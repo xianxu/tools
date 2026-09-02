@@ -176,6 +176,11 @@ type display interface {
 	// Resize sets the terminal's SHAPE. The caller redraws, because the live
 	// edge is rendered against the new width too.
 	Resize(rows, cols int)
+	// Size is that shape read back, for a caller that lays something out before
+	// drawing it — a form that decides where its own words go needs the width at
+	// DRAW time, and a board that cannot be drawn whole must not be told to
+	// commit itself (#40 R17).
+	Size() (rows, cols int)
 	// WriteRegions writes rendered text AND the click map for it. One call,
 	// because the regions are relative to that render and only the screen knows
 	// which buffer line it lands on — two calls could disagree by a line, which

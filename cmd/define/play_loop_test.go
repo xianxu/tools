@@ -3221,3 +3221,155 @@ func lastPaintedFrame(out string) string {
 	frames := strings.Split(unstyled(out), cursorHome+eraseDown)
 	return frames[len(frames)-1]
 }
+
+// R17: A BOARD THAT BECOMES CURRENT AFTER A RESIZE IS LAID OUT FOR THE TERMINAL
+// AS IT IS, not the one it was built for.
+//
+// The resize case told `s.Current()` its new width, which fixed the board on
+// screen at that moment and no other. The NEXT board was built by
+// `todaysQuestions` at the old width and painted with rows too wide — so its
+// rows wrapped, a footer entry stopped being one physical row, and BR-8's
+// wrong-word click came back through a door the first fix could not see.
+//
+// `show` is the one place that draws, so it is the only place that can promise
+// this for every board.
+func TestABoardBuiltBeforeAResizeIsStillLaidOutForTheTerminal(t *testing.T) {
+	first := []string{"keel", "mesa", "run", "bank"}
+	// Long words, so an 80-column layout is far too wide for a 40-column window.
+	second := []string{"arrondissement", "sycophantic", "defenestrate", "ephemeral"}
+	d, opt, _ := playRig(t, "quokka", "concrete")
+	_, held := questionsFor(t, d, opt)
+
+	// BOTH boards built at 80, as todaysQuestions would before any resize.
+	a := play.NewBoard(boardCells(first...), 80, play.Palette{})
+	b := play.NewBoard(boardCells(second...), 80, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+	resizes := make(chan winSize, 1)
+	keys := make(chan Key, 8)
+
+	go func() {
+		defer close(keys)
+		settled := func(cond func() bool) bool {
+			for dl := time.Now().Add(2 * time.Second); time.Now().Before(dl); {
+				if cond() {
+					return true
+				}
+				time.Sleep(time.Millisecond)
+			}
+			return false
+		}
+		if !settled(func() bool { return strings.Contains(unstyled(tty.String()), "[0] keel") }) {
+			return
+		}
+		// Narrow the window while the FIRST board is up...
+		resizes <- winSize{rows: 24, cols: 40}
+		if !settled(func() bool { return strings.Contains(unstyled(tty.String()), "[3] bank") }) {
+			return
+		}
+		// ...then sweep it, so the SECOND board becomes current after the resize.
+		for i := range first {
+			keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[i])}
+		}
+		if !settled(func() bool { return strings.Contains(unstyled(tty.String()), "arrondissement") }) {
+			return
+		}
+		keys <- Key{Kind: KeyInterrupt}
+	}()
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{a, b}), held, keys,
+		console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
+
+	// THE PREMISE: the second board was actually reached and drawn.
+	frame := unstyled(tty.String())
+	if !strings.Contains(frame, "arrondissement") {
+		t.Fatalf("the second board was never drawn:\n%s", frame)
+	}
+	// AND IT FITS. Built at 80, four long words are one row of 74 columns; at 40
+	// that wraps into two physical rows and every click below it means another
+	// word.
+	for i, row := range strings.Split(b.Prompt(), "\n") {
+		if n := visibleCells(row); n > 40 {
+			t.Errorf("the second board's row %d is %d columns in a 40-column window — it was never told the terminal changed:\n%q", i, n, row)
+		}
+	}
+	if b.Rows() <= 3 {
+		t.Errorf("the second board is %d rows; at 40 columns four long words need more, so it did not relayout", b.Rows())
+	}
+}
+
+// R17: ENTER IS HELD WHILE THE BOARD IS NOT DRAWN IN FULL.
+//
+// Enter takes every unmarked word as Wrong. On a terminal too short to draw the
+// whole board, `fitFooter` drops trailing grid rows — so one keystroke would
+// halve the box of words that were never on screen. The loop refuses, the prompt
+// says why, and marking what IS visible still works.
+func TestEnterIsHeldWhileTheBoardIsNotDrawnInFull(t *testing.T) {
+	var words []string
+	for _, w := range []string{
+		"bank", "concrete", "content", "defenestrate", "desert", "ephemeral",
+		"even", "man", "mesa", "minute", "parrot", "present", "pulp", "quokka",
+		"read", "run",
+	} {
+		words = append(words, w)
+	}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), 80, play.Palette{})
+
+	// A window that cannot hold it: the board is six rows plus a prompt and bar.
+	const short = 6
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, short, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	keys := make(chan Key, 4)
+	keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[0])} // one mark, by hand
+	keys <- Key{Kind: KeyEnter}                                 // ...and the sweep, which must not land
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// THE PREMISE: the terminal really is too short for this board.
+	if fitsABoard(short, board.Rows(), displayRows(gradePrompt(board), 80)) {
+		t.Fatalf("a %d-row window fits a %d-row board; this test asserts nothing", short, board.Rows())
+	}
+	// ONE event — the mark. Not sixteen.
+	evs := reviewEvents(t, st)
+	if len(evs) != 1 {
+		t.Fatalf("%d review events, want the one mark — Enter swept words the window never drew:\n%s",
+			len(evs), unstyled(tty.String()))
+	}
+	if evs[0].Word != words[0] {
+		t.Errorf("recorded %q, want the word that was marked by hand", evs[0].Word)
+	}
+	// ...and the learner is told why, on the row Paint clips last.
+	if !strings.Contains(unstyled(tty.String()), "window too short") {
+		t.Errorf("Enter was refused silently:\n%s", unstyled(tty.String()))
+	}
+
+	// AND THE SAME BOARD IN A WINDOW THAT FITS DOES commit, so the refusal is
+	// about the window and not about boards.
+	d2, opt2, st2 := playRig(t, words...)
+	_, held2 := questionsFor(t, d2, opt2)
+	board2 := play.NewBoard(boardCells(words...), 80, play.Palette{})
+	tty2 := &syncBuf{}
+	live2 := newPinnedScreen(tty2, 24, 80)
+	live2.interval = -1
+	keys2 := make(chan Key, 3)
+	keys2 <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[0])}
+	keys2 <- Key{Kind: KeyEnter}
+	keys2 <- Key{Kind: KeyInterrupt}
+	close(keys2)
+	playSession(t.Context(), d2, opt2, play.NewSession([]play.Question{board2}), held2, keys2,
+		console{view: live2, finish: func() {}, stdout: live2, stderr: &errb})
+	if n := len(reviewEvents(t, st2)); n != len(words) {
+		t.Errorf("%d events in a window that fits, want all %d — Enter must still commit there", n, len(words))
+	}
+}

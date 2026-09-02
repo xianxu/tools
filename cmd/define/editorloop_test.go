@@ -166,6 +166,19 @@ func (d *recordDisplay) FooterRowAt(row int) (int, int, bool) {
 	return e[0], e[1], ok
 }
 
+// Size is the shape a test says the terminal has. It defaults to the real
+// 24x80, so a rig that does not care about geometry gets a terminal that exists
+// — a zero would make every board refuse to fit, which is the sentinel-default
+// trap this file's playRig comment already names for width and rows.
+func (d *recordDisplay) Size() (int, int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.rows == nil || d.cols == nil {
+		return defaultRows, defaultCols
+	}
+	return d.rows[len(d.rows)-1], d.cols[len(d.cols)-1]
+}
+
 // footerAt scripts a row as an entry's FIRST physical row; footerAtOffset
 // scripts a continuation, which is what a wrapped entry produces and what a
 // caller acting on a column has to refuse (R9).

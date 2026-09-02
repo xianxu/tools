@@ -765,6 +765,19 @@ func (l *liveScreen) Resize(rows, cols int) {
 	l.rows, l.cols = rows, cols
 }
 
+// Size is the terminal's shape AS IT IS NOW, for a caller that has to lay
+// something out before drawing it (#40 R17).
+//
+// The screen is the authority: it is given the shape by the resize watcher and
+// it is what Paint budgets against. A loop keeping its own copy would be a
+// second owner of a number the terminal owns, and the copy would be right until
+// the first SIGWINCH it happened not to see.
+func (l *liveScreen) Size() (rows, cols int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rows, l.cols
+}
+
 // Stop ends painting. Called as the terminal is handed back, and idempotent for
 // the same reason restore is: it runs from more than one exit path.
 //

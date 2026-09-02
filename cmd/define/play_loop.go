@@ -156,6 +156,11 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// question's index, and -1 means none — the state is one int, and it lives
 	// here because "perform the outcomes" already does.
 	written := -1
+	// boardWhole is whether the CURRENT board is drawn in full, recomputed by
+	// every frame and read by the key loop (R17). False only after a resize has
+	// shrunk the terminal under a board already in play — the board is not
+	// re-selected then, because its marks are already in the log.
+	boardWhole := true
 	// relearn is the words this board has been marked `no` on, emptied into the
 	// transcript when it closes. A slice on the loop rather than state on the
 	// form: see relearnLine.
@@ -173,7 +178,29 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// Its marks change as they land, so it is rebuilt into the FOOTER on
 		// every frame instead, and nothing about it reaches the transcript
 		// except the relearn line it writes as it closes.
-		if _, ok := q.(play.Grid); ok {
+		if g, ok := q.(play.Grid); ok {
+			// LAID OUT FOR THE TERMINAL AS IT IS, at DRAW time (R17).
+			//
+			// The resize case used to be the only place that told a form its
+			// width, which fixed the board that happened to be ON SCREEN when
+			// the window changed and no other: a board that became current
+			// afterwards was built by todaysQuestions at the old width and
+			// painted with rows too wide for the terminal, so its rows wrapped,
+			// a footer entry stopped being one physical row, and the wrong-word
+			// click was back. `show` is the ONE place that draws, so it is the
+			// only place that can promise this for every board.
+			//
+			// Idempotent: Resize returns immediately when the width is the one
+			// the form already has, which is every frame but the first after a
+			// change.
+			termRows, termCols := view.Size()
+			g.Resize(termCols)
+			// AND WHETHER IT FITS, which decides one thing: whether Enter may
+			// spend it. A shrunken terminal drops trailing footer rows, so some
+			// grid rows are simply not drawn — and Enter takes every unmarked
+			// word as Wrong, including words the learner never saw. That is a
+			// box halved per word on a keystroke meaning "ask me these again".
+			boardWhole = fitsABoard(termRows, g.Rows(), displayRows(gradePrompt(q), termCols))
 			// ONE BLANK BUFFER LINE, the first time this board is drawn.
 			//
 			// A board writes nothing else to the buffer, so without it the grid
@@ -190,7 +217,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				written = s.Index
 				fmt.Fprintln(stdout)
 			}
-			view.Draw(livePrompt(s), boardFooter(q, fig))
+			view.Draw(boardPrompt(q, boardWhole), boardFooter(q, fig))
 			return
 		}
 		if q != nil && written != s.Index {
@@ -269,18 +296,18 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// `sz.cols` rather than `opt.width`: this is the width the SCREEN
 			// paints at, and the board has to agree with the paint, not with a
 			// wrap policy that answers 0 on a narrow terminal.
-			if g, ok := s.Current().(play.Grid); ok {
-				g.Resize(sz.cols)
-				// AND NO RE-SELECTION. The board stays, at the new shape, even
-				// if the terminal is now too short to draw it whole — which is
-				// D15's rule holding rather than bending. `boardsFor` chooses
-				// the form for words that have not been asked yet; this board's
-				// marks are already in the log and cannot be retracted, so
-				// "send it to 2.3 instead" would mean re-asking words already
-				// answered. What a too-short terminal loses is listed in
-				// boardFooter, in the order it loses it, and the row that says
-				// what a click means is not in the footer at all.
-			}
+			// NO Resize HERE. show() lays the current form out for the terminal
+			// as it is, every frame — which covers this resize and also the
+			// board that becomes current later, which this call could not (R17).
+			// A second call here would be a second owner of the same fact.
+			//
+			// AND NO RE-SELECTION. The board stays, at the new shape, even if the
+			// terminal is now too short to draw it whole — D15's rule holding
+			// rather than bending. `boardsFor` chooses the form for words not yet
+			// asked; this board's marks are already in the log, so "send it to
+			// 2.3 instead" would mean re-asking answered words. What a short
+			// terminal loses is the bar, then the panel, then grid rows — and
+			// Enter is held while any of them are missing.
 			show()
 			continue
 		case got, ok := <-keys:
@@ -344,6 +371,23 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			var ok bool
 			if in, ok = toInput(k); !ok {
 				continue
+			}
+			// ENTER IS HELD WHILE THE BOARD IS NOT DRAWN IN FULL (R17).
+			//
+			// It takes every unmarked word as Wrong, and on a shrunken terminal
+			// some of those words were never on screen — so one keystroke would
+			// halve the box of words the learner had no chance to look at. The
+			// loop refuses rather than the session, for the same reason a
+			// viewport gesture never reaches `play` (D6): what was DRAWN is the
+			// terminal's business and the pure package must not learn about it.
+			//
+			// Marking still works, and Ctrl-C is still free — so nothing is
+			// stuck. The prompt says why, because a key that silently stops
+			// working is the thing a learner blames themselves for.
+			if in.Kind == play.InputFinish && !boardWhole {
+				if _, isGrid := s.Current().(play.Grid); isGrid {
+					continue
+				}
 			}
 		}
 
@@ -521,6 +565,23 @@ func toInput(k Key) (play.Input, bool) {
 		return play.Input{Kind: play.InputRune, Rune: k.Rune}, true
 	}
 	return play.Input{}, false
+}
+
+// boardPrompt is a board's prompt row: its own keys, or the reason Enter is
+// held (R17).
+//
+// The REASON, not a silent refusal. A learner who presses Enter on a board that
+// will not commit needs to know the window is the problem — and this row is the
+// one `Paint` clips last, so it is the right place to say it.
+//
+// It replaces the form's keys rather than joining them, because the two would
+// not both fit at the width where this happens, and a prompt that wraps is a
+// frame one row taller than the board was budgeted for.
+func boardPrompt(q play.Question, whole bool) string {
+	if whole {
+		return gradePrompt(q)
+	}
+	return "window too short to show the whole board — mark what you see, or Ctrl-C to stop"
 }
 
 // boardPalette is how a board's marks are painted, and it is the ONE place this
