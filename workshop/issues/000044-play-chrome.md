@@ -151,7 +151,16 @@ one-shot and piped paths, where the cursor genuinely has to move.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Durable design: `workshop/plans/000044-play-chrome-plan.md`.
+
+Single-pass: one review boundary, so plain checkboxes rather than `Mx` tags.
+
+- [ ] The indicator inside a screen has no `before` — `screenIndicator()`, shared by the sitting's click path and the editor's, and a test that clicks TWICE.
+- [ ] The frame reserves `chromeGap` between the record and the live edge — `Paint`'s budget, its `footerTop`, and `newPinnedScreen`; pinned by a placement test on a FULL buffer and a footer-click test.
+- [ ] `fitsABoard` charges the gap, so a board is still offered only when it can be drawn whole.
+- [ ] The board's blank-buffer-line special case is deleted, its reasoning now the frame's.
+- [ ] `asChrome` dims the action row and the bar together, leaving `gradePrompt`/`sittingBar` plain so the README pin still holds.
+- [ ] README + atlas follow; the derived board block is regenerated rather than hand-edited.
 
 ## Log
 
