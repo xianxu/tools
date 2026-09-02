@@ -172,14 +172,14 @@ those keep working where hand-maintained enumerations did not.
 
 ## Done when
 
-- [ ] A frame whose buffer fills the screen still shows one blank line between the last content row and the action row, pinned by a frame test that reads the placement rather than searching for a substring.
-- [ ] The action row and the bar carry the dim style in a coloured sitting — at BOTH bar sites, the board's and the common one — and neither carries an escape sequence when the palette is off.
-- [ ] The gap is CHARGED where a board is offered and SACRIFICED FIRST where a frame is drawn, pinned at both boundary heights: the height where one uncharged row would push a board off the bottom, and the height where an unconditional gap would make the frame taller than the terminal.
-- [ ] A sitting that plays audio N times leaves the buffer the height it was — driven through the REVEAL path as well as the click path, since the reveal is the one that fires on every question.
-- [ ] No `playAnnounced` call in a screen-hosted file passes anything but `screenIndicator()`, enforced by a test rather than by having swept the five that exist today.
-- [ ] The board's own blank-buffer-line special case is gone, and a board still reads as separated from the question above it.
-- [ ] `README.md` still quotes the prompt lines verbatim and the doc pin still passes — the plain text is unchanged.
-- [ ] `go test -tags conformance ./cmd/define` passes: the pty suite's SGR-1006 click is the only end-to-end proof that `footerTop` still maps a real terminal's click to the intended cell.
+- [x] A frame whose buffer fills the screen still shows one blank line between the last content row and the action row, pinned by a frame test that reads the placement rather than searching for a substring. — `TestAFullBufferStillLeavesARowAboveThePrompt`, over an overfull buffer so the pinned padding cannot fake the gap; `readFrame` was widened to carry row CONTENT so it reads placement. `TestTheEditorsFrameReservesNoGap` is the other half.
+- [x] The action row and the bar carry the dim style in a coloured sitting — at BOTH bar sites, the board's and the common one — and neither carries an escape sequence when the palette is off. — `TestTheChromeBandIsDimmedTogether`, three rows. **Verified by deleting each styling site in turn and watching it fail**, which is how two holes were found: the board's bar was uncovered, and the predicate "this line contains a dim" passed on the PROMPT's dim, because `Paint` reprints the prompt on the same `\n`-split line as the bar.
+- [x] ~~The gap is CHARGED where a board is offered~~ and SACRIFICED FIRST where a frame is drawn, pinned at both boundary heights. — **Revised: it is not charged, and the proof is the deliverable.** `grantedGap` hands the row out only when there were two rows spare, so `T-P-F >= 2` gives `F+P+1 <= T-1`: charging `fitsABoard` alters no answer while looking like a reconciliation, and at `{T:8, F:7, P:1}` a naive charge refuses a board `Paint` draws whole. `TestTheChromeGapNeverChangesWhetherABoardFits` exhausts 0–40 × 1–30 × 1–5. Sacrifice: `TestTheChromeGapIsGivenUpBeforeTheFrameOverflows` sweeps heights 1–12 × two prompt widths × three footer shapes. See the plan's `## Revisions`.
+- [x] A sitting that plays audio N times leaves the buffer the height it was — driven through the REVEAL path as well as the click path. — `TestSittingPlaybackCommitsNothingToTheBuffer` runs the same sitting audible and silent and compares buffer heights, so content is held fixed and playback is the only variable; it failed at 547 vs 542 lines over five questions. **Stated precisely: the behavioural test drives the REVEAL only**; the click path is covered by the guard below and by `playRegion` no longer taking an indicator at all.
+- [x] No `playAnnounced` call in a screen-hosted file passes anything but `screenIndicator()`, enforced by a test rather than by having swept the five that exist today. — `TestEveryScreenPlaybackTakesTheScreenIndicator`, and it is STRONGER than this row asks: it matches on the ARGUMENT'S TYPE, so it also reaches the two sites that call `playAnnounced` through `playRegion` — which a callee-name walk would have missed, including the site the operator reported.
+- [x] The board's own blank-buffer-line special case is gone, and a board still reads as separated from the question above it. — deleted from `show()`; the separation is now the frame's, for every form.
+- [x] `README.md` still quotes the prompt lines verbatim and the doc pin still passes — the plain text is unchanged. — `TestREADMEQuotesThePromptsTheLoopActuallyPrints` green; `gradePrompt`/`sittingBar` untouched.
+- [x] `go test -tags conformance ./cmd/define` passes: the pty suite's SGR-1006 click is the only end-to-end proof that `footerTop` still maps a real terminal's click to the intended cell. — green, 133s.
 
 ## Estimate
 
@@ -223,12 +223,12 @@ Durable design: `workshop/plans/000044-play-chrome-plan.md`.
 
 Single-pass: one review boundary, so plain checkboxes rather than `Mx` tags.
 
-- [ ] The indicator inside a screen has no `before` — `screenIndicator()`, shared by the sitting's click path and the editor's, and a test that clicks TWICE.
-- [ ] The frame reserves `chromeGap` between the record and the live edge — `Paint`'s budget, its `footerTop`, and `newPinnedScreen`; pinned by a placement test on a FULL buffer and a footer-click test.
-- [ ] `fitsABoard` charges the gap, so a board is still offered only when it can be drawn whole.
-- [ ] The board's blank-buffer-line special case is deleted, its reasoning now the frame's.
-- [ ] `asChrome` dims the action row and the bar together, leaving `gradePrompt`/`sittingBar` plain so the README pin still holds.
-- [ ] README + atlas follow; the derived board block is regenerated rather than hand-edited.
+- [x] The indicator inside a screen has no `before` — `screenIndicator()`, shared by the sitting's click path and the editor's, and a test that clicks TWICE.
+- [x] The frame reserves `chromeGap` between the record and the live edge — `Paint`'s budget, its `footerTop`, and `newPinnedScreen`; pinned by a placement test on a FULL buffer and a footer-click test.
+- [x] ~~`fitsABoard` charges the gap~~ — proved equivalent to not charging it, and pinned by exhaustion instead (see the plan's `## Revisions`).
+- [x] The board's blank-buffer-line special case is deleted, its reasoning now the frame's.
+- [x] `asChrome` dims the action row and the bar together, leaving `gradePrompt`/`sittingBar` plain so the README pin still holds.
+- [x] README + atlas follow; the derived board block is regenerated rather than hand-edited.
 
 ## Log
 
@@ -239,3 +239,41 @@ Sequenced AHEAD of `#42` on the operator's call: the blank line changes the row
 budget (`fitsABoard` charges the prompt's measured height) and `#42` reworks
 exactly that arithmetic, so doing chrome first means the fit math is written once
 against the final chrome. `#42` is parked `blocked` on this.
+
+### 2026-09-02 — what the work turned out to be
+
+Three operator observations, one of which was a much larger bug than it looked
+and one of which was smaller.
+
+**The stray line was the big one.** Filed as "one per click"; it is one per
+PLAYBACK — every answered question in a sitting and every lookup in the editor —
+across five screen-hosted sites that disagreed three ways. The plan gate found
+that (PQ-1, PQ-2) before any code was written. What closed it was not the sweep
+but two structural moves: `playRegion`'s indicator parameter is DELETED (a click
+can only happen inside a screen, so the parameter offered a choice with one right
+answer), and the guard matches on the ARGUMENT'S TYPE rather than a callee name —
+the callee-name version, which the plan proposed first, was blind to exactly the
+site the operator reported (PQ-7).
+
+**`fitsABoard` did not need changing.** The plan had it charging `chromeGap`;
+working the arithmetic through, that is provably a no-op, and writing it would
+have looked like a reconciliation while doing nothing. The proof plus an
+exhaustive pin replaced the code. Recorded in the plan's `## Revisions`, and
+caught as a stale row by `TestPlanTableStatusMatchesTheChangeWindow`.
+
+**Two vacuous tests, both found by breaking the code rather than by reading.**
+The chrome-band test covered one of the two bar sites, and its predicate — "this
+line carries a dim escape" — was satisfied by the PROMPT's dim, because `Paint`
+walks the cursor back and reprints the prompt on the same `\n`-split line as the
+bar. Deleting each styling site in turn is what surfaced both. The lesson is the
+one this repo already knows in another form: a guard has to be shown failing.
+
+**One test moved rather than broke.** `TestALongRevealPagesRatherThanScrollingTheWordAway`
+ran an 8-row terminal; the gap costs the buffer a row, so the entry's tail no
+longer reached `DERIVATIVES`. Nine rows restores the premise the test is about
+("several screenfuls") rather than papering over it.
+
+Estimate 2.16h. The estimate-quality judge flagged (INFO, non-blocking) that no
+`ux-rename-iteration` row was booked on a change whose whole subject is how the
+thing LOOKS — fair, and the issue's own provenance is an operator iteration
+round. Left as filed so the close-time ledger scores the real miss.
