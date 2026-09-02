@@ -392,3 +392,13 @@ failing the first time they were applied. That is the useful shape of this round
 Both mutation-verified. The pattern across three rounds is one lesson, not three:
 **a fix applied at the site of the finding is not the fix** — and that applies to
 rules about rules, which is where rounds 2 and 3 both landed.
+
+### 2026-09-02 — a flaky conformance row, noted not fixed
+
+`TestReflectAgainstTheLiveService` failed once during the round-3 verification and
+passed on re-run, in isolation and in the full suite. It calls the real model and
+asserts over generated prose, so it is non-deterministic by construction — nothing
+to do with this issue's paths (the frame, the indicator, the chrome). Recorded
+because a conformance suite that fails at random is a gate that will eventually be
+ignored, which is `#19`'s shape one seam over. Not filed: it is pre-existing and
+outside this issue's scope.
