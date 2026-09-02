@@ -1,11 +1,12 @@
 ---
 id: 000042
-status: open
+status: working
 deps: [tools#40]
 github_issue:
 created: 2026-09-01
-updated: 2026-09-01
+updated: 2026-09-02
 estimate_hours:
+started: 2026-09-02T12:31:27-07:00
 ---
 
 # retire form 2.1: the board is the fallback when a real test cannot be built
