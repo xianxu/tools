@@ -1628,9 +1628,17 @@ func isCitableName(name string) bool {
 // instances found at once were of exactly that shape, two of them inserted by the
 // window under review.
 //
-// FuncDecl only, and named-function only. A method's receiver is not in the
-// comment by convention, and a `var`/`const` block's doc legitimately describes
-// the group rather than any member.
+// Named FUNCTIONS and SINGLE-SPEC const/var declarations. A method's receiver is
+// not in the comment by convention, and a MULTI-spec `var`/`const` block's doc
+// legitimately describes the group rather than any member — but a lone
+// `const chromeGap = 1` is named by its own doc exactly as a function is.
+//
+// The const arm was added after this guard watched the failure it exists to catch
+// go past it (#44): a new constant was inserted between `Paint`'s doc block and
+// `Paint`, so `go doc` printed the constant with "Paint draws one whole frame…"
+// and left `Paint` undocumented — invisible here, because the reparented block's
+// new owner was not a FuncDecl. A guard whose scope is narrower than the failure
+// mode is the shape of the thing it is guarding against.
 func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
@@ -1643,8 +1651,8 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 		for _, pkg := range pkgs {
 			for path, f := range pkg.Files {
 				for _, d := range f.Decls {
-					fn, ok := d.(*ast.FuncDecl)
-					if !ok || fn.Doc == nil || fn.Name == nil {
+					name, doc := documentedDecl(d)
+					if name == "" || doc == nil {
 						continue
 					}
 					// A TEST's doc legitimately opens with the name of what it
@@ -1652,12 +1660,12 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 					// the repo's convention and reads correctly. The failure
 					// this catches is a PRODUCTION declaration wearing its
 					// neighbour's prose.
-					if strings.HasPrefix(fn.Name.Name, "Test") ||
-						strings.HasPrefix(fn.Name.Name, "Fuzz") ||
-						strings.HasPrefix(fn.Name.Name, "Benchmark") {
+					if strings.HasPrefix(name, "Test") ||
+						strings.HasPrefix(name, "Fuzz") ||
+						strings.HasPrefix(name, "Benchmark") {
 						continue
 					}
-					first := strings.Fields(fn.Doc.Text())
+					first := strings.Fields(doc.Text())
 					if len(first) == 0 {
 						continue
 					}
@@ -1668,7 +1676,7 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 					// a neighbour). Only a first word that is ANOTHER
 					// declaration's name is the failure this catches.
 					word := strings.Trim(first[0], "`:,.—-")
-					if word == fn.Name.Name {
+					if word == name {
 						continue
 					}
 					// SAME FILE only, because that is the shape this catches: a
@@ -1684,24 +1692,87 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 						"declaration in this package — a comment block acquires the wrong "+
 						"owner when a declaration is inserted between them, leaving one "+
 						"undocumented and the other described by its neighbour's prose",
-						filepath.Base(path), fn.Name.Name, word)
+						filepath.Base(path), name, word)
 				}
 			}
 		}
 	}
 	if checked == 0 {
-		t.Fatal("no documented functions parsed, so this guard checked nothing")
+		t.Fatal("no documented declarations parsed, so this guard checked nothing")
 	}
 }
 
-// declaredIn is every function name in ONE file, so the guard can tell a
+// documentedDecl is the NAME a doc comment sits on, and the doc, for the two
+// declaration shapes whose comment names one thing: a named function, and a
+// single-spec const/var.
+//
+// A multi-spec `const (…)` block is excluded because its doc describes the GROUP
+// — "The two prompt lines livePrompt returns…" over a pair of constants is
+// correct prose that this guard must not fire on. A lone declaration has no group
+// to describe, so its doc names it or names its neighbour.
+func documentedDecl(d ast.Decl) (string, *ast.CommentGroup) {
+	name := declName(d)
+	if name == "" {
+		return "", nil
+	}
+	switch d := d.(type) {
+	case *ast.FuncDecl:
+		return name, d.Doc
+	case *ast.GenDecl:
+		return name, d.Doc
+	}
+	return "", nil
+}
+
+// declName is the name a declaration would be documented UNDER, whether or not it
+// currently has a doc.
+//
+// SEPARATE FROM THE DOC, and that separation is the finding rather than a tidy-up
+// (#44 I1). `declaredIn` first derived its neighbour set from `documentedDecl`,
+// which requires a doc — and the failure being caught is a declaration that has
+// just LOST its doc to a neighbour inserted above it. So the very name the guard
+// needed to recognise was the one name excluded, and the mutation still passed.
+// The owner set and the neighbour set must be the same SHAPES, and only the owner
+// set may require a doc.
+func declName(d ast.Decl) string {
+	switch d := d.(type) {
+	case *ast.FuncDecl:
+		if d.Name == nil {
+			return ""
+		}
+		return d.Name.Name
+	case *ast.GenDecl:
+		// Single-spec only: a multi-spec `const (…)` block's doc describes the
+		// GROUP, and firing on that would be wrong.
+		if len(d.Specs) != 1 {
+			return ""
+		}
+		vs, ok := d.Specs[0].(*ast.ValueSpec)
+		if !ok || len(vs.Names) != 1 {
+			return ""
+		}
+		return vs.Names[0].Name
+	}
+	return ""
+}
+
+// declaredIn is every declaration name in ONE file, so the guard can tell a
 // neighbour's name from ordinary prose. Without it the check would fire on every
 // comment that happens to open with an identifier-shaped word.
+//
+// DERIVED FROM declName, so the OWNER set and the NEIGHBOUR set are the
+// same set of declaration shapes BY CONSTRUCTION. They were not: `documentedDecl`
+// was widened to single-spec const/var and this was left at `FuncDecl`, so a doc
+// block whose first word is a CONSTANT's name stayed invisible — insert a
+// function between `// boardRefusal is the prompt row…` and `const boardRefusal`
+// and the guard passes while `go doc` shows the function wearing the constant's
+// prose. That is the same failure one mirror over, and widening one side of a
+// two-sided rule is how it survived being fixed once.
 func declaredIn(f *ast.File) map[string]bool {
 	out := map[string]bool{}
 	for _, d := range f.Decls {
-		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil {
-			out[fn.Name.Name] = true
+		if name := declName(d); name != "" {
+			out[name] = true
 		}
 	}
 	return out

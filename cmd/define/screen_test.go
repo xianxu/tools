@@ -330,6 +330,20 @@ type frameGeometry struct {
 	rows      int // display rows the frame occupies
 	cursorRow int
 	cursorCol int
+	// text is what each display row SHOWS, indexed by row. Placed by column, so
+	// the second write of the prompt (Paint reprints it after walking the cursor
+	// back) overwrites rather than appends — which is what a terminal does, and
+	// what makes "the row above the prompt is empty" a question this can answer.
+	text []string
+}
+
+// row is what display row i shows, trailing blanks trimmed. Out of range is "",
+// because a row the frame never reached is as empty as one it blanked.
+func (g frameGeometry) row(i int) string {
+	if i < 0 || i >= len(g.text) {
+		return ""
+	}
+	return strings.TrimRight(g.text[i], " ")
 }
 
 // readFrame interprets a painted frame as a terminal would: home, erase, text
@@ -338,6 +352,16 @@ func readFrame(t *testing.T, frame string, cols int) frameGeometry {
 	t.Helper()
 	row, col, maxRow := 0, 0, 0
 	pending := false // the deferred wrap: the cursor sits in the last column
+	var text [][]rune
+	put := func(r rune) {
+		for len(text) <= row {
+			text = append(text, nil)
+		}
+		for len(text[row]) <= col {
+			text[row] = append(text[row], ' ')
+		}
+		text[row][col] = r
+	}
 	rest := frame
 	for len(rest) > 0 {
 		if strings.HasPrefix(rest, "\x1b[") {
@@ -393,6 +417,7 @@ func readFrame(t *testing.T, frame string, cols int) frameGeometry {
 				row++
 				col = 0
 			}
+			put(r)
 			col += w
 			if cols > 0 && col == cols {
 				pending = true
@@ -402,7 +427,11 @@ func readFrame(t *testing.T, frame string, cols int) frameGeometry {
 			maxRow = row
 		}
 	}
-	return frameGeometry{rows: maxRow + 1, cursorRow: row, cursorCol: col}
+	lines := make([]string, len(text))
+	for i, r := range text {
+		lines[i] = string(r)
+	}
+	return frameGeometry{rows: maxRow + 1, cursorRow: row, cursorCol: col, text: lines}
 }
 
 // DONE-WHEN 11: on a PINNED screen the footer sits at the terminal's bottom
@@ -499,6 +528,9 @@ func TestOnlyThePinnedConstructorPads(t *testing.T) {
 	}
 }
 
+// sgr matches an SGR (colour) escape and nothing else.
+var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
 // unstyled drops SGR sequences so a text assertion survives a styling change.
 //
 // Only the colour sequences: cursor movement and erasure are what several tests
@@ -509,8 +541,6 @@ func TestOnlyThePinnedConstructorPads(t *testing.T) {
 // be in — and every in-process assertion over a frame's text met escapes for the
 // first time. A second stripper beside this one is how they would come to
 // disagree about what counts as style.
-var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
 func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }
 
 // lastFrame is the most recent WHOLE frame in what a terminal received.
@@ -1265,4 +1295,265 @@ func TestFooterRowAtNamesTheEntryUnderAClick(t *testing.T) {
 			}
 		}
 	})
+}
+
+// THE FRAME RESERVES A ROW BETWEEN THE RECORD AND THE LIVE EDGE (#44).
+//
+// The live edge is a legend of what you can press; the buffer is what you are
+// reading. With nothing between them the action row butts the last line of the
+// definition it belongs under and the two read as one block. Operator,
+// 2026-09-02: "there should be a blank line between the action footer and forms".
+//
+// THE BUFFER IS DELIBERATELY OVERFULL. A pinned screen pads its region out to
+// full height, so any test with spare room shows a gap whether or not one is
+// reserved — it would pass against no implementation at all.
+func TestAFullBufferStillLeavesARowAboveThePrompt(t *testing.T) {
+	const termRows, termCols = 10, 40
+	// THROUGH THE PRODUCTION CONSTRUCTOR, not `screen{gap: chromeGap}`. Every gap
+	// test here built the screen by hand at first, which left `newPinnedScreen`'s
+	// own `l.s.gap = chromeGap` — the line the operator's complaint actually
+	// depends on — pinned by nothing: deleting it kept the whole suite AND the
+	// conformance suite green. A test that constructs the object by hand does not
+	// test the wiring that constructs it in production.
+	var tty bytes.Buffer
+	live := newPinnedScreen(&tty, termRows, termCols)
+	live.interval = -1
+	sc := live.s
+	for i := range 40 {
+		sc.Write(fmt.Appendf(nil, "line %d\n", i))
+	}
+
+	var b strings.Builder
+	sc.Paint(&b, termRows, termCols, "1-4 = pick the definition", []string{"7 of 13"})
+	g := readFrame(t, b.String(), termCols)
+
+	if g.rows > termRows {
+		t.Fatalf("the frame is %d rows in a %d-row terminal", g.rows, termRows)
+	}
+	// The prompt is above the one footer row, so it is the second-to-last row.
+	promptRow := termRows - 2
+	if got := g.row(promptRow); got != "1-4 = pick the definition" {
+		t.Fatalf("row %d is %q, want the prompt — this test has the geometry wrong", promptRow, got)
+	}
+	if got := g.row(promptRow - 1); got != "" {
+		t.Errorf("the row above the prompt is %q, want empty — the record butts the chrome", got)
+	}
+	if got := g.row(promptRow - 2); got == "" {
+		t.Error("two empty rows above the prompt; the gap is one row, and the buffer is full")
+	}
+}
+
+// THE EDITOR'S FRAME IS UNCHANGED. Its prompt is the line you are TYPING, a
+// continuation of what is above it — not a legend. Only one of the two surfaces
+// wants a border, which is why the gap is set at the constructor where `pinned`
+// already makes that difference visible.
+func TestTheEditorsFrameReservesNoGap(t *testing.T) {
+	const termRows, termCols = 10, 40
+	sc := screen{}
+	for i := range 40 {
+		sc.Write(fmt.Appendf(nil, "line %d\n", i))
+	}
+	var b strings.Builder
+	sc.Paint(&b, termRows, termCols, "> typed", nil)
+	g := readFrame(t, b.String(), termCols)
+	if got := g.row(termRows - 2); got == "" {
+		t.Error("the editor's frame left a blank row above the prompt")
+	}
+}
+
+// THE GAP IS GIVEN UP BEFORE THE FRAME OVERFLOWS (#44, PQ-3).
+//
+// `s.rows` floors at zero, so subtracting an unconditional gap and writing it
+// anyway makes the frame one row taller than the terminal: it scrolls, and every
+// row the app believes it placed moves — the exact failure the whole budget
+// exists to prevent. The gap carries no information, so it is the FIRST
+// component sacrificed.
+//
+// A RANGE of heights, not one: the boundary moves with the prompt's wrapped
+// height and with the footer's, so a single case would pin the wrong row.
+func TestTheChromeGapIsGivenUpBeforeTheFrameOverflows(t *testing.T) {
+	const termCols = 40
+	// A prompt wide enough to wrap at 40 columns, so promptRows > 1 for part of
+	// the sweep — the case a fixed-height assumption gets wrong.
+	prompts := []string{"press a key", "1-4 = pick the definition, d = remove from deck, Ctrl-C to stop"}
+	footers := [][]string{nil, {"7 of 13"}, {"a", "b", "c"}}
+	for _, prompt := range prompts {
+		for _, footer := range footers {
+			for termRows := 1; termRows <= 12; termRows++ {
+				sc := screen{pinned: true, gap: chromeGap}
+				for i := range 30 {
+					sc.Write(fmt.Appendf(nil, "line %d\n", i))
+				}
+				var b strings.Builder
+				sc.Paint(&b, termRows, termCols, prompt, footer)
+				if g := readFrame(t, b.String(), termCols); g.rows > termRows {
+					t.Errorf("prompt %q footer %d rows: a %d-row terminal got a %d-row frame — "+
+						"the gap was charged to the budget and emitted anyway",
+						prompt, len(footer), termRows, g.rows)
+				}
+			}
+		}
+	}
+}
+
+// footerTop COUNTS THE GAP, or every footer click lands one row out.
+//
+// This is the row of arithmetic that must not be wrong: on a board the footer
+// entries ARE the grid, so a click mapped one row high marks the wrong word —
+// and a mark is written the moment it lands, with nothing to take back.
+func TestAFooterClickIsUnmovedByTheChromeGap(t *testing.T) {
+	const termRows, termCols = 10, 40
+	var tty bytes.Buffer
+	live := newPinnedScreen(&tty, termRows, termCols)
+	live.interval = -1
+	sc := live.s
+	sc.Write([]byte("question\n"))
+
+	var b strings.Builder
+	footer := []string{"[0] quokka  [1] mesa", "", "gloss", "3 of 9"}
+	const prompt = "marking [yes] no"
+	sc.Paint(&b, termRows, termCols, prompt, footer)
+
+	// AGAINST AN ABSOLUTE ROW, derived from the terminal rather than from
+	// `footerTop` itself. Asking `FooterRowAt(sc.footerTop + i) == i` is a
+	// tautology — `FooterRowAt` IS `row - s.footerTop` — and it passes for any
+	// value the field holds, including one with the gap dropped and one that is
+	// nonsense. This test is the designated pin for the arithmetic whose failure
+	// is a permanent mark on the wrong word, so it has to be able to fail.
+	//
+	// On a pinned screen the footer sits on the bottom edge (D3a), so the first
+	// entry is at `termRows - len(footer)` and nothing about that number comes
+	// from the code under test.
+	wantTop := termRows - len(footer)
+	if sc.footerTop != wantTop {
+		t.Fatalf("footerTop = %d, want %d — the footer no longer starts where a "+
+			"pinned frame puts it, so every click below it is mapped to the wrong entry",
+			sc.footerTop, wantTop)
+	}
+	// And the frame agrees: the first footer entry is DRAWN on that row, and the
+	// row above it is the prompt rather than an entry.
+	g := readFrame(t, b.String(), termCols)
+	if got := g.row(wantTop); got != footer[0] {
+		t.Errorf("row %d shows %q, want the first footer entry %q", wantTop, got, footer[0])
+	}
+	if got := g.row(wantTop - 1); got != prompt {
+		t.Errorf("the row above the footer shows %q, want the prompt %q", got, prompt)
+	}
+	for want := range footer {
+		got, off, ok := sc.FooterRowAt(wantTop + want)
+		if !ok || got != want || off != 0 {
+			t.Errorf("footer entry %d: FooterRowAt(%d) = (%d, %d, %v), want (%d, 0, true)",
+				want, wantTop+want, got, off, ok, want)
+		}
+	}
+	if _, _, ok := sc.FooterRowAt(wantTop - 1); ok {
+		t.Error("the prompt's row answered as a footer entry")
+	}
+}
+
+// THE FOOTER IS BUDGETED BEFORE THE GAP IS, and that ordering is the whole reason
+// the gap can never cost a board a row (#44).
+//
+// `fitFooter` gets `termRows-promptRows` — no gap subtracted — and `grantedGap`
+// then takes only from what is left. Reverse the two and a footer that fits today
+// could lose its last row to a border, which on a board is a grid row: not drawn,
+// so not clickable, while `fitsABoard` had already promised the board was whole.
+//
+// PINNED HERE because the close review flagged it as the one thing `#42` must
+// inherit and nothing went red if it were reordered. `#42` reworks this exact
+// arithmetic.
+func TestTheFooterIsBudgetedBeforeTheGap(t *testing.T) {
+	const termCols = 40
+	for termRows := 2; termRows <= 14; termRows++ {
+		for _, footer := range [][]string{{"bar"}, {"a", "b"}, {"a", "b", "c", "d"}} {
+			var tty bytes.Buffer
+			live := newPinnedScreen(&tty, termRows, termCols)
+			live.interval = -1
+			sc := live.s
+			sc.Write([]byte("question\n"))
+			var b strings.Builder
+			sc.Paint(&b, termRows, termCols, "keys", footer)
+
+			// What the footer would have got with no gap in the picture at all.
+			_, wantRows := fitFooter(footer, termRows-1, termCols)
+			if got := len(sc.footer); got != wantRows {
+				t.Errorf("termRows=%d footer=%d: the drawn footer is %d rows but an "+
+					"ungapped budget gives %d — the gap was taken before the footer, so a "+
+					"border cost a row that carries information",
+					termRows, len(footer), got, wantRows)
+			}
+		}
+	}
+}
+
+// THE GAP NEVER TAKES THE LAST CONTENT ROW (#44 I2).
+//
+// `grantedGap`'s threshold is `>= want+1`, not `>= want`, and the `+1` is the
+// buffer row that survives beside the border. At that size the reader needs the
+// content more than the frame around it — a screen showing a border and nothing
+// else is a border around nothing.
+//
+// PINNED BECAUSE THE CLOSE REVIEW MEASURED IT UNPINNED: relaxing `+1` left the
+// whole suite green. The overflow sweep cannot see it — the frame still totals
+// `termRows`, just with zero content rows — and the fit-equivalence proof holds
+// for any threshold at or above `want`. So the documented rule had no consumer.
+func TestTheChromeGapNeverTakesTheLastContentRow(t *testing.T) {
+	// PURE, over grantedGap itself: the rule is a property of the function, and
+	// reading it back out of a painted frame would measure `s.rows`'s floor-at-zero
+	// clamp as well. `grantedGap` is where the `+1` lives, so it is where the `+1`
+	// is pinned.
+	for termRows := 0; termRows <= 20; termRows++ {
+		for promptRows := 1; promptRows <= 4; promptRows++ {
+			for footerRows := range 6 {
+				got := grantedGap(chromeGap, termRows, promptRows, footerRows)
+				if got == 0 {
+					continue
+				}
+				if left := termRows - promptRows - footerRows - got; left < 1 {
+					t.Errorf("termRows=%d promptRows=%d footerRows=%d: granted a %d-row gap "+
+						"leaving %d buffer rows — a border around nothing. The threshold is "+
+						"`>= want+1` for exactly this row.",
+						termRows, promptRows, footerRows, got, left)
+				}
+			}
+		}
+	}
+	// And it is not vacuously zero everywhere: an ordinary terminal gets its gap.
+	if got := grantedGap(chromeGap, 24, 1, 1); got != chromeGap {
+		t.Fatalf("grantedGap on a 24-row terminal = %d, want %d — this test asserts nothing "+
+			"if the gap is never granted at all", got, chromeGap)
+	}
+}
+
+// THE INDICATOR'S PRECONDITION, named so its failure has a name (#44 I3).
+//
+// `screenIndicator` carries no `before`, so the caller must not be MID-LINE:
+// `eraseOpenLine` takes back the whole open line, and an indicator that joined a
+// partial line takes the caller's text with it when it is erased. The dropped
+// `before` used to close the line incidentally; nothing does now.
+//
+// This asserts the SWALLOW rather than pretending it cannot happen — no shipped
+// caller violates it today, and the guard on `screenIndicator` forces every
+// future screen-hosted site into exactly this shape. When one does leave a
+// partial line, this is the test that says what went wrong.
+func TestAnIndicatorAfterAPartialLineSwallowsIt(t *testing.T) {
+	var s screen
+	s.Write([]byte("a definition\nand a line with no newline"))
+	s.Write([]byte("  ♫ playing 3×"))
+	s.Write([]byte(eraseLine))
+	if got := s.Lines(); len(got) != 1 || got[0] != "a definition" {
+		t.Fatalf("lines = %q; this test documents that an indicator on an OPEN line is "+
+			"erased together with that line — if the screen now protects the caller's text, "+
+			"say so here and relax screenIndicator's precondition", got)
+	}
+	// ...and the same sequence after a CLOSED line loses nothing, which is the
+	// state every shipped caller is actually in.
+	var ok screen
+	ok.Write([]byte("a definition\nand a whole line\n"))
+	ok.Write([]byte("  ♫ playing 3×"))
+	ok.Write([]byte(eraseLine))
+	if got := ok.Lines(); len(got) != 2 || got[1] != "and a whole line" {
+		t.Errorf("lines = %q, want the two written lines intact — the indicator took back "+
+			"content it did not write", got)
+	}
 }

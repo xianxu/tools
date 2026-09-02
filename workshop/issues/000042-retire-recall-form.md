@@ -1,7 +1,7 @@
 ---
 id: 000042
-status: working
-deps: [tools#40]
+status: blocked
+deps: [tools#40, tools#44]
 github_issue:
 created: 2026-09-01
 updated: 2026-09-02

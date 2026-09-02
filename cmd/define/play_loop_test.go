@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -601,14 +602,18 @@ func TestTheBarCountsAnswersAsTheyLand(t *testing.T) {
 
 	var counters []string
 	for _, footer := range view.drawnMenus() {
+		// UNSTYLED, because the bar is drawn as chrome now (#44) and this test is
+		// about the COUNTER — a dim escape on the front of the row would otherwise
+		// read as part of the number.
+		bar := unstyled(footer[0])
 		// Cut at the separator, and FAIL rather than panic if it moves: a bar
 		// format change should read as a broken assertion, not as a slice
 		// bounds error in a test about counting.
-		i := strings.Index(footer[0], " ·")
+		i := strings.Index(bar, " ·")
 		if i < 0 {
-			t.Fatalf("no ` ·` separator in the bar, so its shape changed: %q", footer[0])
+			t.Fatalf("no ` ·` separator in the bar, so its shape changed: %q", bar)
 		}
-		if n := footer[0][:i]; len(counters) == 0 || counters[len(counters)-1] != n {
+		if n := bar[:i]; len(counters) == 0 || counters[len(counters)-1] != n {
 			counters = append(counters, n)
 		}
 	}
@@ -707,8 +712,14 @@ func TestALongRevealPagesRatherThanScrollingTheWordAway(t *testing.T) {
 	qs, held := questionsFor(t, d, opt)
 
 	// A SHORT terminal, which is what makes one entry several screenfuls.
+	//
+	// NINE rows, not eight: a sitting's frame reserves `chromeGap` between the
+	// record and the live edge (#44), so eight rows now leave five for the buffer
+	// and the entry's tail no longer reaches DERIVATIVES. The height is a proxy
+	// for "several screenfuls" and nine is still that — the premise assertion
+	// below is what actually holds the test honest.
 	tty := &syncBuf{}
-	live := newPinnedScreen(tty, 8, 80)
+	live := newPinnedScreen(tty, 9, 80)
 	live.interval = -1
 	var errb bytes.Buffer
 	keys := make(chan Key)
@@ -2325,7 +2336,7 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 	// The rows it counts below the board are the rows boardFooter actually
 	// DRAWS. Two owners of that number would put half a board on screen.
 	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80, play.Palette{})
-	footer := boardFooter(board, sittingFigures{})
+	footer := boardFooter(board, sittingFigures{}, palette{})
 	if got, want := len(footer)-board.Rows(), barRows; got != want {
 		t.Errorf("boardFooter adds %d rows below the board's own, but fitsABoard budgets %d", got, want)
 	}
@@ -2904,7 +2915,7 @@ func TestCtrlCOnABoardStillLeavesItsRelearnList(t *testing.T) {
 // live-edge form, or anything wanting a row above the grid, is where it breaks.
 func TestBoardFooterPutsTheFormsOwnRowsFirst(t *testing.T) {
 	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank", "set"), 80, play.Palette{})
-	footer := boardFooter(board, sittingFigures{})
+	footer := boardFooter(board, sittingFigures{}, palette{})
 	own := strings.Split(board.Prompt(), "\n")
 	if len(footer) < len(own) {
 		t.Fatalf("the footer is %d rows and the board draws %d", len(footer), len(own))
@@ -3450,4 +3461,248 @@ func TestSelectionAndDrawAskTheSameFitQuestion(t *testing.T) {
 		t.Errorf("a %d-column terminal reports a whole board; below minWrapWidth this program "+
 			"treats the terminal as too narrow to lay text out at all", minWrapWidth-1)
 	}
+}
+
+// PLAYBACK IN A SITTING MUST COMMIT NOTHING TO THE BUFFER (#44).
+//
+// The indicator is ephemeral UI and takes its own line back — `screen.Write`
+// splits on the erase gesture and `eraseOpenLine` drops the line it was writing.
+// But `defaultIndicator` also writes a newline BEFORE it, and inside an
+// append-only buffer that newline is CONTENT the erase cannot reach: it is a
+// completed line by the time the erase arrives, and a completed line is
+// scrollback by definition.
+//
+// Operator, 2026-09-02: "after clicking on pronunciation in the daily play, one
+// additional line's inserted".
+//
+// DRIVEN THROUGH THE REVEAL, not the click. The click is where it was SEEN and
+// the reveal is where it lives — every answered question that plays audio pays
+// one row, so a sitting drifts up the screen on its own with nobody clicking
+// anything.
+//
+// MEASURED AS A DIFFERENCE, which is what makes the assertion sharp: the same
+// sitting is run twice against the same deck, audible and silent, so the content
+// is identical and playback is the only variable. Counting blank lines instead
+// would be counting the dictionary's own — a rendered entry is full of them.
+func TestSittingPlaybackCommitsNothingToTheBuffer(t *testing.T) {
+	// TWO questions at least, because one leftover row is indistinguishable from
+	// ordinary spacing — which is how this shipped.
+	const words = 6
+	run := func(t *testing.T, wantAudio bool) int {
+		t.Helper()
+		d, opt, _ := playRig(t, "quokka", "mesa", "parrot", "bank", "keel", "run")
+		var fp *fakePlayer
+		if wantAudio {
+			fp = audible(&d, &opt)
+		}
+		qs, held := questionsFor(t, d, opt)
+		if len(qs) < 2 {
+			t.Fatalf("need two questions to see a per-playback leak, got %d", len(qs))
+		}
+		tty := &syncBuf{}
+		live := newPinnedScreen(tty, 24, opt.width)
+		live.interval = -1
+		var errb bytes.Buffer
+
+		script := ""
+		for _, q := range qs {
+			script += "\r" + gradeKey(t, q, play.Correct)
+		}
+		playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(script),
+			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+		if wantAudio {
+			if len(fp.Played) < 2 {
+				t.Fatalf("played %d times; this test cannot see the leak it is about", len(fp.Played))
+			}
+			for _, l := range live.s.Lines() {
+				if strings.Contains(unstyled(l), "playing") {
+					t.Errorf("the indicator itself survived in the buffer: %q", l)
+				}
+			}
+		}
+		return len(live.s.Lines())
+	}
+
+	silent := run(t, false)
+	audible := run(t, true)
+	if audible != silent {
+		t.Errorf("the buffer is %d lines with playback and %d without, over a deck of %d — "+
+			"playback writes a newline its erase cannot take back, so a sitting drifts "+
+			"up the screen by one row per answered question",
+			audible, silent, words)
+	}
+}
+
+// THE GAP NEVER CHANGES WHETHER A BOARD FITS (#44 PQ-8).
+//
+// `boardFitsIn` is asked at SELECTION and at every DRAW, where its answer decides
+// whether Enter may spend the board (R17). `Paint` decides the gap separately, so
+// the two could disagree — a board drawn whole and refused in the same breath.
+// They cannot, and this is the proof by exhaustion rather than by argument:
+// charging the gap and not charging it are the same predicate at every shape,
+// because `grantedGap` only hands out a row there was already slack for.
+//
+// If this ever fails, `fitsABoard` and `grantedGap` have drifted and the visible
+// symptom is `boardRefusal` printed over a board with every cell on screen.
+func TestTheChromeGapNeverChangesWhetherABoardFits(t *testing.T) {
+	for termRows := 0; termRows <= 40; termRows++ {
+		for boardRows := 1; boardRows <= 30; boardRows++ {
+			for promptRows := 1; promptRows <= 5; promptRows++ {
+				footerRows := boardRows + barRows
+				charged := footerRows+promptRows+
+					grantedGap(chromeGap, termRows, promptRows, footerRows) <= termRows
+				if got := fitsABoard(termRows, boardRows, promptRows); got != charged {
+					t.Fatalf("termRows=%d boardRows=%d promptRows=%d: fitsABoard=%v but "+
+						"charging the gap gives %v — the draw and the fit disagree, so a board "+
+						"is drawn whole and refused at once",
+						termRows, boardRows, promptRows, got, charged)
+				}
+			}
+		}
+	}
+}
+
+// THE CHROME BAND IS DIMMED, AND BOTH ROWS OF IT ARE (#44).
+//
+// The action row and the bar are one band: dimming only the first would leave the
+// figure line brighter than the controls above it, which inverts what they are
+// worth. Operator, 2026-09-02: *"should be colorized to make the border clear"*.
+//
+// Driven through the FRAME rather than by calling asChrome, because the claim is
+// the wiring — asChrome could be perfect and unreferenced at either Draw site,
+// which is exactly the half an earlier draft of this work missed (PQ-6).
+func TestTheChromeBandIsDimmedTogether(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		color bool
+		board bool
+	}{
+		// `--play` refuses -no-color (BR-3), so the colourless row is belt — but a
+		// rig running colourless is how #40's wrap Critical stayed invisible, so
+		// both are driven.
+		{"a coloured sitting", true, false},
+		{"no palette at all", false, false},
+		// THE BOARD'S BAR IS A SECOND SITE. It reaches the frame through
+		// `boardFooter` rather than the inline `[]string{sittingBar(fig)}`, and
+		// an earlier draft of this work styled one and not the other (PQ-6) — so
+		// covering only the common sitting would leave exactly the half that was
+		// missed before.
+		{"a board's bar", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, _ := playRig(t, "quokka", "mesa", "parrot", "bank")
+			opt.color = tc.color
+			qs, held := questionsFor(t, d, opt)
+			if tc.board {
+				qs = []play.Question{play.NewBoard(boardCells("quokka", "mesa"), opt.width, boardPalette(opt))}
+			}
+
+			tty := &syncBuf{}
+			live := newPinnedScreen(tty, 24, opt.width)
+			live.interval = -1
+			var errb bytes.Buffer
+			playSession(t.Context(), d, opt, play.NewSession(qs[:1]), held,
+				keysFor("\r"+gradeKey(t, qs[0], play.Correct)),
+				console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+			// EVERY frame the sitting painted, not just the last: the live edge
+			// changes between reveal, graded and done, and a rule that held on one
+			// of them and not the others is exactly the gap this is about. The
+			// last frame is the summary, where there is no action row at all.
+			out := tty.String()
+			// The bar is matched by its PROGRESS PREFIX, not by "reviews/day": the
+			// summary `finish` writes carries that phrase too, and the summary is
+			// the record rather than the live edge — it is correctly undimmed, so
+			// a looser matcher fails on content that is behaving.
+			barRe := regexp.MustCompile(`\d+ of \d+ · .*?reviews/day`)
+			// THE ESCAPE IS ANCHORED TO THE TEXT, not merely present on the row.
+			// `Paint` walks the cursor back and REPRINTS the prompt with no
+			// newline between, so one "\n"-split line carries the bar AND the
+			// prompt — and "this line contains a dim" then passed on the prompt's
+			// dim while the bar had none. That made the board's row of this table
+			// vacuous, which is the failure a premise check exists to catch.
+			plainRow := func(line string, find func(string) string) (string, bool) {
+				got := find(unstyled(line))
+				return got, got != ""
+			}
+			for _, row := range []struct {
+				what string
+				find func(string) string
+			}{
+				{"the action row", func(l string) string {
+					if p := gradePrompt(qs[0]); strings.Contains(l, p) {
+						return p
+					}
+					return ""
+				}},
+				{"the bar", barRe.FindString},
+			} {
+				// THE ESCAPE COMES FROM THE PALETTE, not spelled here: newPalette
+				// owns the sequence, and a second speller is how the two come to
+				// disagree (ARCH-DRY).
+				dim := newPalette(true).dim
+				var seen bool
+				for _, line := range strings.Split(out, "\n") {
+					text, ok := plainRow(line, row.find)
+					if !ok {
+						continue
+					}
+					seen = true
+					if got := strings.Contains(line, dim+text); got != tc.color {
+						t.Errorf("%s dimmed = %v, want %v — the band must read as chrome in a "+
+							"sitting and carry no escape without a palette:\n\t%q",
+							row.what, got, tc.color, line)
+						break
+					}
+				}
+				if !seen {
+					t.Fatalf("%s was never painted:\n%s", row.what, unstyled(out))
+				}
+			}
+		})
+	}
+}
+
+// A BOARD WRITES NOTHING TO THE BUFFER (#44, Done-when 6).
+//
+// It used to write one blank line the first time it was drawn, because its grid
+// began immediately under the previous question's last line. That gap is the
+// FRAME's now, held for every form — so the buffer line is not merely redundant,
+// it is a row the exit transcript would carry and a SECOND blank above a grid on
+// a full buffer.
+//
+// PINNED BECAUSE THE CLOSE REVIEW MEASURED IT UNPINNED (I2): re-adding the write
+// left the whole suite green, so a Done-when row was ticked on a deletion nothing
+// would have noticed being undone.
+func TestABoardWritesNothingToTheBuffer(t *testing.T) {
+	d, opt, _ := playRig(t, "quokka", "mesa", "parrot")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa"), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	// DRIVEN LIVE, and measured WHILE THE BOARD IS ON SCREEN. Reading the buffer
+	// after the sitting ends would count `finish`'s score and summary, which are
+	// the record and are supposed to be there — the claim is about what the FORM
+	// writes, so it has to be read while the form is the current question.
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	keys <- Key{Kind: KeyRune, Rune: '0'} // one mark: the board is drawn and still open
+	waitFor(t, func() bool { return strings.Contains(unstyled(lastFrame(tty.String())), "[0] quokka") })
+	if got := live.s.Lines(); len(got) != 0 {
+		t.Errorf("a drawn board put %d line(s) in the buffer, want 0 — the grid is the live "+
+			"edge and writes nothing; a blank here reaches the exit transcript and puts a "+
+			"second empty row above the grid:\n%q", len(got), got)
+	}
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
 }

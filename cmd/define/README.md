@@ -58,6 +58,12 @@ sycophantic
 1-4 = pick the definition, d = remove from deck, Ctrl-C to stop
 ```
 
+**The keys line and the figures line are chrome, and they look like it.** Both
+are dimmed, and a blank row separates them from whatever you are reading — so the
+sitting is what you see and those two rows are the frame around it. On a board
+the keys line sits above the grid rather than below it, as the picture further
+down shows.
+
 **The wrong answers are your own words**, taken from your deck — never invented
 by a model, so this works offline and costs nothing. They are also chosen to
 differ from one another: where your deck allows, one is a specialist sense the

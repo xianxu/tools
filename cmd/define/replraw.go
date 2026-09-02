@@ -340,7 +340,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// The registry lives in playRegion, shared with `--play` (#38 D4). This
 		// loop supplies its own ERASABLE indicator; a sitting supplies the
 		// record-shaped one.
-		playRegion(ctx, d, opt, r, entry, indicator{show: true, erase: eraseLine}, stdout, stderr)
+		playRegion(ctx, d, opt, r, entry, stdout, stderr)
 		draw()
 	}
 
@@ -574,14 +574,17 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 // `RegionKind` lands: one loop would act on it and the other would draw an
 // underline that does nothing.
 //
-// The INDICATOR is a parameter because it is the one thing the two loops
-// legitimately differ on: the editor's is erasable, so `♫ playing 3×` is taken
-// back when the recording ends; a sitting passes `defaultIndicator(opt)`.
+// THE INDICATOR IS NOT A PARAMETER, and it used to be — described as "the one
+// thing the two loops legitimately differ on". They did differ, and that WAS the
+// bug (#44): a click is only possible inside a screen, since it arrives as SGR
+// mouse reporting in raw mode, so the parameter offered a choice with exactly one
+// right answer and the sitting took the other one. An argument that cannot be
+// right in two ways is better not taken at all.
 //
 // `entry` is the clicked word's RAW dictionary text, or empty. It supplies the
 // source spellings a foreign replay needs (#29); empty degrades to the headword
 // itself rather than being wrong.
-func playRegion(ctx context.Context, d deps, opt options, r Region, entry string, ind indicator, stdout, stderr io.Writer) {
+func playRegion(ctx context.Context, d deps, opt options, r Region, entry string, stdout, stderr io.Writer) {
 	if !opt.playsAudio() {
 		// The caller's own sentence, not playAnnounced's silence: a click that
 		// does nothing needs to say why, where a review loop skipping a reveal
@@ -602,7 +605,7 @@ func playRegion(ctx context.Context, d deps, opt options, r Region, entry string
 	default:
 		return
 	}
-	playAnnounced(ctx, d, opt, utteranceFor(r.Word, entry, pron, opt), ind, stdout, stderr)
+	playAnnounced(ctx, d, opt, utteranceFor(r.Word, entry, pron, opt), screenIndicator(), stdout, stderr)
 }
 
 // replayInPlace speaks the current word again without moving the cursor off the
@@ -631,7 +634,7 @@ func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron 
 		fmt.Fprintln(stderr, nothingToReplay)
 	default:
 		playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, pron, opt),
-			indicator{show: true, erase: eraseLine}, stdout, stderr)
+			screenIndicator(), stdout, stderr)
 	}
 }
 
@@ -649,7 +652,7 @@ func submitLine(ctx context.Context, d deps, opt options, cmd replCommand,
 	out := lookupAndRender(d, opt, cmd, stdout, stderr)
 	if out.play {
 		playAnnounced(ctx, d, opt, utteranceFor(line, out.entry, cmd.pron, opt),
-			indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
+			screenIndicator(), stdout, stderr)
 	}
 	// Recorded whatever it turned out to be — a typo you want to edit and retry,
 	// and a question you want to ask again, are both worth an Up-arrow. Stored

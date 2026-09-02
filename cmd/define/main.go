@@ -828,6 +828,36 @@ func defaultIndicator(opt options) indicator {
 	return ind
 }
 
+// screenIndicator is the indicator for a caller writing into a SCREEN.
+//
+// NO `before`, and that is the whole difference from defaultIndicator. On a
+// cooked terminal "\n" is cursor positioning and the erase that follows clears
+// the line it moved to. Inside a screen the newline is CONTENT: the buffer is
+// append-only, `screen.Write` splits on the erase gesture, and `eraseOpenLine`
+// takes back only the line still OPEN — which by then is the indicator's own,
+// not the completed blank before it. So the blank stays, once per playback, and
+// the sitting drifts up the screen (#44).
+//
+// FIVE call sites wrote this three ways: three copies of a literal and two of
+// `defaultIndicator`, which belongs to the one-shot path. The rule existed only
+// as whatever each author happened to type (ARCH-DRY). Naming it is what makes
+// the next site right by default; deleting `playRegion`'s parameter is what makes
+// two of them unable to be wrong at all, and
+// TestEveryScreenPlaybackTakesTheScreenIndicator is what keeps the rest honest.
+//
+// PRECONDITION: THE CALLER MUST NOT BE MID-LINE. `eraseOpenLine` takes back the
+// whole OPEN line, so an indicator written while the buffer holds a partial line
+// joins that line and the erase deletes the caller's text along with it. The
+// `before` this drops used to close the line first, incidentally; nothing does
+// now. Every site today satisfies it — `Render` ends in "\n", the reveal writes
+// "\n"+…+"\n", and `replraw.go` writes "\r\n" before `submitLine` — and
+// TestAnIndicatorAfterAPartialLineSwallowsIt is the named failure for the day one
+// does not, because the guard above FORCES every future screen site into this
+// shape and the precondition came with it.
+func screenIndicator() indicator {
+	return indicator{show: true, erase: eraseLine}
+}
+
 // indicator describes the ephemeral "♫ playing N×" line: what to write before it
 // (cursor positioning), and what to write after playback to remove it.
 type indicator struct {
