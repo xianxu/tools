@@ -122,6 +122,11 @@ rounds:
           family: one-owner-per-quantity
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-02T14:45:42-07:00"
+      agent: claude
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#44 (boundary-review)
@@ -200,6 +205,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   cmd/define/play_loop_test.go:3648 spells "\x1b[2m" where newPalette(true).dim
   is the owner. Cosmetic — it fails loudly rather than silently — but it is a
   second speller of a sequence the palette exists to own (ARCH-DRY).
+
+## Round 3 — 2026-09-02T14:45:42-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 

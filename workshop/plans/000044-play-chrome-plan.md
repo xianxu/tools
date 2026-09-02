@@ -49,7 +49,10 @@
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `newPinnedScreen` | `cmd/define/screen.go` | modified | the sitting's terminal |
-| `screenIndicator` | `cmd/define/main.go` | new | the playback announcer's cursor contract |
+
+(`screenIndicator` was listed here in the first draft; it is a pure constructor
+with no IO and belongs above. Left corrected rather than moved, so the table and
+the review's M3 agree.)
 
 - **`newPinnedScreen`** — sets `gap: chromeGap` beside `pinned`.
   - **Injected into:** `newConsole`, from `play_loop.go:106` — the one production caller.
@@ -91,7 +94,7 @@ Independent of the other two and fixes a live bug on the DEFAULT path, so it goe
 - Modify: `cmd/define/play_loop.go:359` (drops the argument), `:507` (reveal)
 - Test: `cmd/define/play_loop_test.go`, `cmd/define/editorloop_test.go:946,967`, `cmd/define/indicator_guard_test.go`
 
-- [ ] **Step 1: Write the failing behaviour test**
+- [x] **Step 1: Write the failing behaviour test**
 
 Drive the REVEAL path, not the click path: the reveal fires on every answered question, which is what makes this a per-question leak rather than a per-click one. Twice, because one leftover row is indistinguishable from ordinary spacing — which is how it shipped.
 
@@ -115,12 +118,12 @@ func TestSittingPlaybackCommitsNothingToTheBuffer(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test ./cmd/define -run TestSittingPlaybackCommitsNothingToTheBuffer -v`
 Expected: FAIL, the buffer grew by two more lines than the content written.
 
-- [ ] **Step 2a: Write the failing GUARD test**
+- [x] **Step 2a: Write the failing GUARD test**
 
 The sweep is the instance; this is the class. Without it the sixth site is free to be written wrong, which is exactly how five sites came to disagree three ways.
 
@@ -149,7 +152,7 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 
 Prefer `go/ast` over a regexp, and **reuse `repo_guard_test.go`'s walker** — that file (package `main_test`) already imports `go/ast`/`go/parser` and already carries the Fatal-never-Skip discipline this guard wants ("a guard that reports nothing when it cannot run certifies nothing"). `dict_symbols_darwin_test.go` is NOT the precedent: it compares a C resolver's symbol list against a Go list and parses no Go source. Resolving a parameter's TYPE across files needs `go/types` (or the argument position of the few known callees); if `go/types` is more machinery than this earns, match on the callee's parameter position derived from its own declaration in the same package, and say in the comment that that is what makes it package-local.
 
-- [ ] **Step 3: Delete the choice, then sweep what is left**
+- [x] **Step 3: Delete the choice, then sweep what is left**
 
 First, `playRegion` loses `ind` and calls `screenIndicator()` itself — two supplying sites gone rather than guarded. Its doc comment currently says the indicator is what the two callers "legitimately differ on"; replace that sentence, because it is the bug stated as a design note.
 
@@ -176,12 +179,12 @@ func screenIndicator() indicator {
 
 Correct the comment at `play_loop.go:356`, which claims `defaultIndicator` is "what every other playback on this path already uses": true of the one-shot path, false of every screen.
 
-- [ ] **Step 4: Run the tests and the neighbours**
+- [x] **Step 4: Run the tests and the neighbours**
 
 Run: `go test ./cmd/define -run 'Playback|Indicator|AClickPlays|Pron' -v`
 Expected: PASS. The editor's own playback tests are the ones that catch a wrong sweep at `replraw.go:653`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define/main.go cmd/define/play_loop.go cmd/define/replraw.go \
@@ -198,7 +201,7 @@ git commit -m "#44: playback into a screen carries no leading newline, and a gua
 - Modify: `cmd/define/play_loop.go` (`fitsABoard` ~line 697; delete the board's blank-buffer-line write in `show()`)
 - Test: `cmd/define/screen_test.go`, `cmd/define/play_loop_test.go`
 
-- [ ] **Step 1: Write the failing placement test**
+- [x] **Step 1: Write the failing placement test**
 
 Read the frame, do not search it. The buffer must be FULL — that is the case the pinned padding was hiding.
 
@@ -229,7 +232,7 @@ func TestAFullBufferStillLeavesARowAboveThePrompt(t *testing.T) {
 
 (`rowAt`/`promptRow` may need adding to `frameGeometry`; follow whatever `readFrame` already exposes rather than inventing a parallel reader.)
 
-- [ ] **Step 2: Write the failing click-map test**
+- [x] **Step 2: Write the failing click-map test**
 
 The gap sits between the buffer and the prompt, so `footerTop` moves with it. A footer click that lands one row out marks the WRONG WORD on a board, and a mark is irreversible — this is the row of arithmetic that must not be wrong.
 
@@ -240,12 +243,12 @@ The gap sits between the buffer and the prompt, so `footerTop` moves with it. A 
 func TestAFooterClickIsUnmovedByTheChromeGap(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 3: Run both and watch them fail**
+- [x] **Step 3: Run both and watch them fail**
 
 Run: `go test ./cmd/define -run 'ChromeGap|AFullBufferStillLeaves' -v`
 Expected: FAIL — no gap drawn, `footerTop` unchanged.
 
-- [ ] **Step 4: Reserve the row**
+- [x] **Step 4: Reserve the row**
 
 In `screen.go`: add `gap int` to `screen` beside `pinned`, and the constant:
 
@@ -303,7 +306,7 @@ s.footer, s.footerTop = footer, bufRows+gap+promptRows
 
 In `newPinnedScreen`: `l.s.gap = chromeGap`.
 
-- [ ] **Step 4a: Pin the short-terminal boundary**
+- [x] **Step 4a: Pin the short-terminal boundary**
 
 ```go
 // A frame NEVER exceeds the terminal, gap or no gap. The clamp hid this once:
@@ -317,7 +320,7 @@ func TestTheChromeGapIsGivenUpBeforeTheFrameOverflows(t *testing.T) {
 
 Sweep a RANGE of heights rather than one — the failure is a boundary and the boundary moves with the prompt's wrapped height.
 
-- [ ] **Step 5: Charge it in the board's fit**
+- [x] ~~**Step 5: Charge it in the board's fit**~~ — RETRACTED, see `## Revisions`. The charge is provably a no-op; the deliverable became the proof plus an exhaustive pin. Do not reintroduce the term.
 
 ```go
 func fitsABoard(termRows, boardRows, promptRows int) bool {
@@ -335,16 +338,16 @@ Verify the two boundaries by hand while writing this, and pin them: at `termRows
 
 `chromeGap` rather than a screen's `s.gap` is ONE owner, not two: `newPinnedScreen` is the only production caller (`play_loop.go:106`), so the sitting's screen is the only screen a board is ever drawn on. State that in the comment rather than leaving it implied — if a second pinned screen appears, this is the line that has to change with it.
 
-- [ ] **Step 6: Delete the board's blank-buffer-line write**
+- [x] **Step 6: Delete the board's blank-buffer-line write**
 
 In `show()`, the `if written != s.Index { fmt.Fprintln(stdout) }` arm inside the `play.Grid` branch goes. Its reasoning is now the frame's, and it says so in the atlas rather than in a special case. Keep `written = s.Index` if anything else reads it; check before deleting the assignment.
 
-- [ ] **Step 7: Run the suite and fix the shifted expectations**
+- [x] **Step 7: Run the suite and fix the shifted expectations**
 
 Run: `go test ./cmd/define/...`
 Expected: several pinned-screen tests shift by one row. That churn is the pin working — move the expectations, and for each one ask whether it was asserting a placement (update it) or accidentally depending on the old geometry (say so in the commit).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add cmd/define/screen.go cmd/define/play_loop.go cmd/define/screen_test.go cmd/define/play_loop_test.go
@@ -360,7 +363,7 @@ git commit -m "#44: the frame reserves a row between the record and the live edg
 - Modify: `cmd/define/play_loop.go` (the two `view.Draw` calls, `boardFooter`)
 - Test: `cmd/define/playbar_test.go`, `cmd/define/play_loop_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // The band reads as chrome, and BOTH rows of it do. Dimming only the action row
@@ -375,12 +378,12 @@ func TestTheChromeBandIsDimmedTogether(t *testing.T) { /* prompt and bar both ca
 func TestTheChromeBandIsPlainWithoutAPalette(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 2: Run and watch it fail**
+- [x] **Step 2: Run and watch it fail**
 
 Run: `go test ./cmd/define -run TestTheChromeBand -v`
 Expected: FAIL — no escape sequences present.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```go
 // asChrome styles the live edge as CHROME rather than as content.
@@ -411,11 +414,11 @@ The palette comes from `newPalette(opt.color)`, from `main`, on the same seam `b
 
 `boardFooter` gains a palette parameter. Its doc comment documents a load-bearing ordering — "THE FORM IS FIRST … formCell reads a footer entry index straight back as a grid row" — so the edit adds an argument and must not disturb the assembly order. Say so in the commit; a reviewer seeing that function touched will look for exactly that.
 
-- [ ] **Step 4: Re-read the width pin**
+- [x] **Step 4: Re-read the width pin**
 
 `TestTheRefusalRowIsNoWiderThanTheKeysRow` compares two prompt strings. Confirm it compares VISIBLE width (`visibleCells`) and not `len` — if it compares bytes, it starts passing for the wrong reason the moment either string carries an escape.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 ```bash
 go test ./cmd/define/...
@@ -431,17 +434,17 @@ git commit -m "#44: the action row and the bar read as one dimmed band"
 - Modify: `cmd/define/README.md`
 - Modify: `atlas/define.md` ("The screen" section)
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
 
 The board block is DERIVED (#40 BR-18) — regenerate rather than hand-editing it. The prompt lines are quoted verbatim and unchanged, since the plain text did not move.
 
-- [ ] **Step 2: Atlas**
+- [x] **Step 2: Atlas**
 
 Under "The screen", the frame-budget passage gains the gap as a component and loses the board's special case. Two claims to state rather than imply: that the gap is a reserved ROW (with why a newline in the prompt is wrong), and that `footerTop` counts it, because that is the one arithmetic whose failure is a permanent mark on the wrong word.
 
 Add the indicator rule beside the existing `eraseLine` paragraph: inside a screen a newline is content, so a screen-hosted playback carries no `before`.
 
-- [ ] **Step 3: Run the doc pins and commit**
+- [x] **Step 3: Run the doc pins and commit**
 
 ```bash
 go test ./cmd/define -run 'README|Atlas' -v
@@ -453,11 +456,11 @@ git commit -m "#44: docs — the gap, and the indicator's missing before"
 
 ## Verification
 
-- [ ] `go test ./...` green.
-- [ ] **`go test -tags conformance ./cmd/define`** green. `pty_conformance_test.go` is `//go:build darwin && conformance`, so the plain run cannot even COMPILE it — and its SGR-1006 click is the only end-to-end proof that a real terminal's click still maps to the intended cell after `footerTop` moved. This plan calls that the arithmetic that must not be wrong; running the suite that checks it is what makes the claim more than an assertion. (`#37` is open on exactly this: these tags run in nothing automated.)
-- [ ] `go vet ./...` clean.
-- [ ] A real sitting: `go build -o define ./cmd/define && ./define --play` — click a word several times and confirm the frame does not drift; confirm the band reads as chrome; confirm a board still draws whole.
-- [ ] Done-when rows in `workshop/issues/000044-play-chrome.md` ticked with the evidence that ticked them.
+- [x] `go test ./...` green.
+- [x] **`go test -tags conformance ./cmd/define`** green. `pty_conformance_test.go` is `//go:build darwin && conformance`, so the plain run cannot even COMPILE it — and its SGR-1006 click is the only end-to-end proof that a real terminal's click still maps to the intended cell after `footerTop` moved. This plan calls that the arithmetic that must not be wrong; running the suite that checks it is what makes the claim more than an assertion. (`#37` is open on exactly this: these tags run in nothing automated.)
+- [x] `go vet ./...` clean.
+- [x] A real sitting: `go build -o define ./cmd/define && ./define --play` — click a word several times and confirm the frame does not drift; confirm the band reads as chrome; confirm a board still draws whole.
+- [x] Done-when rows in `workshop/issues/000044-play-chrome.md` ticked with the evidence that ticked them.
 
 
 ## Revisions
@@ -485,3 +488,21 @@ nobody adds it back as a "fix".
 
 Caught by `TestPlanTableStatusMatchesTheChangeWindow`, which failed on the row
 describing work that did not happen.
+
+### 2026-09-02 — `grantedGap` has ONE consumer, and the sweep that says so
+
+**Delta:** the Core-concepts bullet said `grantedGap` is "**Relationships:** 1:2 —
+`Paint` asks it when drawing, `fitsABoard` when deciding whether Enter may spend a
+board". It is 1:1. `fitsABoard` never calls it — that was the design the entry
+above retracted — and the DRY rationale rests on the EQUIVALENCE PROOF rather than
+on a shared call.
+
+**The rule this makes explicit, because the retraction was incomplete for a whole
+round:** a `## Revisions` entry is not done until `git grep <entity>` is clean of
+comments still stating the superseded design. The enumeration *is* that grep, one
+per revised entity. Three entities were revised here — `fitsABoard`, `grantedGap`,
+`playRegion` — and running it found three live instances: `grantedGap`'s own doc
+advertising a consumer it does not have (which reads as an instruction to add the
+term back), the indicator guard's comment describing the pre-deletion tree, and
+that guard's `repl.go` exemption carrying a confidently wrong reason. Fixing the
+comment `fitsABoard` and forgetting the two around it is the instance again.

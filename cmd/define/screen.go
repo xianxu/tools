@@ -423,10 +423,19 @@ const (
 // also writes the prompt with a bare WriteString, where raw mode needs "\r\n".
 const chromeGap = 1
 
-// grantedGap is whether a frame of this shape gets its gap, and it is ONE owner
-// because TWO consumers ask: Paint when it draws, and fitsABoard when it decides
-// whether Enter may spend a board. Two answers here means a board drawn whole and
-// refused in the same breath (#44 PQ-8).
+// grantedGap is whether a frame of this shape gets its gap.
+//
+// ONE PRODUCTION CONSUMER — `Paint` — and that is a CORRECTION to what this
+// comment first said. It claimed two, `fitsABoard` being the second, which was
+// true of the design and never of the code: charging the gap there turned out to
+// be provably a no-op, so the term was never written (see the plan's
+// `## Revisions`, and `fitsABoard`'s own doc, which now says the opposite). A
+// comment advertising a consumer that does not exist reads as an instruction to
+// add it back (#44 I4).
+//
+// What the two DO share is the property rather than a call: they agree at every
+// shape because this hands out a row only where there was already slack for it,
+// and TestTheChromeGapNeverChangesWhetherABoardFits pins that by exhaustion.
 //
 // DECORATION, so it is the first component given up — before the buffer, before
 // the footer, before the prompt. A frame that scrolls has lost every coordinate

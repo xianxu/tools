@@ -844,6 +844,16 @@ func defaultIndicator(opt options) indicator {
 // the next site right by default; deleting `playRegion`'s parameter is what makes
 // two of them unable to be wrong at all, and
 // TestEveryScreenPlaybackTakesTheScreenIndicator is what keeps the rest honest.
+//
+// PRECONDITION: THE CALLER MUST NOT BE MID-LINE. `eraseOpenLine` takes back the
+// whole OPEN line, so an indicator written while the buffer holds a partial line
+// joins that line and the erase deletes the caller's text along with it. The
+// `before` this drops used to close the line first, incidentally; nothing does
+// now. Every site today satisfies it — `Render` ends in "\n", the reveal writes
+// "\n"+…+"\n", and `replraw.go` writes "\r\n" before `submitLine` — and
+// TestAnIndicatorAfterAPartialLineSwallowsIt is the named failure for the day one
+// does not, because the guard above FORCES every future screen site into this
+// shape and the precondition came with it.
 func screenIndicator() indicator {
 	return indicator{show: true, erase: eraseLine}
 }

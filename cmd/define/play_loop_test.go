@@ -3663,3 +3663,46 @@ func TestTheChromeBandIsDimmedTogether(t *testing.T) {
 		})
 	}
 }
+
+// A BOARD WRITES NOTHING TO THE BUFFER (#44, Done-when 6).
+//
+// It used to write one blank line the first time it was drawn, because its grid
+// began immediately under the previous question's last line. That gap is the
+// FRAME's now, held for every form — so the buffer line is not merely redundant,
+// it is a row the exit transcript would carry and a SECOND blank above a grid on
+// a full buffer.
+//
+// PINNED BECAUSE THE CLOSE REVIEW MEASURED IT UNPINNED (I2): re-adding the write
+// left the whole suite green, so a Done-when row was ticked on a deletion nothing
+// would have noticed being undone.
+func TestABoardWritesNothingToTheBuffer(t *testing.T) {
+	d, opt, _ := playRig(t, "quokka", "mesa", "parrot")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa"), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	// DRIVEN LIVE, and measured WHILE THE BOARD IS ON SCREEN. Reading the buffer
+	// after the sitting ends would count `finish`'s score and summary, which are
+	// the record and are supposed to be there — the claim is about what the FORM
+	// writes, so it has to be read while the form is the current question.
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	keys <- Key{Kind: KeyRune, Rune: '0'} // one mark: the board is drawn and still open
+	waitFor(t, func() bool { return strings.Contains(unstyled(lastFrame(tty.String())), "[0] quokka") })
+	if got := live.s.Lines(); len(got) != 0 {
+		t.Errorf("a drawn board put %d line(s) in the buffer, want 0 — the grid is the live "+
+			"edge and writes nothing; a blank here reaches the exit transcript and puts a "+
+			"second empty row above the grid:\n%q", len(got), got)
+	}
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
+}

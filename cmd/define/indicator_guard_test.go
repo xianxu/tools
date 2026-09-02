@@ -24,11 +24,14 @@ import (
 //
 //   - main.go — the one-shot path (`define <word>`), writing to the real stdout,
 //     where "\n" genuinely is cursor movement.
-//   - repl.go — the piped loop, where the indicator is a RECORD rather than
-//     ephemeral UI and is written as a plain line with no escape at all.
+//   - repl.go — the piped loop, which passes the ZERO indicator (`show: false`)
+//     and therefore announces nothing at all. The RECORD form — a plain line with
+//     no escape — is `defaultIndicator` on a non-tty, which is main.go's site. An
+//     earlier version of this comment attributed the record form to repl.go: the
+//     kind of confident wrong reason an exemption should not carry (#44 I4).
 var nonScreenFiles = map[string]string{
 	"main.go": "the one-shot path writes to a real stdout",
-	"repl.go": "the piped loop keeps the indicator as a record",
+	"repl.go": "the piped loop passes the zero indicator and announces nothing",
 }
 
 // EVERY indicator ARGUMENT in a screen-hosted file is screenIndicator() (#44).
@@ -39,12 +42,17 @@ var nonScreenFiles = map[string]string{
 // already a completed line — scrollback — by the time the erase arrives. One row
 // leaks per playback.
 //
-// BY ARGUMENT TYPE, NOT BY CALLEE NAME, and that distinction is the whole value
-// of this guard. The obvious version — "every call to playAnnounced passes
-// screenIndicator()" — was written first and was blind to exactly the site the
-// issue was reported from: the sitting's click goes through `playRegion`, a
-// forwarder, so a walk keyed on the callee never reached it. Naming a callee
-// enumerates instances; naming the type states the class.
+// BY ARGUMENT TYPE, NOT BY CALLEE NAME. The obvious version — "every call to
+// `playAnnounced` passes `screenIndicator()`" — was written first, and while
+// `playRegion` still took an indicator it was blind to the very site this issue
+// was reported from, because the sitting's click reached `playAnnounced` through
+// that forwarder.
+//
+// Stated precisely, since the tree changed under it: `playRegion`'s parameter was
+// deleted, so today a callee-name walk would reach the same arguments this does.
+// The by-type predicate is kept because it survives the NEXT forwarder, not
+// because it catches something a callee walk misses right now (#44 I4) — naming a
+// callee enumerates instances, naming the type states the class.
 //
 // The types are resolved WITHIN THE PACKAGE, by reading each callee's own
 // declaration, rather than through go/types. Every indicator-taking function
@@ -160,5 +168,71 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 			t.Errorf("nonScreenFiles exempts %s, which is not in package main — "+
 				"if it moved, move the exemption with it", base)
 		}
+	}
+}
+
+// EVERY STRING THE SITTING DRAWS AS CHROME GOES THROUGH asChrome (#44 M1).
+//
+// The indicator class got a guard and the dim class did not, which is the same
+// asymmetry one rule over: `asChrome` is applied BY HAND at four sites, and a
+// fifth `view.Draw` — which `#42` will add, since it reworks the form selection —
+// would ship undimmed chrome silently. Mutation-tested pins catch the four that
+// exist; only a guard catches the fifth.
+//
+// THE PROMPT AND THE BAR, not the footer wholesale: a board's grid rows are the
+// FORM's own rendering, already painted through `play.Palette`, and dimming them
+// would grey out the thing the learner is reading. So the rule is about the
+// prompt argument, and about a bar that goes in as a literal beside it.
+func TestEverySittingDrawPassesChromeThroughAsChrome(t *testing.T) {
+	root := repoRoot(t)
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, filepath.Join(root, "cmd", "define", "play_loop.go"), nil, 0)
+	if err != nil {
+		t.Fatalf("parsing play_loop.go: %v", err)
+	}
+
+	// `asChrome(...)`, or a plain identifier holding something already chromed.
+	chromed := func(e ast.Expr) bool {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		id, ok := call.Fun.(*ast.Ident)
+		return ok && id.Name == "asChrome"
+	}
+
+	draws := 0
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil || sel.Sel.Name != "Draw" || len(call.Args) != 2 {
+			return true
+		}
+		draws++
+		if !chromed(call.Args[0]) {
+			t.Errorf("%s: the prompt handed to Draw is not asChrome'd — the sitting's live "+
+				"edge is chrome and must read as chrome, or the row it is on reads as content",
+				fset.Position(call.Args[0].Pos()))
+		}
+		// A bar written inline as `[]string{...}` is chrome too; a footer built by
+		// a helper (boardFooter) owns its own styling and is checked by that
+		// helper's own test.
+		lit, ok := call.Args[1].(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		for _, el := range lit.Elts {
+			if !chromed(el) {
+				t.Errorf("%s: a footer row written inline at a Draw call is not asChrome'd",
+					fset.Position(el.Pos()))
+			}
+		}
+		return true
+	})
+	if draws == 0 {
+		t.Fatal("no Draw calls found in play_loop.go; this guard would certify nothing")
 	}
 }

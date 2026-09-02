@@ -1485,3 +1485,75 @@ func TestTheFooterIsBudgetedBeforeTheGap(t *testing.T) {
 		}
 	}
 }
+
+// THE GAP NEVER TAKES THE LAST CONTENT ROW (#44 I2).
+//
+// `grantedGap`'s threshold is `>= want+1`, not `>= want`, and the `+1` is the
+// buffer row that survives beside the border. At that size the reader needs the
+// content more than the frame around it — a screen showing a border and nothing
+// else is a border around nothing.
+//
+// PINNED BECAUSE THE CLOSE REVIEW MEASURED IT UNPINNED: relaxing `+1` left the
+// whole suite green. The overflow sweep cannot see it — the frame still totals
+// `termRows`, just with zero content rows — and the fit-equivalence proof holds
+// for any threshold at or above `want`. So the documented rule had no consumer.
+func TestTheChromeGapNeverTakesTheLastContentRow(t *testing.T) {
+	// PURE, over grantedGap itself: the rule is a property of the function, and
+	// reading it back out of a painted frame would measure `s.rows`'s floor-at-zero
+	// clamp as well. `grantedGap` is where the `+1` lives, so it is where the `+1`
+	// is pinned.
+	for termRows := 0; termRows <= 20; termRows++ {
+		for promptRows := 1; promptRows <= 4; promptRows++ {
+			for footerRows := range 6 {
+				got := grantedGap(chromeGap, termRows, promptRows, footerRows)
+				if got == 0 {
+					continue
+				}
+				if left := termRows - promptRows - footerRows - got; left < 1 {
+					t.Errorf("termRows=%d promptRows=%d footerRows=%d: granted a %d-row gap "+
+						"leaving %d buffer rows — a border around nothing. The threshold is "+
+						"`>= want+1` for exactly this row.",
+						termRows, promptRows, footerRows, got, left)
+				}
+			}
+		}
+	}
+	// And it is not vacuously zero everywhere: an ordinary terminal gets its gap.
+	if got := grantedGap(chromeGap, 24, 1, 1); got != chromeGap {
+		t.Fatalf("grantedGap on a 24-row terminal = %d, want %d — this test asserts nothing "+
+			"if the gap is never granted at all", got, chromeGap)
+	}
+}
+
+// THE INDICATOR'S PRECONDITION, named so its failure has a name (#44 I3).
+//
+// `screenIndicator` carries no `before`, so the caller must not be MID-LINE:
+// `eraseOpenLine` takes back the whole open line, and an indicator that joined a
+// partial line takes the caller's text with it when it is erased. The dropped
+// `before` used to close the line incidentally; nothing does now.
+//
+// This asserts the SWALLOW rather than pretending it cannot happen — no shipped
+// caller violates it today, and the guard on `screenIndicator` forces every
+// future screen-hosted site into exactly this shape. When one does leave a
+// partial line, this is the test that says what went wrong.
+func TestAnIndicatorAfterAPartialLineSwallowsIt(t *testing.T) {
+	var s screen
+	s.Write([]byte("a definition\nand a line with no newline"))
+	s.Write([]byte("  ♫ playing 3×"))
+	s.Write([]byte(eraseLine))
+	if got := s.Lines(); len(got) != 1 || got[0] != "a definition" {
+		t.Fatalf("lines = %q; this test documents that an indicator on an OPEN line is "+
+			"erased together with that line — if the screen now protects the caller's text, "+
+			"say so here and relax screenIndicator's precondition", got)
+	}
+	// ...and the same sequence after a CLOSED line loses nothing, which is the
+	// state every shipped caller is actually in.
+	var ok screen
+	ok.Write([]byte("a definition\nand a whole line\n"))
+	ok.Write([]byte("  ♫ playing 3×"))
+	ok.Write([]byte(eraseLine))
+	if got := ok.Lines(); len(got) != 2 || got[1] != "and a whole line" {
+		t.Errorf("lines = %q, want the two written lines intact — the indicator took back "+
+			"content it did not write", got)
+	}
+}

@@ -1711,33 +1711,68 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 // correct prose that this guard must not fire on. A lone declaration has no group
 // to describe, so its doc names it or names its neighbour.
 func documentedDecl(d ast.Decl) (string, *ast.CommentGroup) {
+	name := declName(d)
+	if name == "" {
+		return "", nil
+	}
 	switch d := d.(type) {
 	case *ast.FuncDecl:
-		if d.Name == nil {
-			return "", nil
-		}
-		return d.Name.Name, d.Doc
+		return name, d.Doc
 	case *ast.GenDecl:
-		if d.Doc == nil || len(d.Specs) != 1 {
-			return "", nil
-		}
-		vs, ok := d.Specs[0].(*ast.ValueSpec)
-		if !ok || len(vs.Names) != 1 {
-			return "", nil
-		}
-		return vs.Names[0].Name, d.Doc
+		return name, d.Doc
 	}
 	return "", nil
 }
 
-// declaredIn is every function name in ONE file, so the guard can tell a
+// declName is the name a declaration would be documented UNDER, whether or not it
+// currently has a doc.
+//
+// SEPARATE FROM THE DOC, and that separation is the finding rather than a tidy-up
+// (#44 I1). `declaredIn` first derived its neighbour set from `documentedDecl`,
+// which requires a doc — and the failure being caught is a declaration that has
+// just LOST its doc to a neighbour inserted above it. So the very name the guard
+// needed to recognise was the one name excluded, and the mutation still passed.
+// The owner set and the neighbour set must be the same SHAPES, and only the owner
+// set may require a doc.
+func declName(d ast.Decl) string {
+	switch d := d.(type) {
+	case *ast.FuncDecl:
+		if d.Name == nil {
+			return ""
+		}
+		return d.Name.Name
+	case *ast.GenDecl:
+		// Single-spec only: a multi-spec `const (…)` block's doc describes the
+		// GROUP, and firing on that would be wrong.
+		if len(d.Specs) != 1 {
+			return ""
+		}
+		vs, ok := d.Specs[0].(*ast.ValueSpec)
+		if !ok || len(vs.Names) != 1 {
+			return ""
+		}
+		return vs.Names[0].Name
+	}
+	return ""
+}
+
+// declaredIn is every declaration name in ONE file, so the guard can tell a
 // neighbour's name from ordinary prose. Without it the check would fire on every
 // comment that happens to open with an identifier-shaped word.
+//
+// DERIVED FROM declName, so the OWNER set and the NEIGHBOUR set are the
+// same set of declaration shapes BY CONSTRUCTION. They were not: `documentedDecl`
+// was widened to single-spec const/var and this was left at `FuncDecl`, so a doc
+// block whose first word is a CONSTANT's name stayed invisible — insert a
+// function between `// boardRefusal is the prompt row…` and `const boardRefusal`
+// and the guard passes while `go doc` shows the function wearing the constant's
+// prose. That is the same failure one mirror over, and widening one side of a
+// two-sided rule is how it survived being fixed once.
 func declaredIn(f *ast.File) map[string]bool {
 	out := map[string]bool{}
 	for _, d := range f.Decls {
-		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil {
-			out[fn.Name.Name] = true
+		if name := declName(d); name != "" {
+			out[name] = true
 		}
 	}
 	return out

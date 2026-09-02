@@ -170,3 +170,87 @@ findings:
       is the owner. Cosmetic — it fails loudly rather than silently — but it is a
       second speller of a sequence the palette exists to own (ARCH-DRY).
 ```
+
+---
+
+## Re-review — 2026-09-02T14:45:42-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 44 — the play frame's chrome: separate it, colour it, and stop it growing a line per click |
+| repo | tools |
+| issue file | workshop/issues/000044-play-chrome.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 33321b152e51730cd1ed92e06385b8f6290c8102..7b4383c611ffcb1662a228bceeb07257f16e155b |
+| command | sdlc close --issue 44 |
+| reviewer | claude |
+| timestamp | 2026-09-02T14:45:42-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The frame arithmetic is correct and I verified it independently rather than reading it: `bufRows + gap + promptRows + footerRows == termRows` holds at every reachable shape (the `s.rows < 0` clamp cannot fire while `gap > 0`, because `grantedGap` requires two rows of slack), `LineAt` already refuses the gap row so a click on it maps to nothing, and `clipVisible` already hands the style back at a cut so the dim cannot leak past a clipped prompt. All nine prior findings are genuinely addressed, and I confirmed the four Important ones by mutation rather than by reading the commit message: deleting `l.s.gap = chromeGap` reddens the full-buffer test (BR-3), dropping `+gap` from `footerTop` reddens the click test (BR-4), `go doc` now prints `Paint` with its own prose and the widened guard catches a const-owner reparent (BR-5), and a new screen-hosted file with a bad indicator reddens the guard (BR-6). Deleting each of the four `asChrome` sites in turn reddens `TestTheChromeBandIsDimmedTogether`, and restoring `before: "\n"` reddens the leak test at 547 vs 542 lines. `go test ./...`, `go vet ./...` and `go test -tags conformance ./cmd/define` (137s) are all green. What stops this being SHIP is a second round of the same two families: the BR-5 guard was widened on the owner side but not the neighbour side and I reproduced the escape; two documented behaviours in this window survive mutation with the whole suite green; `grantedGap`'s doc still describes the design the plan's own `## Revisions` retracted; and the durable plan is 0-of-28 ticked at the close boundary, which silently exempts two repo guards from checking it.
+
+## 1. Strengths
+
+- **The gap is a frame row, and the sacrifice order is right.** `screen.go:504` takes the gap *after* `fitFooter` has had its full `termRows-promptRows` budget, so a border can never cost a board a grid row — and `TestTheFooterIsBudgetedBeforeTheGap` (screen_test.go:1466) pins that ordering unprompted, which is the single most valuable thing here for `#42`.
+- **The `fitsABoard` revision is the right call and was made for the right reason.** Charging the gap there is provably a no-op, and writing it would have *looked* like a reconciliation. `TestTheChromeGapNeverChangesWhetherABoardFits` turns the proof into a pin over 41×30×5 shapes.
+- **Deleting `playRegion`'s `ind` parameter instead of guarding it.** Two of the five drifting sites became structurally unable to be wrong. That is the correct answer to a "five sites disagree three ways" defect, and the by-type guard covers the rest.
+- **`readFrame` was widened to carry row *content*.** Placement assertions now read the frame the way a terminal does instead of substring-searching it; `frameGeometry.row` (screen_test.go:339) is what makes "the row above the prompt is empty" answerable at all.
+- **The chrome-band test anchors the escape to the text** (`strings.Contains(line, dim+text)`, play_loop_test.go:3650) rather than to the row — which is what stops `Paint`'s prompt reprint from making the board's case vacuous.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — `cmd/define/repo_guard_test.go:1736` — the BR-5 guard was widened on the owner side only, and the escape is reproducible.**
+This is the 2nd finding in family `doc-attaches-to-the-wrong-decl`. `documentedDecl` (repo_guard_test.go:1713) now accepts single-spec const/var as a doc *owner*, but `declaredIn` still collects only `FuncDecl` names, so a block whose first word is a **const or var** name is invisible. Verified in a scratch checkout: inserting `func inserted() {}` between `// boardRefusal is the prompt row…` and `const boardRefusal` leaves `go test ./cmd/define -run TestADocCommentNamesWhatItSitsOn` green, while `go doc -all -u` prints `func inserted` wearing boardRefusal's prose and `boardRefusal` with none — exactly the BR-5 failure, mirrored.
+**Do not fix the instance; fix the rule:** the owner set and the neighbour set must be the same set of declaration shapes. Derive `declaredIn` from `documentedDecl` (walk `f.Decls`, take `name, _ := documentedDecl(d)`, ignore the doc) so widening one widens both by construction.
+
+**I2 — `cmd/define/play_loop.go:220`, `cmd/define/screen.go:436` — two claims in this window survive mutation with the whole suite green.**
+This is the 3rd finding in family `pin-must-fail-without-the-code` (BR-3, BR-4 were the first two, and both were fixed as instances). Measured prevalence, 2 live:
+- Done-when 6 ("the board's blank-buffer-line special case is gone"): re-adding `if written != s.Index { written = s.Index; fmt.Fprintln(stdout) }` to the grid arm leaves `go test ./cmd/define` green (only the four git-dependent guards fail, and only because the scratch repo has no history). The regression it would ship — a blank in the exit transcript plus two blank rows above a grid on a full buffer — is caught by nothing.
+- `grantedGap`'s documented rule "granted only when a buffer row survives beside it": relaxing `>= want+1` to `>= want` leaves the entire suite green. The exhaustion test cannot see it (the fit-equivalence holds for *any* threshold ≥ `want`) and the overflow test cannot either (the frame still totals `termRows`, just with zero content rows).
+
+**State the rule rather than patching these two:** a Done-when row is not tickable, and a threshold constant is not landable, until the reverting mutation has been *shown* red. The enumeration is finite and already written down — the issue's eight Done-when rows plus every constant/threshold the window introduces (`chromeGap`, `grantedGap`'s `+1`). Sweep that enumeration this round and record the mutation used per row in `## Log`, as the dim row already does.
+
+**I3 — `cmd/define/main.go:847` — `screenIndicator()`'s contract now depends on an invariant stated nowhere and pinned by nothing.**
+`eraseOpenLine` takes back the whole **open** line. With no `before`, an indicator written while the buffer is mid-line joins that line, and the erase deletes the caller's content with it. Demonstrated directly against `screen`: `Write("a\nb-no-newline")`, then `Write("  ♫ playing 3×")`, then `Write(eraseLine)` leaves `Lines() == ["a"]` — the definition's last line gone. `submitLine` previously passed `before: "\r\n"`, which closed the line first; that defence is now removed. Not reachable today (I checked all four sites: `Render` always ends in `"\n"`, the reveal writes `"\n"+…+"\n"`, and `replraw.go:545` writes `"\r\n"` before `submitLine`) — but the guard now *forces* every future screen-hosted site into this shape, and nothing tells the next author about the precondition. Fix: state it in `screenIndicator`'s doc ("the caller must not be mid-line; `eraseOpenLine` takes the whole open line") and pin it with a `screen`-level unit test on the swallow, so the day a caller does leave a partial line the failure has a name.
+
+**I4 — `cmd/define/screen.go:426` — `grantedGap`'s doc describes the design the plan's own `## Revisions` retracted.**
+This is the 4th finding in family `cite-the-code-you-claim`. The block says it is "ONE owner because **TWO consumers** ask: Paint when it draws, and fitsABoard when it decides whether Enter may spend a board" — but `git grep grantedGap` shows exactly one production consumer (`screen.go:504`), and `fitsABoard`'s own doc at `play_loop.go:699` now says the opposite ("THE CHROME GAP IS NOT A TERM HERE"). Two doc blocks in the same window contradict each other about this issue's central design decision, and the stale one reads as an instruction to add the term back. Two more measured instances of the same class in this window: `indicator_guard_test.go:31` justifies exempting `repl.go` as "the piped loop keeps the indicator as a record", but `repl.go:317` passes `indicator{}` (`show:false`) so *nothing* is written — the record form is `defaultIndicator` on a non-tty, which is main.go's site; and `play_loop.go:220`'s "`written` still tracks the board so the non-grid arm below can tell a new question from a redraw" is false, since the non-grid arm sets `written` itself and deleting the line reddens nothing.
+**Do not fix the three sites; fix the rule:** a plan `## Revisions` entry is not complete until `git grep <entity>` is clean of comments still stating the superseded design. The enumeration *is* that grep — three entities were revised here (`fitsABoard`, `grantedGap`, `playRegion`), and one grep per entity would have caught all three instances above.
+
+**I5 — `workshop/plans/000044-play-chrome-plan.md` — 0 of 28 checkboxes ticked at the close boundary, which switches two repo guards off.**
+22 of the 25 archived plans in `workshop/history/plans/` are fully ticked; this one is fully unticked. That is not only a record about to be archived claiming no step was done — `TestPlanTablesNameEntitiesThatExist` skips every `new` row while `inProgress` (repo_guard_test.go:772) and `TestPlanNamedTestsExist` skips the whole document (repo_guard_test.go:917), so this plan's Core-concepts table and its named tests were never checked. I ticked them in a scratch copy and both guards pass, so **nothing substantive is hidden** — but the guards were nonetheless off for the window they exist to cover. Tick the plan, and strike Task 2 Step 5 ("Charge it in the board's fit") rather than ticking it, since the `## Revisions` entry retracted it.
+
+## 4. Minor findings
+
+- **M1** — 2nd finding in family `sweep-every-site-of-the-rule`: the indicator class got a source-level guard; the dim class did not. `asChrome` is applied by hand at four sites (`play_loop.go:220`, `:248` ×2, `:679`), and a fifth `view.Draw` in the sitting would ship undimmed chrome silently. Prevalence is 2 `Draw` sites today, both pinned by mutation. The rule, if it is worth stating: every string handed to the sitting's `Draw` as prompt or footer-bar is `asChrome`'d — checkable the same way the indicator guard is (argument position of `view.Draw` within `playSession`). Note for `#42`, which adds draw paths.
+- **M2** — `play_loop.go:220`: `written = s.Index` in the grid arm is dead (deleting it reddens nothing, and indices only move forward). Harmless as an invariant, but its comment claims necessity — see I4.
+- **M3** — the plan's Core-concepts table lists `screenIndicator` under **Integration points**; it is a pure constructor with no IO. Cosmetic classification only.
+
+## 5. Test coverage notes
+
+Coverage is strong where it was attacked last round and thin exactly where it was not. Confirmed red by mutation: the gap wiring, `footerTop`'s `+gap`, all four dim sites, the indicator's `before`, and a new screen-hosted file joining the guard. Confirmed green (i.e. unpinned) by mutation: the board's blank-line deletion, `grantedGap`'s `want+1` threshold, and the grid arm's `written`. `TestTheChromeGapIsGivenUpBeforeTheFrameOverflows` still builds `screen{pinned: true, gap: chromeGap}` by hand — acceptable, since it is about overflow rather than wiring and two sibling tests go through `newPinnedScreen`, but worth a one-line comment saying so, since BR-3's rule is now written down. `TestSittingPlaybackCommitsNothingToTheBuffer` measuring audible-vs-silent as a *difference* is the right shape and is why it can be sharp. The conformance suite is the only end-to-end proof `footerTop` still maps a real terminal's click, and it passes — `#37` remains the open risk that nothing runs it automatically.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, with I4.** `asChrome` and `grantedGap` are single owners; the dim escape now reads from `newPalette`; the five-way indicator drift is collapsed to one constructor plus a deleted parameter. The failure is documentary, not structural: `grantedGap`'s doc advertises a second consumer it does not have (I4).
+- **ARCH-PURE — pass.** `chromeGap`, `grantedGap`, `asChrome`, `screenIndicator` are pure; every new test runs against `screen`/`Paint` with a `strings.Builder` or `bytes.Buffer` and no mocks. `Paint` remains the thin seam and `liveScreen` the only tty-touching part.
+- **ARCH-PURPOSE — pass on the three operator complaints; flag on one class.** All three are delivered end to end, and the indicator's class got a guard rather than a sweep, which is the issue's own thesis honoured. The dim's class did not (M1), and the `## Revisions` sweep was not carried to the comments (I4) — instance fixed, class left.
+- **ARCH-MOCK — pass.** The audio binary sits behind `fakePlayer` at the same seam production uses (`audible(&d, &opt)`), the dictionary behind the store fake, and the real-terminal behaviour behind the pty conformance suite, which I ran and which passes. Production flow and test flow share the `playAnnounced`/`screen` boundary.
+- **ARCH-CONSTRAINTS — pass.** `Paint` is the keystroke path; `grantedGap` adds one comparison and the gap loop is O(1) at `chromeGap = 1`. No unbounded fan-out. The exhaustion test is 6,150 pure iterations and the overflow sweep 72 paints — the package suite is 107s, dominated by pre-existing work, and the conformance suite 137s. The one envelope claim the code makes and does not enforce is `grantedGap`'s "a buffer row survives beside it" (I2).
+
+## 7. Plan revision recommendations
+
+- **`## Revisions` — "grantedGap has one consumer, not two".** The 2026-09-02 entry retracted `fitsABoard`'s charge but the plan's Core-concepts bullet still says `grantedGap` is "**Relationships:** 1:2 — `Paint` asks it when drawing, `fitsABoard` when deciding whether Enter may spend a board", which the code no longer does. Append a delta correcting the relationship to 1:1 and noting that the DRY rationale now rests on the *equivalence proof* rather than on a shared call, so the row stops claiming what `screen.go:504` alone delivers. Same entry should record the `git grep grantedGap` sweep (I4).
+- **Task 2 Step 5 — mark struck, not done.** It reads as an unticked instruction to write the charge that `## Revisions` retracted; strike it in place (`- [x] ~~Step 5: Charge it in the board's fit~~ — see ## Revisions`) when the plan is ticked (I5), so the archived artifact does not preserve a live instruction to reintroduce the term.
