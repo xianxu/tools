@@ -54,7 +54,8 @@
 
 - **`todaysQuestions`** — one lookup and one parse per due word, then a pure decision over the result.
   - **Injected into:** nothing new; it already receives `deps`.
-  - **ARCH-CONSTRAINTS:** cost is UNCHANGED at one `DCSCopyTextDefinition` per due word. Today singles are looked up in the render loop and board words in the board loop; after this there is one loop that does both. What is saved is a `Render` on a young word that turns out to be triaged; what must not appear is a second lookup for a word that changes hands, which is why the parsed entry is carried rather than re-fetched.
+  - **ARCH-CONSTRAINTS:** lookups are UNCHANGED at one `DCSCopyTextDefinition` per due word — today singles are fetched in the render loop and board words in the board loop; after this one loop does both. What must not appear is a SECOND lookup for a word that changes hands, which is why the parsed entry is carried rather than re-fetched.
+    **Both directions, because the first draft named only the saving (PQ-8):** saved is a `Render` on a young word that turns out to be triaged. **Newly paid** is a `Render` plus a click-region map entry on every MATURE board word — today's board loop does `Lookup` + `ParseEntry` + `targetCandidate` and no `Render` at all. Bounded by `opt.count` (20 by default) and pure string work, so it is small; it is written down because a cost table that lists only savings is an argument, not a measurement. **If the render turns out to matter, the fix is to render lazily at the point a `Choice` is built** — the split in Step 3 is what makes that possible without restructuring again.
 
 - **`boardPalette`** — a third sequence for a dropped cell.
   - **Injected into:** `play.Palette`, which already takes finished escapes from `main`.
@@ -126,6 +127,19 @@ func optionsFor(word string, e Entry, pool []play.Candidate, seed uint64) []play
 
 Mature words skip `optionsFor` entirely — the box alone decides, and that keeps the pool work off words that will never use it.
 
+**WHERE A TRIAGED YOUNG WORD LANDS IN THE QUEUE, decided rather than left to fall
+out (PQ-6).** `boardsFor` records singles-first-then-boards as a deliberate choice:
+*"retrieval gets the learner's freshest attention and the maintenance sweep comes
+after"*. Under the new rule an untestable young word moves from the retrieval half
+to the sweep tail, and may share a board with box ≥ 3 words.
+
+**Both are accepted, and neither is an accident.** It is not a retrieval question —
+nothing can be retrieved from it, which is why it is triaged — so putting it in
+the retrieval half would buy the learner's freshest attention for a question that
+does not use it. And a mixed board is the point of the form: sixteen words for
+sixteen keystrokes is what makes the sweep cheap, and splitting young from mature
+would mean two half-empty boards where one full one packs.
+
 - [ ] **Step 5: Pack the triage words into boards the terminal can draw**
 
 ```go
@@ -133,40 +147,85 @@ Mature words skip `optionsFor` entirely — the box alone decides, and that keep
 // WHOLE, and returns the ones it cannot draw at all.
 //
 // A CHUNK THAT DOES NOT FIT SHRINKS rather than going back to singles (#40 D15's
-// widening). D15 sent it to form 2.3 — the form that is unavailable for exactly
-// the words newly arriving here. Shrinking is monotone: fewer words never need
-// more rows, because `cols` is capped at four and a subset's longest word is no
-// longer than the whole's.
+// widening). Shrinking is monotone: fewer words never need more rows, because
+// `cols` is capped at four and a subset's longest word is no longer than the
+// whole's.
 //
 // SO THE LEFTOVER CASE IS ALL-OR-NOTHING, and that is worth knowing rather than
 // discovering: a one-word board's height does not depend on the word (the grid is
 // one row, the chrome two), so either this terminal can draw a board or it cannot.
 ```
 
-- [ ] **Step 6: A word that can be neither tested nor drawn is skipped, by cause**
+- [ ] **Step 6: A LEFTOVER WORD TRIES 2.3 BEFORE IT IS SKIPPED — D15 survives**
 
-Reuse the existing shape — `define: skipping %q: %v` already exists for a word the dictionary cannot find, and this is the same event with a different cause. Name BOTH conditions, because both must hold.
+**This is the step the plan-quality gate caught as a Critical (PQ-1), and the
+mistake is worth naming: a rule true of the words this issue ADDS was applied to
+the words that were already there.** "2.3 is unavailable for exactly the words
+newly arriving here" is true of box ≤ 2 words with no distractors — and false of
+mature words, which reach the board because their BOX sent them, not because no
+test could be built. Many of them can still take a 2.3.
 
-- [ ] **Step 7: Pin the leftover path**
+`boardFitsIn` refuses every board below `minWrapWidth` (20 columns) or ~5 rows. So
+shrink-then-skip applied to all triage words would, on a 19-column terminal, skip
+every due word on a mature deck — and `todaysQuestions` would then print *"N words
+are due but none could be looked up"*, which is false and is the one message that
+path exists to avoid. Today that same terminal runs a full sitting on singles
+(`TestAShortTerminalGetsMeaningChoiceNotAClippedBoard`).
+
+So the order is: **board, else 2.3, else skip.** A word is skipped only when it can
+be neither drawn nor tested — which is the Done-when's actual wording, and the
+plan had drifted off it.
+
+The entry is already parsed and in hand, so asking `optionsFor` for the leftovers
+costs nothing extra and happens only on a terminal too small for any board.
+
+- [ ] **Step 7: Pin BOTH leftover paths**
 
 ```go
-// A terminal too short for even a ONE-WORD board. The word is skipped for the
-// sitting with its cause named, and the sitting continues — like a word the
-// dictionary cannot find, which is the shape this reuses rather than inventing.
+// A terminal too short for any board sends triage words to 2.3 where one can be
+// built — D15's fallback, unchanged for the words it always covered — and skips
+// only the ones that can be neither drawn nor tested.
+//
+// TWO ROWS, because one of them is the regression: a mature deck on a narrow
+// terminal must still get a full sitting, not a screen of skips.
+func TestANarrowTerminalFallsBackToChoiceBeforeSkipping(t *testing.T) { /* … */ }
+
+// The word is skipped with its cause named, and the sitting CONTINUES — like a
+// word the dictionary cannot find, which is the shape this reuses rather than
+// inventing. Assert the other words are still asked: a skip that ended the sitting
+// would pass a test that only checked the message.
 func TestAWordNeitherTestableNorDrawableIsSkippedWithItsCause(t *testing.T) { /* … */ }
 ```
-
-Assert the sitting CONTINUES (the other words are still asked) — a skip that ended the sitting would pass a test that only checked the message.
 
 - [ ] **Step 8: Measure the sitting length (Done-when 5)**
 
 ```go
 // The board PACKS, so retiring 2.1 must not add screens to a young deck.
 // MEASURED, because "the board packs" is an argument and this is the number.
+//
+// THE BASELINE IS NAMED, not read from the tree (PQ-9): form 2.1 gave ONE SCREEN
+// PER WORD, so that is what "no longer than it was" means, and it stays checkable
+// after the form it describes is deleted. A test comparing against whatever the
+// tree does today would assert nothing the day the tree changes.
 func TestRetiringRecallDoesNotLengthenAYoungSitting(t *testing.T) {
-	// questions (screens), not words, for decks of 1..5 — strictly fewer or equal
+	// For decks of 1..5, count QUESTIONS (screens), not words, and assert
+	// len(qs) <= len(deck) — one screen per word being what 2.1 cost.
 }
 ```
+
+- [ ] **Step 8a: RE-POINT `boardsFor`'s PINS, do not just delete them (PQ-5)**
+
+`boardsFor` is called from five places across three of `#40`'s Done-when tests, and
+deleting the function silently deletes what they proved:
+
+| test | what it pins | goes to |
+|---|---|---|
+| `TestTheBoxPicksTheForm` | the box threshold | `formFor` (Step 1's new test covers this half) |
+| `TestBoardsArePackedToTheLabelAlphabet` | sixteen words per board | **`packBoards`** — must be re-pointed, not dropped |
+| `TestAShortTerminalGetsMeaningChoiceNotAClippedBoard` | `#40` D15's fallback | **`packBoards` + the Step 6 order** — this is the test PQ-1's regression would have broken |
+
+The third is the one to write FIRST, because it is the existing pin on the
+behaviour the Critical was about.
 
 - [ ] **Step 9: Run, then commit**
 
@@ -181,7 +240,13 @@ git commit -m "#42: one rule picks the form, and it picks after the lookup"
 
 **Files:**
 - Delete: `cmd/define/play/recall.go`, `cmd/define/play/recall_test.go`
-- Modify: `cmd/define/play/session_test.go` (16 uses), `cmd/define/play/missed_test.go` (2), `cmd/define/play_loop_test.go` (8 + `typeName`), `cmd/define/doc_sync_test.go` (1)
+- Modify: `cmd/define/play/session_test.go`, `cmd/define/play/missed_test.go`, `cmd/define/play_loop_test.go` (plus `typeName`), `cmd/define/doc_sync_test.go`
+- Modify (PRODUCTION COMMENTS naming Recall, found by the tree-wide grep and in no other task's list): `cmd/define/play/choice.go` (cites `recall.go:19` by file:line), `cmd/define/play/board.go`, `cmd/define/play_loop.go`, `cmd/define/optionpool.go`
+
+**No per-file counts here, deliberately (PQ-7).** The first draft carried them and
+they were already wrong in three of four places. The compiler enumerates the test
+uses; `git grep -n 'Recall'` over the TREE enumerates the comments. A hand-copied
+count is a third owner of a fact two tools already own.
 - Test: the suites above
 
 - [ ] **Step 1: Delete the form, then follow the compiler**
@@ -261,15 +326,61 @@ type Dropping interface {
 }
 ```
 
-`Apply` asks it after the mark lands and emits `Outcome{Kind: OutcomeDrop, Word: …}` — the kind the loop **already** handles, so no new outcome and no new loop branch.
+`Apply` asks it **on the successful `Grade`/`Mark` path only**, and emits `Outcome{Kind: OutcomeDrop, Word: …}` — the kind the loop **already** handles, so no new outcome and no new loop branch.
 
-- [ ] **Step 4: Say what mode is live, in all three states**
+**WHERE it is asked is the whole of its correctness.** Asked from the outer `Apply`
+instead, a board whose last mark was a drop would re-emit `OutcomeDrop` on the next
+Tab or on a refused click — performing one act twice, against a word already gone,
+and breaking the "no outcome is performed twice" obligation the loop enumerates. So
+either it is consulted only where a mark just landed, or `Dropped()` is one-shot.
+**Pin it:** Tab, then a refused click, after a drop — exactly one `OutcomeDrop`.
 
-`Keys()` owns the mode line (R11) and is pinned by the README. Three states, and the destructive one must be unmistakable — this is the row a short window keeps longest, and it is the only statement of what the next click will mean.
+- [ ] **Step 4: Say what mode is live, in all three states — INSIDE THE WIDTH BUDGET**
 
-- [ ] **Step 5: A board names what it dropped as it closes**
+`Keys()` owns the mode line (R11) and is pinned by the README. Three states, and the destructive one must be unmistakable — this is the row a short window keeps longest, and the only statement of what the next click will mean.
 
-`relearnLine`'s sibling. The board is the live edge and vanishes whole, so what it did has to reach the transcript or it did not visibly happen — and a dropped word is recoverable by looking it up again (`Forget` keeps events), which the line is what makes discoverable.
+**THE ROW HAS TWO COLUMNS OF HEADROOM, and the width is not cosmetic (PQ-3).**
+`gradePrompt(board)` is `Keys()` + `", "` + `quitKey` = 62 + 2 + 14 = **78 at 80
+columns**. `boardFitsIn` charges `displayRows(gradePrompt(q), termCols)` into
+`fitsABoard`, so a row that wraps at 80 costs every board a row of terminal height
+— on exactly the path this issue routes untestable young words onto, where the
+fallback is now narrower. Naively adding `drop` costs 5 columns and wraps.
+
+`TestTheRefusalRowIsNoWiderThanTheKeysRow` will NOT catch this: it compares the
+refusal against the keys row, and both grow together.
+
+So the row is re-cut to fit, e.g.:
+
+```
+marking [yes] no drop, Tab cycles, click or key, Enter ends
+```
+
+— 59 columns, 75 with the reserved keys, and `"click or key marks"` loses `marks`
+because with three modes a click no longer only marks. **Two new pins:** all three
+spellings are the same visible width (the existing invariant, extended), and
+`gradePrompt` of a board fits 80 columns in one row.
+
+- [ ] **Step 4a: while here — the same doc block is stale about `d`**
+
+`Keys()`'s comment says *"The label set is NOT enumerated. It has a hole at `d`"*.
+`#40` removed that hole; the sentence describes the alphabet before its own final
+round. Same family as `Grade`'s comment in Step 7.
+
+- [ ] **Step 5: DO NOT add a `dropped:` line — the loop already writes one**
+
+The first draft of this plan wanted `relearnLine`'s sibling. It would have been a
+SECOND OWNER (PQ-4): `play_loop.go` already writes `removed %q from the deck` into
+the buffer on every `OutcomeDrop`, and that line is already in the right place —
+it lands as the drop happens, which is where `relearnLine`'s own reasoning
+("written as the board closes, so the line sits in the transcript where the board
+was") wants it.
+
+`relearn:` is batched because a board's `no` marks are only knowable once it
+closes; a drop is knowable immediately and is already reported. Nothing to add,
+and the step survives as the reason not to.
+
+**Verify rather than assume**: pin that a board drop produces exactly ONE
+transcript line.
 
 - [ ] **Step 6: A third colour**
 
