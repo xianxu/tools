@@ -130,14 +130,14 @@ issue changes, is fixed here.
 
 ## Done when
 
-- [ ] A word with no usable distractors reaches a BOARD, at every box, pinned by a test over a deck that spans the threshold and asserts both sides.
-- [ ] `play.Recall` does not exist, and no test substitutes a shipped form where it wants a double.
-- [ ] The declared fallback reasons still derive into the README, and still name three — the reasons did not change, only what they select.
-- [ ] A word that can be neither tested nor drawn is skipped with a message that names the cause, and the sitting continues.
-- [ ] Measured: the sitting a young deck gets is no longer than it was — the board packs, so this must not add screens.
-- [ ] A word can be dropped from a board, by key and by click, and the drop reaches `store.Forget` — pinned end to end rather than at the form, since the form is not what removes anything.
-- [ ] The live mode is unambiguous on the prompt row in all three states, and a board closes naming what it dropped.
-- [ ] `Board.Grade`'s doc no longer claims `d` never arrives.
+- [x] A word with no usable distractors reaches a BOARD, at every box, pinned by a test over a deck that spans the threshold and asserts both sides. — `TestUntestableWordsReachABoardAtEveryBox`: `bases` (every sense a cross-reference) at box 0 reaches a board, a box-5 word still does, and a young TESTABLE word still gets 2.3 — the third assertion is what stops it passing on a build that boarded everything.
+- [x] `play.Recall` does not exist, and no test substitutes a shipped form where it wants a double. — deleted with its test file. Three doubles replace it: `fakeQuestion` (loop mechanics), `askableRig` (tests needing a real rendered entry), and `play`'s own `fakeForm`. The one test that genuinely needed a SELF-RATED form takes the board, now its only implementor.
+- [x] The declared fallback reasons still derive into the README, and still name three — the reasons did not change, only what they select. — `TestREADMENamesEveryFallbackReason` green; `fallbackReasons` is unchanged and the README carries all three under the board's section.
+- [x] A word that can be neither tested nor drawn is skipped with a message that names the cause, and the sitting continues. — `TestAWordNeitherTestableNorDrawableIsSkippedWithItsCause` asserts BOTH causes are named (both must hold) and that the other words are still asked.
+- [x] Measured: the sitting a young deck gets is no longer than it was — the board packs, so this must not add screens. — `TestRetiringRecallDoesNotLengthenAYoungSitting`, decks of 1–5, `len(qs) <= len(deck)` against the NAMED baseline (form 2.1 cost one screen per word), plus every due word still reviewed.
+- [x] A word can be dropped from a board, by key and by click, and the drop reaches `store.Forget` — pinned end to end rather than at the form. — `TestDroppingAWordOnABoardRemovesItFromTheDeck`, two subtests, asserting the word left the deck, its neighbours did NOT, and no review event was written.
+- [x] The live mode is unambiguous on the prompt row in all three states, and a board closes naming what it dropped. — `TestEveryModeSpellingIsTheSameWidthAndFitsEighty`. **Second half revised:** no new line. The loop already reports each removal as it happens (PQ-4), so the planned `dropped:` sibling to `relearnLine` would have been a second owner; `TestADropOnABoardIsReportedOnce` pins exactly one, driving a Tab and a refused click after the drop.
+- [x] `Board.Grade`'s doc no longer claims `d` never arrives. — corrected, and so is `Keys()`'s claim that the label set "has a hole at `d`". Both were falsified by `#40`'s own last round.
 
 ## Estimate
 
@@ -212,12 +212,12 @@ Durable design: `workshop/plans/000042-retire-recall-form-plan.md`.
 
 Single-pass: one review boundary, so plain checkboxes rather than `Mx` tags.
 
-- [ ] One rule picks the form, and it picks AFTER the lookup — `formFor` over an already-parsed entry, with `optionsFor` split out of `choiceFor` so a triaged word is never rendered.
-- [ ] `packBoards` shrinks a chunk to what the terminal can draw instead of sending it to a form that is unavailable; a word that can be neither tested nor drawn is skipped naming both causes.
-- [ ] `play.Recall` deleted; the ~30 tests that borrowed it as a one-word `Question` take a double, and any that needed a SELF-RATED form take one.
-- [ ] The board gains a `Dropped` mark, a `Dropping` capability (not a type switch), a third palette colour, and a `dropped:` line as it closes.
-- [ ] `Board.Grade`'s doc stops claiming `d` never arrives.
-- [ ] README + atlas swept over the TREE; the three passages that are history are kept as history.
+- [x] One rule picks the form, and it picks AFTER the lookup — `formFor` over an already-parsed entry, with `optionsFor` split out of `choiceFor` so a triaged word is never rendered.
+- [x] `packBoards` shrinks a chunk to what the terminal can draw instead of sending it to a form that is unavailable; a word that can be neither tested nor drawn is skipped naming both causes.
+- [x] `play.Recall` deleted; the ~30 tests that borrowed it as a one-word `Question` take a double, and any that needed a SELF-RATED form take one.
+- [x] The board gains a `Dropped` mark, a `Dropping` capability (not a type switch), a third palette colour, and a `dropped:` line as it closes.
+- [x] `Board.Grade`'s doc stops claiming `d` never arrives.
+- [x] README + atlas swept over the TREE; the three passages that are history are kept as history.
 
 ## Log
 
