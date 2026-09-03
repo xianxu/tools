@@ -247,6 +247,18 @@ git commit -m "#42: one rule picks the form, and it picks after the lookup"
 they were already wrong in three of four places. The compiler enumerates the test
 uses; `git grep -n 'Recall'` over the TREE enumerates the comments. A hand-copied
 count is a third owner of a fact two tools already own.
+
+**TWO REFERENCES THE COMPILER WILL NOT CATCH**, so they are named individually —
+this is the exception the rule above needs, not a lapse from it:
+
+- `cmd/define/play/purity_test.go:56` — `[]string{"Board", "Choice", "Recall"}`, a
+  STRING literal. The purity guard iterates form names; a deleted form leaves it
+  scanning for a type that no longer exists, which passes silently forever.
+- `cmd/define/optionpool_test.go:362` — a doc comment ending *"on a small deck lose
+  the form entirely to Recall"*, which after this issue is "to the board".
+
+Both go in the tree-wide grep of Task 4 Step 3, and neither is found by
+`go build`.
 - Test: the suites above
 
 - [ ] **Step 1: Delete the form, then follow the compiler**
