@@ -5,7 +5,7 @@ deps: [tools#40, tools#44]
 github_issue:
 created: 2026-09-01
 updated: 2026-09-02
-estimate_hours: 3.33
+estimate_hours: 3.89
 started: 2026-09-02T12:31:27-07:00
 ---
 
@@ -144,22 +144,36 @@ issue changes, is fixed here.
 *Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
 `baseline-v3.1.md`. Method A only.*
 
-Design carries the v2.1 thorough-plan discount and the `0.15` buffer, since the
-plan doc resolved the decisions — except the operator round, which a plan cannot
-resolve because it is a sitting.
+**Revised upward from 3.33 after the estimate-quality judge, before any code was
+written.** The gate PASSED at 3.33; the revision is recorded rather than quietly
+made, because an estimate known to be light pollutes the calibration ledger it
+feeds, and the ledger is the only thing that can catch this repo's drift.
 
-**Two `milestone-review` rows, and the second is evidence rather than padding.**
-`#44` just shipped on this exact surface and took FIVE boundary rounds against one
-booked review; its close measured est 2.16 / actual 4.60. This issue is larger and
-touches the same frame arithmetic, so booking one review round again would be
-repeating a miss the ledger has already recorded. Booking two at the top of the
-band is the honest reading of that evidence.
+**TWO NAMED DEVIATIONS from v3.1's primitive units**, stated because a block that
+claims fidelity while quietly deviating is the dishonest kind:
 
-**And a `ux-rename-iteration` row, which `#44`'s estimate-quality judge flagged as
-the largest omission there.** This issue changes the FORM SET — what the learner
-sees and which keys do what — and the only way that gets judged is the operator
-sitting with it. `#42` exists because of one such sitting, and the drop mode was
-added mid-plan by another.
+1. **Two `milestone-review` rows for a single-boundary issue.** The primitive's
+   unit is one review of one chunk, and the Plan is explicitly single-pass. Booking
+   two prices ROUNDS, not boundaries — `#44` shipped on this exact surface against
+   one booked review and took FIVE, closing est 2.16 / actual 4.60.
+2. **`ux-rename-iteration` at `#40`'s price (0.55/0.1), not one round's.** The
+   record already shows two operator rounds on this issue, and the second — the
+   drop mode — landed after `started:`, so it is inside the measured window
+   already. `baseline-v2.1.md` says plan for 3–5 rounds per TUI-heavy milestone,
+   not 1.
+
+**Design discounting is NOT uniform, which the earlier prose wrongly implied.**
+The v2.1 thorough-plan discount applies to the two `tui-screen` rows and the
+`cross-cutting-refactor` row, whose decisions the plan resolved. It does NOT apply
+to `ux-rename-iteration` — a plan cannot pre-resolve a sitting — and the small
+rows sit at table midpoints because a discount below their floor would be noise.
+
+**One thing this estimate does NOT do**, and it is deliberate: the repo's four most
+recent rows (`#38` 0.67, `#40` 0.48, `#41` 0.69, `#44` 0.47) are same-direction
+misses, and at that trailing ratio 3.89 predicts 6–8h. Multiplying the total to
+meet it would be back-fitting — the primitives are the method, and `#117`'s
+calibration ledger is where a systematic ratio belongs. Recorded here so the next
+reader knows the gap was seen rather than missed.
 
 ```estimate
 model: estimate-logic-v3.1
@@ -169,12 +183,14 @@ item: tui-screen               design=0.35 impl=0.34
 item: cross-cutting-refactor   design=0.05 impl=0.18
 item: tui-screen               design=0.35 impl=0.36
 item: smaller-go-module        design=0.05 impl=0.1
+item: smaller-go-module        design=0.02 impl=0.16
+item: smaller-go-module        design=0.02 impl=0.1
 item: atlas-docs               design=0.1  impl=0.08
 item: milestone-review         design=0.0  impl=0.2
 item: milestone-review         design=0.0  impl=0.2
-item: ux-rename-iteration      design=0.35 impl=0.08
+item: ux-rename-iteration      design=0.55 impl=0.1
 design-buffer: 0.15
-total: 3.33
+total: 3.89
 ```
 
 | row | what it is |
@@ -184,9 +200,11 @@ total: 3.33
 | `cross-cutting-refactor` | deleting `play.Recall` and re-pointing every borrower at a double |
 | `tui-screen` #2 | the board's drop: `Mark`, `Toggle`, `Dropping`, `Apply`, the palette |
 | `smaller-go-module` #2 | re-cutting the keys row inside its width budget, and its two pins |
+| `smaller-go-module` #3 | the pty conformance run — it needs `-tags conformance` and a real pty, so it is work here rather than in review (`#37`, and `#40` priced it the same way) |
+| `smaller-go-module` #4 | the sitting-length measurement (Done-when 5), itemized as `#40` itemized its load claim |
 | `atlas-docs` | README's form section + the atlas sweep over the tree |
-| `milestone-review` ×2 | see above — `#44` took five rounds on this surface |
-| `ux-rename-iteration` | one operator sitting on a changed form set |
+| `milestone-review` ×2 | deviation 1 above |
+| `ux-rename-iteration` | deviation 2 above |
 
 ## Plan
 
