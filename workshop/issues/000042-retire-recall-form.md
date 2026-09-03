@@ -328,3 +328,40 @@ finding that the first draft named only savings.
 Two lessons recorded in `workshop/lessons.md`: a mutation check you did not run is
 worse than none, and a scripted revert must never replace an empty string (it
 prepends, and it corrupted two source files this round).
+
+### 2026-09-03 — boundary review round 2: the sweep was the instance, again
+
+Six of round 1's findings disposed; three new, and two are the same family one
+level out. That is the round's actual content: I had swept the sites each round
+named and never written the enumeration the class implied.
+
+- **BR-7 — `boardsFor` was deleted in this window and was still the current
+  account of selection in six places**, including two atlas paragraphs — so the
+  atlas held two contradictory accounts of the rule this issue exists to change.
+  **The guard for this already existed and could not see it:**
+  `TestARemovedDeclarationIsSweptOrRetired` gates on `isCitableName`, which
+  required an exported or `Test*` name. Widened to unexported names with an
+  interior capital — the discriminator that separates cited compounds
+  (`boardsFor`, `choiceFor`) from the single lowercase words (`ids`, `paint`) the
+  original clause was right to exclude. It went red on all six immediately.
+- **BR-8 — five comments restated an extent this window changed**, including
+  `Mark`'s own doc saying "TWO marks and an ABSENCE" three lines above the const
+  declaring a third. Fixed by deferring to `Marks()` rather than by correcting the
+  numbers, which is the same move `Keys()` already makes for the label set.
+- **BR-9 — `Marks()` and `Palette.For` were new exported surface with no atlas
+  entry and no plan row.** Both, plus a `## Revisions` note saying they were added
+  at the close boundary rather than designed.
+
+**One finding was a conflict between two guards, not a defect in the prose.**
+`TestPlanTableStatusMatchesTheChangeWindow` requires a plan to name what the window
+deleted; `TestNoArtifactNamesARetiredSymbol` forbids a current-truth artifact from
+naming a retired symbol. The plan could not both name it and not. Settled in
+`currentTruthOnly`, where "is this a record?" is already decided, so both guards
+inherit one answer — and the exemption is self-limiting: only a document carrying
+a `| deleted |` row gets it, and only for the symbol that row names.
+
+Also recorded: no `retiredSymbolNames` row for `Recall`. "Recall" is ordinary
+English this program uses constantly for the editor's up-arrow history, so a row
+fires on `history.go`, `repl.go` and half the atlas over text with nothing to do
+with the form. What is retired is the routing CLAIM, and `retiredPhrases` carries
+that — a phrase, not a word.
