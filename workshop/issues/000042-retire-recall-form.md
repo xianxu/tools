@@ -130,7 +130,16 @@ issue changes, is fixed here.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Durable design: `workshop/plans/000042-retire-recall-form-plan.md`.
+
+Single-pass: one review boundary, so plain checkboxes rather than `Mx` tags.
+
+- [ ] One rule picks the form, and it picks AFTER the lookup — `formFor` over an already-parsed entry, with `optionsFor` split out of `choiceFor` so a triaged word is never rendered.
+- [ ] `packBoards` shrinks a chunk to what the terminal can draw instead of sending it to a form that is unavailable; a word that can be neither tested nor drawn is skipped naming both causes.
+- [ ] `play.Recall` deleted; the ~30 tests that borrowed it as a one-word `Question` take a double, and any that needed a SELF-RATED form take one.
+- [ ] The board gains a `Dropped` mark, a `Dropping` capability (not a type switch), a third palette colour, and a `dropped:` line as it closes.
+- [ ] `Board.Grade`'s doc stops claiming `d` never arrives.
+- [ ] README + atlas swept over the TREE; the three passages that are history are kept as history.
 
 ## Log
 
