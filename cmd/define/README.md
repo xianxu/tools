@@ -83,10 +83,17 @@ close in meaning without the dictionary ever linking them.
 Answer and the full entry appears, with the right answer and what you picked
 named above it.
 
-### Recall, on a young deck
+### The board: settled words, and words no test can be built for
 
-The word appears alone and you rate yourself. A word gets this form when a
-multiple choice is not possible, and there are exactly three reasons:
+**The form set is one sentence: a multiple choice tests you, the board triages
+you.** Two kinds of word reach the grid, by two different doors.
+
+**A word that has climbed three rungs of the ladder**, because it is settled. It
+is the BOX that decides, not a tally of correct answers — a miss knocks a word
+back down, so one recalled five times and missed twice is still tested properly.
+
+**A word no multiple choice can be built for**, and there are exactly three
+reasons:
 
 - **the deck has no other word to draw on** — the very first reviews;
 - **the entry is nothing but cross-references** ("another term for …"), so there
@@ -95,24 +102,17 @@ multiple choice is not possible, and there are exactly three reasons:
   their base, so looking up *bargainer* returns *bargain*, and offering that
   definition as *bargainer*'s meaning would be wrong.
 
-```
-$ define --play
-ephemeral
+That used to be its own form — the word alone, and you rated yourself —
+and it was the same instrument as the grid at sixteen times the cost: nothing was
+being checked either way. It was also the worst place for self-report, since a
+word you have just met is the one you are most likely to think you know.
 
-y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
-```
-
-### The board, once a word is settled
-
-**A word that has climbed three rungs of the ladder is swept on a grid rather
-than tested one at a time.** It is the BOX that decides, not a tally of correct
-answers — a miss knocks a word back down, so one recalled five times and missed
-twice is still asked one at a time. Sixteen at once, one keystroke or one click
-each: you are saying whether you still have it, not proving it.
+Sixteen at once, one keystroke or one click each: you are saying whether you still
+have it, not proving it.
 
 ```
 $ define --play
-marking [yes] no, Tab switches, click or key marks, Enter ends, Ctrl-C to stop
+marking [yes] no drop, Tab cycles, click or key, Enter ends, Ctrl-C to stop
 [0] arrondissement  [1] bailiwick       [2] keel            [3] mesa
 [4] ephemeral       [5] quokka          [6] potassium       [7] ligament
 [8] sycophantic     [9] concrete        [a] parrot          [b] run
@@ -129,11 +129,18 @@ dictionary entry on screen for every word; a board puts one line up for the
 entire sweep.
 
 **Click a word, or press the key printed beside it** — `0`–`9` then `a`–`f`, in
-order and with no gaps. `Tab` switches between marking yes and marking no; the
-bracketed one on the prompt line is live, and that line is the last thing a short
-window gives up.
+order and with no gaps. `Tab` cycles what a mark MEANS — yes, then no, then
+drop; the bracketed one on the prompt line is live, and that line is the last
+thing a short window gives up.
 
-**A marked word turns green for yes and red for no, and keeps its key** — so you
+**Drop mode removes a word from the deck** rather than answering it, which is how
+you throw away a typo or a word you never meant to keep without leaving the
+sitting. Its history is kept, so looking the word up again brings it back exactly
+where it was. It is two Tabs from the default deliberately: the destructive mode
+is never one press away from the one you start in.
+
+**A marked word turns green for yes, red for no, and struck-out for a drop, and
+keeps its key** — so you
 can still see what you answered and the grid still reads the same way. A word can
 only be marked once: the answer is written the moment it lands, so there is
 nothing to take back.
@@ -154,14 +161,12 @@ test can. As a board closes it leaves one line naming the words you marked no.
 | key | does |
 |---|---|
 | `1`–`4` | multiple choice: pick the definition |
-| `y` | recall: you had it — straight to the next word |
-| `n` | recall: you missed it — the definition appears |
 | `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
 | click | board: mark that word. Anywhere else in a sitting, a click plays the word rather than answering |
-| Tab | board: switch between marking yes and marking no |
+| Tab | board: cycle what a mark means — yes, no, then drop |
 | Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
 | space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
-| `d` | remove this word from the deck — its history is kept. On a board it is a cell's key instead: a grid has no single current word to remove |
+| `d` | remove this word from the deck — its history is kept. On a board it is a cell's key instead, and `Tab` to drop mode is how you remove a word there: a grid has no single current word |
 | PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |
 | Ctrl-C | stop; everything you answered is already saved |
 

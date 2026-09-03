@@ -40,6 +40,18 @@ const (
 	Unmarked Mark = iota
 	Yes
 	No
+	// Dropped is a cell REMOVED from the deck rather than rated (#42).
+	//
+	// Its Verdict is Skipped, which is what keeps it out of the schedule: a
+	// removal is not an assessment, and recording one as a miss would demote a
+	// word on its way out. `Rest` already skips anything not Unmarked, so Enter's
+	// sweep leaves a dropped cell alone for free.
+	//
+	// It is a MARK rather than a fourth Verdict because Verdict is what an ANSWER
+	// meant, and `schedule.Fold` reads verdicts to move boxes — "remove this
+	// word" in front of that would be a category error the ladder would have to
+	// branch on.
+	Dropped
 )
 
 // Verdict is what a mark means to the schedule: Yes climbs the ladder, No falls
@@ -142,9 +154,10 @@ type Cell struct {
 // them: the padding is computed from the plain word and applied OUTSIDE the
 // style, so a styled cell occupies exactly the columns an unstyled one does.
 type Palette struct {
-	Yes string // starts the style for a cell marked yes
-	No  string // ...and for one marked no
-	Off string // ends either
+	Yes  string // starts the style for a cell marked yes
+	No   string // ...and for one marked no
+	Drop string // ...and for one being removed from the deck
+	Off  string // ends any of them
 }
 
 // Board is one grid. Pointer receivers: it REMEMBERS every mark, which is the
@@ -164,6 +177,9 @@ type Board struct {
 	// the mark WHERE THE KEY WAS — saying "answered" by taking away the thing
 	// the keyboard needs, on the one path a mouse-less terminal has.
 	pal Palette
+	// dropping is set by a mark landed in Dropped mode and cleared by the reader,
+	// which is what makes Dropped() one-shot.
+	dropping bool
 	// last is the cell most recently marked, and it is what Word() reports.
 	// advance builds Outcome{Word: q.Word()} at a call site that knows nothing
 	// about grids, so the form has to answer "which word did that just mean".
@@ -408,6 +424,8 @@ func (b *Board) paint(i int) string {
 		return b.pal.Yes
 	case No:
 		return b.pal.No
+	case Dropped:
+		return b.pal.Drop
 	}
 	return ""
 }
@@ -451,18 +469,29 @@ func (b *Board) Reveal() string { return "" }
 // form holds many words, and Tab reaches nothing at all on 2.1 or 2.3. The form
 // is the only thing that can describe them truthfully.
 //
-// The label set is NOT enumerated. It has a hole at `d` and it is printed beside
-// every word, so spelling "0-9 a-c e-g" here would be a second owner of the
-// sequence and a harder thing to read than the grid itself.
+// The label set is NOT enumerated. It is printed beside every word, so spelling
+// it out here would be a second owner of the sequence and a harder thing to read
+// than the grid itself. (This used to say the set "has a hole at `d`" — it had
+// one until #40's last round filled it, and the sentence outlived the hole.)
 //
 // Both spellings are the SAME WIDTH, so the line does not jump under a key
 // pressed to be pressed again — and short enough that this plus the session's
 // reserved keys fits eighty columns.
 func (b *Board) Keys() string {
-	if b.mode == Yes {
-		return "marking [yes] no, Tab switches, click or key marks, Enter ends"
+	// RE-CUT TO FIT, not appended to (#42). `boardFitsIn` charges
+	// `displayRows(gradePrompt(q), termCols)` into the board's fit, so a row that
+	// wraps at eighty columns raises the minimum terminal height for EVERY board.
+	// The old row was 62 columns and left two of headroom; adding a third state
+	// naively would have wrapped, so "Tab switches" became "Tab cycles" and
+	// "click or key marks" lost its verb — with three modes a click no longer
+	// only marks. 59 columns, 75 with the reserved key.
+	switch b.mode {
+	case No:
+		return "marking yes [no] drop, Tab cycles, click or key, Enter ends"
+	case Dropped:
+		return "marking yes no [drop], Tab cycles, click or key, Enter ends"
 	}
-	return "marking yes [no], Tab switches, click or key marks, Enter ends"
+	return "marking [yes] no drop, Tab cycles, click or key, Enter ends"
 }
 
 // Mode is the mark a click will land. Not on any interface — the form states its
@@ -476,13 +505,25 @@ func (b *Board) Mode() Mark { return b.mode }
 // word's next real test.
 func (b *Board) Form() string { return "board" }
 
-// Toggle flips the mode. This is what Tab means on a board.
+// Toggle cycles the mode. This is what Tab means on a board.
+//
+// THREE now, and the ORDER is a UX decision rather than arithmetic on the iota
+// (#42): Yes → No → Dropped, so the destructive mode is never one press from the
+// default. A learner reaching for `no` cannot overshoot into a removal, and the
+// mode they most often want is the one they start in.
+//
+// Written as a switch for that reason — `(b.mode % 3) + 1` would be shorter and
+// would hide the decision, and the day a fourth mode arrives the order question
+// has to be asked again rather than answered by an increment.
 func (b *Board) Toggle() {
-	if b.mode == Yes {
+	switch b.mode {
+	case Yes:
 		b.mode = No
-		return
+	case No:
+		b.mode = Dropped
+	default:
+		b.mode = Yes
 	}
-	b.mode = Yes
 }
 
 // Grade marks the cell whose printed key is k.
@@ -493,8 +534,12 @@ func (b *Board) Toggle() {
 // mouse-owning developer never presses, and it is the one a mouse-less terminal
 // has (Done-when 6).
 //
-// Case-insensitive, as form 2.1 is. `d` and `D` never arrive: toInput takes them
-// first, and boardLabels has no cell for them either way.
+// Case-insensitive, as every key path here is. AND `d` DOES ARRIVE: the session
+// reserves that key only for forms with a single current word to remove, and
+// hands it to a grid as an ordinary cell key (#40 D12) — this comment used to
+// claim the opposite ("`d` and `D` never arrive… boardLabels has no cell for them
+// either way"), which #40's own final round falsified when it put `d` back in the
+// alphabet. Corrected in #42, the issue about that key.
 func (b *Board) Grade(k rune) (Verdict, bool) {
 	if k >= 'A' && k <= 'Z' {
 		k += 'a' - 'A'
@@ -527,7 +572,29 @@ func (b *Board) Mark(i int) (Verdict, bool) {
 	}
 	b.marks[i] = b.mode
 	b.last = i
+	// The drop is ARMED here and disarmed by the reader, so it is one-shot: the
+	// loop asks `Dropped()` on every mark, and a sticky answer would remove the
+	// same word again on the next keystroke — against a word already gone.
+	b.dropping = b.mode == Dropped
 	return b.mode.Verdict(), true
+}
+
+// Dropped is the word the last mark asked to REMOVE, once (#42).
+//
+// It implements the session's `Dropping` capability rather than being reached by
+// a type switch on *Board — the same shape as `Missed` and `SelfRated`, and the
+// reason is `#6`'s Done-when: a session that knew what a board IS would have to
+// change for every future form.
+//
+// ONE-SHOT, and that is the whole of its correctness. `Apply` asks after each
+// mark lands; an answer that persisted would re-emit the removal on the next Tab
+// or refused click, performing one act twice.
+func (b *Board) Dropped() (string, bool) {
+	if !b.dropping {
+		return "", false
+	}
+	b.dropping = false
+	return b.cells[b.last].Word, true
 }
 
 // CellAt is which cell a click landed on, given a position INSIDE the grid

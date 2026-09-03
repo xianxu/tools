@@ -2182,9 +2182,10 @@ func TestAClickOnABoardMarksIt(t *testing.T) {
 	// footer sits at the bottom edge: four entries (the board's own three, plus
 	// the bar) means the grid's only row is viewport row 10-4 = 6.
 	//
-	// The board also writes ONE blank line into the buffer as it opens, which
-	// separates it from the previous question — the operator's fourth note from
-	// a real sitting. It is a buffer line, so it does not move the footer.
+	// The separation from the previous question is a RESERVED FRAME ROW now
+	// (`chromeGap`, #44), not a blank the board writes into the buffer. It sits
+	// above the prompt, so it does not move the footer either — the arithmetic
+	// here is unchanged and the reason for it is not.
 	const termRows, gridRow = 10, 6
 	// The second cell's column, read off what Prompt DREW rather than computed.
 	col := strings.Index(board.Prompt(), "[1] ") + len("[1] ")
@@ -4028,4 +4029,137 @@ func askableRig(t *testing.T, word string) (deps, options, []play.Question, *sit
 	}
 	t.Fatalf("%q is not in the sitting at all", word)
 	return deps{}, options{}, nil, nil
+}
+
+// A DROP ON A BOARD REACHES store.Forget (#42).
+//
+// DRIVEN THROUGH playSession rather than by calling Mark, because the WIRING is
+// the claim: a board that records a drop the loop never acts on leaves every
+// `play` test green while the word sits in the deck untouched.
+//
+// It matters because #42 makes the board the only form some words ever see, and
+// `d` — the session's drop key everywhere else — is a cell key here (#40 D12: a
+// grid has no single current word). Without this the sitting would lose its
+// ability to curate the deck for exactly the young words it surfaces.
+func TestDroppingAWordOnABoardRemovesItFromTheDeck(t *testing.T) {
+	const termRows = 24
+	// Set per subtest from the board's own layout, so a click lands where the
+	// form drew the word rather than where the test guessed.
+	var boardGridRow, boardCellCol int
+	for _, tc := range []struct {
+		name string
+		mark func(keys chan Key)
+	}{
+		// A KEY AND A CLICK ARE ONE ACT reached two ways, so both are driven —
+		// the keyboard path is the one a mouse-owning developer never presses,
+		// and the one a mouse-less terminal has.
+		{"by key", func(keys chan Key) {
+			keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[1])}
+		}},
+		{"by click", func(keys chan Key) {
+			// The grid's only row, and the second cell's column read off what
+			// Prompt DREW rather than computed. Pinned, the footer sits at the
+			// bottom edge: the board's three rows plus the bar means the grid is
+			// at viewport row termRows-4.
+			keys <- Key{Kind: KeyClick, Row: boardGridRow, Col: boardCellCol}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, st := playRig(t, "quokka", "mesa", "parrot")
+			_, held := questionsFor(t, d, opt)
+			board := play.NewBoard(boardCells("quokka", "mesa", "parrot"), opt.width, play.Palette{})
+			boardGridRow = termRows - board.Rows() - 1 // the bar is the last footer row
+			boardCellCol = strings.Index(board.Prompt(), "[1] ") + len("[1] ")
+			if boardCellCol < 1 {
+				t.Fatalf("no second cell in %q", board.Prompt())
+			}
+
+			tty := &syncBuf{}
+			live := newPinnedScreen(tty, termRows, opt.width)
+			live.interval = -1
+			var errb bytes.Buffer
+
+			keys := make(chan Key, 5)
+			keys <- Key{Kind: KeyTab} // yes -> no
+			keys <- Key{Kind: KeyTab} // no -> drop
+			tc.mark(keys)
+			keys <- Key{Kind: KeyInterrupt}
+			close(keys)
+
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+				console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+			deck, err := st.Deck()
+			if err != nil {
+				t.Fatal(err)
+			}
+			left := map[string]bool{}
+			for _, w := range deck {
+				left[store.Key(w.Text)] = true
+			}
+			if left["mesa"] {
+				t.Errorf("`mesa` was dropped on the board and is still in the deck — the form "+
+					"recorded a removal the loop never performed; deck %v", left)
+			}
+			// AND ONLY THAT WORD. A drop that took its neighbours would be the
+			// worst kind of bug here: irreversible, and invisible until a sitting
+			// comes up short.
+			for _, w := range []string{"quokka", "parrot"} {
+				if !left[w] {
+					t.Errorf("%q left the deck too — a drop names ONE cell", w)
+				}
+			}
+			// A REMOVAL IS NOT A REVIEW: nothing about it reaches the schedule,
+			// or a word on its way out would be demoted on the way.
+			for _, e := range reviewEvents(t, st) {
+				if store.Key(e.Word) == "mesa" {
+					t.Errorf("the drop wrote a review event: %+v", e)
+				}
+			}
+		})
+	}
+}
+
+// A DROP WRITES EXACTLY ONE TRANSCRIPT LINE (#42 PQ-4).
+//
+// The loop already reports every removal — "removed %q from the deck" — as it
+// happens, which is where `relearnLine`'s own reasoning wants it. The first draft
+// of this issue planned a `dropped:` line at board close as relearn's sibling;
+// that would have been a SECOND OWNER of one fact, and the batching that makes
+// sense for `relearn:` (a board's no-marks are only knowable once it closes) does
+// not apply to a removal, which is knowable immediately.
+//
+// So the pin is that there is one line, not that there is a new one.
+func TestADropOnABoardIsReportedOnce(t *testing.T) {
+	d, opt, _ := playRig(t, "quokka", "mesa", "parrot")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot"), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	keys := make(chan Key, 6)
+	keys <- Key{Kind: KeyTab}
+	keys <- Key{Kind: KeyTab}
+	keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[1])}
+	// Two more keystrokes AFTER the drop: a Tab and a refused click. Either one
+	// re-firing the removal is what a sticky `Dropped()` looks like.
+	keys <- Key{Kind: KeyTab}
+	keys <- Key{Kind: KeyClick, Row: 0, Col: 0}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	script := unstyled(live.Transcript())
+	if n := strings.Count(script, "removed"); n != 1 {
+		t.Errorf("the transcript says %q %d times, want once — a Tab or a refused click "+
+			"after a drop must not perform it again:\n%s", "removed", n, script)
+	}
+	if !strings.Contains(script, `"mesa"`) {
+		t.Errorf("the removal does not name the word:\n%s", script)
+	}
 }

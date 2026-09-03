@@ -628,7 +628,12 @@ func boardPalette(opt options) play.Palette {
 	if !opt.color {
 		return play.Palette{}
 	}
-	return play.Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Off: "\x1b[0m"}
+	// DIM STRIKETHROUGH for a removal, not a third hue. Green and red are the two
+	// conventions a terminal reader already has and a learner does not have to be
+	// taught; a third colour would need teaching and would compete with them. A
+	// word on its way out of the deck reads as struck out, which is what it is
+	// (#42).
+	return play.Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Drop: "\x1b[2;9m", Off: "\x1b[0m"}
 }
 
 // boardFooter is the live edge for a board: everything the FORM draws, then the

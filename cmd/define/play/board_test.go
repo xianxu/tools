@@ -142,9 +142,14 @@ func TestAMarkLandsTheActiveMode(t *testing.T) {
 	if v, _ := b.Mark(1); v != Wrong {
 		t.Errorf("a No-mode mark graded %v, want Wrong", v)
 	}
+	// TWO more Tabs to come back round: the cycle is three since #42 added drop.
+	b.Toggle()
+	if b.Mode() != Dropped {
+		t.Fatalf("the second Tab gave %v, want Dropped", b.Mode())
+	}
 	b.Toggle()
 	if b.Mode() != Yes {
-		t.Errorf("Tab did not flip back: mode is %v", b.Mode())
+		t.Errorf("Tab did not come back round: mode is %v", b.Mode())
 	}
 	// AND Keys() IS WHERE THE MODE IS SHOWN (R11). It had a footer row of its
 	// own, and a resize measured what that costs: fitFooter drops from the END,
@@ -163,9 +168,15 @@ func TestAMarkLandsTheActiveMode(t *testing.T) {
 	if !strings.Contains(no, "[no]") || strings.Contains(no, "[yes]") {
 		t.Errorf("Keys() in No mode = %q, want the live mark bracketed", no)
 	}
-	// Same width, so the line does not jump under a key pressed twice.
-	if columnsIn(yes) != columnsIn(no) {
-		t.Errorf("the two spellings are %d and %d columns:\n%q\n%q", columnsIn(yes), columnsIn(no), yes, no)
+	b.Toggle()
+	drop := b.Keys()
+	if !strings.Contains(drop, "[drop]") || strings.Contains(drop, "[no]") {
+		t.Errorf("Keys() in Dropped mode = %q, want the live mark bracketed", drop)
+	}
+	// Same width, so the line does not jump under a key pressed repeatedly.
+	if columnsIn(yes) != columnsIn(no) || columnsIn(no) != columnsIn(drop) {
+		t.Errorf("the three spellings are %d, %d and %d columns:\n%q\n%q\n%q",
+			columnsIn(yes), columnsIn(no), columnsIn(drop), yes, no, drop)
 	}
 	// And nothing BELOW the grid says it a second time.
 	for _, line := range strings.Split(b.Prompt(), "\n") {
@@ -597,8 +608,11 @@ func TestTabFlipsTheBoardsModeThroughApply(t *testing.T) {
 	if len(outs) != 1 || outs[0].Verdict != Wrong {
 		t.Errorf("a mark after Tab produced %+v, want Wrong", outs)
 	}
+	if _, ok := Apply(s, Input{Kind: InputToggle}); b.Mode() != Dropped {
+		t.Errorf("a second Tab left the mode at %v, want Dropped; outs %+v", b.Mode(), ok)
+	}
 	if _, ok := Apply(s, Input{Kind: InputToggle}); b.Mode() != Yes {
-		t.Errorf("a second Tab left the mode at %v, want Yes; outs %+v", b.Mode(), ok)
+		t.Errorf("a third Tab left the mode at %v, want Yes; outs %+v", b.Mode(), ok)
 	}
 }
 
@@ -832,5 +846,104 @@ func TestABoardRelaysOutForTheWidthItIsDrawnAt(t *testing.T) {
 		if b.Spent() {
 			t.Errorf("after Resize(%d) the board reports itself spent after two marks", w)
 		}
+	}
+}
+
+// TAB CYCLES THREE MODES, and the order is a UX decision rather than arithmetic
+// on the iota (#42).
+//
+// Yes → No → Dropped, so the DESTRUCTIVE mode is never one Tab from the default:
+// a learner reaching for `no` cannot overshoot into a removal, and the mode they
+// are most likely to want is the one they start in.
+func TestTabCyclesThreeModes(t *testing.T) {
+	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}, {Word: "run"}}, 80, Palette{})
+	for i, want := range []Mark{No, Dropped, Yes, No} {
+		b.Toggle()
+		if got := b.Mode(); got != want {
+			t.Fatalf("Tab %d gave mode %v, want %v — the cycle is Yes → No → Dropped, "+
+				"so the destructive mode is never one press from the default", i+1, got, want)
+		}
+	}
+}
+
+// A DROPPED CELL RECORDS NO REVIEW. Its verdict is Skipped, which the session
+// never writes — a drop is not an assessment, and recording one as a miss would
+// demote a word on its way out of the deck.
+func TestADroppedCellRecordsNothing(t *testing.T) {
+	if got := Dropped.Verdict(); got != Skipped {
+		t.Errorf("Dropped.Verdict() = %v, want Skipped — a removal is not an answer, and "+
+			"schedule.Fold reads verdicts to move boxes", got)
+	}
+	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}}, 80, Palette{})
+	b.Toggle()
+	b.Toggle() // into drop mode
+	if v, ok := b.Mark(0); !ok || v != Skipped {
+		t.Errorf("marking a cell in drop mode gave (%v, %v), want (Skipped, true)", v, ok)
+	}
+	// ...and it IS marked, so Enter's sweep leaves it alone and a second press
+	// cannot drop it twice.
+	if got := b.Marked(0); got != Dropped {
+		t.Errorf("cell 0 is %v after a drop, want Dropped", got)
+	}
+	if rest := b.Rest(Wrong); len(rest) != 1 || rest[0] != "mesa" {
+		t.Errorf("Enter swept %v, want only the unmarked word — a dropped cell is not "+
+			"unmarked and must not be answered on the way out", rest)
+	}
+}
+
+// THE FORM SAYS WHICH WORD WAS DROPPED, through a capability rather than a type
+// switch — one-shot, so the same removal cannot be performed twice.
+func TestABoardNamesTheWordItDropped(t *testing.T) {
+	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}}, 80, Palette{})
+	if _, ok := b.Dropped(); ok {
+		t.Error("a board with no marks claims a drop")
+	}
+	b.Toggle()
+	b.Toggle()
+	b.Mark(1)
+	word, ok := b.Dropped()
+	if !ok || word != "mesa" {
+		t.Fatalf("Dropped() = (%q, %v), want (\"mesa\", true)", word, ok)
+	}
+	// ONE-SHOT. Asked again — which the loop does on the next frame, and after a
+	// refused click — it must not name the word a second time, or the removal is
+	// performed twice against a word already gone.
+	if _, ok := b.Dropped(); ok {
+		t.Error("Dropped() answered twice for one drop — the loop asks it per mark, so a " +
+			"sticky answer removes the same word on every following keystroke")
+	}
+	// A yes after a drop is a MARK, not a drop.
+	b.Toggle()
+	b.Mark(0)
+	if _, ok := b.Dropped(); ok {
+		t.Error("a yes mark claimed to be a drop")
+	}
+}
+
+// ALL THREE MODE SPELLINGS ARE THE SAME WIDTH, and the row fits eighty columns
+// with the session's reserved key beside it.
+//
+// NOT COSMETIC: `boardFitsIn` charges `displayRows(gradePrompt(q), termCols)` into
+// the board's fit, so a row that wraps at 80 raises the minimum terminal height
+// for EVERY board — on the path #42 routes untestable young words onto, where
+// there is no form 2.1 left to fall back to. The existing refusal-row pin cannot
+// catch this: it compares the refusal against the keys row, and both grow
+// together.
+func TestEveryModeSpellingIsTheSameWidthAndFitsEighty(t *testing.T) {
+	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}}, 80, Palette{})
+	want := visibleColumns(b.Keys())
+	for range 3 {
+		got := visibleColumns(b.Keys())
+		if got != want {
+			t.Errorf("mode %v spells a %d-column row; the first was %d — the line must not "+
+				"jump under a key pressed to be pressed again", b.Mode(), got, want)
+		}
+		// The reserved half a board gets is `quitKey` — `d` is a cell key here.
+		if total := got + len(", ") + len("Ctrl-C to stop"); total > 80 {
+			t.Errorf("mode %v: the prompt row is %d columns with the reserved keys, over 80 — "+
+				"it wraps, and boardFitsIn charges the wrapped height to every board",
+				b.Mode(), total)
+		}
+		b.Toggle()
 	}
 }
