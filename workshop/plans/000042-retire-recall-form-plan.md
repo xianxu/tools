@@ -16,8 +16,9 @@
 
 | Name | Lives in | Status |
 |------|----------|--------|
-| `Mark` | `cmd/define/play/board.go` | modified |
-| `Board.Mode` / `Board.Toggle` | `cmd/define/play/board.go` | modified |
+| `Dropped` (a `Mark`) | `cmd/define/play/board.go` | new |
+| `Board.Toggle` | `cmd/define/play/board.go` | modified |
+| `Board.Dropped` | `cmd/define/play/board.go` | new |
 | `Dropping` | `cmd/define/play/session.go` | new |
 | `Recall` | `cmd/define/play/recall.go` | deleted |
 | `optionsFor` | `cmd/define/optionpool.go` | new |
@@ -25,7 +26,14 @@
 | `packBoards` | `cmd/define/play_loop.go` | new |
 | `boardsFor` | `cmd/define/play_loop.go` | deleted |
 
-- **`Mark`** — gains `Dropped` beside `Yes` and `No`. `Unmarked` stays the zero value; `Dropped.Verdict()` is `Skipped`, so a drop records no review and the schedule never sees it.
+(Three rows corrected against the tree at close, because the table has to
+describe what the diff DID: `Board.Mode` is unchanged — it returns a field whose
+TYPE gained a value, which is not a change to the accessor; `Board.Mark` gains one
+line arming the drop, with the answer read by a new sibling rather than by
+widening `Mark`; and the entity that is genuinely new is the `Dropped` constant,
+not the `Mark` type.)
+
+- **`Dropped`** — a third `Mark`, beside `Yes` and `No`. `Unmarked` stays the zero value; `Dropped.Verdict()` is `Skipped`, so a drop records no review and the schedule never sees it.
   - **Relationships:** 1:1 with a cell. `Rest` (Enter's sweep) already skips anything not `Unmarked`, so a dropped cell is untouched by it for free.
   - **DRY rationale:** The mode already exists, is already drawn on the prompt row, and is already landed by both a key and a click. A third value costs no new gesture, no new key and no second input grammar.
   - **Future extensions:** A fourth mode would want a mode *list* rather than an `if` chain in `Toggle`; two values did not earn one and three is the point at which to look again.
