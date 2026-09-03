@@ -362,11 +362,18 @@ func TestPromptLabelsEveryWord(t *testing.T) {
 // the cell and how a learner reads the grid back, so it is the wrong half to
 // spend on saying "answered".
 func TestAMarkedCellIsPaintedAndKeepsItsKey(t *testing.T) {
-	pal := Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Off: "\x1b[0m"}
+	// EVERY MARK'S SEQUENCE, so no arm of the paint can be deleted unnoticed. The
+	// drop was added to the Palette and to `paint` with neither pinned, and both
+	// could be removed with the whole suite green — a dropped cell would then have
+	// painted identically to an untouched one while the README promised otherwise
+	// (#42 BR-1).
+	pal := Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Drop: "\x1b[2;9m", Off: "\x1b[0m"}
 	b := NewBoard(cellsOf(sixteen...), 100, pal)
 	b.Mark(2)
 	b.Toggle()
 	b.Mark(7)
+	b.Toggle()
+	b.Mark(9)
 	p := b.Prompt()
 
 	// THE KEYS ARE ALL STILL THERE, marked or not.
@@ -382,6 +389,13 @@ func TestAMarkedCellIsPaintedAndKeepsItsKey(t *testing.T) {
 	if !strings.Contains(p, pal.No+"[7] "+sixteen[7]+pal.Off) {
 		t.Errorf("cell 7 is not painted as a no:\n%s", p)
 	}
+	if !strings.Contains(p, pal.Drop+"[9] "+sixteen[9]+pal.Off) {
+		t.Errorf("cell 9 is not painted as a drop:\n%s", p)
+	}
+	// THREE DISTINCT sequences, or two marks read as one on screen.
+	if pal.Yes == pal.No || pal.No == pal.Drop || pal.Yes == pal.Drop {
+		t.Error("two marks share a sequence, so the test cannot tell them apart either")
+	}
 	// An unmarked cell carries no sequence at all.
 	if strings.Contains(p, pal.Yes+"[0] ") || strings.Contains(p, pal.No+"[0] ") {
 		t.Errorf("an unmarked cell is painted:\n%s", p)
@@ -394,8 +408,9 @@ func TestAMarkedCellIsPaintedAndKeepsItsKey(t *testing.T) {
 		t.Errorf("an unpalletted board emitted an escape:\n%q", plain.Prompt())
 	}
 	// AND Marked() reports the state without anyone parsing colour back out.
-	if b.Marked(2) != Yes || b.Marked(7) != No || b.Marked(0) != Unmarked {
-		t.Errorf("Marked() = %v/%v/%v, want Yes/No/Unmarked", b.Marked(2), b.Marked(7), b.Marked(0))
+	if b.Marked(2) != Yes || b.Marked(7) != No || b.Marked(9) != Dropped || b.Marked(0) != Unmarked {
+		t.Errorf("Marked() = %v/%v/%v/%v, want Yes/No/Dropped/Unmarked",
+			b.Marked(2), b.Marked(7), b.Marked(9), b.Marked(0))
 	}
 }
 

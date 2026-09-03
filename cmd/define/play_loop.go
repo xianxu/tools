@@ -939,6 +939,10 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 	var qs []play.Question
 	marks := map[string]clickable{}
 	var triage []string
+	// unaskable counts words dropped for a reason that is NOT a lookup failure, so
+	// an empty sitting can name the cause it actually established rather than the
+	// only cause that used to exist.
+	var unaskable int
 	// The entries parsed on THIS pass, so a word that changes hands is not looked
 	// up twice. A young word that turns out to be untestable goes to the board
 	// loop, which needs the same entry for its gloss.
@@ -1013,6 +1017,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			qs = append(qs, q)
 			continue
 		}
+		unaskable++
 		fmt.Fprintf(stderr, "define: skipping %q: this window is too short to draw a board "+
 			"and no multiple choice can be built for it\n", key)
 	}
@@ -1048,10 +1053,23 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		}
 	}
 	if len(qs) == 0 {
-		// NOT "nothing due today": words WERE due, and every one of them failed
-		// to look up. Saying nothing is due would send the learner away believing
-		// their deck is clear when the dictionary is the problem.
-		fmt.Fprintf(stderr, "define: %d words are due but none could be looked up\n", len(keys))
+		// NOT "nothing due today": words WERE due. Saying nothing is due would
+		// send the learner away believing their deck is clear when it is not.
+		//
+		// AND THE CAUSE IS THE ONE THE CODE ESTABLISHED. This said "none could be
+		// looked up" for every empty sitting, which was true while a failed lookup
+		// was the only way to drop a word — and #42 added a second: a word the
+		// dictionary answers fine, for which no test can be built and which this
+		// window cannot draw a board for. Reporting a dictionary failure then
+		// sends the learner to check their dictionary about a window that is too
+		// narrow. The population is exactly this issue's subject: a young deck on
+		// a narrow terminal, which ran a full sitting before #42.
+		if unaskable > 0 && unaskable == len(keys) {
+			fmt.Fprintf(stderr, "define: %d words are due but none can be asked in this "+
+				"window — make it taller or wider\n", len(keys))
+		} else {
+			fmt.Fprintf(stderr, "define: %d words are due but none could be looked up\n", len(keys))
+		}
 		return nil, held, 1
 	}
 	held.marks = marks

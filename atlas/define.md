@@ -2232,7 +2232,9 @@ Spec's "a hundred mature words cost what ten fragile ones cost", and it was neve
 a typing claim.
 
 **`ReviewEvent.Form` names which form asked**, on every review event —
-`recall`, `meaning`, `board`. It is TELEMETRY: `Fold` does not read it and must
+`meaning`, `board` — and `recall`, which #42 retired but which the LOG still
+carries for every sitting before it, since history is what happened. It is
+TELEMETRY: `Fold` does not read it and must
 not, or a scheduler would start branching on it. It exists because the board
 promotes on self-report and the two remedies for that — promote more slowly, or
 offer the board less often — are both deferred to be chosen from evidence. The

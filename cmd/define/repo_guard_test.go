@@ -1095,6 +1095,19 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 var retiredPhrases = map[string]string{
 	"toggle row":      "the prompt row — `Board.Keys` states the live mark (#40 R11)",
 	"footer's toggle": "the prompt row — `Board.Keys` states the live mark (#40 R11)",
+	// #42 deleted form 2.1. The FORM's name is not banned — several comments
+	// legitimately explain why something exists by naming the form it was built
+	// for, and the atlas keeps the argument that produced `Keys()`. What is
+	// retired is the ROUTING CLAIM: nothing falls back to it any more, because it
+	// is not there to fall back to.
+	//
+	// The phrase, not the word, exactly as the two rows above are phrases. It was
+	// worth writing down because the tree-wide sweep this issue ran caught four
+	// files and missed five more — the instance, not the class (#42 BR-3).
+	"back to form 2.1":         "a word no test can be built for is TRIAGED on a board (#42)",
+	"back to Recall":           "a word no test can be built for is TRIAGED on a board (#42)",
+	"fallback to form":         "a word no test can be built for is TRIAGED on a board (#42)",
+	"falls back to the recall": "a word no test can be built for is TRIAGED on a board (#42)",
 }
 
 // No current-truth artifact describes a drawn element the tool no longer draws.

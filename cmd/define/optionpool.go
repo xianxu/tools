@@ -109,7 +109,7 @@ func optionCandidates(word string, e Entry) []play.Candidate {
 // sense in document order — the first block's, whenever that block has one at
 // all. Not ok when the entry offers no definition anywhere: an entry that is
 // nothing but cross-references (`bases` — "plural form of base1") cannot be the
-// answer to a recognition question, so the caller falls back to form 2.1.
+// answer to a recognition question, so the caller triages the word on a board.
 //
 // Unlike optionCandidates this takes the first usable sense of ANY axis, not
 // the first unlabelled one. The target is what the learner looked up; a `rare`
@@ -138,7 +138,7 @@ func targetCandidate(word string, e Entry) (play.Candidate, bool) {
 // "did you know this word". Form 2.3 cannot: it asserts that ONE gloss IS the
 // meaning of the word on screen, marks it Correct, and promotes the word in the
 // schedule on the strength of it. So the entry has to be checked, and a redirect
-// falls back to form 2.1 — the same route `bases` takes.
+// is triaged on a board instead — the same route `bases` takes.
 //
 // `Headword()` alone is NOT the check, which is why this walks the token run:
 // the head is built from `fields[0]` (parse.go:436), so it returns "hot" for
@@ -222,8 +222,8 @@ var fallbackReasons = []string{
 // define the prompted word (a NOAD derivative redirect — see entryDefines), the
 // entry offers no usable definition at all (`bases`, every sense a
 // cross-reference), or the deck has not yet grown enough distractors (D9 — a
-// learner three lookups in). The caller falls back to form 2.1, which is
-// invisible to the learner and keeps the sitting the length the schedule asked
+// learner three lookups in). The caller TRIAGES the word on a board (#42), which
+// is invisible to the learner and keeps the sitting the length the schedule asked
 // for.
 func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint64) *play.Choice {
 	opts := optionsFor(word, e, pool, seed)

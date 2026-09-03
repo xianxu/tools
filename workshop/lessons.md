@@ -3369,3 +3369,31 @@ to remember — the first pass here ran over `cmd/` and missed both atlas hits.
 And: **a rule recorded only in a plan is a rule that will not be read.** Plans are
 archived to `workshop/history/` at close, which `AGENTS.md` §2 tells the next agent
 not to read. If a round produced a rule, it belongs HERE.
+
+## Mutation testing has to be done, and the tooling for it has to be safe (`#42`, close round 1)
+
+Two failures in one round, both about the same habit.
+
+**A mutation check you did not run is worse than none**, because the tick claims
+it. `#42`'s plan named three required mutation checks for the board's drop; I ran
+two and ticked all three, and the boundary review found that the untested one —
+the palette — could be deleted twice over with the whole suite green. A dropped
+cell would have painted identically to an untouched one while the README promised
+it was struck out.
+
+The fix that generalises is not "run the third check". It is that a palette test
+listing three fields says nothing about a fourth mark, so the check DERIVES from
+the mark set: `play.Marks()` is the extent, `Palette.For` is the one owner of
+mark → sequence, and a new mark with no colour now fails the day it is declared.
+Same shape as `numRegionKinds` guarding the click registry.
+
+**And the scripted revert must not use an empty replacement.** A helper doing
+`s.replace(from, to)` to mutate and `s.replace(to, from)` to restore silently
+PREPENDS the original text at byte 0 when `to` is `""` — Python's `str.replace`
+matches the empty string at every position. Two source files were corrupted into
+`Drop: "\x1b[2;9m", package main`. Mutate by replacing a line with a *different*
+line (`if cond {` → `if false {`), or copy the file aside and copy it back. Never
+restore by replacing an empty string.
+
+(The corruption did prove the point: with both arms missing, exactly the two
+tests that should have failed did.)

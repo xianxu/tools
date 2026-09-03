@@ -60,7 +60,7 @@ not the `Mark` type.)
 
 - **`todaysQuestions`** — one lookup and one parse per due word, then a pure decision over the result.
   - **Injected into:** nothing new; it already receives `deps`.
-  - **ARCH-CONSTRAINTS:** lookups are UNCHANGED at one `DCSCopyTextDefinition` per due word — today singles are fetched in the render loop and board words in the board loop; after this one loop does both. What must not appear is a SECOND lookup for a word that changes hands, which is why the parsed entry is carried rather than re-fetched.
+  - **ARCH-CONSTRAINTS (corrected at close):** lookups are UNCHANGED at one `DCSCopyTextDefinition` per due word — today singles are fetched in the render loop and board words in the board loop; after this one loop does both. What must not appear is a SECOND lookup for a word that changes hands, which is why the parsed entry is carried rather than re-fetched.
     **Both directions, because the first draft named only the saving (PQ-8):** saved is a `Render` on a young word that turns out to be triaged. **Newly paid** is a `Render` plus a click-region map entry on every MATURE board word — today's board loop does `Lookup` + `ParseEntry` + `targetCandidate` and no `Render` at all. Bounded by `opt.count` (20 by default) and pure string work, so it is small; it is written down because a cost table that lists only savings is an argument, not a measurement. **If the render turns out to matter, the fix is to render lazily at the point a `Choice` is built** — the split in Step 3 is what makes that possible without restructuring again.
 
 - **`boardPalette`** — a third sequence for a dropped cell.
@@ -496,3 +496,17 @@ the wanted verdict, WHICHEVER form q is" while ending in form 2.1's hardcoded
 tests stopped grading while still passing their earlier assertions. It probes the
 form now, with an explicit arm for a grid (whose key means whatever the MODE is,
 and whose marks are irreversible so probing would spend one).
+
+
+### 2026-09-03 — the cost table was wrong in the direction that flatters
+
+The ARCH-CONSTRAINTS bullet said the unified loop "newly pays a `Render` plus a
+click-region map entry on every MATURE board word". It pays none: the implemented
+loop appends a mature word to `triage` BEFORE any lookup, so those words are never
+parsed and never rendered. The saving is real and the new cost is zero.
+
+Recorded rather than silently corrected, because the error runs the interesting
+way: the block was written to answer a gate finding that the first draft named
+only savings, and the fix over-corrected into a cost that does not exist. **A cost
+table has to describe the code, and "I added a pessimistic line to look balanced"
+is the same failure as omitting one.**

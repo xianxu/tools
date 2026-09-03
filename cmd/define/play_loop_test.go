@@ -4163,3 +4163,92 @@ func TestADropOnABoardIsReportedOnce(t *testing.T) {
 		t.Errorf("the removal does not name the word:\n%s", script)
 	}
 }
+
+// AN EMPTY SITTING NAMES THE CAUSE THE CODE ESTABLISHED (#42 BR-2).
+//
+// "None could be looked up" was true while a failed lookup was the only way a due
+// word could fall out of a sitting. `#42` added a second: a word the dictionary
+// answers perfectly well, for which no multiple choice can be built and whose
+// window cannot draw a board. Reporting a dictionary failure then sends the
+// learner to check their dictionary about a window that is too narrow.
+//
+// The population is exactly this issue's subject — a young deck on a narrow
+// terminal, which ran a full sitting before `#42` retired form 2.1.
+func TestAnEmptySittingNamesWhyItIsEmpty(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		deck        []string
+		width       int
+		want, avoid string
+	}{
+		{
+			// The dictionary answers; there is simply no form for the word here.
+			name: "unaskable in this window", deck: []string{"bases"}, width: 12,
+			want: "can be asked in this window", avoid: "looked up",
+		},
+		{
+			// The original cause, unchanged: the dictionary is the problem.
+			name: "the dictionary cannot answer", deck: []string{"rizz"}, width: defaultCols,
+			want: "could be looked up", avoid: "in this window",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, _ := playRig(t, tc.deck...)
+			opt.width = tc.width
+
+			var out, errb bytes.Buffer
+			qs, _, code := todaysQuestions(d, opt, &out, &errb)
+			if len(qs) != 0 || code == 0 {
+				t.Fatalf("the sitting is not empty (%d questions, code %d); this test asserts "+
+					"nothing unless it is", len(qs), code)
+			}
+			if !strings.Contains(errb.String(), tc.want) {
+				t.Errorf("the summary does not say %q:\n%s", tc.want, errb.String())
+			}
+			if strings.Contains(errb.String(), tc.avoid) {
+				t.Errorf("the summary blames %q, which is not what happened:\n%s", tc.avoid, errb.String())
+			}
+		})
+	}
+}
+
+// EVERY MARK A BOARD CAN LAND HAS A SEQUENCE, and `boardPalette` is the one place
+// this program decides them (#42 BR-1).
+//
+// DERIVED FROM THE MARK SET rather than listing three fields, so a fourth mark
+// cannot ship with no colour: `play.Marks()` is the extent, and a mark missing
+// from the palette fails here the day it is declared. That is the same shape as
+// `numRegionKinds` guarding the click registry — an enumeration the code owns
+// instead of one a test restates.
+func TestEveryBoardMarkHasAPaintedSequence(t *testing.T) {
+	pal := boardPalette(options{color: true})
+	seen := map[string]play.Mark{}
+	for _, m := range play.Marks() {
+		seq := pal.For(m)
+		if m == play.Unmarked {
+			if seq != "" {
+				t.Errorf("Unmarked is painted %q — an untouched cell must carry no sequence", seq)
+			}
+			continue
+		}
+		if seq == "" {
+			t.Errorf("mark %v has no sequence, so a cell carrying it paints as untouched — "+
+				"and the learner cannot see what they answered", m)
+			continue
+		}
+		if other, dup := seen[seq]; dup {
+			t.Errorf("marks %v and %v share the sequence %q, so two answers read as one "+
+				"on screen", m, other, seq)
+		}
+		seen[seq] = m
+	}
+	// ...and -no-color paints nothing at all. `--play` refuses to run there
+	// (BR-3), so this is belt — and it is the configuration a colourless rig
+	// silently runs in, which is how #40's wrap Critical stayed invisible.
+	off := boardPalette(options{color: false})
+	for _, m := range play.Marks() {
+		if seq := off.For(m); seq != "" {
+			t.Errorf("mark %v paints %q with no palette", m, seq)
+		}
+	}
+}

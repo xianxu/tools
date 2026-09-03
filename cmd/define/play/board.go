@@ -419,15 +419,10 @@ func (b *Board) cellText(i int) string {
 // paint is the sequence that starts this cell's style: empty for an unmarked
 // cell, and for a board built with no palette.
 func (b *Board) paint(i int) string {
-	switch b.marks[i] {
-	case Yes:
-		return b.pal.Yes
-	case No:
-		return b.pal.No
-	case Dropped:
-		return b.pal.Drop
-	}
-	return ""
+	// THROUGH Palette.For, which is the one owner of mark → sequence. Spelling the
+	// mapping again here would be a second owner, and the failure is silent: a
+	// mark painted one way in the form and another in the test that checks it.
+	return b.pal.For(b.marks[i])
 }
 
 // Marked reports how cell i is marked, for a caller that must see the state
@@ -764,4 +759,29 @@ func trimRight(s string) string {
 		end--
 	}
 	return s[:end]
+}
+
+// Marks is every mark a cell can carry, in cycle order, and it is the EXTENT of
+// the set (#42).
+//
+// Exported so a caller enumerates them rather than restating them — the same move
+// `BoardLabels` made for the key sequence and `numRegionKinds` made for the click
+// registry. A palette that a test checked by listing three fields would say
+// nothing about a fourth mark; deriving the loop from here means a new mark
+// arrives already covered, or fails loudly.
+func Marks() []Mark { return []Mark{Unmarked, Yes, No, Dropped} }
+
+// For is the sequence that paints this mark, and the Palette is the one owner of
+// that mapping — so a caller asking "how is a drop drawn" cannot answer it from a
+// field it picked itself.
+func (p Palette) For(m Mark) string {
+	switch m {
+	case Yes:
+		return p.Yes
+	case No:
+		return p.No
+	case Dropped:
+		return p.Drop
+	}
+	return ""
 }
