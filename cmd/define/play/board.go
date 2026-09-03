@@ -118,7 +118,7 @@ const (
 // Cell is one word on the board and the ONE-LINE gloss shown when it is marked.
 //
 // The gloss arrives finished, exactly as Choice takes rendered Options and
-// Recall takes a rendered definition: extracting a sense, reading NOAD's labels
+// Choice takes rendered Options: extracting a sense, reading NOAD's labels
 // and rejecting an entry that defines a different word all need the dictionary,
 // and this package imports nothing.
 //

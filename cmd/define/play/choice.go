@@ -13,7 +13,7 @@ package play
 // empty allowlist (purity_test.go). Everything here is byte arithmetic and
 // concatenation. The dictionary work — extracting a gloss, reading NOAD's
 // labels, excluding near-synonyms — happens in package main and arrives as
-// finished Options, exactly as Recall takes already-rendered text (recall.go:19).
+// finished Options, exactly as Board takes a finished gloss (board.go).
 
 // Axis is WHY a distractor is in the option set, and it is the whole of the
 // error taxonomy this form can produce (#17 M2, reduced).
@@ -75,7 +75,7 @@ type Option struct {
 }
 
 // Choice is one question. Pointer receivers because it REMEMBERS what was
-// picked, which Recall never had to.
+// picked, which a self-rated form never has to.
 type Choice struct {
 	word    string
 	options []Option
@@ -83,9 +83,9 @@ type Choice struct {
 	//
 	// The options carry ONE gloss each, which is enough to choose between and
 	// not enough to learn from — a learner who just missed a word wants its
-	// examples, its other senses and its origin. Recall reveals the full entry
-	// for exactly this reason, and a recognition form that revealed less would
-	// teach less than the easier form does.
+	// examples, its other senses and its origin. Form 2.1 revealed the full entry
+	// for exactly this reason before #42 deleted it, and a recognition form that
+	// revealed less would have taught less than the easier form did.
 	definition string
 	chosen     int // -1 until graded
 }

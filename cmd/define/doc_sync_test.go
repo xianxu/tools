@@ -44,13 +44,15 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 	// 2.1's y/n was printed under form 2.3's numbered options and told the
 	// learner to press a key that did nothing.
 	//
-	// The residual, stated rather than hidden: a THIRD form added to play and
-	// not added to this slice is not checked here. That half is human. What is
-	// mechanical is that Question.Keys() is on the interface, so a new form
-	// cannot compile without writing one, and the rows below fail the build the
-	// moment an existing form's wording moves.
+	// The residual, stated rather than hidden: a form added to play and not added
+	// to this slice is not checked here. That half is human. What is mechanical is
+	// that Question.Keys() is on the interface, so a new form cannot compile
+	// without writing one, and the rows below fail the build the moment an
+	// existing form's wording moves.
+	//
+	// TWO FORMS, not three: `#42` deleted form 2.1, so the set is "2.3 tests you,
+	// the board triages you" and the README says so in one sentence.
 	forms := []play.Question{
-		play.NewRecall("ephemeral", "lasting for a very short time"),
 		play.NewChoice("ephemeral", "", []play.Option{
 			{Gloss: "a", Correct: true}, {Gloss: "b"}, {Gloss: "c"}, {Gloss: "d"},
 		}),

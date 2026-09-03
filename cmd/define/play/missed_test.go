@@ -44,8 +44,8 @@ func TestACorrectAnswerCarriesNoAxis(t *testing.T) {
 // The session stays form-AGNOSTIC: a form that cannot say why it was missed is
 // not required to, and Apply must not know which forms those are.
 func TestAFormWithNoAxisStillRecords(t *testing.T) {
-	s := NewSession([]Question{NewRecall("w", "the definition")})
-	_, outs := Apply(s, Input{Kind: InputRune, Rune: 'n'})
+	s := NewSession([]Question{&fakeForm{word: "w", reveal: "the definition"}})
+	_, outs := Apply(s, Input{Kind: InputRune, Rune: '2'})
 	found := false
 	for _, o := range outs {
 		if o.Kind == OutcomeRecord {
@@ -102,16 +102,20 @@ func TestARevealDisqualifiesUnaided(t *testing.T) {
 
 // A SELF-RATED form can never earn it, however cold the answer.
 //
-// Form 2.1's `y` means "I knew it" with nobody checking. Granting the two-rung
-// promotion for that is the same overconfidence the board is denied — one form
-// to the left.
+// A board's mark means "I still have that one" with nobody checking, so granting
+// the two-rung promotion for it would run the ladder at double speed on a claim.
+//
+// THE SHIPPED SELF-RATED FORM, not a double: `SelfRated` is a capability, and a
+// test that stood a non-self-rated double in this row would assert nothing about
+// the thing it is named for. Form 2.1 used to be the example here; `#42` deleted
+// it and the board is the only implementor left (#42).
 func TestSelfRatedFormsNeverEarnUnaided(t *testing.T) {
 	for _, q := range []Question{
-		NewRecall("w", "the definition"),
+		NewBoard([]Cell{{Word: "w"}}, 80, Palette{}),
 		NewChoice("w", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b", Axis: AxisGeneral}}),
 	} {
 		s := NewSession([]Question{q})
-		key := 'y'
+		key := rune(BoardLabels[0])
 		if _, ok := q.(*Choice); ok {
 			key = '1'
 		}
