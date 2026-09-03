@@ -22,7 +22,6 @@
 | `Dropping` | `cmd/define/play/session.go` | new |
 | `Recall` | `cmd/define/play/recall.go` | deleted |
 | `optionsFor` | `cmd/define/optionpool.go` | new |
-| `formFor` | `cmd/define/play_loop.go` | new |
 | `packBoards` | `cmd/define/play_loop.go` | new |
 | `boardsFor` | `cmd/define/play_loop.go` | deleted |
 
@@ -46,8 +45,7 @@ not the `Mark` type.)
 - **`optionsFor`** — the pure half of today's `choiceFor`: `(word, Entry, pool, seed) → []play.Option`. `choiceFor` keeps building the `Choice` from a rendered string.
   - **DRY rationale:** Splits the DECISION from the CONSTRUCTION so selection can ask "could this be a 2.3?" without paying a `Render` for a word that turns out to be triaged.
 
-- **`formFor`** — the preference order, as one function over one already-parsed entry.
-  - **DRY rationale:** Selection is currently split between `boardsFor` (box) and an `if q := choiceFor(...)` in the render loop (capability). One rule in one place is the whole readability claim of this issue.
+- **`formFor`** — NOT BUILT, and see `## Revisions`: the two halves of the rule happen at different TIMES, so "one function over one already-parsed entry" is not expressible without a cost regression. The rule reads top-to-bottom in `todaysQuestions`' one loop instead.
 
 - **`packBoards`** — triage words → boards the terminal can draw whole, plus any it cannot.
   - **Relationships:** replaces `boardsFor`'s chunking half.
@@ -68,7 +66,7 @@ not the `Mark` type.)
 - **`boardPalette`** — a third sequence for a dropped cell.
   - **Injected into:** `play.Palette`, which already takes finished escapes from `main`.
 
-**Test surface.** `play` is mechanically guarded pure (import allowlist + wall-clock grep), so `Mark`, `Toggle`, `Dropping` and the board's layout are unit-tested with no terminal. `formFor`/`packBoards` are pure over an already-parsed `Entry`. The end-to-end claims — a drop reaching `store.Forget`, a young deck's sitting length — run through `playSession` against the store fake.
+**Test surface.** `play` is mechanically guarded pure (import allowlist + wall-clock grep), so `Mark`, `Toggle`, `Dropping` and the board's layout are unit-tested with no terminal. `packBoards` is pure over words and a terminal size. The end-to-end claims — a drop reaching `store.Forget`, a young deck's sitting length — run through `playSession` against the store fake.
 
 ---
 
@@ -78,7 +76,7 @@ not the `Mark` type.)
 
 **Files:**
 - Modify: `cmd/define/optionpool.go` (split `optionsFor` out of `choiceFor`)
-- Modify: `cmd/define/play_loop.go` (`formFor`, `packBoards`; delete `boardsFor`; rewrite `todaysQuestions`'s loop)
+- Modify: `cmd/define/play_loop.go` (`packBoards`; delete `boardsFor`; rewrite `todaysQuestions`'s loop)
 - Test: `cmd/define/play_loop_test.go`
 
 - [x] **Step 1: Write the failing selection test**
@@ -475,7 +473,23 @@ tree at close and caught by `TestPlanTableStatusMatchesTheChangeWindow`:
 genuinely new entity is the `Dropped` constant rather than the `Mark` type. A
 table row has to describe what the diff did, not what the design felt like.
 
-**3. `gradeKey` had to become what its doc already claimed.** Not in any task's
+**3. `formFor` was not built, because it cannot be.** The plan specified it as
+"the preference order, as one function over one already-parsed ENTRY". The two
+halves of the rule do not happen at the same time: the BOX half must run *before*
+the lookup — a mature word is never parsed for its options, which is the plan's
+own ARCH-CONSTRAINTS note — while the CAPABILITY half is only answerable *after*
+it. A single function over an entry forces a dictionary lookup on every mature
+word, which is the cost regression the plan was written to avoid.
+
+So the rule is a short top-to-bottom loop in `todaysQuestions` — mature → triage,
+no test buildable → triage, else ask — with `optionsFor` (the capability half) and
+`packBoards` (the packing half) named beside it. That still satisfies the
+readability claim the row existed for: the rule is in ONE place and reads as one
+sentence, which is what "one rule" meant. Caught by
+`TestPlanTablesNameEntitiesThatExist`, which only fires once a plan is fully
+ticked — so the row survived the whole implementation unchecked.
+
+**4. `gradeKey` had to become what its doc already claimed.** Not in any task's
 file list, and unavoidable: its comment promised "the keystroke that grades q with
 the wanted verdict, WHICHEVER form q is" while ending in form 2.1's hardcoded
 `y`/`n`. Deleting that form left it silently answering nothing, and about a dozen
