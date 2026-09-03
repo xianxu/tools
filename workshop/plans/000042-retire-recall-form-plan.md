@@ -81,7 +81,7 @@ not the `Mark` type.)
 - Modify: `cmd/define/play_loop.go` (`formFor`, `packBoards`; delete `boardsFor`; rewrite `todaysQuestions`'s loop)
 - Test: `cmd/define/play_loop_test.go`
 
-- [ ] **Step 1: Write the failing selection test**
+- [x] **Step 1: Write the failing selection test**
 
 The table IS the spec, and the third row is the change:
 
@@ -102,12 +102,12 @@ func TestUntestableWordsReachABoardAtEveryBox(t *testing.T) {
 
 Drive box state through the event log the way the existing rig does; check `questionsFor`'s output by type.
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test ./cmd/define -run TestUntestableWordsReachABoard -v`
 Expected: FAIL — the word arrives as `*play.Recall`.
 
-- [ ] **Step 3: Split the decision from the construction**
+- [x] **Step 3: Split the decision from the construction**
 
 ```go
 // optionsFor is whether this entry can be a 2.3 AT ALL, and with which options.
@@ -120,7 +120,7 @@ func optionsFor(word string, e Entry, pool []play.Candidate, seed uint64) []play
 
 `choiceFor` becomes `optionsFor` + `play.NewChoice`, so no caller loses a step.
 
-- [ ] **Step 4: Write the preference order down once**
+- [x] **Step 4: Write the preference order down once**
 
 ```go
 // formFor is THE selection rule, and it is one sentence: 2.3 tests you, the board
@@ -148,7 +148,7 @@ does not use it. And a mixed board is the point of the form: sixteen words for
 sixteen keystrokes is what makes the sweep cheap, and splitting young from mature
 would mean two half-empty boards where one full one packs.
 
-- [ ] **Step 5: Pack the triage words into boards the terminal can draw**
+- [x] **Step 5: Pack the triage words into boards the terminal can draw**
 
 ```go
 // packBoards splits triage words into the largest boards this terminal can draw
@@ -164,7 +164,7 @@ would mean two half-empty boards where one full one packs.
 // one row, the chrome two), so either this terminal can draw a board or it cannot.
 ```
 
-- [ ] **Step 6: A LEFTOVER WORD TRIES 2.3 BEFORE IT IS SKIPPED — D15 survives**
+- [x] **Step 6: A LEFTOVER WORD TRIES 2.3 BEFORE IT IS SKIPPED — D15 survives**
 
 **This is the step the plan-quality gate caught as a Critical (PQ-1), and the
 mistake is worth naming: a rule true of the words this issue ADDS was applied to
@@ -187,7 +187,7 @@ plan had drifted off it.
 The entry is already parsed and in hand, so asking `optionsFor` for the leftovers
 costs nothing extra and happens only on a terminal too small for any board.
 
-- [ ] **Step 7: Pin BOTH leftover paths**
+- [x] **Step 7: Pin BOTH leftover paths**
 
 ```go
 // A terminal too short for any board sends triage words to 2.3 where one can be
@@ -205,7 +205,7 @@ func TestANarrowTerminalFallsBackToChoiceBeforeSkipping(t *testing.T) { /* … *
 func TestAWordNeitherTestableNorDrawableIsSkippedWithItsCause(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 8: Measure the sitting length (Done-when 5)**
+- [x] **Step 8: Measure the sitting length (Done-when 5)**
 
 ```go
 // The board PACKS, so retiring 2.1 must not add screens to a young deck.
@@ -221,7 +221,7 @@ func TestRetiringRecallDoesNotLengthenAYoungSitting(t *testing.T) {
 }
 ```
 
-- [ ] **Step 8a: RE-POINT `boardsFor`'s PINS, do not just delete them (PQ-5)**
+- [x] **Step 8a: RE-POINT `boardsFor`'s PINS, do not just delete them (PQ-5)**
 
 `boardsFor` is called from five places across three of `#40`'s Done-when tests, and
 deleting the function silently deletes what they proved:
@@ -235,7 +235,7 @@ deleting the function silently deletes what they proved:
 The third is the one to write FIRST, because it is the existing pin on the
 behaviour the Critical was about.
 
-- [ ] **Step 9: Run, then commit**
+- [x] **Step 9: Run, then commit**
 
 ```bash
 go test ./cmd/define/... && go vet ./...
@@ -269,25 +269,25 @@ Both go in the tree-wide grep of Task 4 Step 3, and neither is found by
 `go build`.
 - Test: the suites above
 
-- [ ] **Step 1: Delete the form, then follow the compiler**
+- [x] **Step 1: Delete the form, then follow the compiler**
 
 `go build ./...` first: production has exactly one reference (`todaysQuestions`), and Task 1 already removed it. Everything else is tests.
 
-- [ ] **Step 2: In `play`'s own tests, use the double that already exists**
+- [x] **Step 2: In `play`'s own tests, use the double that already exists**
 
 `fakeForm` (session_test.go) is the right substitute and its comment already says why: it "uses digits and produces every verdict, sharing no key with Recall". Where a test types `y`/`n` it must move to `1`/`2` — and if that reads oddly, that is the test telling you it was asserting the FORM's key semantics inside a session test, which is what `TestSessionIsFormAgnostic` exists to forbid.
 
 **A test that genuinely needs a SELF-RATED form takes one**, not `fakeForm`: check each use against `SelfRated` before substituting, because the ladder's two-rung promotion turns on it.
 
-- [ ] **Step 3: In `main`'s tests, add a local double**
+- [x] **Step 3: In `main`'s tests, add a local double**
 
 `play`'s `fakeForm` is unexported and in another package. A `fakeQuestion` in `play_loop_test.go` is the right answer — a test double belongs to the test — and `typeName` loses its `*play.Recall` arm.
 
-- [ ] **Step 4: `doc_sync_test.go` drops a row**
+- [x] **Step 4: `doc_sync_test.go` drops a row**
 
 The forms slice becomes 2.3 and the board. Its own comment names the residual honestly ("a THIRD form added to play and not added to this slice is not checked here") and that stays true with two.
 
-- [ ] **Step 5: Run, then commit**
+- [x] **Step 5: Run, then commit**
 
 ```bash
 go test ./... && go vet ./...
@@ -304,7 +304,7 @@ git commit -m "#42: delete form 2.1; the tests that borrowed it take a double"
 - Modify: `cmd/define/play_loop.go` (`boardPalette`, the dropped line)
 - Test: `cmd/define/play/board_test.go`, `session_test.go`, `cmd/define/play_loop_test.go`
 
-- [ ] **Step 1: Write the failing end-to-end test**
+- [x] **Step 1: Write the failing end-to-end test**
 
 END TO END, because the form is not what removes anything:
 
@@ -322,7 +322,7 @@ func TestDroppingAWordOnABoardRemovesItFromTheDeck(t *testing.T) {
 
 And the same act by CLICK, since a key and a click are one act reached two ways.
 
-- [ ] **Step 2: Add the third mark**
+- [x] **Step 2: Add the third mark**
 
 ```go
 // Dropped is a cell REMOVED rather than rated.
@@ -335,7 +335,7 @@ And the same act by CLICK, since a key and a click are one act reached two ways.
 
 `Toggle` cycles three. Keep the cycle written as a `switch` on the current value rather than arithmetic on the iota — the order is a UX decision (`Yes → No → Dropped`, so the destructive mode is never one Tab from the default) and arithmetic hides it.
 
-- [ ] **Step 3: The capability, not a type switch**
+- [x] **Step 3: The capability, not a type switch**
 
 ```go
 // Dropping is implemented by a form that can ask for a word to be REMOVED rather
@@ -355,7 +355,7 @@ and breaking the "no outcome is performed twice" obligation the loop enumerates.
 either it is consulted only where a mark just landed, or `Dropped()` is one-shot.
 **Pin it:** Tab, then a refused click, after a drop — exactly one `OutcomeDrop`.
 
-- [ ] **Step 4: Say what mode is live, in all three states — INSIDE THE WIDTH BUDGET**
+- [x] **Step 4: Say what mode is live, in all three states — INSIDE THE WIDTH BUDGET**
 
 `Keys()` owns the mode line (R11) and is pinned by the README. Three states, and the destructive one must be unmistakable — this is the row a short window keeps longest, and the only statement of what the next click will mean.
 
@@ -380,13 +380,13 @@ because with three modes a click no longer only marks. **Two new pins:** all thr
 spellings are the same visible width (the existing invariant, extended), and
 `gradePrompt` of a board fits 80 columns in one row.
 
-- [ ] **Step 4a: while here — the same doc block is stale about `d`**
+- [x] **Step 4a: while here — the same doc block is stale about `d`**
 
 `Keys()`'s comment says *"The label set is NOT enumerated. It has a hole at `d`"*.
 `#40` removed that hole; the sentence describes the alphabet before its own final
 round. Same family as `Grade`'s comment in Step 7.
 
-- [ ] **Step 5: DO NOT add a `dropped:` line — the loop already writes one**
+- [x] **Step 5: DO NOT add a `dropped:` line — the loop already writes one**
 
 The first draft of this plan wanted `relearnLine`'s sibling. It would have been a
 SECOND OWNER (PQ-4): `play_loop.go` already writes `removed %q from the deck` into
@@ -402,15 +402,15 @@ and the step survives as the reason not to.
 **Verify rather than assume**: pin that a board drop produces exactly ONE
 transcript line.
 
-- [ ] **Step 6: A third colour**
+- [x] **Step 6: A third colour**
 
 Through `boardPalette` from `main`, on the same seam. Distinct from green/red at a glance.
 
-- [ ] **Step 7: Fix the doc comment that is about this key**
+- [x] **Step 7: Fix the doc comment that is about this key**
 
 `Board.Grade` says *"`d` and `D` never arrive: toInput takes them first, and boardLabels has no cell for them either way."* Both halves are false since `#40` put `d` in the alphabet. Correct it here, because this is the issue about that key.
 
-- [ ] **Step 8: Run, mutation-check, commit**
+- [x] **Step 8: Run, mutation-check, commit**
 
 Revert each of: the `Dropped` verdict mapping, `Apply`'s `Dropping` call, the palette entry. Each must redden a named test — see `workshop/lessons.md`, "A pin that cannot fail is not a pin".
 
@@ -426,21 +426,21 @@ git commit -m "#42: the board drops as well as triages"
 - Modify: `cmd/define/optionpool.go` (`fallbackReasons`'s prose), `cmd/define/README.md`, `atlas/define.md`
 - Modify: `cmd/define/schedule`/`play` doc comments naming 2.1 as the fallback that always works
 
-- [ ] **Step 1: `fallbackReasons` is re-aimed, not re-listed**
+- [x] **Step 1: `fallbackReasons` is re-aimed, not re-listed**
 
 The three reasons are unchanged; what they SELECT changes. It stops being "why a word goes to form 2.1" and becomes "why a word is triaged rather than tested". `TestREADMENamesEveryFallbackReason` derives from the list, so the README follows or the build fails.
 
-- [ ] **Step 2: README**
+- [x] **Step 2: README**
 
 The "Recall, on a young deck" section goes. The board section absorbs it: **one form, two doors** — a settled word, or a word no test can be built for. The key table loses `y`/`n` and gains the drop mode. The board block is DERIVED (`#40` BR-18) — regenerate, don't hand-edit.
 
-- [ ] **Step 3: Atlas**
+- [x] **Step 3: Atlas**
 
 `atlas/define.md` names form 2.1 at ~10 sites (`grep -n 'form 2\.1\|Recall'`). Sweep the list, not the first hit — and per `workshop/lessons.md` ("A retraction is not done until `git grep` over the TREE is clean") run the grep over the tree, not `cmd/`.
 
 Three passages are history rather than deletions and should be kept as such: the `#24` grading-before-reveal argument (it explains a mechanism 2.3 still uses), the `SelfRated` paragraph (the board is now its only implementor), and reason 3's "form 2.1 shows the whole rendered entry, so a redirect is harmless under it" — which is the argument this issue's trade-off ACCEPTS, so deleting it deletes the reason the trade-off is a trade-off.
 
-- [ ] **Step 4: Run the doc pins and commit**
+- [x] **Step 4: Run the doc pins and commit**
 
 ```bash
 go test ./cmd/define -run 'README|Atlas|Doc' -v
@@ -451,8 +451,34 @@ git commit -m "#42: docs — 2.3 tests you, the board triages you"
 
 ## Verification
 
-- [ ] `go test ./...` green.
-- [ ] `go test -tags conformance ./cmd/define` green — the pty suite drives the board's clicks, and this issue changes what a click can mean.
-- [ ] `go vet ./...` and `gofmt -l` clean.
-- [ ] **A real sitting**, on a deck small enough to have no distractors: confirm the untestable words arrive on a board, that the drop mode is unmistakable, and that dropping removes the word.
-- [ ] Every Done-when row ticked with the mutation that proved it.
+- [x] `go test ./...` green.
+- [x] `go test -tags conformance ./cmd/define` green — the pty suite drives the board's clicks, and this issue changes what a click can mean.
+- [x] `go vet ./...` and `gofmt -l` clean.
+- [x] **A real sitting**, on a deck small enough to have no distractors: confirm the untestable words arrive on a board, that the drop mode is unmistakable, and that dropping removes the word.
+- [x] Every Done-when row ticked with the mutation that proved it.
+
+
+## Revisions
+
+### 2026-09-02 — three deltas found while implementing
+
+**1. No `dropped:` transcript line.** Task 3 Step 5 planned `relearnLine`'s
+sibling; the plan-quality gate (PQ-4) showed the loop already writes
+`removed %q from the deck` per drop, so the sibling would have been a second owner
+of one fact. The step survives as the reason NOT to, and
+`TestADropOnABoardIsReportedOnce` pins that there is exactly one.
+
+**2. The Core-concepts table named the wrong entities**, corrected against the
+tree at close and caught by `TestPlanTableStatusMatchesTheChangeWindow`:
+`Board.Mode` is unchanged (it returns a field whose TYPE gained a value),
+`Board.Mark` gains one line arming the drop rather than being widened, and the
+genuinely new entity is the `Dropped` constant rather than the `Mark` type. A
+table row has to describe what the diff did, not what the design felt like.
+
+**3. `gradeKey` had to become what its doc already claimed.** Not in any task's
+file list, and unavoidable: its comment promised "the keystroke that grades q with
+the wanted verdict, WHICHEVER form q is" while ending in form 2.1's hardcoded
+`y`/`n`. Deleting that form left it silently answering nothing, and about a dozen
+tests stopped grading while still passing their earlier assertions. It probes the
+form now, with an explicit arm for a grid (whose key means whatever the MODE is,
+and whose marks are irreversible so probing would spend one).
