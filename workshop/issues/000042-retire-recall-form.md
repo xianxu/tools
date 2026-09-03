@@ -365,3 +365,69 @@ English this program uses constantly for the editor's up-arrow history, so a row
 fires on `history.go`, `repl.go` and half the atlas over text with nothing to do
 with the form. What is retired is the routing CLAIM, and `retiredPhrases` carries
 that — a phrase, not a word.
+
+## Restart here — state as of 2026-09-03
+
+**Session ended mid-close. Everything is committed; nothing is in flight.**
+
+### Where things are
+
+| | |
+|---|---|
+| branch | `000042-retire-recall-form` (in-place), clean tree |
+| HEAD | `666964f` — "#42: close round 2 — widen the guard that should have caught this" |
+| status | `working`, `estimate_hours: 3.89`, no `actual_hours` yet |
+| gates | plan-quality PASSED (2 rounds). close: **2 rounds run, not finalized** |
+| verification | `go test ./...`, `go vet`, `gofmt` all clean at HEAD; `go test -tags conformance ./cmd/define` green (136s) |
+
+### The one thing to do next
+
+```
+sdlc close --issue 42 --verified '<evidence>'
+```
+
+A round 3 was launched and **interrupted before it wrote anything** — the gate
+ledger has 2 rounds recorded, so re-running is a clean round 3, not a resume.
+
+Reuse the `--verified` text from the round-2 attempt: it is preserved verbatim in
+the session transcript, and its substance is the four `### 2026-09-0x` Log entries
+above. The one clause that must survive rewriting, because it is the honest limit
+of what was checked:
+
+> **NOT VERIFIED BY ME:** the operator sitting the plan's Verification asks for.
+> The binary is rebuilt and current, but I cannot press keys — so drop-mode
+> legibility on a live prompt row is unconfirmed.
+
+### What the ledger will say
+
+`workshop/plans/000042-retire-recall-form-close-gate.md` lists five open findings.
+**Three of them (BR-7, BR-8, BR-9) are already fixed at HEAD** and were fixed
+*after* the round that raised them, so the ledger could not dispose of them — the
+same situation `workshop/lessons.md` records under "An open ledger row is a
+question, not an answer". Re-measure against the tree before treating any as live.
+
+Two are genuinely open, both Minor and both non-blocking, both deliberately
+declined with reasons worth keeping:
+
+- **BR-4** — the `Lookup` / skip-message / `ParseEntry` block appears three times
+  in `todaysQuestions`. Real duplication. Declined during round 2 because the
+  three copies differ in what they do on failure (one skips a due word loudly, one
+  is a board cell, one is a leftover retry) and a helper taking a callback for
+  that is not obviously better than three short blocks. Worth a fresh look, not
+  worth blocking a close.
+- **BR-5** — `Board.Dropped()` reads `b.cells[b.last]`, so its correctness rests
+  on `b.last` not having moved since the arming `Mark`. No path interleaves `Rest`
+  with an armed drop today. The tighter fix is a `dropWord string` field set at
+  arming time; it is one line and would remove the ordering dependency entirely.
+
+### If the close passes
+
+`sdlc pr` → merge (interactive; the operator runs it). Then the project file
+`workshop/projects/define-learn.md` needs `#42` marked done — it is NOT in
+`mvp_scope`, so it is a scope-event note rather than a task tick.
+
+### Then: the MVP is four issues from done
+
+`#10` (authored practice items) is the one the project is actually waiting on —
+its Breakdown calls it "the material-quality checkpoint … stop here and read the
+output before building the forms that consume it". `#8`, `#12`, `#13` follow.
