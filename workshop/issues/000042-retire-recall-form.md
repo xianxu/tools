@@ -290,3 +290,41 @@ mutation-verified: `Dropped.Verdict()`, `advance`'s call, the one-shot reset, an
 Also corrected while here, both about the key this issue is named for:
 `Board.Grade` claimed *"`d` and `D` never arrive"* and `Keys()` claimed the label
 set *"has a hole at `d`"*. `#40`'s own final round falsified both.
+
+### 2026-09-03 — boundary review round 1: one real bug, one false tick, one half-swept class
+
+Verdict FIX-THEN-SHIP. Three blockers, all fixed at the class and
+mutation-verified.
+
+- **BR-2 — a real user-visible bug I introduced.** A word the dictionary answers
+  fine, for which no test can be built and whose window cannot draw a board, made
+  the sitting print *"N words are due but none could be looked up"* — sending the
+  learner to check their dictionary about a window that is too narrow. This is
+  `PQ-1`'s false-summary concern NARROWED rather than removed, and the surviving
+  population is exactly this issue's subject: a young deck on a narrow terminal,
+  which ran a full sitting before `#42`. The summary now names the cause the code
+  established, pinned in both directions by
+  `TestAnEmptySittingNamesWhyItIsEmpty`.
+- **BR-1 — I ticked a mutation check I never ran.** The plan named three for the
+  drop; I ran two. The palette was the third, and both its halves could be
+  deleted with the whole suite green — a dropped cell would have painted
+  identically to an untouched one while the README promised it was struck out.
+  Fixed at the class rather than by adding one assertion: `play.Marks()` is now
+  the extent of the mark set and `Palette.For` its one owner, so a fourth mark
+  with no colour fails the day it is declared.
+- **BR-3 — the tree-wide sweep was the instance, not the class.** `PQ-7` named
+  four files; I swept exactly those four and five more were left claiming a word
+  "falls back to form 2.1" as current behaviour. Swept — and `retiredPhrases`
+  (the mechanism `#40` built for exactly this) gains rows for the retired ROUTING
+  CLAIM. The form's NAME is deliberately not banned: several comments explain why
+  something exists by naming the form it was built for, and the atlas keeps the
+  argument that produced `Keys()`.
+
+Minor also taken: the plan's cost table claimed a `Render` newly paid on every
+mature board word. It pays none — mature words are triaged before any lookup — and
+the error runs the flattering way, since the line was added to answer a gate
+finding that the first draft named only savings.
+
+Two lessons recorded in `workshop/lessons.md`: a mutation check you did not run is
+worse than none, and a scripted revert must never replace an empty string (it
+prepends, and it corrupted two source files this round).
