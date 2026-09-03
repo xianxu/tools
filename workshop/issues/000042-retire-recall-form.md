@@ -5,7 +5,7 @@ deps: [tools#40, tools#44]
 github_issue:
 created: 2026-09-01
 updated: 2026-09-02
-estimate_hours:
+estimate_hours: 3.33
 started: 2026-09-02T12:31:27-07:00
 ---
 
@@ -138,6 +138,55 @@ issue changes, is fixed here.
 - [ ] A word can be dropped from a board, by key and by click, and the drop reaches `store.Forget` — pinned end to end rather than at the form, since the form is not what removes anything.
 - [ ] The live mode is unambiguous on the prompt row in all three states, and a board closes naming what it dropped.
 - [ ] `Board.Grade`'s doc no longer claims `d` never arrives.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Design carries the v2.1 thorough-plan discount and the `0.15` buffer, since the
+plan doc resolved the decisions — except the operator round, which a plan cannot
+resolve because it is a sitting.
+
+**Two `milestone-review` rows, and the second is evidence rather than padding.**
+`#44` just shipped on this exact surface and took FIVE boundary rounds against one
+booked review; its close measured est 2.16 / actual 4.60. This issue is larger and
+touches the same frame arithmetic, so booking one review round again would be
+repeating a miss the ledger has already recorded. Booking two at the top of the
+band is the honest reading of that evidence.
+
+**And a `ux-rename-iteration` row, which `#44`'s estimate-quality judge flagged as
+the largest omission there.** This issue changes the FORM SET — what the learner
+sees and which keys do what — and the only way that gets judged is the operator
+sitting with it. `#42` exists because of one such sitting, and the drop mode was
+added mid-plan by another.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: smaller-go-module        design=0.15 impl=0.18
+item: tui-screen               design=0.35 impl=0.34
+item: cross-cutting-refactor   design=0.05 impl=0.18
+item: tui-screen               design=0.35 impl=0.36
+item: smaller-go-module        design=0.05 impl=0.1
+item: atlas-docs               design=0.1  impl=0.08
+item: milestone-review         design=0.0  impl=0.2
+item: milestone-review         design=0.0  impl=0.2
+item: ux-rename-iteration      design=0.35 impl=0.08
+design-buffer: 0.15
+total: 3.33
+```
+
+| row | what it is |
+|---|---|
+| `smaller-go-module` #1 | `optionsFor` split out of `choiceFor`, and `formFor` |
+| `tui-screen` #1 | `packBoards`, the board-else-2.3-else-skip order, `todaysQuestions`'s single loop |
+| `cross-cutting-refactor` | deleting `play.Recall` and re-pointing every borrower at a double |
+| `tui-screen` #2 | the board's drop: `Mark`, `Toggle`, `Dropping`, `Apply`, the palette |
+| `smaller-go-module` #2 | re-cutting the keys row inside its width budget, and its two pins |
+| `atlas-docs` | README's form section + the atlas sweep over the tree |
+| `milestone-review` ×2 | see above — `#44` took five rounds on this surface |
+| `ux-rename-iteration` | one operator sitting on a changed form set |
 
 ## Plan
 
