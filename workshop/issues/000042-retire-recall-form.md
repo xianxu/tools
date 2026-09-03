@@ -256,3 +256,37 @@ sitting was the only drop path. `define --forget <word>` already exists, so the
 loss is a convenience inside the sitting rather than a capability. The operator's
 choice stands unless they revisit it; it is recorded this way so the choice is not
 later read as having been made on facts it was not.
+
+### 2026-09-02 — implementation: what the deletion actually cost
+
+**The selection rewrite was the small half.** `formFor`'s rule fits in a
+paragraph; what made it a rewrite is that it had to happen AFTER the lookup, so
+`todaysQuestions`' two loops (render-then-ask, then boards) became one that
+carries parsed entries forward so a word changing hands is not fetched twice.
+
+**Deleting the form broke about fifteen tests, and every one was a test that had
+borrowed a shipped form as a double.** That is the finding worth keeping. A
+one-word deck produced form 2.1 deterministically, so "give me some single-word
+question" was spelled "make a one-word deck" all over the suite — and the form's
+`y`/`n` leaked into scripts that were not about it.
+
+The sharpest instance was `gradeKey`, whose doc promised *"the keystroke that
+grades q with the wanted verdict, WHICHEVER form q is"* while ending in a
+hardcoded `y`/`n`. It had been lying since form 2.3 shipped; deleting 2.1 turned
+the lie into silence — a dozen tests stopped grading and still passed their
+earlier assertions. It probes the form now.
+
+Three doubles replaced the borrowing: `fakeQuestion` for loop mechanics,
+`askableRig` for tests that need a real rendered entry (a deck big enough to build
+distractors), and `play`'s existing `fakeForm` inside the package. One test
+genuinely needed a self-rated form — `TestSelfRatedFormsNeverEarnUnaided` — and
+takes the board, which is the only implementor left.
+
+**The drop landed as designed**, with `advance` the single place the capability is
+asked because that is where the printed-key and click paths meet. Every piece is
+mutation-verified: `Dropped.Verdict()`, `advance`'s call, the one-shot reset, and
+`Toggle`'s third state each redden a named test when reverted.
+
+Also corrected while here, both about the key this issue is named for:
+`Board.Grade` claimed *"`d` and `D` never arrive"* and `Keys()` claimed the label
+set *"has a hole at `d`"*. `#40`'s own final round falsified both.
