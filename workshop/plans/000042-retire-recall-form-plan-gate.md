@@ -117,6 +117,52 @@ rounds:
           family: capability-consumption-unstated
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-02T17:38:12-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: Step 6 restores D15's order — board, else 2.3, else skip — and names the over-applied premise.
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: Spec carries the correction; --forget verified at main.go:425 and main.go:1032.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: 'Widths re-measured and confirmed: 62+2+14=78 today, 59/75 for the re-cut row; two pins added.'
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: Step 5 now forbids the second line and pins exactly one, since play_loop.go:460 already writes it.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: Step 8a re-points all three pins by name; all three tests confirmed present.
+          round: 2
+        - id: PQ-6
+          disposition: addressed
+          note: Sweep-tail placement and mixed boards both decided explicitly, with the reasoning.
+          round: 2
+        - id: PQ-7
+          disposition: addressed
+          note: Counts dropped in favour of the compiler plus a tree-wide grep; the four comment files are listed.
+          round: 2
+        - id: PQ-8
+          disposition: addressed
+          note: Both directions now stated, bounded by opt.count, with the lazy-render escape named.
+          round: 2
+        - id: PQ-9
+          disposition: addressed
+          note: Baseline named as one screen per word — len(qs) <= len(deck) — so it survives the deletion.
+          round: 2
+        - id: PQ-10
+          disposition: addressed
+          note: Dropping is consulted on the successful Grade/Mark path only, with the double-emit case pinned.
+          round: 2
+      blocked: false
+content_hash: 0a397dfa3ddb730c1c96786ec5c01bf5e78fda582634812ad6e02e054a36db48
 ---
 
 # Gate ledger — tools#42 (plan-quality)
@@ -188,15 +234,21 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   obligation the loop enumerates at play_loop.go:~470. Say it is asked on the successful
   Grade/Mark path, or that Dropped() is one-shot.
 
+## Round 2 — 2026-09-02T17:38:12-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — Step 6 restores D15's order — board, else 2.3, else skip — and names the over-applied premise.
+- PQ-2 — addressed — Spec carries the correction; --forget verified at main.go:425 and main.go:1032.
+- PQ-3 — addressed — Widths re-measured and confirmed: 62+2+14=78 today, 59/75 for the re-cut row; two pins added.
+- PQ-4 — addressed — Step 5 now forbids the second line and pins exactly one, since play_loop.go:460 already writes it.
+- PQ-5 — addressed — Step 8a re-points all three pins by name; all three tests confirmed present.
+- PQ-6 — addressed — Sweep-tail placement and mixed boards both decided explicitly, with the reasoning.
+- PQ-7 — addressed — Counts dropped in favour of the compiler plus a tree-wide grep; the four comment files are listed.
+- PQ-8 — addressed — Both directions now stated, bounded by opt.count, with the lazy-render escape named.
+- PQ-9 — addressed — Baseline named as one screen per word — len(qs) <= len(deck) — so it survives the deletion.
+- PQ-10 — addressed — Dropping is consulted on the successful Grade/Mark path only, with the double-emit case pinned.
+
 ## Open findings
 
-- **PQ-1** [Critical] `widening-outruns-its-population` packBoards applies shrink-or-skip to every triage word, deleting #40 D15's form-2.3 fallback for mature words
-- **PQ-2** [Important] `unbacked-existing-behavior-claim` Spec claims store.Forget has one caller and that a learner "could not delete a typo'd capture at all" — both false
-- **PQ-3** [Important] `prompt-row-is-a-budget` A third mode state on the board's keys row has two columns of headroom, and that width feeds fitsABoard
-- **PQ-4** [Important] `two-owners-of-one-fact` The loop already prints a per-drop transcript line, so the planned board `dropped:` line is a second owner
-- **PQ-5** [Important] `deleted-function-drops-its-pins` Deleting boardsFor removes four #40 pins with no named replacement for two of them
-- **PQ-6** [Minor] `unstated-ordering-decision` The plan does not say where triaged young words land in the queue, or whether they share a board with mature ones
-- **PQ-7** [Minor] `stale-inventory-in-plan` Task 2's per-file counts are wrong and four production files naming Recall are in no task's file list
-- **PQ-8** [Minor] `one-directional-cost-claim` The ARCH-CONSTRAINTS block names the Render saved but not the Render newly paid on every board word
-- **PQ-9** [Minor] `undefined-acceptance-baseline` Done-when 5's "no longer than it was" has no in-tree baseline once Recall is deleted
-- **PQ-10** [Minor] `capability-consumption-unstated` Where Dropping is consulted decides whether a drop can be emitted twice
+(none — every finding has been disposed)
