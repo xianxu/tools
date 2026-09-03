@@ -85,13 +85,24 @@ wrong costs least.
 
 ### The board learns to DROP, because it is about to become the only form some words see
 
-**Widened 2026-09-02, operator's call.** `d` is the only drop path this program
-has — `store.Forget` has exactly one caller, `play_loop.go`'s `OutcomeDrop` — and
-on a board `d` is cell 13, not a drop (`#40` D12: a grid has no single current
-word, so the session hands the key to the form). Sending untestable young words to
-the board therefore removes the ONLY way to remove them, and on a deck of one to
-three words every word is untestable, so a new learner could not delete a typo'd
-capture at all. That is the population most likely to need it.
+**Widened 2026-09-02, operator's call — and the premise it was decided on was
+partly WRONG, which is recorded here rather than quietly repaired.**
+
+What is true: on a board `d` is cell 13, not a drop (`#40` D12 — a grid has no
+single current word, so the session hands the key to the form). So sending
+untestable young words to the board removes the IN-SITTING drop for exactly the
+population most likely to need it: a typo'd capture, a word looked up once. On a
+deck of one to three words that is every word.
+
+What was claimed and is false: that this is the *only* drop path. **`define
+--forget <word>` exists** (`main.go:425`, dispatched as a mode at `:568`, calling
+`store.Forget` at `:1032`), so `store.Forget` has TWO callers and a learner can
+always remove a word from the command line. The decision to widen this issue was
+put to the operator on the stronger, false version. The honest framing is
+narrower: **`--play` would lose the ability to curate the deck from inside the
+sitting, for words the sitting itself surfaces** — which is where you notice you
+do not want a word, and leaving is a context switch — not that curation becomes
+impossible.
 
 **Proposed mechanism: `Tab` cycles THREE modes — yes, no, drop.** The board
 already owns a mode, already draws it on the prompt row, and already lands it with
@@ -172,3 +183,9 @@ Scope grew by one mode value, one transcript line and a stale doc comment.
 add a `/forget <word>` command first as a separate issue (decoupling deck
 management from the review forms); revive the study card declined when this issue
 was filed. The operator chose to keep it inside the board.
+
+**Correction, same day:** the question was put on a false premise — that `d` in a
+sitting was the only drop path. `define --forget <word>` already exists, so the
+loss is a convenience inside the sitting rather than a capability. The operator's
+choice stands unless they revisit it; it is recorded this way so the choice is not
+later read as having been made on facts it was not.
