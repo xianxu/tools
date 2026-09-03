@@ -3397,3 +3397,43 @@ restore by replacing an empty string.
 
 (The corruption did prove the point: with both arms missing, exactly the two
 tests that should have failed did.)
+
+## A deletion's blast radius is every artifact that named the thing (`#42`, close rounds 1–2)
+
+Three consecutive review rounds found the same shape: a sweep that fixed the sites
+the previous round named and not the class. `PQ-7` named four files; I fixed four
+and five were left. `BR-3` named five; I fixed five and eleven were left, spread
+over `boardsFor` (deleted in the same window) and comments restating a count that
+had changed.
+
+**The guard that should have caught it existed and could not see it.**
+`TestARemovedDeclarationIsSweptOrRetired` sweeps every artifact for names the
+window removed — but gated on `isCitableName`, which required an EXPORTED or
+`Test*` name, on the reasoning that unexported helpers are not cited in prose.
+That is true of `ids` and `binds` and false of exactly the helpers a codebase
+argues about: `boardsFor` stayed the current account of selection in two atlas
+paragraphs, so the atlas held two contradictory accounts of the rule the issue
+existed to change.
+
+**The interior capital is the discriminator.** A prose-cited unexported name here
+is a compound (`boardsFor`, `choiceFor`, `optionCandidates`); a single lowercase
+word (`ids`, `paint`) is both uncited and a substring of ordinary English. Widening
+on that keeps the noise out and lets the citations in.
+
+**Two more rules from the same rounds:**
+
+- **A comment must not restate a count the code enumerates.** `Mark`'s own doc
+  said "TWO marks and an ABSENCE" three lines above the const block declaring a
+  third. The fix is not the edit — it is that the extent became `Marks()` and the
+  prose defers to it, exactly as `Keys()` already declines to enumerate the label
+  set.
+- **When two guards disagree about one artifact, settle it where "is this a
+  record?" is already decided.** The plan-table guard REQUIRES a plan to name what
+  the window deleted; the retired-symbol guard forbids naming a retired symbol.
+  Neither could yield alone. It belongs in `currentTruthOnly`, so both inherit one
+  answer — and the exemption is self-limiting: only a document carrying a
+  `| deleted |` row gets it, and only for the symbol that row names.
+
+**And the guard's own name for the failure was right:** *"a guard that depends on
+someone remembering has now been remembered late twice."* Every fix above replaces
+remembering with a build failure.

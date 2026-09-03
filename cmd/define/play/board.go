@@ -25,12 +25,17 @@ package play
 
 // Mark is what a cell says, and what the board's MODE is set to.
 //
-// TWO marks and an ABSENCE, which is not a third mark. D7 deleted `unsure`
-// ("I guess unsure means no") along with the whole EventUnsure mechanism the
-// first draft had drawn around it.
+// THREE marks and an ABSENCE, and `Marks()` below is the EXTENT — a count spelled
+// in prose is a second owner of it, which is how this comment came to say "TWO
+// marks" three lines above the const block that declares a third (#42).
+//
+// The two that survive from `#40` are `Yes` and `No`; D7 deleted `unsure` ("I
+// guess unsure means no") along with the whole EventUnsure mechanism the first
+// draft had drawn around it, and `#42` added `Dropped` — a removal rather than a
+// rating, which is why it is a mark and not a Verdict.
 //
 // Unmarked is the zero value deliberately, and it is the reason this is not just
-// a Verdict: a cell has three states and a verdict has no way to say "nobody has
+// a Verdict: a cell can be untouched, and a verdict has no way to say "nobody has
 // answered this one". Verdict's own zero is Skipped, which means something else
 // entirely — a word the learner declined — and spending it on "untouched" would
 // have made Rest's job unstateable.
@@ -213,7 +218,7 @@ type Board struct {
 //
 // More than MaxBoardWords is CAPPED rather than rejected, and nothing is lost by
 // it: a word this board does not ask about gets no event, so its box does not
-// move and it is due again tomorrow. The caller (boardsFor) packs in
+// move and it is due again tomorrow. The caller (`packBoards`) packs in
 // MaxBoardWords chunks and is pinned there; this is the belt.
 func NewBoard(cells []Cell, width int, pal Palette) *Board {
 	if len(cells) > MaxBoardWords {
@@ -351,7 +356,7 @@ func (b *Board) Prompt() string {
 	//
 	// Concatenation got this wrong for an empty board: with no grid rows the
 	// separator's "\n\n" produced two blanks instead of one, so Prompt yielded
-	// four lines where Rows() said three. Unreachable — boardsFor never builds an
+	// four lines where Rows() said three. Unreachable — the caller never builds an
 	// empty board — but Word() and panelLine() both defend the empty case, and an
 	// invariant held in three places and dropped in a fourth is worse than one
 	// held nowhere.
@@ -469,9 +474,11 @@ func (b *Board) Reveal() string { return "" }
 // than the grid itself. (This used to say the set "has a hole at `d`" — it had
 // one until #40's last round filled it, and the sentence outlived the hole.)
 //
-// Both spellings are the SAME WIDTH, so the line does not jump under a key
-// pressed to be pressed again — and short enough that this plus the session's
-// reserved keys fits eighty columns.
+// EVERY spelling is the SAME WIDTH — one per mark `Toggle` cycles through — so
+// the line does not jump under a key pressed to be pressed again, and short
+// enough that this plus the session's reserved key fits eighty columns.
+// `TestEveryModeSpellingIsTheSameWidthAndFitsEighty` is the pin, and it derives
+// its loop from the cycle rather than counting the spellings here.
 func (b *Board) Keys() string {
 	// RE-CUT TO FIT, not appended to (#42). `boardFitsIn` charges
 	// `displayRows(gradePrompt(q), termCols)` into the board's fit, so a row that

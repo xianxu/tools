@@ -20,6 +20,8 @@
 | `Board.Toggle` | `cmd/define/play/board.go` | modified |
 | `Board.Dropped` | `cmd/define/play/board.go` | new |
 | `Dropping` | `cmd/define/play/session.go` | new |
+| `Marks` | `cmd/define/play/board.go` | new |
+| `Palette.For` | `cmd/define/play/board.go` | new |
 | `Recall` | `cmd/define/play/recall.go` | deleted |
 | `optionsFor` | `cmd/define/optionpool.go` | new |
 | `packBoards` | `cmd/define/play_loop.go` | new |
@@ -36,6 +38,9 @@ not the `Mark` type.)
   - **Relationships:** 1:1 with a cell. `Rest` (Enter's sweep) already skips anything not `Unmarked`, so a dropped cell is untouched by it for free.
   - **DRY rationale:** The mode already exists, is already drawn on the prompt row, and is already landed by both a key and a click. A third value costs no new gesture, no new key and no second input grammar.
   - **Future extensions:** A fourth mode would want a mode *list* rather than an `if` chain in `Toggle`; two values did not earn one and three is the point at which to look again.
+
+- **`Marks`** / **`Palette.For`** — the extent of the mark set, and the one owner of mark → sequence. Both added at the CLOSE boundary, not planned: see `## Revisions`.
+  - **DRY rationale:** a palette checked by listing fields cannot see a fourth mark. The extent is the code's, so the guard derives from it.
 
 - **`Dropping`** — the optional capability a form implements when its last act asked for a REMOVAL rather than a grade: `Dropped() (string, bool)`.
   - **Relationships:** asked by `Apply` after `Grade`/`Mark`, exactly as `missedAxis(q)` asks `Missed`.
@@ -510,3 +515,14 @@ way: the block was written to answer a gate finding that the first draft named
 only savings, and the fix over-corrected into a cost that does not exist. **A cost
 table has to describe the code, and "I added a pessimistic line to look balanced"
 is the same failure as omitting one.**
+
+
+### 2026-09-03 — two entities added at the close boundary
+
+`Marks()` and `Palette.For` are not in the original design. They were added to fix
+BR-1, and the reason they are ENTITIES rather than a test edit is the finding: the
+board's drop colour was added to the `Palette` and to the paint with neither
+pinned, and both halves could be deleted with the full suite green. A test
+asserting three fields would have closed that instance and left the next mark
+uncovered, so the extent became the code's (`Marks()`) and the mapping got one
+owner (`Palette.For`), which the guard then derives from.

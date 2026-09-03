@@ -294,7 +294,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			//
 			// AND NO RE-SELECTION. The board stays, at the new shape, even if the
 			// terminal is now too short to draw it whole — D15's rule holding
-			// rather than bending. `boardsFor` chooses the form for words not yet
+			// rather than bending. Selection chooses the form for words not yet
 			// asked; this board's marks are already in the log, so "send it to
 			// 2.3 instead" would mean re-asking answered words. What a short
 			// terminal loses is the bar, then the panel, then grid rows — and
@@ -651,7 +651,7 @@ func boardPalette(opt options) play.Palette {
 // from: the bar goes first, then the panel, then grid rows.
 //
 // A BOARD CAN END UP IN A FOOTER THAT DROPS ROWS, and D15's "never" was measured
-// wrong (R11). It holds at SELECTION — boardsFor refuses a board the terminal
+// wrong (R11). It holds at SELECTION — `packBoards` refuses a board the terminal
 // cannot draw whole — and a resize afterwards is a shape nobody chose.
 //
 // What the order buys is that the losses are SURVIVABLE in sequence: the bar (a
@@ -927,7 +927,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 
 	// THE FORM IS PICKED AFTER THE LOOKUP, and that is #42's structural change.
 	//
-	// `boardsFor` ran on KEYS, before anything was fetched, because the box was
+	// Selection ran on KEYS, before anything was fetched, because the box was
 	// all it consulted. The rule is now one sentence — **2.3 tests you, the board
 	// triages you** — and its second half is a question about the ENTRY: whether
 	// the deck can build a real test out of it. That is not knowable until the

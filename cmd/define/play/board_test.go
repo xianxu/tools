@@ -245,7 +245,7 @@ func TestABoardIsSpentOnlyWhenEveryCellIsMarked(t *testing.T) {
 	}
 }
 
-// A BOARD OF THREE (D5). The board is what boardsFor could fill, not always
+// A BOARD OF THREE (D5). The board is what the caller could fill, not always
 // sixteen, and every part of it has to work at that size.
 func TestABoardOfThreeIsAWholeBoard(t *testing.T) {
 	words := []string{"keel", "mesa", "run"}
@@ -755,7 +755,7 @@ func TestTheChromeRowsAreNotCells(t *testing.T) {
 // It was arithmetic that happened to match rather than a construction that had
 // to: with no grid rows the separator produced two blanks instead of one, so an
 // empty board's Prompt yielded four lines while Rows() said three. Unreachable
-// through boardsFor, and that is exactly why it needs a test — the invariant is
+// through the packing caller, and that is exactly why it needs a test — the invariant is
 // defended in Word() and panelLine() and was dropped here.
 func TestRowsIsWhatPromptDraws(t *testing.T) {
 	for n := 0; n <= MaxBoardWords; n++ {

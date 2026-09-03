@@ -78,6 +78,101 @@ rounds:
           family: plan-claim-outruns-the-code
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-03T11:33:49-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: Fixed at the class via play.Marks() + Palette.For; both mutations now redden named tests — I re-verified each by reverting at HEAD.
+          round: 2
+        - id: BR-2
+          disposition: addressed
+          note: Branch added and pinned in both directions by TestAnEmptySittingNamesWhyItIsEmpty; reverting the branch reddens it. See the new Minor for the surviving mixed case.
+          round: 2
+        - id: BR-3
+          disposition: addressed
+          note: All five named sites swept and retiredPhrases rows added; I confirmed the guard fires on a reintroduced claim. The class is re-raised as a new finding under the same family for boardsFor.
+          round: 2
+        - id: BR-4
+          disposition: not-addressed
+          note: play_loop.go:981, :1009, :1038 still carry the same Lookup/skip/ParseEntry block. Minor, non-blocking.
+          round: 2
+        - id: BR-5
+          disposition: not-addressed
+          note: Board.Dropped() still reads b.cells[b.last]; no dropWord field. Minor, non-blocking — no path currently interleaves Rest with an armed drop.
+          round: 2
+        - id: BR-6
+          disposition: addressed
+          note: A 2026-09-03 "## Revisions" entry corrects the cost claim and the bullet is marked "(corrected at close)", which is the repo's append-don't-overwrite convention.
+          round: 2
+      findings:
+        - id: BR-7
+          severity: Important
+          title: boardsFor was deleted by this window and is still the current account of selection in six current-truth sites, including the atlas's Form 2.5 section
+          detail: |-
+            2ND FINDING IN THIS FAMILY — do not fix the six sites; fix the rule. Round 1 swept the instance it was
+            given (form 2.1 routing claims) and added retiredPhrases rows for that phrase, but the enumeration the
+            class implies — every top-level declaration this window removed — was never written, and `boardsFor` was
+            deleted in the same window as `Recall`. Sites: atlas/define.md:2100 ("Selection was a capability question
+            until this: form 2.3 … 2.1 when it cannot. `boardsFor` partitions the day's keys at box >= 3"),
+            atlas/define.md:2138, play_loop.go:297, play_loop.go:654, play/board.go:216, play/board.go:354 — all
+            present tense, all currentTruthFiles, and the atlas now holds two contradictory accounts of the selection
+            rule this issue exists to change. THE RULE: a window that removes a top-level declaration owes a tree-wide
+            sweep of that name regardless of export status, enforced by the guard. TestARemovedDeclarationIsSweptOrRetired
+            (repo_guard_test.go:1497) already implements the sweep but gates on isCitableName (:1628), which requires an
+            exported or Test* name. Proven: adding `if name == "boardsFor" { return true }` to isCitableName turns the
+            guard red on atlas/define.md, play/board.go, play_loop.go and the plan. Widen the filter to removed camelCase
+            identifiers with an interior capital (which keeps the `ids`/"for-bids" case out), and note the fix must
+            handle workshop/plans/…-plan.md, which legitimately names boardsFor in its "deleted" row and is itself a
+            currentTruthFile.
+          family: retraction-not-swept-over-the-tree
+          round: 2
+        - id: BR-8
+          severity: Important
+          title: Five current-truth comments restate an extent this window changed, including Mark's own doc three lines above the const that falsifies it
+          detail: |-
+            play/board.go:28 says "TWO marks and an ABSENCE, which is not a third mark" while the const block directly
+            below now declares Dropped, added by this diff; :33 says "a cell has three states" (four); :472 says "Both
+            spellings are the SAME WIDTH" while Keys() beneath it returns three and its test is named
+            TestEveryModeSpellingIsTheSameWidthAndFitsEighty; play/question.go:30 says "NO SHIPPED FORM PRODUCES Skipped
+            today" and cites form 2.1, but Mark.Verdict() returns Skipped for Dropped so Board.Mark now returns
+            (Skipped, true); atlas/define.md:2183 says the palette is "green for yes, red for no" while README.md:141
+            promises a third, struck-out sequence. New family, not the retraction one: nothing was retracted here, a
+            count was restated. THE RULE: a comment must not restate the cardinality or extent of a set the code
+            enumerates. This window already built the owner — play.Marks() is the extent — so these comments should
+            defer to it or drop the count, exactly as Keys()'s own comment declines to enumerate the label set. The #42
+            Spec took "a comment describing the opposite of the code, on the key this issue changes" into scope;
+            board.go:28 is that comment on the type this issue extended.
+          family: comment-restates-a-count-the-code-owns
+          round: 2
+        - id: BR-9
+          severity: Important
+          title: play.Marks() and Palette.For are new exported surface with no atlas entry and no Core-concepts row
+          detail: |-
+            play/board.go:760-786. Both were added in the close round as the single-source mechanism for the mark set.
+            Marks()' own doc positions it beside BoardLabels and numRegionKinds — and the atlas documents numRegionKinds
+            at :461 and :2290 precisely because it is that kind of mechanism — but atlas/define.md gained no entry for
+            either, and the palette paragraph it belongs in (:2183) is the same one finding (b) leaves stale. The plan's
+            Core-concepts table (plan.md:20-29) also has no rows for them; TestPlanTablesNameEntitiesThatExist only
+            checks table -> tree, so the reverse direction is unguarded and the table now under-describes the diff — the
+            mirror of the correction its own Revision 2 made.
+          family: new-surface-undocumented
+          round: 2
+        - id: BR-10
+          severity: Minor
+          title: The empty-sitting summary still misattributes when the deck mixes lookup failures with unaskable words
+          detail: |-
+            2ND FINDING IN THIS FAMILY — do not fix the branch condition. Reproduced at HEAD with
+            playRig(t, "bases", "rizz") and opt.width=12: `rizz` fails lookup, `bases` is unaskable, so
+            `unaskable(1) != len(keys)(2)` at play_loop.go:1066 and the summary prints "2 words are due but none could
+            be looked up" over a word the dictionary answered fine. THE RULE: an aggregate summary must be derived from
+            a tally of the per-word outcomes, never from one counter compared against the total. Every skip path already
+            prints its own cause, so either count each reason and phrase from the tally, or have the summary stop naming
+            a cause when the tally is mixed ("none could be asked; see the reasons above").
+          family: message-names-a-cause-the-code-did-not-establish
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#42 (boundary-review)
@@ -130,11 +225,70 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   (play_loop.go:971-974), so they are never rendered and lookups stay at one per due word. The cost table
   should describe the code; a `## Revisions` entry is the right repair.
 
+## Round 2 — 2026-09-03T11:33:49-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Fixed at the class via play.Marks() + Palette.For; both mutations now redden named tests — I re-verified each by reverting at HEAD.
+- BR-2 — addressed — Branch added and pinned in both directions by TestAnEmptySittingNamesWhyItIsEmpty; reverting the branch reddens it. See the new Minor for the surviving mixed case.
+- BR-3 — addressed — All five named sites swept and retiredPhrases rows added; I confirmed the guard fires on a reintroduced claim. The class is re-raised as a new finding under the same family for boardsFor.
+- BR-4 — not-addressed — play_loop.go:981, :1009, :1038 still carry the same Lookup/skip/ParseEntry block. Minor, non-blocking.
+- BR-5 — not-addressed — Board.Dropped() still reads b.cells[b.last]; no dropWord field. Minor, non-blocking — no path currently interleaves Rest with an armed drop.
+- BR-6 — addressed — A 2026-09-03 "## Revisions" entry corrects the cost claim and the bullet is marked "(corrected at close)", which is the repo's append-don't-overwrite convention.
+
+### Raised
+
+- **BR-7** [Important] `retraction-not-swept-over-the-tree` boardsFor was deleted by this window and is still the current account of selection in six current-truth sites, including the atlas's Form 2.5 section
+  2ND FINDING IN THIS FAMILY — do not fix the six sites; fix the rule. Round 1 swept the instance it was
+  given (form 2.1 routing claims) and added retiredPhrases rows for that phrase, but the enumeration the
+  class implies — every top-level declaration this window removed — was never written, and `boardsFor` was
+  deleted in the same window as `Recall`. Sites: atlas/define.md:2100 ("Selection was a capability question
+  until this: form 2.3 … 2.1 when it cannot. `boardsFor` partitions the day's keys at box >= 3"),
+  atlas/define.md:2138, play_loop.go:297, play_loop.go:654, play/board.go:216, play/board.go:354 — all
+  present tense, all currentTruthFiles, and the atlas now holds two contradictory accounts of the selection
+  rule this issue exists to change. THE RULE: a window that removes a top-level declaration owes a tree-wide
+  sweep of that name regardless of export status, enforced by the guard. TestARemovedDeclarationIsSweptOrRetired
+  (repo_guard_test.go:1497) already implements the sweep but gates on isCitableName (:1628), which requires an
+  exported or Test* name. Proven: adding `if name == "boardsFor" { return true }` to isCitableName turns the
+  guard red on atlas/define.md, play/board.go, play_loop.go and the plan. Widen the filter to removed camelCase
+  identifiers with an interior capital (which keeps the `ids`/"for-bids" case out), and note the fix must
+  handle workshop/plans/…-plan.md, which legitimately names boardsFor in its "deleted" row and is itself a
+  currentTruthFile.
+- **BR-8** [Important] `comment-restates-a-count-the-code-owns` Five current-truth comments restate an extent this window changed, including Mark's own doc three lines above the const that falsifies it
+  play/board.go:28 says "TWO marks and an ABSENCE, which is not a third mark" while the const block directly
+  below now declares Dropped, added by this diff; :33 says "a cell has three states" (four); :472 says "Both
+  spellings are the SAME WIDTH" while Keys() beneath it returns three and its test is named
+  TestEveryModeSpellingIsTheSameWidthAndFitsEighty; play/question.go:30 says "NO SHIPPED FORM PRODUCES Skipped
+  today" and cites form 2.1, but Mark.Verdict() returns Skipped for Dropped so Board.Mark now returns
+  (Skipped, true); atlas/define.md:2183 says the palette is "green for yes, red for no" while README.md:141
+  promises a third, struck-out sequence. New family, not the retraction one: nothing was retracted here, a
+  count was restated. THE RULE: a comment must not restate the cardinality or extent of a set the code
+  enumerates. This window already built the owner — play.Marks() is the extent — so these comments should
+  defer to it or drop the count, exactly as Keys()'s own comment declines to enumerate the label set. The #42
+  Spec took "a comment describing the opposite of the code, on the key this issue changes" into scope;
+  board.go:28 is that comment on the type this issue extended.
+- **BR-9** [Important] `new-surface-undocumented` play.Marks() and Palette.For are new exported surface with no atlas entry and no Core-concepts row
+  play/board.go:760-786. Both were added in the close round as the single-source mechanism for the mark set.
+  Marks()' own doc positions it beside BoardLabels and numRegionKinds — and the atlas documents numRegionKinds
+  at :461 and :2290 precisely because it is that kind of mechanism — but atlas/define.md gained no entry for
+  either, and the palette paragraph it belongs in (:2183) is the same one finding (b) leaves stale. The plan's
+  Core-concepts table (plan.md:20-29) also has no rows for them; TestPlanTablesNameEntitiesThatExist only
+  checks table -> tree, so the reverse direction is unguarded and the table now under-describes the diff — the
+  mirror of the correction its own Revision 2 made.
+- **BR-10** [Minor] `message-names-a-cause-the-code-did-not-establish` The empty-sitting summary still misattributes when the deck mixes lookup failures with unaskable words
+  2ND FINDING IN THIS FAMILY — do not fix the branch condition. Reproduced at HEAD with
+  playRig(t, "bases", "rizz") and opt.width=12: `rizz` fails lookup, `bases` is unaskable, so
+  `unaskable(1) != len(keys)(2)` at play_loop.go:1066 and the summary prints "2 words are due but none could
+  be looked up" over a word the dictionary answered fine. THE RULE: an aggregate summary must be derived from
+  a tally of the per-word outcomes, never from one counter compared against the total. Every skip path already
+  prints its own cause, so either count each reason and phrase from the tally, or have the summary stop naming
+  a cause when the tally is mixed ("none could be asked; see the reasons above").
+
 ## Open findings
 
-- **BR-1** [Important] `pin-that-cannot-fail` The board's drop colour is unpinned: both the Palette.Drop entry and paint's Dropped arm can be deleted with the full suite green
-- **BR-2** [Important] `message-names-a-cause-the-code-did-not-establish` todaysQuestions reports "none could be looked up" for words whose lookup succeeded but which were unaskable
-- **BR-3** [Important] `retraction-not-swept-over-the-tree` Four production doc comments still route words to form 2.1, and the atlas still lists `recall` as a live form stamp
 - **BR-4** [Minor] `duplicated-block-should-be-a-helper` The Lookup / skip-message / ParseEntry block is copy-pasted three times inside todaysQuestions
 - **BR-5** [Minor] `derived-state-depends-on-call-order` Board.Dropped() reads b.cells[b.last], so its correctness rests on b.last not having moved since the arming Mark
-- **BR-6** [Minor] `plan-claim-outruns-the-code` The plan's ARCH-CONSTRAINTS block claims a Render newly paid on every mature board word; the code pays none
+- **BR-7** [Important] `retraction-not-swept-over-the-tree` boardsFor was deleted by this window and is still the current account of selection in six current-truth sites, including the atlas's Form 2.5 section
+- **BR-8** [Important] `comment-restates-a-count-the-code-owns` Five current-truth comments restate an extent this window changed, including Mark's own doc three lines above the const that falsifies it
+- **BR-9** [Important] `new-surface-undocumented` play.Marks() and Palette.For are new exported surface with no atlas entry and no Core-concepts row
+- **BR-10** [Minor] `message-names-a-cause-the-code-did-not-establish` The empty-sitting summary still misattributes when the deck mixes lookup failures with unaskable words

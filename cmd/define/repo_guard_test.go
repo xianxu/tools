@@ -637,6 +637,31 @@ func currentTruthOnly(t *testing.T, name, text string) string {
 		}
 		text = text[:i]
 	}
+	// A DOCUMENT THAT DECLARES A SYMBOL DELETED IS THE RECORD OF THAT DELETION,
+	// so its account of the symbol is a record too (#42).
+	//
+	// Two guards disagreed and neither could settle it alone:
+	// `TestPlanTableStatusMatchesTheChangeWindow` REQUIRES a plan's Core-concepts
+	// table to name what the window removed and checks it against the diff, while
+	// `TestNoArtifactNamesARetiredSymbol` forbids a current-truth artifact from
+	// naming a retired symbol. The plan cannot both name it and not.
+	//
+	// Settled HERE because "is this text a record" is this function's whole
+	// question, so both guards inherit one answer instead of being taught it
+	// separately. The exemption is SELF-LIMITING in two directions: only a
+	// document carrying a `| deleted |` row gets it, and only for the symbol that
+	// row names — so a plan cannot quiet a guard about anything it did not
+	// declare, and no other artifact is exempted at all.
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.HasPrefix(line, "| ") || !strings.HasSuffix(strings.TrimSpace(line), "| deleted |") {
+			continue
+		}
+		name := strings.Trim(strings.SplitN(line, "|", 3)[1], " `")
+		if name == "" {
+			continue
+		}
+		text = regexp.MustCompile("`?"+regexp.QuoteMeta(name)+"`?").ReplaceAllString(text, "")
+	}
 	// THE SECOND DISCARDING RULE, and R10's premise assertion applies to it too.
 	//
 	// Splitting on "\n### " means a closed section runs to the NEXT "### " — which
@@ -1021,6 +1046,17 @@ func checkPlanName(t *testing.T, root, plan, name, path, status string, checked 
 // down. Everything after that is mechanical, and the list can only shrink as
 // history archives.
 var retiredSymbolNames = map[string]string{
+	// #42 split selection in two: the box partition moved into todaysQuestions'
+	// one loop (it must run BEFORE the lookup, so it cannot be a function over a
+	// parsed entry) and the packing half became packBoards.
+	//
+	// NO ROW FOR `Recall`, the form deleted in the same window, and the omission
+	// is deliberate: "recall" is ordinary English this program uses constantly for
+	// the editor's up-arrow history, so a row would fire on `history.go`,
+	// `repl.go` and half the atlas over text that has nothing to do with the form.
+	// What IS retired there is the routing CLAIM, and `retiredPhrases` carries it
+	// — a phrase, not a word, which is the distinction that map's own doc makes.
+	"boardsFor":       "packBoards, plus the box partition inside todaysQuestions",
 	"deckDeps":        "newLangDeps",
 	"newDeck":         "newLangDeps",
 	"MigrateFlatDeck": "MigrateToLanguages",
@@ -1621,13 +1657,34 @@ func treeDeclares(t *testing.T, root, name string) bool {
 }
 
 // isCitableName reports whether a removed declaration is one an artifact would
-// actually name: a Test, a Fuzz target, or an exported identifier.
+// actually name: a Test, a Fuzz target, an exported identifier, or an unexported
+// camelCase one with an interior capital.
 //
-// Unexported helpers like `ids` or `binds` are not cited in prose, and searching
-// artifacts for them produces substring noise rather than findings.
+// THE LAST CLAUSE IS #42's, and it is the second finding in its family. This
+// filter read "exported or Test*", on the reasoning that unexported helpers are
+// not cited in prose. That is true of `ids` and `binds` and false of exactly the
+// helpers this codebase argues about: `boardsFor` was deleted alongside `Recall`
+// and stayed the current account of selection in six current-truth sites,
+// including two atlas paragraphs — so the atlas held two contradictory accounts
+// of the very rule the issue existed to change, and the guard written to catch
+// that could not see it.
+//
+// The interior capital is what separates the two populations. A prose-cited
+// unexported helper in this repo is a compound (`boardsFor`, `choiceFor`,
+// `optionCandidates`); a single lowercase word (`ids`, `binds`, `paint`) is both
+// uncited AND a substring of ordinary English, which is the noise the original
+// clause was avoiding. So the noise is still excluded and the citations are not.
 func isCitableName(name string) bool {
-	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Fuzz") ||
-		(name != "" && name[0] >= 'A' && name[0] <= 'Z')
+	if strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Fuzz") {
+		return true
+	}
+	if name == "" {
+		return false
+	}
+	if name[0] >= 'A' && name[0] <= 'Z' {
+		return true
+	}
+	return strings.ContainsFunc(name[1:], func(r rune) bool { return r >= 'A' && r <= 'Z' })
 }
 
 // A DOC COMMENT'S FIRST WORD IS THE NAME OF THE DECLARATION IT SITS ON.

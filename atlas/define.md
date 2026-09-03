@@ -2097,7 +2097,7 @@ is asking and a form restating them would be two owners of one fact.
 **Sixteen words on a grid, one mark each, and the SCHEDULER picks it — the first
 time anything here has consulted a box to choose a form.** Selection was a
 capability question until this: form 2.3 when the deck can supply distractors,
-2.1 when it cannot. `boardsFor` partitions the day's keys at **box ≥ 3** and
+2.1 when it cannot. Selection partitioned the day's keys at **box ≥ 3** and
 packs the eligible ones sixteen at a time.
 
 **Box 3 is a starting number, not a derived one**, and it is the only figure in
@@ -2135,7 +2135,7 @@ The general rule: an element whose absence makes the rest MISLEADING outranks
 every element whose absence merely makes it smaller.
 
 **A board can end up in a footer that drops rows.** D15's "never" holds at
-SELECTION — `boardsFor` refuses a board the terminal cannot draw whole — and a
+SELECTION — `packBoards` shrinks a chunk the terminal cannot draw whole, and a
 resize afterwards is a shape nobody chose. The board is not re-selected then: its
 marks are in the log, so sending those words to 2.3 would re-ask words already
 answered. What the footer's order buys is that the losses are SURVIVABLE in
@@ -2180,7 +2180,7 @@ other way — the mark stood where the key was, `[y]` in place of `[3]`, on the
 reasoning that it said "answered" and "this key is spent" at once. An operator
 sitting corrected it: the key is how a mouse-less terminal reaches the cell and
 how a learner reads the grid back, so it is the wrong half to spend. The
-sequences come from `main` through `play.Palette` — green for yes, red for no —
+sequences come from `main` through `play.Palette`, one per mark —
 because `play` is guarded pure and `newPalette` already owns that decision for
 every other surface. Padding is applied OUTSIDE the style, so a painted cell
 occupies exactly the columns an unpainted one does and the click map is
@@ -2464,6 +2464,14 @@ the same instrument as the board (both `SelfRated`, neither retrieving) at sixte
 times the cost, and it collected that self-report at the box where it is least
 reliable. The fallback stays invisible to the learner and the sitting stays the
 length the schedule asked for.
+
+**`play.Marks()` is the EXTENT of the mark set and `Palette.For` its one owner**,
+both `#42`'s. A palette test that listed three fields would say nothing about a
+fourth mark; deriving the loop from `Marks()` means a mark shipped with no colour
+fails the day it is declared — the same move `numRegionKinds` makes for the click
+registry and `BoardLabels` for the key sequence. It exists because the drop's
+colour was added to both the `Palette` and the paint with NEITHER pinned, and both
+halves could be deleted with the whole suite green.
 
 **The board is the fallback, and `Tab` cycles THREE modes because of it**
 (`#42`). Yes, no, then drop — and the order is a UX decision rather than

@@ -2475,7 +2475,7 @@ func seedBox(t *testing.T, st *store.Mem, word string, n int) {
 // ask. Everything before it was a capability question: form 2.3 when the deck
 // could supply distractors, 2.1 when it could not.
 func TestTheBoxPicksTheForm(t *testing.T) {
-	// RE-POINTED from `boardsFor`, which #42 deleted (the box was all it
+	// RE-POINTED from the deleted box-only partition (the box was all it
 	// consulted, and the rule now also asks the ENTRY). The threshold itself is
 	// unchanged and is still worth its own pin, so this drives the real selection
 	// through todaysQuestions with a deck whose entries can ALL build a 2.3 —
@@ -2517,7 +2517,7 @@ func TestBoardsArePackedToTheLabelAlphabet(t *testing.T) {
 		keys = append(keys, fmt.Sprintf("word%02d", i))
 	}
 	// RE-POINTED at packBoards, which owns the chunking half of the deleted
-	// boardsFor. The box partition is TestTheBoxPicksTheForm's now; this is about
+	// the deleted partition. The box half is TestTheBoxPicksTheForm's now; this is about
 	// how many words fit on one board.
 	boards, undrawable := packBoards(keys, opt)
 	if len(undrawable) != 0 {
