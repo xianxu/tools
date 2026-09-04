@@ -314,14 +314,14 @@ Durable design: `workshop/plans/000010-vocab-harvest-plan.md`.
 **Two milestones, and the stop between them is the point** (see the decisions
 above). Each `Mx` row closes with its own `sdlc milestone-close`.
 
-- [ ] M1 — `WordFacts` (band + domain) and its store surface, on the `Store`
+- [x] M1 — `WordFacts` (band + domain) and its store surface, on the `Store`
       interface with `storetest` rows so `Mem` and `YAML` cannot diverge; `facts`
       joins `RuntimeDirs`.
-- [ ] M1 — `bandTask`, one call per word for both facts, with a golden and a live
+- [x] M1 — `bandTask`, one call per word for both facts, with a golden and a live
       conformance row.
-- [ ] M1 — the STABILITY measure (`agreement` over N assignments), reported by
+- [x] M1 — the STABILITY measure (`agreement` over N assignments), reported by
       `--harvest` rather than buried, and documented as agreement-not-correctness.
-- [ ] M1 — `--harvest` dispatched as a MODE beside `--forget`; a sitting never
+- [x] M1 — `--harvest` dispatched as a MODE beside `--forget`; a sitting never
       waits on it (model seam PANICS in the test), a second run makes zero calls,
       and an outage leaves the store untouched.
 - [ ] M2 — authored stems: entailment and named subjects as prompt REQUIREMENTS,
@@ -336,6 +336,41 @@ above). Each `Mx` row closes with its own `sdlc milestone-close`.
       checkpoint, and the one row no test replaces.
 
 ## Log
+
+### 2026-09-04 — M1 implemented
+
+Four commits: the store surface + the two closed vocabularies, the `#17`
+learner-band loop, and `--harvest` with its bound and its measure.
+
+**Done-when 1 (a sitting never waits)** — pinned with the model seam made to
+PANIC, not nil, and the sitting also asserted not to have banded anything on the
+way past.
+
+**Done-when 2 (assigned once, re-read after)** — pinned on the request COUNT, not
+on files existing. Mutation-tested: removing the cache check reddens it.
+
+**Done-when 3 (the banding is MEASURED)** — `--harvest -agreement N`, its own
+mode, writing nothing. Ran against the live service: **mean agreement 1.00 over
+8 words x 5 assignments**, floor 0.8. Reported with its caveat everywhere it
+appears.
+
+**Done-when 6 (an outage leaves the store usable)** — pinned by failing the fake
+mid-batch and asserting what survived is WHOLE, not merely present.
+
+**Two things worth carrying to M2.**
+
+*The 1.00 is the caveat made concrete.* Perfect stability is exactly what a
+consistently-wrong scale also scores. The live bands are mostly right — `run` and
+`set` at A1, `ephemeral` at C1 — but `quokka` at C2 is reporting rarity, not a
+level any learner is at. If M2's distractors read as mispitched, this is the
+first thing to suspect.
+
+*A design improvement, from the gate's PQ-4.* `readGloss` already extracts NOAD's
+printed subject field, so most words get a domain from the DICTIONARY with no
+model call at all. The model went from the source to the fallback, and the
+closed set moved into `store` with `glosslabel.go` deriving from it — which also
+turned its longest-first ordering from a hand-maintained invariant into a
+computed one.
 
 ### 2026-09-04 — claimed, planned, and one gate round
 
