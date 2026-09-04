@@ -1,0 +1,78 @@
+task:   word-band
+model:  
+effort: 
+--- system ---
+You place English vocabulary on the CEFR scale. Answer about the WORD as a learner would meet it, not about the rarest sense a dictionary records.
+--- prompt ---
+## The word
+
+sycophantic
+
+Its dictionary sense:
+
+behaving or done in an obsequious way in order to gain advantage
+
+## What to answer
+
+**band** — the CEFR level at which a learner would be expected to KNOW this word: one of A1, A2, B1, B2, C1, C2, and nothing else. Not a range, not a `+`, not a word like "intermediate". Judge the word's ordinary current usage.
+
+**domain** — the subject field this word belongs to, from EXACTLY this list:
+
+- American football
+- Psychoanalysis
+- Archaeology
+- Mathematics
+- Architecture
+- Linguistics
+- Philosophy
+- Psychology
+- Statistics
+- Astronomy
+- Chemistry
+- Computing
+- Geometry
+- Heraldry
+- Medicine
+- Military
+- Nautical
+- Politics
+- Theology
+- Anatomy
+- Baseball
+- Biology
+- Ecology
+- Finance
+- Geology
+- Grammar
+- Cricket
+- Physics
+- Printing
+- Botany
+- Mining
+- Music
+- Zoology
+- Bridge
+- Chess
+- Sports
+- Law
+
+If the word is ordinary vocabulary rather than a specialist term of one of those fields, answer `general`. `general` is the common and correct answer — do not reach for a field a word merely touches.
+
+
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "band": {
+      "type": "string"
+    },
+    "domain": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "band",
+    "domain"
+  ],
+  "type": "object"
+}

@@ -1412,6 +1412,97 @@ trimming acts on the clew"*). Depth and ordering, not a different topic. The
 `directive` fields are aimed at `#10`'s authoring, which is where the payoff is
 designed to land.
 
+## Harvested facts: a band and a domain per word (`#10 M1`)
+
+`define --harvest` writes the material a review sitting will draw on, ahead of
+time. The fourth and fifth artifacts in the working directory: `facts/<lang>/`
+holds one record per word — a CEFR band and a subject domain — and `items/<lang>/`
+holds the practice items authored from them (`#10 M2`).
+
+**Batch, and the only path here that may block.** Nothing a sitting does reaches
+it, asserted with the model seam made to PANIC rather than left nil — nil passes
+on a loop that reaches for a model behind a `!= nil` guard, which is how a
+network dependency creeps into a path that promises to be offline.
+
+**Assigned once, re-read forever.** The cache check precedes anything that
+touches the network, so a second run over an unchanged deck makes ZERO calls. The
+pin asserts the request COUNT rather than the file's existence — a loop that
+re-asks and rewrites the same answer leaves an identical directory behind.
+`-limit` (default 200) bounds one run's calls; a capped run is partial, says so,
+and resumes on the next invocation because the cache is its own progress marker.
+
+### Two closed vocabularies, in the store
+
+`store.Band` and `store.Domain` are parse-refusing types, and they live in
+`store` because the store is what decides which values may be persisted.
+
+**The band is arithmetic, which is why the parse refuses.** `Rank()` answers -1
+off the scale, and -1 sorts below A1 — so a band like `B2+` reaching disk would
+pitch every selected distractor at the floor with nothing downstream able to
+tell. Refused answers leave the word unbanded and re-askable, which costs one
+call; the alternative corrupts a cache that is never re-examined.
+
+**`#17` derives from the same type**, and that is what makes the single source
+real rather than documentary (ARCH-PURPOSE). `levelClaim.Band` was free-form
+prose for `#17`'s whole life — harmless while a model was its only reader.
+`--reflect` now validates through `ParseBand` in `checkEvidence`, beside every
+other unusable-claim check, and stores the canonical spelling;
+`renderUserModel` emits a `level:` frontmatter key and `parseLearnerBand` reads
+it back. Absent or unparseable means generic authoring, never an error — which
+covers every learner-model file written before `#10`.
+
+**One domain vocabulary, not three.** `noadDomainLabels` in `glosslabel.go` was
+this repo's closed table, `#17`'s `domainClaim.Name` is free model text, and a
+third open string would have made `topicSpread` — the one measure taken with no
+model — inflatable by casing alone. The set moved into `store`; `glosslabel.go`
+derives its labels from `store.Domains()` and keeps only what it is for, reading
+NOAD's prose. Its longest-first ordering is now COMPUTED rather than a
+hand-maintained invariant, so the property holds for any label anyone adds.
+
+**A domain usually costs no model call at all.** `readGloss` already extracts
+NOAD's printed subject field, so the dictionary answers first and the model is
+the fallback for words NOAD leaves unlabelled. Where the dictionary spoke, its
+label wins outright: a model asked to repeat it must not be able to overwrite an
+editorial fact with a paraphrase.
+
+### Per-language, because the facts are derived
+
+`facts/<lang>/` and `items/<lang>/` scope like `words/` and unlike `events/` —
+`yaml.go`'s rule is DERIVATION, not storage. `red`, `once`, `actual` and
+`sensible` are real words in English and Spanish with different bands and
+unrelated meanings, and because these are cached forever and replaced rather than
+merged, a flat collision would be permanent: whichever language harvested last
+would own the band, with no re-ask to fix it. `#23` paid for this once with the
+learner model.
+
+`"facts"` and `"items"` are appended at the TAIL of `RuntimeDirs`, which
+`wordsDir`/`eventsDir`/`usageDir` index positionally — inserting elsewhere
+silently repoints three directories at each other.
+
+### The measure, and what it does not say
+
+`--harvest -agreement N` re-asks a sample of already-banded words N times and
+reports the fraction agreeing with the modal band. **Its own mode, writing
+nothing**, because measuring N assignments cannot coexist with "one call per
+unbanded word, zero on a second run" — splitting them keeps both properties true
+of the path that runs daily.
+
+The unit test owns the ARITHMETIC on synthetic bands; a fake seeded to vary would
+report how the fake was seeded. The FLOOR (0.8 over five assignments) is asserted
+against the live service, which is the only place the fraction says anything
+about a model. Measured 2026-09-04: **1.00 across eight words**, five assignments
+each.
+
+**It is STABILITY, not correctness, and the distinction is load-bearing.** A
+model that is confidently and consistently wrong scores 1.00 here, and every
+downstream use of a band rests on the scale being right. Off-scale answers count
+against the score rather than being dropped from the denominator, so a refusal
+reads as the instability it is. If distractors ever read as mispitched, this is
+the first thing to suspect and the hand-labelled sample the issue defers is the
+thing to build. The live run's own bands are worth reading in that light —
+`run` and `set` at A1 and `ephemeral` at C1 are right, while `quokka` at C2 says
+more about rarity than about any level a learner is at.
+
 ## Entry modes
 
 `run` dispatches modes first (`-forget`), then on argument count. The function

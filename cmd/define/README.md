@@ -357,6 +357,43 @@ says so and exits `1` rather than looking up a sentence.
 miss stays a miss, and an explicit `?` alongside it is a usage error (exit `2`)
 rather than a guess at which of the two contradicting flags you meant.
 
+## Practice material, written ahead of time
+
+**`define --harvest` prepares the material a review sitting will use.** It reads
+your deck and, for every word it has not seen before, records two facts that
+never change: a CEFR band (`A1`–`C2`) and a subject domain. Those are what make
+a good wrong answer possible — a distractor is *selected* from real words at your
+level, never invented.
+
+It is batch, on demand, and the only thing in `define` that may take a while.
+Nothing a sitting does ever waits on it, and a review works perfectly well
+against a deck that has never been harvested; it simply has less to draw on.
+
+**It asks about each word once, ever.** Run it again and it re-reads what it
+already knows and makes no calls at all, so the cost does not grow with time —
+only with new words. `-limit N` caps how many words one run will ask about
+(default 200); a capped run is a partial run and says so, and running again picks
+up where it stopped.
+
+**The domain usually costs nothing.** When your dictionary already prints a
+subject field on a word — `Law`, `Medicine`, `Nautical` — that label is used
+directly and the model is never asked. Most words carry no field at all and are
+simply `general`, which is the common and correct answer.
+
+**`define --harvest -agreement N` measures how stable the banding is.** It
+re-asks a sample of already-banded words N times each and reports how often the
+answers agree. It writes nothing, so measuring cannot disturb what it measures.
+
+Read the number for exactly what it says: **agreement is stability, not
+correctness.** A model that gives the same wrong band every time scores a perfect
+1.00. It measures the one property the cache actually depends on — that a band
+assigned once is the band this model usually gives — and it cannot tell you the
+scale is right.
+
+`--harvest` needs a model configured (see `--llm-check`). Without one it says so
+and exits `1`. If the model becomes unavailable mid-run, everything already
+banded is saved and only the harvesting stops.
+
 ## What it writes, where you run it
 
 **`define` reads and writes the current directory.** *Every* successful lookup —
@@ -375,6 +412,10 @@ events/2026-08-21.yaml     append-only, one file per day (named in UTC)
                            carries correct:, and a MISS from the multiple-choice
                            form also carries missed: — which kind of wrong answer
                            it was (domain, register, general)
+facts/en/sycophantic.yaml  a word's CEFR band and domain, written by
+                           --harvest and never re-asked; per language, because
+                           `red` is a different word in English and Spanish
+items/en/sycophantic.yaml  practice items authored ahead of time, per language
 lang.txt                   which language this directory is in
 user-model.en.md           written by --reflect, read to pitch answers; one per
                            language, because it is read off that language's

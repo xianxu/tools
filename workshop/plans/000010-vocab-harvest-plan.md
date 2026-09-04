@@ -192,7 +192,7 @@ cannot be written until the learner's band has a source.
   authoring** — which is also every learner-model file written before this issue.
 - The `user-model.golden.md` diff is the artifact that proves the field landed.
 
-- [ ] **Step 1: Write `agreement` and its table test**
+- [x] **Step 1: Write `agreement` and its table test**
 
 Pure, and worth its own test before any model exists:
 
@@ -210,7 +210,7 @@ Pure, and worth its own test before any model exists:
 // conformance row (Step 4) and this test owns the arithmetic.
 ```
 
-- [ ] **Step 2: Write the task, with the golden**
+- [x] **Step 2: Write the task, with the golden**
 
 ```go
 // bandTask asks for a CEFR band and a domain in ONE call, because they are one
@@ -224,7 +224,7 @@ Pure, and worth its own test before any model exists:
 // same closed set — unrecognised lands on `general` rather than widening it.
 ```
 
-- [ ] **Step 3: The measure, in its own mode**
+- [x] **Step 3: The measure, in its own mode**
 
 `--harvest --agreement[=N]` re-asks a fixed sample of K already-banded words N
 times and **writes nothing** (defaults `N=5`, `K=20`; off unless asked for).
@@ -245,7 +245,7 @@ measurement where someone is choosing to pay it.
 // with no claim about correctness.
 ```
 
-- [ ] **Step 4: A live conformance row, and the floor**
+- [x] **Step 4: A live conformance row, and the floor**
 
 Follow `#11`'s existing `-tags conformance` pattern. **The floor is `agreement ≥
 0.8` over `N=5` on the sample**, asserted here rather than in the unit test —
@@ -254,7 +254,7 @@ the model. A binary "same band twice" would not have been the measure Done-when 
 asks for. This is also the only check that can see the fake and the service
 disagreeing about the shape of the answer.
 
-- [ ] **Step 5: Run, then commit**
+- [x] **Step 5: Run, then commit**
 
 ---
 
@@ -264,7 +264,7 @@ disagreeing about the shape of the answer.
 - Create: `cmd/define/harvest.go`, `cmd/define/harvest_test.go`
 - Modify: `cmd/define/main.go` (flag + dispatch), `cmd/define/README.md`
 
-- [ ] **Step 1: Write the failing test for Done-when 1 and 2**
+- [x] **Step 1: Write the failing test for Done-when 1 and 2**
 
 ```go
 // A SITTING NEVER WAITS ON HARVESTING. Driven with the model seam made to PANIC,
@@ -275,7 +275,7 @@ disagreeing about the shape of the answer.
 // forever" is a claim about calls, not about the file existing.
 ```
 
-- [ ] **Step 2: Dispatch it as a mode, with its bound**
+- [x] **Step 2: Dispatch it as a mode, with its bound**
 
 Beside `--forget` and `--llm-check`, which are validated apart from the argument
 count. Reuse that path rather than adding a fourth shape.
@@ -284,13 +284,13 @@ count. Reuse that path rather than adding a fourth shape.
 selects the measurement mode from Task 2. A test asserts the cap holds on a deck
 larger than it — `poolCap` has one for the same reason.
 
-- [ ] **Step 3: Outage leaves the store untouched (Done-when 6)**
+- [x] **Step 3: Outage leaves the store untouched (Done-when 6)**
 
 Fail the fake mid-batch; assert the words banded before the failure are intact and
 nothing partial was written. The atomic write already gives this — the test is
 what makes it a property rather than an accident.
 
-- [ ] **Step 4: README + atlas, then close M1**
+- [x] **Step 4: README + atlas, then close M1**
 
 ```bash
 sdlc milestone-close --issue 10 --milestone M1

@@ -428,6 +428,9 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// help text is printed before any language is resolved.
 	reflect := fs.Bool("reflect", false, "read the deck and write the learner model")
 	playFlag := fs.Bool("play", false, "review the words due today")
+	harvest := fs.Bool("harvest", false, "band the deck and author practice items, ahead of time")
+	harvestLimitFlag := fs.Int("limit", 0, "words --harvest may ask the model about in one run (0 = the default cap)")
+	agreementFlag := fs.Int("agreement", 0, "measure banding STABILITY over N assignments and write nothing")
 	count := fs.Int("count", 20, "how many words a review session offers")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, "usage: define [flags] [word]\n\n"+
@@ -578,6 +581,17 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	case forgetting && fs.NArg() != 0:
 		fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
 		return 2
+	// --harvest is a mode like --forget, validated apart from the argument count:
+	// combining it with a word is two commands on one line.
+	case *harvest && fs.NArg() != 0:
+		fmt.Fprintln(stderr, "define: -harvest takes no word; it works over the whole deck")
+		return 2
+	case !*harvest && (isSet(fs, "limit") || isSet(fs, "agreement")):
+		fmt.Fprintln(stderr, "define: -limit and -agreement only mean anything with -harvest")
+		return 2
+	case *agreementFlag < 0 || *harvestLimitFlag < 0:
+		fmt.Fprintln(stderr, "define: -limit and -agreement cannot be negative")
+		return 2
 	// cmdAsk is exempted for the same reason cmdCommand is: a question is
 	// multi-word by nature, so counting words would reject the thing the flag
 	// exists to accept (BR-20's shape).
@@ -646,6 +660,15 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	}
 	if *reflect {
 		return runReflect(ctx, d, opt, stdout, stderr)
+	}
+	// Beside --reflect and --forget rather than beside --llm-check: --harvest
+	// needs the deck, the dictionary and the clock, so it belongs after
+	// withStore built them (#17 D5's rule, unchanged).
+	if *harvest {
+		return runHarvest(ctx, d, opt, harvestOptions{
+			limit:     *harvestLimitFlag,
+			agreement: *agreementFlag,
+		}, stdout, stderr)
 	}
 
 	switch fs.NArg() {
