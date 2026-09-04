@@ -1,11 +1,12 @@
 ---
 id: 000010
-status: open
+status: working
 deps: ["tools#3", "tools#11", "tools#17"]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-31
+updated: 2026-09-04
 estimate_hours:
+started: 2026-09-04T09:38:50-07:00
 ---
 
 # authored practice items: level-tagged words, and stems the model writes offline
