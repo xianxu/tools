@@ -3569,3 +3569,42 @@ nothing on the real deck, because for a C1 Nautical word the whole eligible tier
 was two words. **Measure the fix on the shape that motivated it, not only on a
 constructed one** — and when the limit is the input rather than the code, say so
 instead of adding machinery.
+
+## #10 M2's review — the sweep row, and pins that had tests
+
+**A milestone's Verification sweep is not satisfied by the previous milestone's
+table.** I ran the mutation sweep for M1, wrote its 13-row table into the plan,
+and then ticked the same row at M2's boundary. Three headline M2 properties had
+pins that could not fail. The row is per-milestone; enumerate THIS milestone's
+properties from the diff's branches, not from the atlas's claims.
+
+**Two of the four unpinned properties HAD tests, which is the failure worth
+recognising.** `prune`'s determinism was asserted by pruning the same slice
+twice — so a prune that returned its input unchanged agreed with itself
+perfectly. The `## Corrections` guard used a fixture domain the parse refuses
+anyway, so it could not distinguish the guard from the parse. **A pin whose
+fixture cannot reach the branch is the same failure as no pin**, and reading the
+test does not reveal it — only reverting the code does.
+
+**A rig too small to run the pass makes every assertion about that pass
+vacuous.** `harvestRig(t, 1)` gave a pool of one, so authoring bailed before
+running and "nothing was authored" passed for an unrelated reason. Fixed at the
+class level: the rig now REFUSES a size that cannot exercise the path, and the
+skipped pass says so on stdout where a test can read it. Prefer making the
+degenerate case loud over remembering not to construct it.
+
+**Assert a comparison, not a threshold, when the claim is "X improves Y."** The
+diversity pin checked `worst > 3`, which both branches satisfied. Run the code
+with the feature off and on over the same inputs and assert the difference —
+otherwise the test measures the fixture.
+
+**A flag's counter must be the resource the flag names.** `-limit` documented a
+ceiling on model calls and counted successes per pass, so rejected words charged
+nothing and a run cost one call per deck word regardless. It also spent the same
+value twice, once per pass. One budget, threaded, charged next to every call
+site including inner loops.
+
+**A value parsed and read by nothing is not a delivered consumer.** The learner's
+domains were parsed into a struct field whose doc comment said selection did
+arithmetic on it; grep found zero production readers. Either wire it or delete
+it — and when the Spec names it, wiring it is the deliverable, not a follow-up.
