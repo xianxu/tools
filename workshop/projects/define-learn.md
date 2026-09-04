@@ -408,7 +408,7 @@ bug rather than an unavailable service.
 ### tools#10 M1 — a band and a domain per word, cached forever
 
 **est:** 3.94 (M1's share of the issue's 7.94)
-**actual:** 2.58h
+**actual:** 4.03h
 **closed:** 2026-09-04
 
 `define --harvest` bands the deck ahead of time: `facts/<lang>/` holds one record
@@ -444,17 +444,21 @@ concrete rather than a triumph — a consistently wrong scale scores 1.00 too, a
 `quokka` at C2 is reporting rarity rather than any level a learner is at. If M2's
 distractors read as mispitched, this is the first thing to suspect.
 
-**Calibration: est 3.94 / actual 2.58 = 1.53, an OVER-estimate** — the same
-direction as `#39` (1.85) and against `#40`/`#42`/`#44`, though by less than the
-first draft of this paragraph claimed. That draft said "the milestone had no
-remediation round at all" and was written BEFORE the boundary gate ran; the
-review then returned FIX-THEN-SHIP with four Important findings, and remediating
-them is most of the gap between 2.16h and the closing figure. Recorded rather
-than quietly corrected, because predeclaring an outcome and then measuring it is
-exactly how a calibration ledger stops being evidence.
+**Calibration: est 3.94 / actual 4.03 = 0.98 — very nearly exact, and the route
+there is the useful part.** The first draft of this paragraph read "actual 2.16h,
+1.82, an over-estimate, the milestone had no remediation round at all" — written
+BEFORE the boundary gate ran. The gate then took THREE rounds: FIX-THEN-SHIP with
+4 Important + 6 Minor, a round that produced no verdict at all, and a third
+raising three more Importants, each 2nd-in-family. Remediation is the whole 1.87h
+between that first figure and this one.
 
-The boundary rows were booked at 0.62 of the 3.94 and that was roughly right; the
-task rows were the over-estimate.
+Recorded rather than quietly corrected, because predeclaring an outcome and then
+measuring it is how a calibration ledger stops being evidence — and the
+correction points at the real lesson. The two `milestone-review` rows booked
+0.62 of the 3.94 for review-and-remediate; the actual boundary cost was closer to
+1.9h. **The estimate block's own named deviation #1 — booking two rows because
+`#7` took eight rounds and `#44` took five — was right in kind and still low by
+3x.** M2 books 0.75 for its boundary and should be read as optimistic.
 
 ### tools#10 — item authoring + harvest
 
