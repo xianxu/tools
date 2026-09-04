@@ -125,3 +125,36 @@ the learner's CEFR band or one below**. Rationale in the project's
 - **`sycophantic`/`obsequious` stays the test case.** A near-synonym must still
   be rejected, and under the new rule it is *more* likely to be selected, not
   less — same domain, same band. The guard matters more.
+
+### 2026-09-04 — selection and the veto MOVE to `#10`; this issue keeps rendering
+
+**Reason.** `#10`'s plan-quality gate (round 1, PQ-3) caught that `#10` was
+building distractor selection and the near-synonym veto while three Done-when
+rows here still owned them. Declaring the move now rather than discovering the
+overlap at one of the two closes.
+
+**Delta.** `#10` authors finished items offline — stem, answer, and distractors
+already selected at the learner's band or one below and already vetoed. So:
+
+- *"Options are drawn from the pool + deck, never model-generated"* — **satisfied
+  by construction, and more strongly than review-time filtering managed.** Options
+  are SELECTED from the banded deck at authoring time; nothing generates them.
+- *"The form works with the LLM seam unavailable (veto step skipped)"* — **now
+  unconditional, and the cost recorded in the 2026-08-30 revision above
+  disappears with it.** A form reading a finished item never reaches for a model,
+  so there is no degraded offline path to decide between: the veto already ran,
+  once, when the item was written. That was the open question this issue was
+  carrying; `#10` answers it by moving the work earlier rather than by widening a
+  filter.
+- *"A near-synonym of the answer is rejected"* — the `sycophantic`/`obsequious`
+  case **moves to `#10`** as the veto's committed known-bad row. Same assertion,
+  earlier in time.
+
+**What stays here, and it is still a real issue:** rendering an authored item as
+a cloze question — blanking the stem without leaking the answer through stem,
+plural or hyphenation — and determinism under a fixed seed. Plus the bad-question
+keypress recording the full option set.
+
+**Not yet applied to the rows above.** They are rewritten when `#10 M2` lands and
+the shape of a finished `Item` is real rather than planned; this entry is the
+record that they are no longer this issue's to satisfy.

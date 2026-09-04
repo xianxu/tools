@@ -5,7 +5,7 @@ deps: ["tools#3", "tools#11", "tools#17"]
 github_issue:
 created: 2026-08-20
 updated: 2026-09-04
-estimate_hours: 6.92
+estimate_hours: 7.94
 started: 2026-09-04T09:38:50-07:00
 ---
 
@@ -164,17 +164,27 @@ that, `pickDistractors` has no source for the learner's band at all.
 `baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
 `sdlc estimate-source`, so the per-primitive hours are provisional.
 
+**Revised upward from 6.92 after the estimate-quality judge, before any code was
+written.** The gate returned INFO — it did not block — and the revision is
+recorded rather than quietly made, because an estimate known to be light pollutes
+the calibration ledger it feeds, and that ledger is the only thing that can catch
+this repo's drift. Four items were unpriced (`item.go`'s types, the `--agreement`
+mode's driver, the mutation sweep, `#19`'s discovery risk) and one was priced as
+the wrong kind of work.
+
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
 item: issue-spec               design=0.50 impl=0.08
 item: greenfield-go-module     design=0.05 impl=0.28
+item: smaller-go-module        design=0.03 impl=0.12
 item: cross-cutting-refactor   design=0.04 impl=0.24
 item: smaller-go-module        design=0.03 impl=0.14
 item: smaller-go-module        design=0.02 impl=0.12
 item: cross-cutting-refactor   design=0.05 impl=0.20
 item: greenfield-go-module     design=0.05 impl=0.24
 item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.03 impl=0.14
 item: smaller-go-module        design=0.02 impl=0.12
 item: greenfield-go-module     design=0.05 impl=0.28
 item: smaller-go-module        design=0.02 impl=0.12
@@ -189,26 +199,30 @@ item: greenfield-go-module     design=0.06 impl=0.28
 item: greenfield-go-module     design=0.05 impl=0.24
 item: smaller-go-module        design=0.02 impl=0.12
 item: atlas-docs               design=0.03 impl=0.06
-item: ux-rename-iteration      design=0.55 impl=0.10
+item: ux-rename-iteration      design=0.55 impl=0.35
 item: milestone-review         design=0.0  impl=0.35
 item: milestone-review         design=0.0  impl=0.40
+item: real-api-discovery       design=0.0  impl=0.20
+item: smaller-go-module        design=0.0  impl=0.24
 design-buffer: 0.15
-total: 6.92
+total: 7.94
 ```
 
 | item | task | why this primitive |
 |---|---|---|
-| `issue-spec` 0.50/0.08 | the design carrier | the Spec, two operator decisions, the durable plan, and TWO plan-quality rounds — round 1 raised 8 findings including a Critical, and remediating it meant verifying each against the tree and REDESIGNING three things, not editing sentences. Priced above `#39`'s two-round 0.40 for that reason, level with `#40`'s 0.50. |
+| `issue-spec` 0.50/0.08 | the design carrier | the Spec, two operator decisions, the durable plan, and TWO plan-quality rounds — round 1 raised 8 findings including a Critical, and remediating it meant verifying each against the tree and REDESIGNING three things, not editing sentences. Above `#39`'s two-round 0.40 for that reason, level with `#40`'s 0.50. |
 | `greenfield-go-module` 0.05/0.28 | M1 T1 `vocab.go` | `Band` and `Domain`, two refusing parses, the closed set moving into `store` |
-| `cross-cutting-refactor` 0.04/0.24 | M1 T1 the store surface | four methods across `store.go`, `mem.go`, `yaml.go`, `storetest/suite.go`, plus `factsDir`, `RuntimeDirs` and the `.gitignore` row its guard demands |
+| `smaller-go-module` 0.03/0.12 | M1 T1 `item.go` | **added on review** — `WordFacts`, `Item` and its `Form` discriminator are the persisted types, and they fell between the `vocab.go` row and the store-surface row |
+| `cross-cutting-refactor` 0.04/0.24 | M1 T1 the store surface | four methods across `store.go`, `mem.go`, `yaml.go`, `storetest/suite.go`, plus `factsDir`, the tail-append to `RuntimeDirs` and the `.gitignore` row its guard demands |
 | `smaller-go-module` 0.03/0.14 | M1 T1 `glosslabel` derives | the ARCH-DRY move: the vocabulary leaves `main`, the longest-first ordering stays |
 | `smaller-go-module` 0.02/0.12 | M1 T1 `sanitiseFacts`/`sanitiseItem` | one pass at the write, plus the unparseable-reads-as-absent row |
-| `cross-cutting-refactor` 0.05/0.20 | M1 T2 Step 0, the `#17` loop | edits a SHIPPED feature: `reflect.go` writes through `ParseBand`, `renderUserModel` gains `level:`, `parseLearnerBand` reads it, and `user-model.golden.md` moves |
-| `greenfield-go-module` 0.05/0.24 | M1 T2 `bandTask` | the task, its golden, the fake-driven test, and the skip-when-NOAD-answered branch |
-| `smaller-go-module` 0.02/0.10 | M1 T2 `agreement` | pure, table-tested over synthetic bands |
-| `smaller-go-module` 0.02/0.12 | M1 T2 conformance + floor | `#11`'s pattern; the API is not new, so no discovery budget |
-| `greenfield-go-module` 0.05/0.28 | M1 T3 `runHarvest` | the batch loop, resumability, and the outage-leaves-the-store-untouched property |
-| `smaller-go-module` 0.02/0.12 | M1 T3 dispatch | `--harvest`, `--limit`, `--agreement`, the panic-seam and zero-call tests |
+| `cross-cutting-refactor` 0.05/0.20 | M1 T2 Step 0, the `#17` loop | edits a SHIPPED feature: `reflect.go` writes through `ParseBand`, `renderUserModel` gains `level:`, `parseLearnerBand` reads it, `user-model.golden.md` moves |
+| `greenfield-go-module` 0.05/0.24 | M1 T2 `bandTask` | the task, its golden, the fake-driven test, the skip-when-NOAD-answered branch |
+| `smaller-go-module` 0.02/0.10 | M1 T2 `agreement` | the ARITHMETIC only — pure, table-tested over synthetic bands |
+| `smaller-go-module` 0.03/0.14 | M1 T2 the `--agreement` driver | **added on review** — sampling K=20, re-asking N=5, aggregating against the mode and writing nothing is the mode's own machinery; it had been folded into a flag row |
+| `smaller-go-module` 0.02/0.12 | M1 T2 conformance + floor | `#11`'s pattern; the transport is not new |
+| `greenfield-go-module` 0.05/0.28 | M1 T3 `runHarvest` | the batch loop, resumability, the outage-leaves-the-store-untouched property |
+| `smaller-go-module` 0.02/0.12 | M1 T3 dispatch | `--harvest`, `--limit`, the panic-seam and zero-call tests |
 | `atlas-docs` 0.03/0.06 | M1 T3 | atlas, README |
 | `milestone-review` 0.0/0.30 | M1 boundary: run | |
 | `milestone-review` 0.0/0.32 | M1 boundary: remediation | |
@@ -220,38 +234,51 @@ total: 6.92
 | `greenfield-go-module` 0.05/0.24 | M2 T5 `vetoTask` | the veto and its committed known-bad case, now carrying `sycophantic`/`obsequious` |
 | `smaller-go-module` 0.02/0.12 | M2 T6 `prune` | deterministic, proved by pruning twice |
 | `atlas-docs` 0.03/0.06 | M2 T6 | atlas, README, project row |
-| `ux-rename-iteration` 0.55/0.10 | M2 T6 **the checkpoint** | see the deviation note below |
+| `ux-rename-iteration` 0.55/0.35 | M2 T6 **the checkpoint** | impl raised from 0.10 — see deviation 3 |
 | `milestone-review` 0.0/0.35 | M2 boundary: run | a larger diff than M1's, with an LLM judge inside it |
 | `milestone-review` 0.0/0.40 | M2 boundary: remediation | |
+| `real-api-discovery` 0.0/0.20 | `#19`, on the first many-call path | **added on review** — the transport is not new, but `#19` (an overloaded upstream reading as OUR bug) is OPEN, and the plan's own envelope calls it a real risk here. Naming it unpriced was the honest handling; pricing it is better. |
+| `smaller-go-module` 0.0/0.24 | the mutation sweep | **added on review** — the plan's `## Verification` commits to reverting the code behind each of seven Done-when rows and watching the named test redden, plus a full `-tags conformance` run. The four boundary rows cover review-and-remediate, not this. |
 
 **THREE NAMED DEVIATIONS**, stated because a block claiming fidelity while
 quietly departing is the dishonest kind:
 
 1. **Two `milestone-review` rows per boundary, above the primitive's unit.** The
    primitive prices one review of one chunk; booking two prices ROUNDS. This is
-   `#42`'s deviation and it was earned on measured evidence — `#7` took eight
-   rounds, `#44` took five against one booked review and closed est 2.16 /
-   actual 4.60. Four boundary rows here because this issue genuinely has two
-   boundaries, which is decision 2 on the issue rather than a pricing choice.
-2. **M2's boundary is priced above M1's** (0.35/0.40 vs 0.30/0.32). M1 is a
-   store surface and one task; M2 is three model tasks, two judges and a
-   selection rule, and a review of an LLM judge is the harder review.
-3. **`ux-rename-iteration` for the material-quality checkpoint.** Not a rename —
-   but structurally the same primitive: the operator reads real output and asks
-   for changes, and prompts get tuned. Priced at `#40`/`#42`'s 0.55 rather than
-   one round's 0.30, because `baseline-v2.1` says plan for 3-5 rounds and because
-   *this checkpoint is the whole point of the issue*: "how good can the material
-   get" is answered here, and one round would price it as a formality — the exact
-   failure decision 2 exists to prevent.
+   `#42`'s deviation, earned on measured evidence — `#7` took eight rounds, `#44`
+   took five against one booked review and closed est 2.16 / actual 4.60. Four
+   rows here because this issue genuinely has two boundaries, which is decision 2
+   on the issue rather than a pricing choice. **Their MAGNITUDE is unjustified by
+   v3.1** — 1.37h at 0.30-0.40 sits inside the *unscaled* v2 band but above the
+   ×0.4 scaled one, and `#38`-`#42` all do the same. That is a model gap for
+   `#117`'s ledger, recorded here rather than silently inherited.
+2. **M2's boundary is priced above M1's** (0.35/0.40 vs 0.30/0.32). M1 is a store
+   surface and one task; M2 is three model tasks, two judges and a selection
+   rule, and a review of an LLM judge is the harder review.
+3. **`ux-rename-iteration` at 0.55/0.35 — impl well above the primitive's band.**
+   The primitive's scaled impl is 0.04-0.12, and 0.10 was what `#40` and `#42`
+   booked. Their rounds were reading a screen; **a round here re-runs `--harvest`
+   against the real model over a real deck and re-reads a batch**, so the
+   implementation half is a live generation cycle, not a tweak. At 3-5 cycles,
+   0.10 priced the checkpoint as a formality — the exact failure decision 2
+   exists to prevent. The design half stays at 0.55 for the reason `#40` and
+   `#42` give: `baseline-v2.1` says plan for 3-5 rounds, not one.
 
-**The gap this estimate does NOT close, recorded rather than missed.** This
-repo's recent rows are same-direction misses — `#38` 0.67, `#40` 0.48, `#41`
-0.69, `#44` 0.47 est/actual. At that trailing ratio 6.92 predicts 10-14h.
-Multiplying to meet it would be back-fitting; the primitives are the method, and
-`#117`'s calibration ledger is where a systematic ratio belongs. Two things here
-push the same way and are already priced as far as the primitives allow: the
-checkpoint is open-ended by design, and `#19` (an overloaded upstream reading as
-our bug) is OPEN and this is the first path that makes many calls in a row.
+**The trailing record, stated in full — and the earlier version of this paragraph
+was wrong.** It cited `#38` 0.67, `#40` 0.48, `#41` 0.69, `#44` 0.47 and called
+them "same-direction misses". Those four numbers are right and the claim is not:
+**all six** v3.1 rows are `#38` 0.67, **`#39` 1.85**, `#40` 0.48, `#41` 0.69,
+**`#42` 0.36**, `#44` 0.47 — `#39` overshot in the opposite direction, and `#42`
+is the worst miss of the set. Both were omitted, and both are cited elsewhere in
+this very block, so the selection was not for want of looking them up. Corrected
+because an estimate that picks its evidence is worth less than no estimate.
+
+Honestly stated: median ratio 0.58, range 0.36-1.85, so **7.94 projects to
+roughly 4-22h, centred near 14h**. That spread is the real finding — this repo
+cannot yet predict itself within a factor of five. **The total is NOT multiplied
+to meet the median**: the primitives are the method, back-fitting would destroy
+the only signal `#117`'s ledger can read, and the four additions above were made
+because each names work that exists, not to close a gap.
 
 ## Done when
 
