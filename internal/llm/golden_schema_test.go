@@ -8,8 +8,10 @@ import (
 )
 
 // vetoVerdict is a representative result type. It is not used in production —
-// #12 will define its own — it exists so the derived schema has a committed
-// snapshot, which is the property schema.go cites to justify reflecting the
+// #10 defines the real one, at AUTHORING time rather than at review time, and
+// this shape predates that decision (see #12's Revisions: selection and the veto
+// moved to #10 so an item reaches a sitting already finished). It exists here so
+// the derived schema has a committed snapshot, which is the property schema.go cites to justify reflecting the
 // schema instead of hand-writing one: "a struct field added without thought shows
 // up in a diff."
 //

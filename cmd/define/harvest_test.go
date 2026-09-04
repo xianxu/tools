@@ -44,6 +44,39 @@ func harvestRig(t *testing.T, words int) (deps, *llmtest.Fake, *store.YAML) {
 
 const bandReply = `{"band":"C1","domain":"Law"}`
 
+// The four tasks --harvest runs, matched by a marker unique to each prompt.
+// Scripting by TASK rather than by call order is what keeps these tests readable
+// once one invocation drives banding, authoring, entailment and the veto.
+const (
+	markBand   = "## What to answer"
+	markAuthor = "## What to write"
+	markEntail = "**entails**"
+	markVeto   = "**fits**"
+)
+
+// scriptAll answers every task, so a test that cares about one pass is not
+// written in terms of the others. n is generous: the fake serves its fallback
+// once a queue is drained, and these replies are all well-formed.
+func scriptAll(f *llmtest.Fake, n int) {
+	for range n {
+		f.Script(markBand, llmtest.Reply{Text: bandReply})
+		f.Script(markAuthor, llmtest.Reply{Text: `{"stem":"The Senate confirmed the nominee after a sycophantic hearing."}`})
+		f.Script(markEntail, llmtest.Reply{Text: `{"entails":true,"named":true,"reason":"names the Senate"}`})
+		f.Script(markVeto, llmtest.Reply{Text: `{"fits":false,"reason":"unrelated meaning"}`})
+	}
+}
+
+// countTask reports how many requests carried a task's marker.
+func countTask(f *llmtest.Fake, mark string) int {
+	n := 0
+	for _, r := range f.Requests() {
+		if strings.Contains(r.Prompt(), mark) {
+			n++
+		}
+	}
+	return n
+}
+
 // Done-when 2, and it is a claim about CALLS rather than about a file existing.
 //
 // The second run is driven against a fake that has served everything it was
@@ -52,15 +85,15 @@ const bandReply = `{"band":"C1","domain":"Law"}`
 // the loop asks anyway and overwrites it with the same answer.
 func TestHarvestAsksOncePerWordAndNeverAgain(t *testing.T) {
 	d, fake, st := harvestRig(t, 3)
-	fake.Script("", llmtest.Reply{Text: bandReply}, llmtest.Reply{Text: bandReply}, llmtest.Reply{Text: bandReply})
+	scriptAll(fake, 12)
 
 	var out, errOut bytes.Buffer
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
 		t.Fatalf("first run = %d, stderr: %s", code, errOut.String())
 	}
-	first := len(fake.Requests())
+	first := countTask(fake, markBand)
 	if first == 0 {
-		t.Fatal("the first run made no calls at all")
+		t.Fatal("the first run asked about no words at all")
 	}
 
 	deck, err := st.Deck()
@@ -77,13 +110,18 @@ func TestHarvestAsksOncePerWordAndNeverAgain(t *testing.T) {
 		}
 	}
 
+	before := len(fake.Requests())
 	out.Reset()
 	errOut.Reset()
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
 		t.Fatalf("second run = %d, stderr: %s", code, errOut.String())
 	}
-	if got := len(fake.Requests()); got != first {
-		t.Errorf("the second run made %d more call(s); a banded word must be re-READ, not re-ASKED", got-first)
+	if got := countTask(fake, markBand); got != first {
+		t.Errorf("the second run made %d more banding call(s); a banded word must be re-READ, not re-ASKED", got-first)
+	}
+	// And nothing is re-authored either: an item on disk is finished material.
+	if got := len(fake.Requests()); got != before {
+		t.Errorf("the second run made %d call(s) of any kind; a harvested deck must cost nothing", got-before)
 	}
 }
 
@@ -96,7 +134,7 @@ func TestHarvestAsksOncePerWordAndNeverAgain(t *testing.T) {
 // makes it one.
 func TestHarvestOutageKeepsWhatWasAlreadyBought(t *testing.T) {
 	d, fake, st := harvestRig(t, 4)
-	fake.Script("", llmtest.Reply{Text: bandReply}, llmtest.Reply{Text: bandReply},
+	fake.Script(markBand, llmtest.Reply{Text: bandReply}, llmtest.Reply{Text: bandReply},
 		llmtest.Reply{Status: 500, Text: "upstream is having a day"})
 
 	var out, errOut bytes.Buffer
@@ -140,16 +178,18 @@ func TestHarvestOutageKeepsWhatWasAlreadyBought(t *testing.T) {
 // where an unbounded loop and a bounded one differ.
 func TestHarvestStopsAtTheLimit(t *testing.T) {
 	d, fake, _ := harvestRig(t, 6)
-	for range 6 {
-		fake.Script("", llmtest.Reply{Text: bandReply})
-	}
+	scriptAll(fake, 24)
 
 	var out, errOut bytes.Buffer
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: 2}, &out, &errOut); code != 0 {
 		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
 	}
-	if got := len(fake.Requests()); got != 2 {
-		t.Errorf("made %d calls with -limit 2; the cap is not enforced", got)
+	if got := countTask(fake, markBand); got != 2 {
+		t.Errorf("made %d banding calls with -limit 2; the cap is not enforced", got)
+	}
+	// The cap bounds BOTH passes, or a 200-word limit still authors the whole deck.
+	if got := countTask(fake, markAuthor); got > 2 {
+		t.Errorf("authored %d items with -limit 2; the cap does not reach the second pass", got)
 	}
 	// A capped run is a PARTIAL run, not a failure, and it has to say so or the
 	// operator cannot tell it from a finished one.
@@ -163,7 +203,7 @@ func TestHarvestStopsAtTheLimit(t *testing.T) {
 // order.
 func TestHarvestRefusesABandOffTheScale(t *testing.T) {
 	d, fake, st := harvestRig(t, 1)
-	fake.Script("", llmtest.Reply{Text: `{"band":"B2+","domain":"Law"}`})
+	fake.Script(markBand, llmtest.Reply{Text: `{"band":"B2+","domain":"Law"}`})
 
 	var out, errOut bytes.Buffer
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
@@ -190,9 +230,7 @@ func TestAgreementModeWritesNothing(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for range 6 {
-		fake.Script("", llmtest.Reply{Text: bandReply}) // C1, disagreeing with the stored B1
-	}
+	scriptAll(fake, 12) // the band replies say C1, disagreeing with the stored B1
 
 	var out, errOut bytes.Buffer
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{agreement: 3}, &out, &errOut); code != 0 {
@@ -361,7 +399,8 @@ func TestTheDictionaryDomainBeatsTheModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The model is told the answer and asked to repeat it; here it paraphrases.
-	fake.Script("", llmtest.Reply{Text: `{"band":"C2","domain":"Politics"}`})
+	fake.Script(markBand, llmtest.Reply{Text: `{"band":"C2","domain":"Politics"}`})
+	scriptAll(fake, 8)
 
 	var out, errOut bytes.Buffer
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
@@ -392,7 +431,7 @@ func TestTheDictionaryDomainBeatsTheModel(t *testing.T) {
 func TestHarvestSendsTheDecksLanguage(t *testing.T) {
 	d, fake, _ := harvestRig(t, 1)
 	d.lang = store.Lang("es")
-	fake.Script("", llmtest.Reply{Text: bandReply})
+	scriptAll(fake, 8)
 
 	var out, errOut bytes.Buffer
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
@@ -521,7 +560,7 @@ func TestRunHarvestThroughTheWiringHop(t *testing.T) {
 	// not the fixture loader.
 	d := testDeps(t)
 	fake := llmtest.NewFake(t)
-	fake.Script("", llmtest.Reply{Text: bandReply})
+	scriptAll(fake, 8)
 
 	dir := t.TempDir()
 	st := store.NewYAML(dir, store.DefaultLang, nil)
@@ -552,9 +591,7 @@ func TestRunHarvestThroughTheWiringHop(t *testing.T) {
 
 	// And a bare -agreement takes the documented default rather than erroring.
 	var out2, errb2 bytes.Buffer
-	for range agreementRounds {
-		fake.Script("", llmtest.Reply{Text: bandReply})
-	}
+	scriptAll(fake, agreementRounds+4)
 	if code := run(t.Context(), []string{"-harvest", "-agreement", "0"}, d,
 		strings.NewReader(""), &out2, &errb2); code != 0 {
 		t.Fatalf("-agreement=0 exit = %d, stderr %q", code, errb2.String())

@@ -3476,3 +3476,51 @@ which never terminates for a mark `Toggle` cannot reach — exactly the mark the
 test exists to catch. A red says what is wrong; a hang says nothing and takes the
 suite with it. Bound every search whose termination depends on the property under
 test.
+
+## #10 M1 — four boundary rounds, and one class that kept coming back
+
+**A finding is disposed by CODE, not by the paragraph promising it.** `#10`'s
+plan-quality gate raised a neutralisation finding; the plan answered it with a
+paragraph specifying `sanitiseFacts`/`sanitiseItem`, the gate recorded it
+`addressed`, the step was ticked, and neither function was ever written. The
+boundary review found it two rounds later. **A ticked checkbox is the weakest
+evidence in the loop, because ticking it is the cheapest thing in the loop** — so
+when disposing a finding, name the symbol and grep for it.
+
+**"Fix the class, not the site" fails in a specific, predictable way: you fix the
+instances the finding NAMED.** Three rounds in a row on this issue:
+
+- a mode-collision guard covered `--play` and `--reflect` — the two the finding
+  listed — while `-forget` and `--llm-check`, which dispatch *above* that switch,
+  still swallowed the new mode in silence;
+- a "properties without pins" finding listed three, they were pinned, and the
+  round-4 review found the enumeration the round-3 finding had itself written
+  down had seven members and one was swept;
+- a read-side canonicalisation rule was stated on one accessor while its sibling
+  forty lines up returned the raw record.
+
+**The tell is that the finding hands you the enumeration and you use it as a
+list of sites instead of as a specification.** When a finding says "2nd in
+family", write the enumeration down as an object the code shares — a `modes`
+slice both the check and its table test walk — so the next member is covered by
+construction rather than by the next reviewer.
+
+**A seam only constrains callers that go through it.** `bandTask` existed
+precisely so `--harvest` and its measurement mode could not ask different
+questions, and the conformance row broke that from OUTSIDE by handing the seam
+different arguments: it floored a bare word while production sends a dictionary
+gloss. Every number the milestone reported as *measured* was a number about a
+prompt nobody runs. **When a test asserts a property of production, derive its
+inputs the way production derives them** — the row now calls the same
+`senseFacts` the harvest loop does.
+
+**Do not write the calibration prose before the gate runs.** The project's M1
+paragraph said "est 3.94 / actual 2.16 = 1.82, and the milestone had no
+remediation round at all" — committed before the boundary review, which then took
+three more rounds and 1.9h. Predeclaring an outcome and then measuring it is how
+a calibration ledger stops being evidence.
+
+**And a `go test` that takes ~110s is a review-agent hazard.** One boundary round
+produced no verdict at all: the reviewer spent its budget waiting on repeated
+full-suite runs and was cut off mid-sentence. Not a code defect, but it cost a
+round — worth knowing before blaming the diff.

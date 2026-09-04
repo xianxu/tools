@@ -1,0 +1,39 @@
+task:   distractor-veto
+model:  
+effort: 
+--- system ---
+You check whether a wrong answer is actually wrong. You are looking for the case where it is not.
+--- prompt ---
+## The question
+
+Sentence: The aide was ___, praising a policy he had privately called unworkable.
+
+The intended answer is **sycophantic**.
+
+A wrong answer being considered: **obsequious**
+
+## What to judge
+
+**fits** — would `obsequious` ALSO make the sentence true and natural? Answer yes if a careful reader could defend it as correct, even if it is a worse fit than the intended answer. A near-synonym almost always fits: `obsequious` fits a blank meant for `sycophantic`.
+
+Yes means the candidate is REJECTED as a wrong answer, because a question with two correct options teaches nothing.
+
+**reason** — one clause.
+
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "fits": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "fits",
+    "reason"
+  ],
+  "type": "object"
+}

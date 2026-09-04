@@ -43,6 +43,10 @@ const (
 	agreementMaxRounds = 25
 )
 
+// optionsPerItem is three wrong answers beside one right one — four options,
+// which is what play.maxOptions can express and what the 1-4 key range grades.
+const optionsPerItem = 3
+
 // harvestOptions is what the flags decide.
 type harvestOptions struct {
 	limit int
@@ -151,7 +155,167 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 		fmt.Fprintf(out, ", %d refused", refused)
 	}
 	fmt.Fprintln(out, ".")
+
+	return runAuthoring(ctx, d, client, limit, out, errOut)
+}
+
+// runAuthoring writes practice items for banded words that have none.
+//
+// SECOND PASS, after banding, and it depends on the first having run: selection
+// draws from the deck's BANDED words, so a word cannot supply a distractor until
+// it has a level. That ordering is why a single --harvest does both rather than
+// authoring being its own flag — the two are one job with a dependency, not two
+// jobs a person chooses between.
+func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out, errOut io.Writer) int {
+	deck, err := d.deck.Deck()
+	if err != nil {
+		fmt.Fprintf(errOut, "define: could not read the deck: %v\n", err)
+		return 1
+	}
+
+	// THE POOL is every banded word, built once. Selection is pure over it, so
+	// this is the only place the store is read for candidates.
+	var pool []bandedWord
+	for _, w := range deck {
+		f, err := d.deck.WordFacts(w.Text)
+		if err != nil {
+			fmt.Fprintf(errOut, "define: could not read facts for %q: %v\n", w.Text, err)
+			return 1
+		}
+		if f.Harvested() {
+			pool = append(pool, bandedWord{Word: w.Text, Facts: f})
+		}
+	}
+	pool = sortedBanded(pool)
+	if len(pool) < 2 {
+		fmt.Fprintln(out, "define: too few banded words to select wrong answers from; harvest more first.")
+		return 0
+	}
+
+	learner := readLearner(d.deck)
+	var authored, skipped, rejected int
+	var domains []store.Domain
+	widened := map[selectionTier]int{}
+
+	for _, c := range pool {
+		if authored >= limit {
+			fmt.Fprintf(out, "define: stopped authoring at the --limit of %d; run again to continue\n", limit)
+			break
+		}
+		existing, err := d.deck.Items(c.Word)
+		if err != nil {
+			fmt.Fprintf(errOut, "define: could not read items for %q: %v\n", c.Word, err)
+			return 1
+		}
+		if len(existing) > 0 {
+			skipped++
+			continue
+		}
+
+		gloss, _ := wordSense(d, c.Word)
+		stem, err := llm.Run(ctx, client, authorTask(d.lang, c.Word, gloss, c.Facts, learner))
+		if err != nil {
+			fmt.Fprintf(errOut, "define: authoring stopped: %v\n", err)
+			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
+			return 1
+		}
+
+		// THE ENTAILMENT JUDGE, before any distractor is selected. A stem that
+		// does not entail its answer cannot be rescued by better wrong answers,
+		// so judging first is what stops the veto being spent on a doomed item.
+		verdict, err := llm.Run(ctx, client, entailTask(c.Word, stem.Stem))
+		if err != nil {
+			fmt.Fprintf(errOut, "define: judging stopped: %v\n", err)
+			return 1
+		}
+		if !verdict.Entails || !verdict.Named {
+			rejected++
+			fmt.Fprintf(errOut, "define: %q: stem rejected (%s); leaving it unauthored\n", c.Word, verdict.Reason)
+			continue
+		}
+
+		// SELECTED, never invented, and then vetoed one pair at a time.
+		candidates, tier := pickDistractors(c.Word, c.Facts, learner.Band, pool, optionsPerItem,
+			// optionpool's seedFor, reused rather than reimplemented (ARCH-DRY):
+			// it is already variadic, already pinned by TestSeedForIsPinned, and
+			// the property wanted here is the same one — a stable sequence this
+			// repo owns rather than a stdlib version's.
+			//
+			// NO DAY PART, unlike a sitting's seed. #7 varies options per day so a
+			// learner cannot learn a position; an authored item is written ONCE and
+			// cached forever, so varying it by day would make two runs of the same
+			// deck produce different material and a bad batch undebuggable.
+			seedFor("harvest-options", c.Word))
+		widened[tier]++
+		var kept []string
+		for _, cand := range candidates {
+			v, err := llm.Run(ctx, client, vetoTask(c.Word, stem.Stem, cand))
+			if err != nil {
+				fmt.Fprintf(errOut, "define: the veto stopped: %v\n", err)
+				return 1
+			}
+			if v.Fits {
+				// The veto EXERCISED. Said out loud because a veto nobody sees
+				// work is a veto nobody can trust.
+				fmt.Fprintf(errOut, "define: %q: vetoed %q (%s)\n", c.Word, cand, v.Reason)
+				continue
+			}
+			kept = append(kept, cand)
+		}
+		if len(kept) == 0 {
+			rejected++
+			fmt.Fprintf(errOut, "define: %q: every candidate was vetoed; leaving it unauthored\n", c.Word)
+			continue
+		}
+
+		if err := d.deck.SetItems(c.Word, []store.Item{{
+			Word: c.Word, Form: store.FormCloze, Stem: stem.Stem,
+			Answer: c.Word, Distractors: kept, At: now(d),
+		}}); err != nil {
+			fmt.Fprintf(errOut, "define: could not save items for %q: %v\n", c.Word, err)
+			return 1
+		}
+		authored++
+		domains = append(domains, c.Facts.Domain)
+	}
+
+	fmt.Fprintf(out, "define: %d item(s) authored, %d already had material", authored, skipped)
+	if rejected > 0 {
+		fmt.Fprintf(out, ", %d rejected", rejected)
+	}
+	fmt.Fprintln(out, ".")
+	if authored > 0 {
+		// REPORTED, not buried, and measured with NO MODEL — a judge scoring its
+		// own batch's variety is the self-oracle problem the atlas records.
+		fmt.Fprintf(out, "define: topic spread %.2f across the batch.\n", topicSpread(domains))
+	}
+	// How far selection had to widen is a fact about the DECK, and the difference
+	// between "these wrong answers are pitched" and "these were what was lying
+	// around".
+	for _, t := range []selectionTier{tierGeneral, tierAnyDomain, tierAboveBand} {
+		if widened[t] > 0 {
+			fmt.Fprintf(out, "define: %d item(s) drew options from %s.\n", widened[t], t)
+		}
+	}
 	return 0
+}
+
+// authorTask, entailTask and vetoTask are the one place each request is built,
+// so no caller can drift into asking a different question — the rule bandTask's
+// comment states and the conformance row once broke from outside.
+func authorTask(lang store.Lang, word, gloss string, facts store.WordFacts, learner learnerFacts) llm.Task[authoredStem] {
+	req := renderAuthorPrompt(lang, word, gloss, facts, learner)
+	return llm.Task[authoredStem]{Name: req.Task, System: req.System, Prompt: req.Prompt}
+}
+
+func entailTask(word, stem string) llm.Task[entailVerdict] {
+	req := renderEntailPrompt(word, stem)
+	return llm.Task[entailVerdict]{Name: req.Task, System: req.System, Prompt: req.Prompt}
+}
+
+func vetoTask(answer, stem, candidate string) llm.Task[vetoVerdict] {
+	req := renderVetoPrompt(answer, stem, candidate)
+	return llm.Task[vetoVerdict]{Name: req.Task, System: req.System, Prompt: req.Prompt}
 }
 
 // runHarvestAgreement measures how stable the model's banding is, and WRITES

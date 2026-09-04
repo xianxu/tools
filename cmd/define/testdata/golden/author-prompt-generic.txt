@@ -1,0 +1,41 @@
+task:   authored-item
+model:  
+effort: 
+--- system ---
+You write one sentence that teaches a word by using it. You never explain the word, and you never write a definition.
+--- prompt ---
+## The word
+
+ephemeral (CEFR C1)
+
+Language: `en`.
+
+Its dictionary sense:
+
+lasting for a very short time
+
+## What to write
+
+ONE sentence using the word, which will be shown with the word blanked out.
+
+Two requirements:
+
+1. **The sentence must ENTAIL the word.** A reader who did not know the word must be able to work out which word belongs in the blank from the rest of the sentence alone. "His ___ behaviour was noted by all" fails this: almost any adjective fits.
+2. **Name real people, places or institutions.** Not "a manager" or "the company" — a named subject the reader can picture. This is what the word attaches to in memory.
+
+Write the sentence with the word itself present, spelled exactly as given. Do not blank it out; do not quote it; do not explain it afterwards.
+
+
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "stem": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "stem"
+  ],
+  "type": "object"
+}

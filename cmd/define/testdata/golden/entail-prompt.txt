@@ -1,0 +1,41 @@
+task:   stem-entails
+model:  
+effort: 
+--- system ---
+You judge whether a sentence teaches a word by using it. You are strict: most sentences do not.
+--- prompt ---
+## The item
+
+Word: sycophantic
+
+Sentence: The aide was sycophantic, praising a policy he had privately called unworkable.
+
+## What to judge
+
+**entails** — with the word removed, could a reader who did NOT know it work out which word belongs in the blank, from the rest of the sentence alone? If several unrelated words would fit equally well, the answer is no. "His ___ behaviour was noted by all" is a NO: almost any adjective fits.
+
+**named** — does the sentence name a real person, place or institution the reader can picture? "A manager" and "the company" are NO. "The Senate Judiciary Committee" is YES.
+
+**reason** — one clause, for a human reading a rejected item.
+
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "entails": {
+      "type": "boolean"
+    },
+    "named": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "entails",
+    "named",
+    "reason"
+  ],
+  "type": "object"
+}
