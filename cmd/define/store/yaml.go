@@ -649,7 +649,17 @@ func (y *YAML) Items(key string) ([]Item, error) {
 		y.warnf("skipping unreadable %s: %v", name, err)
 		return nil, nil
 	}
-	return f.Items, nil
+	// Re-neutralised on the way OUT, the same rule WordFacts states forty lines
+	// up: a record read back out of a runtime directory is UNTRUSTED INPUT, no
+	// matter that this build wrote it. The write-side pass covers what this
+	// build wrote; it cannot cover a file a person edited — and the README
+	// documents these as inspectable, so hand-editing is an invited workflow.
+	// A distractor carrying a newline would otherwise forge a row on #40's grid,
+	// arriving by the one path oneLine was not applied to.
+	//
+	// Mem cannot reproduce a hand-edited file, so storetest structurally cannot
+	// hold this one — yaml_test.go does.
+	return sanitiseItems(f.Items), nil
 }
 
 func (y *YAML) SetItems(key string, items []Item) error {

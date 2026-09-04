@@ -243,7 +243,18 @@ func wordSense(d deps, word string) (gloss string, domain store.Domain) {
 	if err != nil {
 		return "", ""
 	}
-	e := ParseEntry(text)
+	return senseFacts(word, ParseEntry(text))
+}
+
+// senseFacts is the PURE half: an entry in, the leading gloss and the first
+// subject label out.
+//
+// Split from wordSense because the IO is one line and the judgement is the rest,
+// and the judgement is what needs pinning — the axis filter below was mutable
+// with the whole package green until this had a table test (ARCH-PURE: if a test
+// needs a dict fake to exercise a derivation, the derivation is in the wrong
+// function).
+func senseFacts(word string, e Entry) (gloss string, domain store.Domain) {
 	if !entryDefines(word, e) {
 		return "", ""
 	}
@@ -257,11 +268,14 @@ func wordSense(d deps, word string) (gloss string, domain store.Domain) {
 				gloss = f.Text
 			}
 			// The first DOMAIN label in document order, not the first label of
-			// any kind: readGloss also reports register (`informal`, `archaic`),
-			// which is a different axis and not a subject field.
+			// any kind: readGloss also reports REGISTER (`informal`, `archaic`),
+			// which is a different axis and not a subject field. Without this
+			// filter an `informal` sense would be stored as a word's domain, and
+			// ParseDomain would then flatten it to `general` — silently losing
+			// the specialist label a later sense actually carried.
 			if domain == "" && f.Axis == play.AxisDomain {
-				if d, ok := store.ParseDomain(f.Label); ok {
-					domain = d
+				if parsed, ok := store.ParseDomain(f.Label); ok {
+					domain = parsed
 				}
 			}
 		}

@@ -177,3 +177,132 @@ findings:
       remediation round at all" in the commit that precedes the boundary review. Any
       remediation of the findings above makes both stale.
 ```
+
+---
+
+## Re-review — 2026-09-04T13:03:59-07:00 (unknown)
+
+| field | value |
+|-------|-------|
+| issue | 10 — authored practice items: level-tagged words, and stems the model writes offline |
+| repo | tools |
+| issue file | workshop/issues/000010-vocab-harvest.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 0b8d9930762168cf52f77c5d0864599f678d3b5d..991fef6aa0e4cedc8fd55177053994bd35d539f8 |
+| command | sdlc milestone-close --issue 10 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-09-04T13:03:59-07:00 |
+| verdict | unknown |
+
+## Review
+
+The clean re-run is still going (the `cmd/define` package takes ~110s). I'll report as soon as it lands — I'm leaving the scratch tree untouched this time so the result is trustworthy.
+
+---
+
+## Re-review — 2026-09-04T13:55:45-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 10 — authored practice items: level-tagged words, and stems the model writes offline |
+| repo | tools |
+| issue file | workshop/issues/000010-vocab-harvest.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 0b8d9930762168cf52f77c5d0864599f678d3b5d..991fef6aa0e4cedc8fd55177053994bd35d539f8 |
+| command | sdlc milestone-close --issue 10 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-09-04T13:55:45-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All ten prior findings are `addressed`, and I verified the four that could be verified by reverting rather than by reading: keying `agreement` on the raw band, dropping `sanitiseFacts` from `Mem`, inverting `sortedByLengthDesc`, and continuing past a mid-batch outage each turn a named test red in a scratch copy. `go build`, `go vet`, `gofmt -l` and `go test ./...` are clean at HEAD. What blocks SHIP is that three of the round-2 fixes landed *without* the pin that would have made them fixes rather than edits, and one of them left its own class half-swept: BR-3's language threading, the dictionary-domain precedence and `wordSense`'s axis filter can all be mutated with the whole `cmd/define` suite staying green, and BR-9's mode-collision fix covered `-play`/`-reflect` while `-forget` and `-llm-check` still silently swallow `--harvest` — confirmed by running the built binary. All three Important findings are 2nd-in-family, so each asks for the rule and the enumeration rather than the site.
+
+## 1. Strengths
+
+- **`sanitiseFacts`/`sanitiseItem` in `store` is the class fix, not the instance** (`cmd/define/store/item.go:92`). Reverting `m.facts[k] = sanitiseFacts(f)` in `mem.go:163` reddens two `storetest` rows against *both* implementations — the divergence BR-2 found is now the interface's guarantee, and the suite is where it is held.
+- **`YAML.WordFacts` re-parses on the way out** (`store/yaml.go:592-604`) with `TestUnparseableWordFactsReadAsUnharvested` covering four damaged-file shapes (truncated, off-scale, prose, no band) plus the asymmetry row where a bad domain degrades and keeps the band. This is ARCH-SECURE done properly at a persisted boundary.
+- **Done-when 1's seam is made to PANIC, not nil** (`harvest_test.go:243`), and the test also asserts the sitting banded nothing on the way past. That second half is what makes it a property rather than a timing accident.
+- **Done-when 6 asserts what survived is WHOLE** (`harvest_test.go:129`), not merely present — `f.Band == ""` with a timestamp is the torn-write shape a "file exists" check would miss.
+- **`store.Domains()`/`Bands()` copy, and `TestVocabularyAccessorsCopy` pins it.** A closed set handed out by reference is not closed.
+- **The atlas section reports the 1.00 with its counter-example** (`atlas/define.md:1497`): `quokka` at C2 is named as rarity-not-level in the same paragraph as the perfect score. That is the honest shape for a stability measure.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+### I-1 — `-harvest` is still silently dropped by `-forget` and `-llm-check`; and none of the six new guards has a test (`cmd/define/main.go:568`, `:665`)
+
+**This is the 2nd finding in family `flag-silently-ignored`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+Verified by running the built binary: `define -forget nosuchword -harvest` prints `nosuchword is not in the deck` and exits 1; `define -llm-check -harvest` prints the config report and exits 0. Both drop `--harvest` in silence — the exact shape `main.go:562`'s own comment calls "how `-raw` came to mean two different things in #2". BR-9's remediation added `case *harvest && (*playFlag || *reflect)` at `main.go:610`, which is the two instances the finding named; `-forget` and `-llm-check` dispatch *above* the switch and were never enumerated.
+
+The rule: **mode flags are validated against the whole mode set in one enumeration, not pairwise as each collision is found.** The enumeration exists and is short — `llm-check`, `forget`, `play`, `reflect`, `harvest`. One `modes := []struct{ name string; on bool }{…}` refusing when `>1` is on, placed before the `if *llmCheck` early return, covers every pair including the ones nobody has typed yet, and a table test derived from that same slice covers a sixth mode by construction.
+
+Second half, same finding: **the entire BR-9 remediation is untested.** No test file outside `harvest_test.go` mentions harvest, and `harvest_test.go` calls `runHarvest` directly — so none of the six new `case` arms at `main.go:583-611` is reached by any test, nor is `main.go:670`'s bare-`-agreement`-default branch. The repo already pins this class of guard through `run()` (`play_loop_test.go:1438` asserts `"do not also pass a word"`), so this is a break from local convention, not a missing convention.
+
+### I-2 — three properties this milestone advertises can be mutated with the suite green (`cmd/define/harvest.go:111`, `:137`, `:262`)
+
+**This is the 2nd finding in family `property-without-a-pin`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+Measured this round by reverting each in a scratch copy at HEAD and running `./cmd/define/ ./cmd/define/store/...`:
+
+| mutation | result |
+|---|---|
+| `bandTask(d.lang, …)` → `bandTask(store.DefaultLang, …)` at **both** call sites (`:111`, `:198`) | **green** |
+| `domain := known; if domain == "" {…}` → `domain, _ = store.ParseDomain(claim.Domain)` (`:137`) | **green** |
+| drop `&& f.Axis == play.AxisDomain` in `wordSense` (`:262`) | **green** |
+
+The first is BR-3's own fix. `TestBandPromptCarriesTheLanguage` pins `renderBandPrompt`, but BR-3's operative sentence was *"d.lang is already in scope at the call site; thread it"* — and the threading is what nothing checks. The second and third are the PQ-4 design improvement the plan calls the milestone's payoff and the atlas states as "Where the dictionary spoke, its label wins outright" — a model paraphrase overwriting an editorial label is exactly what the mutation makes happen, silently, into a forever cache. `wordSense` (`harvest.go:238`) has **no test at all**; it is the only function in the diff with none.
+
+The rule is already written and already unticked: the plan's `## Verification` row *"Every Done-when row ticked with the mutation that proved it — revert the code, watch the named test redden"*. It was applied to Done-when 2 (the `## Log` says so, and I confirmed the cache-check mutation reddens `TestHarvestAsksOncePerWordAndNeverAgain`) and to Done-when 6, and not to the rest. **Fix the rule, not the three sites: enumerate every property the `## Log` and `atlas/define.md:1415-1500` state as delivered, mutate each, and record the sweep** — then add pins only where it comes back green. Prevalence measured here is 3 of the ~8 properties I sampled.
+
+ARCH-PURE note for the same fix: `wordSense` is untested partly because it is IO-shaped — it takes `deps` and calls `d.dict.Lookup` before doing purely-derivable extraction. Splitting the pure half (`Entry` → leading gloss + first `AxisDomain` label) out makes both mutations above table-testable with no dict fake.
+
+### I-3 — `YAML.Items` hands back the raw disk record while `YAML.WordFacts` forty lines up re-parses (`cmd/define/store/yaml.go:652`)
+
+**This is the 2nd finding in family `parse-result-not-canonicalised`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+`WordFacts` states the rule in its own comment — *"Re-parsed on the way OUT, not trusted because it is on disk. A file can be hand-edited, half-written or produced by an older build"* (`yaml.go:592`) — and `Items` in the same commit returns `f.Items` unmodified. `item.go:88` claims the write-side pass makes "every RENDER site automatically safe"; that holds for anything this build wrote and fails for a file a person edited, which is a workflow the README explicitly invites by documenting `items/en/sycophantic.yaml` as inspectable. A `Distractors` entry carrying `\n` then forges a row on `#40`'s grid — the failure `oneLine` (`item.go:119`) exists to prevent, arriving by the one path it is not applied to. `Mem` cannot reproduce it, so `storetest` structurally cannot catch it.
+
+The rule: **a record read back out of a `RuntimeDirs` directory is untrusted input and goes through the same canonicalisation its write applies.** The enumeration is the `Store` read surface — `WordFacts` ✓, `Items` ✗, and `NewsItems` (`yaml.go:531`) which is pre-existing and should at least be recorded as in or out of the class. The mechanical fix at the new site is `return sanitiseItems(f.Items), nil`, pinned by a `yaml_test.go` row that writes a hand-edited `items/en/*.yaml` with an embedded newline.
+
+## 4. Minor findings
+
+- `main.go:431` — the `-harvest` flag help says "band the deck **and author practice items**, ahead of time". Authoring is M2 and unbuilt; README and atlas were written accurately, the help string was not. (2nd in family `doc-predeclares-outcome` — the rule: shipped user-facing text describes the shipped milestone; forward capability lives in the plan.)
+- Issue Done-when 3 (`000010-vocab-harvest.md:295`) and plan Task 2 Step 3 (`…-plan.md:229`) still specify `-agreement[=N]` with "bare = 5". `flag.Int` cannot accept a bare `-agreement`: the binary answers `flag needs an argument: -agreement`. The shipped shape is `-agreement=0`, which README and atlas were corrected to; the two tracker artifacts were not. (2nd in family `plan-element-ticked-unbuilt` — the rule: when remediation changes a shape, the artifact that specified it is corrected in the same commit as the code.)
+- `store/item.go:109` — `sanitiseItem` mutates `i.Distractors[n]` through the caller's backing array. Safe today only because `sanitiseItems` (`mem.go:208`) deep-copies first; the doc comment does not say so, and `item.go` is the file M2 extends most.
+- `sanitiseItems`/`copyItems` live in `mem.go` although `yaml.go:667` is a caller — the write-side pass is split across two files for no stated reason. `item.go`, beside `sanitiseItem`, is where it reads as belonging.
+
+## 5. Test coverage notes
+
+Pinned and mutation-confirmed this round: Done-when 2 (cache check), Done-when 6 (outage stops, prior work whole), the `-limit` cap, the agreement arithmetic including both casing rows, the `Mem`/`YAML` sanitise contract, the canonical-band store row, the computed longest-first ordering, and `parseLearnerBand`'s six absent/damaged shapes plus the render round-trip. `TestCheckEvidenceDropsABandOffTheCEFRScale` correctly asserts the drop *message* names `A1-C2`, which is the only place a user learns why their level vanished.
+
+Unpinned, in descending order of what they would cost: `wordSense` entirely (I-2); the language threading at both `bandTask` call sites (I-2); dictionary-domain precedence (I-2); every `run()`-level `--harvest` flag guard (I-1); the `items/` read path (I-3). The conformance rows (`harvest_conformance_test.go`) are well-shaped — the floor lives against the live service and skips rather than fails on a flat network, and `TestBandClaimShapeAgainstTheLiveService` checks the domain half lands inside the closed set, which is the only thing that can catch `topicSpread` silently reading 1.00 forever in M2.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** The vocabulary genuinely moved: `noadDomainLabels` derives from `store.Domains()` and `renderBandPrompt` enumerates the same slice, so a label added in `store` reaches both the scanner and the prompt with one edit. `bandTask` is the single request-builder for the harvest and measurement modes, which is what keeps the measurement about a prompt somebody runs. Grepping `CEFR|A1|B2` across `cmd/**/*.go` returns only the new files and the two `#17` consumers — no second spelling of the scale survives.
+- **ARCH-PURE — pass with one note.** `Band`, `Domain`, `agreement`, `parseLearnerBand` and `renderBandPrompt` are pure and their tests touch no IO, no clock and no fake. `runHarvest` is the thin shell. The note is `wordSense` (I-2): pure extraction behind a dictionary call, which is why it has no test.
+- **ARCH-PURPOSE — pass for `Band`, deferred-as-declared for `Domain`.** The shadow-sweep on `Band`: `--reflect` writes through `ParseBand` (`reflect.go:259`), `renderUserModel` emits `level:` (`usermodel.go:53`), `parseLearnerBand` reads it back, golden updated. No hand-maintained restatement remains. `Domain`'s learner-side fold (`#17`'s free-text `domainClaim.Name` → closed set) is still a documentary consumer, but the plan places it in M2 Task 4 Step 1 where its only reader lives — a genuine separable extension, not the deferred point. `parseLearnerBand` having no production caller at M1 is correct for the same reason.
+- **ARCH-MOCK — pass.** `llmtest.Fake` is wire-level and `harvestRig` drives a real `YAML` store in a temp dir, so `facts/` is written through the production path rather than seeded into a field. Live conformance rows exist for both the floor and the response shape. Gap: the dictionary seam has a fake but no harvest-path test exercises it (I-2).
+- **ARCH-CONSTRAINTS — pass.** `-limit` 200 with a stated reason and a cap test; `-agreement` bounded at 25 rounds; K×N ≤ 500 serial calls declared as the measurement's price; the batch path is unreachable from `--play`, asserted by panic. Resumability is real because the cache is the progress marker.
+- **ARCH-SECURE — flag, see I-3.** `facts/` degrades visibly and never fabricates; `items/` trusts the disk. Path construction reuses `wordFileName(Slug(k))`. No credentials in the diff.
+
+For M2: `pickDistractors` and `topicSpread` should take an already-banded candidate slice and no store handle, so they stay on the pure side. `Item.Form` is currently unvalidated at the write — worth a parse before `#13` adds a third form, on the same argument `ParseBand` makes.
+
+## 7. Plan revision recommendations
+
+Two `## Revisions` entries, both small:
+
+1. **`-agreement`'s shipped shape.** `--harvest --agreement[=N]` / "bare = 5" is not what `flag.Int` can express. Record that the delivered contract is `-agreement N`, with `-agreement=0` selecting the default of 5, and correct Done-when 3 on the issue to match (Minor 2 above).
+2. **The mutation sweep is partial.** The `## Verification` row *"Every Done-when row ticked with the mutation that proved it"* is ticked in spirit by the `## Log` but was run against two Done-when rows, not all of them; three properties came back green under mutation at this boundary. Record the sweep's actual coverage and its result rather than leaving the row to be read as complete at close (I-2).

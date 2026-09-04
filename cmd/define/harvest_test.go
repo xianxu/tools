@@ -277,3 +277,196 @@ func TestASittingNeverWaitsOnHarvesting(t *testing.T) {
 		}
 	}
 }
+
+// I-2's first green mutation: the axis filter in senseFacts.
+//
+// readGloss reports REGISTER (`informal`, `archaic`) on the same Label field as
+// DOMAIN, so a filter that accepts any label stores `informal` as a word's
+// domain. ParseDomain then flattens it to `general` — silently losing the
+// specialist label a later sense actually carried, into a forever cache.
+//
+// Table-tested with no dictionary fake, which is why senseFacts was split out of
+// wordSense: the derivation is the part worth pinning and it needs no IO.
+func TestSenseFactsTakesTheDomainAxisOnly(t *testing.T) {
+	d := testDict(t)
+	for _, tc := range []struct {
+		word       string
+		wantDomain store.Domain
+	}{
+		// Entries the committed corpus labels with a subject field. Chosen from
+		// the corpus rather than invented, so the fixture cannot drift from what
+		// NOAD actually prints.
+		{"record", "Law"},
+		{"subject", "Music"},
+		{"desert", "Military"},
+		// Ordinary vocabulary: no field label anywhere, so no domain.
+		{"ephemeral", ""},
+	} {
+		t.Run(tc.word, func(t *testing.T) {
+			raw, err := d.Lookup(tc.word)
+			if err != nil {
+				t.Fatalf("%s is not in the committed corpus: %v", tc.word, err)
+			}
+			gloss, domain := senseFacts(tc.word, ParseEntry(raw))
+			if gloss == "" {
+				t.Error("no leading gloss extracted")
+			}
+			if domain != tc.wantDomain {
+				t.Errorf("domain = %q, want %q", domain, tc.wantDomain)
+			}
+		})
+	}
+
+	// The property directly: a register label must never become a domain.
+	// Every label readGloss can report on a non-domain axis has to be refused
+	// here, or ParseDomain quietly turns it into `general`.
+	// Whatever any corpus entry yields must be a real subject field or nothing.
+	// `general` reaching this return is the tell that a register label was
+	// accepted and then flattened by ParseDomain, losing a specialist label a
+	// later sense carried.
+	for _, w := range []string{"sycophantic", "run", "pulp", "minute", "present", "bank"} {
+		raw, err := d.Lookup(w)
+		if err != nil {
+			continue
+		}
+		_, domain := senseFacts(w, ParseEntry(raw))
+		if domain == store.DomainGeneral {
+			t.Errorf("%q yielded the general fallback as a DOMAIN; a register label was accepted", w)
+		}
+		if domain == "" {
+			continue
+		}
+		if _, ok := store.ParseDomain(string(domain)); !ok {
+			t.Errorf("%q yielded %q, which is not in the closed set", w, domain)
+		}
+	}
+}
+
+// I-2's second green mutation: the dictionary's label WINS over the model's.
+//
+// The atlas states this as "Where the dictionary spoke, its label wins
+// outright", and the plan calls it the milestone's payoff. Nothing checked it:
+// replacing the precedence with the model's answer left the suite green, and the
+// failure it allows is a model paraphrase overwriting an editorial fact into a
+// cache that is never re-examined.
+func TestTheDictionaryDomainBeatsTheModel(t *testing.T) {
+	d, fake, st := harvestRig(t, 0)
+	d.dict = testDict(t)
+	// `record` rather than the rig's default deck: it is a corpus entry NOAD
+	// labels `Law`, which is what makes the precedence observable at all.
+	if err := d.deck.Upsert(store.Word{
+		Text: "record", FirstSeen: harvestClock, LastSeen: harvestClock, Lookups: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The model is told the answer and asked to repeat it; here it paraphrases.
+	fake.Script("", llmtest.Reply{Text: `{"band":"C2","domain":"Politics"}`})
+
+	var out, errOut bytes.Buffer
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
+		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+	}
+
+	_, known := wordSense(d, "record")
+	if known == "" {
+		t.Fatal("`record` carries no NOAD subject label, so this test cannot see the " +
+			"precedence it exists to pin — pick a corpus word that does")
+	}
+	f, err := st.WordFacts("record")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Domain != known {
+		t.Errorf("domain = %q, want the dictionary's %q — a model paraphrase overwrote an editorial label",
+			f.Domain, known)
+	}
+}
+
+// I-2's third green mutation: the LANGUAGE reaches the request.
+//
+// TestBandPromptCarriesTheLanguage pins the renderer, but BR-3's operative
+// sentence was "d.lang is already in scope at the call site; thread it" — and
+// the threading is what nothing checked. Asserted on the wire, which is the only
+// place the distinction between the two is visible.
+func TestHarvestSendsTheDecksLanguage(t *testing.T) {
+	d, fake, _ := harvestRig(t, 1)
+	d.lang = store.Lang("es")
+	fake.Script("", llmtest.Reply{Text: bandReply})
+
+	var out, errOut bytes.Buffer
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
+		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+	}
+	reqs := fake.Requests()
+	if len(reqs) == 0 {
+		t.Fatal("no request was sent")
+	}
+	if !strings.Contains(reqs[0].Prompt(), "`es`") {
+		t.Errorf("the request never names the deck's language; a Spanish deck would be "+
+			"banded from an English prompt, forever. Prompt: %s", reqs[0].Prompt())
+	}
+}
+
+// The mode rule, pinned on the RULE rather than on the pairs.
+//
+// modeCollision is what run() calls, so this covers every pair including the
+// ones nobody has typed — and a sixth mode added to run()'s slice is covered by
+// construction rather than by someone remembering to add a case here.
+func TestModeCollision(t *testing.T) {
+	all := []mode{
+		{"-llm-check", false}, {"-forget", false}, {"-play", false},
+		{"-reflect", false}, {"-harvest", false},
+	}
+	if _, _, clash := modeCollision(all); clash {
+		t.Error("no mode requested reported a collision")
+	}
+	for i := range all {
+		one := append([]mode(nil), all...)
+		one[i].on = true
+		if _, _, clash := modeCollision(one); clash {
+			t.Errorf("%s alone reported a collision", all[i].name)
+		}
+		// EVERY pair, derived from the list rather than enumerated by hand: the
+		// bug this replaces was -harvest refused beside -play and -reflect while
+		// -forget and -llm-check silently swallowed it, because those two were
+		// never written down.
+		for j := range all {
+			if i == j {
+				continue
+			}
+			two := append([]mode(nil), all...)
+			two[i].on, two[j].on = true, true
+			a, b, clash := modeCollision(two)
+			if !clash {
+				t.Errorf("%s with %s was accepted; two modes is two commands on one line",
+					all[i].name, all[j].name)
+			}
+			if a == "" || b == "" || a == b {
+				t.Errorf("collision of %s and %s named %q and %q", all[i].name, all[j].name, a, b)
+			}
+		}
+	}
+}
+
+// And the guard reached through run(), which is where the repo pins this class
+// (play_loop_test.go does the same for "-forget takes the word to remove").
+// modeCollision being right is not the same claim as run() calling it.
+func TestRunRefusesTwoModes(t *testing.T) {
+	for _, args := range [][]string{
+		{"-forget", "x", "-harvest"},
+		{"-llm-check", "-harvest"},
+		{"-play", "-harvest"},
+		{"-reflect", "-harvest"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var out, errb bytes.Buffer
+			code := run(t.Context(), args, testDeps(t), strings.NewReader(""), &out, &errb)
+			if code != 2 {
+				t.Errorf("exit = %d, want 2 — a dropped mode is a silently different command", code)
+			}
+			if !strings.Contains(errb.String(), "modes") {
+				t.Errorf("stderr = %q, want it to name the collision", errb.String())
+			}
+		})
+	}
+}

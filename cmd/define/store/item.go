@@ -106,6 +106,36 @@ func sanitiseFacts(f WordFacts) WordFacts {
 	return f
 }
 
+// copyItems deep-copies far enough to matter: Item's only reference field is
+// Distractors, and sharing that slice is the aliasing SetNewsItems' comment
+// warns about, one level down.
+func copyItems(in []Item) []Item {
+	out := make([]Item, len(in))
+	copy(out, in)
+	for i := range out {
+		out[i].Distractors = append([]string(nil), in[i].Distractors...)
+	}
+	return out
+}
+
+// sanitiseItems is the pass every WRITE and every READ of the items surface
+// goes through — see the read-side rule on Items in store.go.
+//
+// It COPIES first, which sanitiseItem relies on: sanitiseItem writes through
+// i.Distractors' backing array, so handing it a caller's slice would mutate what
+// the caller still holds. The copy is here rather than there so there is one
+// place to look.
+func sanitiseItems(in []Item) []Item {
+	out := copyItems(in)
+	for i := range out {
+		out[i] = sanitiseItem(out[i])
+	}
+	return out
+}
+
+// sanitiseItem neutralises one item. It writes through the Distractors backing
+// array, so callers hand it a COPY — sanitiseItems is the only caller and makes
+// one.
 func sanitiseItem(i Item) Item {
 	i.Word = Key(i.Word)
 	i.Stem = oneLine(i.Stem)

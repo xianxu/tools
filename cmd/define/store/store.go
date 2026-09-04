@@ -58,6 +58,18 @@ type Store interface {
 	SetWordFacts(key string, f WordFacts) error
 	// Items returns the practice items authored for a word, or none. A word may
 	// hold several — of different Forms — and #12 picks among the ones it renders.
+	//
+	// READ-SIDE RULE, which this surface and WordFacts both obey: a record read
+	// back out of a RuntimeDirs directory is UNTRUSTED INPUT and goes through the
+	// same canonicalisation its write applies. Not because the writer is
+	// suspect — because these files are documented as inspectable, so a
+	// hand-edited one is an invited workflow and an older build's output is a
+	// certainty.
+	//
+	// NewsItems is deliberately OUT of the class, recorded here rather than left
+	// ambiguous: its fields are a feed's text, not a model's, and nothing renders
+	// them into a structure a newline could forge. If that changes — if a
+	// headline ever reaches the board — it joins the rule.
 	Items(key string) ([]Item, error)
 	// SetItems replaces a word's authored items, for the same reason
 	// SetNewsItems replaces rather than appends: a re-harvest must not silently

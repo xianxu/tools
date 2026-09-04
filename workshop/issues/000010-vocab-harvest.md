@@ -292,7 +292,7 @@ because each names work that exists, not to close a gap.
       refused, a STABILITY measure over repeated assignment, which is what the
       cache actually depends on. A row that says "checked" without naming the
       reference is the one shape this row may not take.
-      **Mechanism (2026-09-04):** `--harvest -agreement[=N]` (bare = 5), a mode of its own
+      **Mechanism (2026-09-04):** `--harvest -agreement=N`, a mode of its own
       that re-asks a sample of K=20 already-banded words N=5 times and writes
       nothing; floor `agreement >= 0.8`, asserted against the real service in the
       conformance row. It is separate from the harvesting path because measuring

@@ -112,6 +112,18 @@ rounds:
           round: 1
       boundary: M1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-04T13:03:59-07:00"
+      agent: claude
+      boundary: M1
+      blocked: true
+      protocol_error: no valid findings block
+    - "n": 3
+      timestamp: "2026-09-04T13:55:45-07:00"
+      agent: claude
+      boundary: M1
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#10 (boundary-review)
@@ -176,6 +188,14 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   workshop/projects/define-learn.md records actual 2.16h and "the milestone had no
   remediation round at all" in the commit that precedes the boundary review. Any
   remediation of the findings above makes both stale.
+
+## Round 2 — 2026-09-04T13:03:59-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
+
+## Round 3 — 2026-09-04T13:55:45-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 

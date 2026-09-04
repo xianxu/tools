@@ -52,7 +52,7 @@
   - **Future extensions:** `#13`'s free-sentence form wants a different shape; `Form` is the field that lets one store hold both rather than a second store appearing beside this one.
 
 - **`agreement`** — over N repeated band assignments for one word, the fraction that agree with the modal answer. **This is the measured claim M1 makes**, and it is deliberately narrow — see "What the measure does not say" below.
-  - **It runs on a SAMPLE, in its own mode, and never on the cached path (PQ-5).** The earlier draft asked `--harvest` to print an agreement it measured while also promising one call per unbanded word and zero calls on a second run; those cannot all hold. Resolved by separating them: `--harvest --agreement[=N]` re-asks a fixed sample of K already-banded words N times and **writes nothing**. Default off. The ordinary path keeps its one-call-per-unbanded-word cost and its zero-call second run, both untouched.
+  - **It runs on a SAMPLE, in its own mode, and never on the cached path (PQ-5).** The earlier draft asked `--harvest` to print an agreement it measured while also promising one call per unbanded word and zero calls on a second run; those cannot all hold. Resolved by separating them: `--harvest -agreement=N` re-asks a fixed sample of K already-banded words N times and **writes nothing**. Default off. The ordinary path keeps its one-call-per-unbanded-word cost and its zero-call second run, both untouched.
   - **The unit test measures the ARITHMETIC, not the model.** `agreement` is a pure function over a slice of bands, table-tested on synthetic input — a fake "seeded to vary" would only report how the fake was seeded. The floor (`≥ 0.8` over `N=5`, `K=20`) is asserted in the **conformance** row, against the real service, which is the only place the number means anything.
 
 - **`pickDistractors`** — same domain (or general vocabulary), at the learner's band or one below, never the answer. Pure over an already-banded candidate list.
@@ -226,8 +226,10 @@ Pure, and worth its own test before any model exists:
 
 - [x] **Step 3: The measure, in its own mode**
 
-`--harvest --agreement[=N]` re-asks a fixed sample of K already-banded words N
-times and **writes nothing** (defaults `N=5`, `K=20`; off unless asked for).
+`--harvest -agreement=N` re-asks a fixed sample of K already-banded words N
+times and **writes nothing** (`-agreement=0` selects the default N=5; K=20; off
+unless asked for). `flag.Int` cannot accept a bare `-agreement`, so the
+`--agreement[=N]` shape the first draft specified does not exist.
 
 **Why a separate mode rather than a number `--harvest` prints.** The two claims
 in the envelope — one call per unbanded word, and zero calls on a second run —
@@ -280,7 +282,7 @@ disagreeing about the shape of the answer.
 Beside `--forget` and `--llm-check`, which are validated apart from the argument
 count. Reuse that path rather than adding a fourth shape.
 
-`--limit` (default 200) caps the words one run asks about, and `--agreement[=N]`
+`--limit` (default 200) caps the words one run asks about, and `-agreement=N`
 selects the measurement mode from Task 2. A test asserts the cap holds on a deck
 larger than it — `poolCap` has one for the same reason.
 
@@ -409,7 +411,35 @@ can the material get* — and no green suite answers it.
 
 - [ ] `go test ./...` green; `go vet ./...` and `gofmt -l` clean.
 - [ ] `go test -tags conformance ./...` green — the band task's live row is new, and `#11`'s existing rows must still pass.
-- [ ] Every Done-when row ticked with the mutation that proved it — revert the code, watch the named test redden (`workshop/lessons.md`, "A pin that cannot fail is not a pin").
+- [x] Every property this milestone states as delivered, mutated — revert the
+      code, watch a NAMED test redden (`workshop/lessons.md`, "A pin that cannot
+      fail is not a pin").
+
+      **M1's sweep, run 2026-09-04 after the boundary review's I-2.** The first
+      pass applied this row to two Done-when rows and left the rest to be read as
+      covered; the review sampled ~8 properties and found 3 green. All 13 are now
+      enumerated and each reddens a named test:
+
+      | property | verdict |
+      |---|---|
+      | the language reaches the request | RED |
+      | the dictionary's domain beats the model's | RED |
+      | `senseFacts` takes the domain axis only | RED |
+      | `agreement` keys the parsed band | RED |
+      | items neutralised on READ | RED |
+      | `sanitiseFacts` on the `Mem` write | RED |
+      | mode collision refuses | RED |
+      | an outage keeps what was bought | RED |
+      | cache reuse (Done-when 2) | RED |
+      | the `--limit` cap | RED |
+      | longest-first ordering | RED |
+      | facts are per-language | RED |
+      | the band is re-parsed off disk | RED |
+
+      The three the review found green — language threading, dictionary
+      precedence, the axis filter — were the three with no pin, and `senseFacts`
+      was split out of `wordSense` so the last two are table-testable with no
+      dictionary fake (ARCH-PURE).
 - [ ] **The generated batch, read by the operator.** The one row no test replaces.
 
 ---
@@ -446,7 +476,7 @@ Ledger: `workshop/plans/000010-vocab-harvest-plan-gate.md`.
   yields a NOAD field label, so most words get a domain from the DICTIONARY with
   no model call — the model is now the fallback, not the source.
 - **PQ-5 (Important) — the agreement measure has a mechanism.** It moves to its
-  own `--agreement[=N]` mode over a sample of K, writing nothing, so the daily
+  own `-agreement=N` mode over a sample of K, writing nothing, so the daily
   path keeps both of its stated properties. The floor (`≥ 0.8`, `N=5`) moves to
   the conformance row; the unit test owns the arithmetic, since a fake seeded to
   vary only measures its own seed.
@@ -494,3 +524,36 @@ cheapest thing in the loop.
   dictionary lookup is hoisted, `contains` is `strings.Contains`, and the
   **computed longest-first ordering is pinned** — the review verified an inverted
   comparator left the whole package green, and it now reddens.
+
+### 2026-09-04 — M1 boundary review, round 3: three 2nd-in-family findings
+
+**Reason.** Round 3 confirmed all ten round-1 findings addressed — and verified
+four of them by REVERTING rather than by reading. It then raised three
+Importants, each explicitly *2nd in family*: my round-2 fixes were instances, and
+the classes were still open.
+
+**The pattern is the finding.** Every one was "you fixed the site, the rule is
+still unwritten":
+
+- **`flag-silently-ignored` (2nd).** BR-9's fix refused `-harvest` beside `-play`
+  and `-reflect` — the two the finding named. `-forget` and `-llm-check` dispatch
+  ABOVE that switch and were never enumerated, so both still swallowed
+  `--harvest` silently; the reviewer confirmed it against the built binary. The
+  rule now exists as an object: `modeCollision` over a `modes` slice that run()
+  and its table test share, so a sixth mode is covered by construction.
+- **`property-without-a-pin` (2nd).** Three properties this milestone advertises
+  could be mutated with the whole suite green — including BR-3's own fix, whose
+  operative sentence was "thread it" while only the renderer was pinned. The
+  rule was already written and already unticked: the `## Verification` mutation
+  row. It is now RUN and RECORDED across 13 properties rather than applied to two
+  and assumed for the rest.
+- **`parse-result-not-canonicalised` (2nd).** `WordFacts` re-parses on the way
+  out and states why; `Items` in the same commit returned the raw disk record.
+  The rule — *a record read out of a `RuntimeDirs` directory is untrusted input
+  and goes through its write's canonicalisation* — is now on the interface, with
+  `NewsItems` explicitly recorded as OUT of the class rather than left ambiguous.
+
+**ARCH-PURE, from the same finding.** `wordSense` was the only function in the
+diff with no test, partly because it took `deps` and called the dictionary before
+doing purely-derivable extraction. `senseFacts` is the pure half, and two of the
+three green mutations became table-testable with no fake the moment it existed.

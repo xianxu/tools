@@ -428,7 +428,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// help text is printed before any language is resolved.
 	reflect := fs.Bool("reflect", false, "read the deck and write the learner model")
 	playFlag := fs.Bool("play", false, "review the words due today")
-	harvest := fs.Bool("harvest", false, "band the deck and author practice items, ahead of time")
+	harvest := fs.Bool("harvest", false, "band the deck ahead of time: a CEFR level and a domain per word")
 	harvestLimitFlag := fs.Int("limit", 0, "words --harvest may ask the model about in one run (0 = the default cap)")
 	agreementFlag := fs.Int("agreement", 0, "measure banding STABILITY over N assignments and write nothing (0 with the flag set = the default rounds)")
 	count := fs.Int("count", 20, "how many words a review session offers")
@@ -565,10 +565,38 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// --llm-check is a mode, like --forget: it answers a question about the
 	// configuration rather than looking a word up, so it is dispatched before the
 	// argument count is judged.
+	forgetting := isSet(fs, "forget")
+
+	// MODES ARE VALIDATED AS A SET, in ONE enumeration, before any of them
+	// dispatches.
+	//
+	// Not pairwise as each collision is found, which is what this rule replaces:
+	// -harvest was refused beside -play and -reflect and silently swallowed by
+	// -forget and -llm-check, because those two dispatch above the switch and
+	// nobody enumerated them. Every mode added since #2 has cost this discovery
+	// again, and the pairwise form cannot cover the pair nobody has typed yet.
+	//
+	// A slice rather than a chain of cases so the CHECK and the LIST are the same
+	// object: modeCollision's table test derives from this, so a sixth mode is
+	// covered by construction rather than by remembering.
+	modes := []mode{
+		{"-llm-check", *llmCheck},
+		{"-forget", forgetting},
+		{"-play", *playFlag},
+		{"-reflect", *reflect},
+		{"-harvest", *harvest},
+	}
+	if a, b, clash := modeCollision(modes); clash {
+		// Two modes on one line is two commands on one line, exactly as -forget
+		// with a word is. Silently honouring one is how -raw came to mean two
+		// different things in #2.
+		fmt.Fprintf(stderr, "define: %s and %s are both modes; run them separately\n", a, b)
+		return 2
+	}
+
 	if *llmCheck {
 		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
 	}
-	forgetting := isSet(fs, "forget")
 	// A command may take arguments, so the WHOLE argument list is one line:
 	// `define /history 7` has to mean what `/history 7` means at the prompt.
 	// Classifying only fs.Arg(0) made the argument count reject it as "too many
@@ -603,11 +631,6 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// comment warns about.
 	case isSet(fs, "agreement") && isSet(fs, "limit"):
 		fmt.Fprintln(stderr, "define: -limit does not apply to -agreement; it measures a fixed sample")
-		return 2
-	// Two modes on one line is two commands on one line, exactly as -forget with
-	// a word is. Previously --play silently won.
-	case *harvest && (*playFlag || *reflect):
-		fmt.Fprintln(stderr, "define: -harvest is a mode of its own; do not combine it with -play or -reflect")
 		return 2
 	// cmdAsk is exempted for the same reason cmdCommand is: a question is
 	// multi-word by nature, so counting words would reject the thing the flag
@@ -1165,4 +1188,33 @@ const (
 func isTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	return ok && term.IsTerminal(int(f.Fd()))
+}
+
+// mode is one of the program's mutually-exclusive modes and whether it was asked
+// for. The type exists so the enumeration in run() and the test that covers it
+// are the same shape.
+type mode struct {
+	name string
+	on   bool
+}
+
+// modeCollision reports the first two modes that were both requested.
+//
+// Pure, and separated from run() for exactly that: the rule it enforces —
+// "at most one mode" — is a property of the SET, and pairwise checks written as
+// each collision is discovered can never cover a pair nobody has typed. A table
+// test over the same slice run() builds is what makes a mode added later covered
+// by construction.
+func modeCollision(modes []mode) (string, string, bool) {
+	first := ""
+	for _, m := range modes {
+		if !m.on {
+			continue
+		}
+		if first != "" {
+			return first, m.name, true
+		}
+		first = m.name
+	}
+	return "", "", false
 }

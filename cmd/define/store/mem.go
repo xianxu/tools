@@ -191,28 +191,6 @@ func (m *Mem) SetItems(key string, items []Item) error {
 	return nil
 }
 
-// copyItems deep-copies far enough to matter: Item's only reference field is
-// Distractors, and sharing that slice is the aliasing SetNewsItems' comment
-// warns about, one level down.
-func copyItems(in []Item) []Item {
-	out := make([]Item, len(in))
-	copy(out, in)
-	for i := range out {
-		out[i].Distractors = append([]string(nil), in[i].Distractors...)
-	}
-	return out
-}
-
-// sanitiseItems is the write-side pass, applied by both stores so the fake
-// cannot hold text the real one would have neutralised.
-func sanitiseItems(in []Item) []Item {
-	out := copyItems(in)
-	for i := range out {
-		out[i] = sanitiseItem(out[i])
-	}
-	return out
-}
-
 func (m *Mem) Forget(key string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

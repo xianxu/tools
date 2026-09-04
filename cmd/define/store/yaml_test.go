@@ -659,3 +659,36 @@ func TestAnUnknownDomainDegradesButKeepsTheBand(t *testing.T) {
 		t.Errorf("domain = %q, want the general fallback", got.Domain)
 	}
 }
+
+// The read-side rule, at the one place storetest structurally cannot reach:
+// Mem has no disk, so it cannot hold a hand-edited file.
+//
+// The README documents items/ as inspectable, which makes hand-editing an
+// invited workflow rather than an abuse. A distractor carrying a newline would
+// forge a row on #40's grid — the failure oneLine exists to prevent, arriving by
+// the one path the write-side pass cannot cover.
+func TestHandEditedItemsAreNeutralisedOnRead(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "items", "en"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "items", "en", "word.yaml"),
+		"items:\n  - word: word\n    stem: \"a stem\\nwith a forged line\"\n"+
+			"    answer: word\n    distractors:\n      - \"one\\ntwo\"\n")
+
+	got, err := store.NewYAML(dir, store.DefaultLang, nil).Items("word")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d items, want 1", len(got))
+	}
+	if strings.ContainsAny(got[0].Stem, "\r\n") {
+		t.Errorf("stem %q kept a line break read off disk", got[0].Stem)
+	}
+	for _, d := range got[0].Distractors {
+		if strings.ContainsAny(d, "\r\n") {
+			t.Errorf("distractor %q kept a line break read off disk", d)
+		}
+	}
+}
