@@ -5,7 +5,7 @@ goal: "Make define an adaptive vocabulary trainer on three verbs — definition,
 done_when: "A real day of use runs end to end on generated material: words captured by ordinary lookup; practice items authored from current usage and stored offline; a review session played and scored; a free-form question answered in the console with the session's own words as context; and the learner model regenerated from the resulting events, visibly steering the next batch of items."
 status: defined
 created: 2026-08-20
-updated: 2026-08-22
+updated: 2026-09-04
 mvp_scope: ["tools#5", "tools#6", "tools#7", "tools#8", "tools#9", "tools#10", "tools#11", "tools#12", "tools#13", "tools#16", "tools#17"]
 explicitly_out_note: "tools#18 (Spanish) is real and filed, but OUT of this project's MVP: define-learn is done when the English loop works end to end. #18 M1 (audio) is independently shippable at any time."
 explicitly_out: ["multi-learner accounts", "sync/replication beyond whichever directory you run it in", "languages other than English", "generated (TTS) pronunciation — recorded audio only", "a GUI or mobile client"]
@@ -740,6 +740,39 @@ guards could fail.
 [tools#23]: ../issues/000023-deck-language.md
 [tools#23 M1]: #tools-23-m1
 [tools#23 M2]: #tools-23-m2
+
+### 2026-09-04 — scope event: `#44` and `#42` shipped alongside, outside MVP
+
+Neither is in `mvp_scope` and neither changes the done-when. Recorded for the
+reason the entries below are: the project is the portfolio view, both shipped
+inside its window on operator request, and both touch the review loop the
+project's own verbs live in.
+
+- **tools#44 — the play frame's chrome.** A reserved row between the record and
+  the live edge, the action row and the bar dimmed as one band, and playback
+  stopped committing a blank line per run — that last one filed as "one per
+  click" and found to be one per PLAYBACK across five sites that disagreed three
+  ways. est 2.16 / actual 4.60.
+
+- **tools#42 — form 2.1 retired; the board is the fallback.** The form set is one
+  sentence now: **2.3 tests you, the board triages you.** A word no real test can
+  be built for is triaged on a grid rather than asked to rate itself — the same
+  instrument at sixteen times the cost, collected at the box where self-report is
+  least reliable. The board gained a drop mode with it, because it became the only
+  form some words ever see and `d` is a cell key on a grid (`#40` D12).
+  est 3.89 / actual 10.85.
+
+  **Why it matters to this project rather than merely coinciding with it:** `#12`
+  (form 2.2, cloze) and `#13` (form 2.4, free sentence) both add forms, and they
+  now add them to a set with one rule and one selection site instead of two rules
+  split across a partition and a render loop.
+
+  **The cost is worth reading before the next form lands.** Four review rounds
+  (one aborted by a revoked token) on a 3.89h estimate, and the ratio — 0.4× —
+  is the worst of the last five. Nearly all of it went to one repeated failure:
+  fixing the sites a finding named rather than the class it implied, then twice
+  shipping a class fix that was itself green when reverted. `workshop/lessons.md`
+  carries the rules that came out of it.
 
 ### 2026-08-31 — scope event: `#38` shipped alongside, outside MVP
 
