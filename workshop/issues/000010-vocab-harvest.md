@@ -5,7 +5,7 @@ deps: ["tools#3", "tools#11", "tools#17"]
 github_issue:
 created: 2026-08-20
 updated: 2026-09-04
-estimate_hours:
+estimate_hours: 6.92
 started: 2026-09-04T09:38:50-07:00
 ---
 
@@ -38,9 +38,10 @@ path a learner waits on.
 
 **1. A band and a domain for every word, cached forever.**
 
-- **CEFR is the single scale**, because `#17` already puts the LEARNER on it —
-  "the learner's band, or one below" is then arithmetic on one 6-point scale
-  rather than a mapping nothing reconciles.
+- **CEFR is the single scale.** `#17` already puts the LEARNER on it — though as
+  free-form prose, not as a type (see decision 6), so this issue is what makes
+  "the learner's band, or one below" arithmetic on one 6-point scale rather than
+  a mapping nothing reconciles.
 - **The model is the source at both ends**, and there is no external asset. A
   downloadable CEFR or frequency list is DEFERRED, not rejected; the trigger for
   reaching for one is model-assigned bands proving too inconsistent to use.
@@ -121,6 +122,137 @@ single-pass: a lone boundary would put the first review over seven Done-when row
 of greenfield code with an LLM judge in it, and would let the checkpoint pass as a
 formality.
 
+### Three more, 2026-09-04 (from the plan-quality gate)
+
+**3. Word facts are PER-LANGUAGE.** `facts/<lang>/<key>.yaml`, scoped exactly like
+`words/`. The store's own rule is that derived state is scoped and raw state is
+flat; a band is derived from the word in a language, and `red`, `once`, `actual`
+and `sensible` are real words in both English and Spanish. Cached forever plus
+"a second write replaces" would make a collision permanent.
+
+**4. There is ONE domain vocabulary, and it is mostly not the model's.**
+`noadDomainLabels` — the closed table this repo already owns — is the set, with
+`general` as the fallback. A word whose NOAD entry carries a field label gets its
+domain from the DICTIONARY, offline and free; the model is asked only for the
+rest, and its answer is parsed through the same set. This is what makes
+`topicSpread` — the one measure taken with no model — arithmetic that cannot be
+inflated by `Medicine`/`medicine`/`med`. The learner's free-text domains from
+`#17` fold onto the set case-insensitively; an unmapped one is ignored.
+
+**5. Distractor selection and the veto MOVE here from `#12`.** Three of `#12`'s
+Done-when rows are about selecting options and vetoing near-synonyms. Authoring
+them offline satisfies those rows more strongly than review-time filtering did —
+options selected from the banded deck are never model-generated, and a form
+reading finished items works with the seam down because it never reaches for it.
+`#12` keeps the rendering job: blanking without leaking the answer, determinism
+under a seed. Recorded as a Revision on `#12` rather than discovered at its close.
+
+**6. `Band` must be ENFORCED, not just defined — and `#17` is the consumer that
+proves it.** The plan's first draft justified a `store.Band` by saying `#17`
+"already assigns the learner one". It does not: `#17`'s band is a bare `string`
+that reaches disk as prose, and the learner model is readable only as raw
+markdown that gets pasted into a prompt. A new type beside that would have BEEN
+the second spelling. So this issue closes the loop (ARCH-PURPOSE — a single
+source is not done until the motivating consumer derives): `--reflect` writes its
+band through the parse, the learner model gains a machine-readable `level:`
+frontmatter field, and authoring reads it back through the same type. Without
+that, `pickDistractors` has no source for the learner's band at all.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
+`sdlc estimate-source`, so the per-primitive hours are provisional.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.50 impl=0.08
+item: greenfield-go-module     design=0.05 impl=0.28
+item: cross-cutting-refactor   design=0.04 impl=0.24
+item: smaller-go-module        design=0.03 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.12
+item: cross-cutting-refactor   design=0.05 impl=0.20
+item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.02 impl=0.12
+item: greenfield-go-module     design=0.05 impl=0.28
+item: smaller-go-module        design=0.02 impl=0.12
+item: atlas-docs               design=0.03 impl=0.06
+item: milestone-review         design=0.0  impl=0.30
+item: milestone-review         design=0.0  impl=0.32
+item: greenfield-go-module     design=0.06 impl=0.32
+item: smaller-go-module        design=0.02 impl=0.12
+item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.03 impl=0.08
+item: greenfield-go-module     design=0.06 impl=0.28
+item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.02 impl=0.12
+item: atlas-docs               design=0.03 impl=0.06
+item: ux-rename-iteration      design=0.55 impl=0.10
+item: milestone-review         design=0.0  impl=0.35
+item: milestone-review         design=0.0  impl=0.40
+design-buffer: 0.15
+total: 6.92
+```
+
+| item | task | why this primitive |
+|---|---|---|
+| `issue-spec` 0.50/0.08 | the design carrier | the Spec, two operator decisions, the durable plan, and TWO plan-quality rounds — round 1 raised 8 findings including a Critical, and remediating it meant verifying each against the tree and REDESIGNING three things, not editing sentences. Priced above `#39`'s two-round 0.40 for that reason, level with `#40`'s 0.50. |
+| `greenfield-go-module` 0.05/0.28 | M1 T1 `vocab.go` | `Band` and `Domain`, two refusing parses, the closed set moving into `store` |
+| `cross-cutting-refactor` 0.04/0.24 | M1 T1 the store surface | four methods across `store.go`, `mem.go`, `yaml.go`, `storetest/suite.go`, plus `factsDir`, `RuntimeDirs` and the `.gitignore` row its guard demands |
+| `smaller-go-module` 0.03/0.14 | M1 T1 `glosslabel` derives | the ARCH-DRY move: the vocabulary leaves `main`, the longest-first ordering stays |
+| `smaller-go-module` 0.02/0.12 | M1 T1 `sanitiseFacts`/`sanitiseItem` | one pass at the write, plus the unparseable-reads-as-absent row |
+| `cross-cutting-refactor` 0.05/0.20 | M1 T2 Step 0, the `#17` loop | edits a SHIPPED feature: `reflect.go` writes through `ParseBand`, `renderUserModel` gains `level:`, `parseLearnerBand` reads it, and `user-model.golden.md` moves |
+| `greenfield-go-module` 0.05/0.24 | M1 T2 `bandTask` | the task, its golden, the fake-driven test, and the skip-when-NOAD-answered branch |
+| `smaller-go-module` 0.02/0.10 | M1 T2 `agreement` | pure, table-tested over synthetic bands |
+| `smaller-go-module` 0.02/0.12 | M1 T2 conformance + floor | `#11`'s pattern; the API is not new, so no discovery budget |
+| `greenfield-go-module` 0.05/0.28 | M1 T3 `runHarvest` | the batch loop, resumability, and the outage-leaves-the-store-untouched property |
+| `smaller-go-module` 0.02/0.12 | M1 T3 dispatch | `--harvest`, `--limit`, `--agreement`, the panic-seam and zero-call tests |
+| `atlas-docs` 0.03/0.06 | M1 T3 | atlas, README |
+| `milestone-review` 0.0/0.30 | M1 boundary: run | |
+| `milestone-review` 0.0/0.32 | M1 boundary: remediation | |
+| `greenfield-go-module` 0.06/0.32 | M2 T4 `authorTask` | the highest-risk task: entailment and named-subject REQUIREMENTS in the prompt, learner-aware through two seams |
+| `smaller-go-module` 0.02/0.12 | M2 T4 `topicSpread` | arithmetic, plus the casing-collapse test the closed set makes possible |
+| `greenfield-go-module` 0.05/0.24 | M2 T4 entailment judge | batch scoring with a committed known-bad stem |
+| `smaller-go-module` 0.03/0.08 | M2 T5 Step 0 paperwork | `#12`'s Revision, and correcting `golden_schema_test.go:11` |
+| `greenfield-go-module` 0.06/0.28 | M2 T5 `pickDistractors` | band-or-one-below selection AND the recorded answer on sharing `play.PickOptions` — an investigation whose outcome is a finding either way |
+| `greenfield-go-module` 0.05/0.24 | M2 T5 `vetoTask` | the veto and its committed known-bad case, now carrying `sycophantic`/`obsequious` |
+| `smaller-go-module` 0.02/0.12 | M2 T6 `prune` | deterministic, proved by pruning twice |
+| `atlas-docs` 0.03/0.06 | M2 T6 | atlas, README, project row |
+| `ux-rename-iteration` 0.55/0.10 | M2 T6 **the checkpoint** | see the deviation note below |
+| `milestone-review` 0.0/0.35 | M2 boundary: run | a larger diff than M1's, with an LLM judge inside it |
+| `milestone-review` 0.0/0.40 | M2 boundary: remediation | |
+
+**THREE NAMED DEVIATIONS**, stated because a block claiming fidelity while
+quietly departing is the dishonest kind:
+
+1. **Two `milestone-review` rows per boundary, above the primitive's unit.** The
+   primitive prices one review of one chunk; booking two prices ROUNDS. This is
+   `#42`'s deviation and it was earned on measured evidence — `#7` took eight
+   rounds, `#44` took five against one booked review and closed est 2.16 /
+   actual 4.60. Four boundary rows here because this issue genuinely has two
+   boundaries, which is decision 2 on the issue rather than a pricing choice.
+2. **M2's boundary is priced above M1's** (0.35/0.40 vs 0.30/0.32). M1 is a
+   store surface and one task; M2 is three model tasks, two judges and a
+   selection rule, and a review of an LLM judge is the harder review.
+3. **`ux-rename-iteration` for the material-quality checkpoint.** Not a rename —
+   but structurally the same primitive: the operator reads real output and asks
+   for changes, and prompts get tuned. Priced at `#40`/`#42`'s 0.55 rather than
+   one round's 0.30, because `baseline-v2.1` says plan for 3-5 rounds and because
+   *this checkpoint is the whole point of the issue*: "how good can the material
+   get" is answered here, and one round would price it as a formality — the exact
+   failure decision 2 exists to prevent.
+
+**The gap this estimate does NOT close, recorded rather than missed.** This
+repo's recent rows are same-direction misses — `#38` 0.67, `#40` 0.48, `#41`
+0.69, `#44` 0.47 est/actual. At that trailing ratio 6.92 predicts 10-14h.
+Multiplying to meet it would be back-fitting; the primitives are the method, and
+`#117`'s calibration ledger is where a systematic ratio belongs. Two things here
+push the same way and are already priced as far as the primitives allow: the
+checkpoint is open-ended by design, and `#19` (an overloaded upstream reading as
+our bug) is OPEN and this is the first path that makes many calls in a row.
+
 ## Done when
 
 - [ ] `define --harvest` produces finished items with no review session running,
@@ -133,6 +265,12 @@ formality.
       refused, a STABILITY measure over repeated assignment, which is what the
       cache actually depends on. A row that says "checked" without naming the
       reference is the one shape this row may not take.
+      **Mechanism (2026-09-04):** `--harvest --agreement[=N]`, a mode of its own
+      that re-asks a sample of K=20 already-banded words N=5 times and writes
+      nothing; floor `agreement >= 0.8`, asserted against the real service in the
+      conformance row. It is separate from the harvesting path because measuring
+      N assignments cannot coexist with "one call per unbanded word, zero on a
+      second run".
 - [ ] A distractor is never the answer: an LLM judge vetoes a candidate that
       would also fit the stem, and the veto is exercised by a committed
       known-bad case.
@@ -169,3 +307,34 @@ above). Each `Mx` row closes with its own `sdlc milestone-close`.
 - [ ] M2 — `prune`: bounded, deterministic, tested by pruning twice.
 - [ ] M2 — **generate a real batch and READ it** before `#12`/`#13`. The
       checkpoint, and the one row no test replaces.
+
+## Log
+
+### 2026-09-04 — claimed, planned, and one gate round
+
+Claimed 09:38; durable plan at `workshop/plans/000010-vocab-harvest-plan.md`.
+
+`sdlc change-code` round 1 refused with 1 Critical, 5 Important, 2 Minor. All
+eight were checked against the tree before being acted on and all eight held —
+nothing withdrawn. Ledger: `workshop/plans/000010-vocab-harvest-plan-gate.md`;
+deltas in the plan's `## Revisions`; the design consequences are decisions 3-6
+above.
+
+**Worth keeping:** the Critical was a factual claim about existing code that read
+as obviously true and was not — `#17` "assigns the learner a CEFR band" is true
+of the prose and false of the types. The plan cited it as the DRY rationale for a
+new type, which is the one place a wrong belief about the tree does structural
+damage.
+
+**A design improvement fell out of the domain finding:** `readGloss` already
+extracts a NOAD field label per sense, so most words get a domain from the
+dictionary with no model call. The model went from the source to the fallback.
+
+## Revisions
+
+### 2026-09-04 — decisions 3-6 added from the plan-quality gate
+
+Reason: `sdlc change-code` round 1. Delta: word facts scoped per-language;
+one closed domain vocabulary with the dictionary as primary source; selection +
+veto moved here from `#12`; `Band` enforced through `#17` as a deriving consumer;
+Done-when 3 gained the concrete agreement mechanism it was missing.
