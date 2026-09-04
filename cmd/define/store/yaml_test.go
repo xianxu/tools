@@ -520,3 +520,142 @@ func TestYAMLRoundTripsTheFormThatAsked(t *testing.T) {
 		t.Errorf("%d form: keys on disk, want 3 — omitempty must drop the one that was never set:\n%s", n, b)
 	}
 }
+
+// The homograph, at the store level: `red` is A1 general vocabulary in English
+// and a C1-ish noun ("network") in Spanish, and both decks hold it.
+//
+// This is #23's rule one member further out. A band and a domain are DERIVED
+// from a word in a language, so they scope like words/ and unlike events/. Flat
+// storage would collide them — and because facts are cached FOREVER and a second
+// write REPLACES rather than merges, the collision would be permanent: whichever
+// language harvested last would own the band, silently, with no re-ask to fix it
+// because the word would read as already harvested.
+func TestWordFactsArePerLanguage(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+
+	en := store.WordFacts{Band: store.A1, Domain: store.DomainGeneral, At: at}
+	esDomain, ok := store.ParseDomain("Computing")
+	if !ok {
+		t.Fatal(`ParseDomain("Computing") refused`)
+	}
+	es := store.WordFacts{Band: store.C1, Domain: esDomain, At: at}
+
+	if err := store.NewYAML(dir, store.DefaultLang, nil).SetWordFacts("red", en); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.NewYAML(dir, "es", nil).SetWordFacts("red", es); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		lang store.Lang
+		want store.WordFacts
+	}{{store.DefaultLang, en}, {"es", es}} {
+		got, err := store.NewYAML(dir, tc.lang, nil).WordFacts("red")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Band != tc.want.Band || got.Domain != tc.want.Domain {
+			t.Errorf("%s facts for red = %+v, want %+v — one language's harvest overwrote the other's",
+				tc.lang, got, tc.want)
+		}
+	}
+
+	// And on disk, where the scoping is actually enforced.
+	for _, lang := range []string{"en", "es"} {
+		if _, err := os.Stat(filepath.Join(dir, "facts", lang, "red.yaml")); err != nil {
+			t.Errorf("facts/%s/red.yaml: %v", lang, err)
+		}
+	}
+}
+
+// Items are per-language for the same reason and one step more obviously: an
+// authored stem is a SENTENCE in one language, and serving a Spanish learner an
+// English stem is not a degraded question, it is a broken one.
+func TestItemsArePerLanguage(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+
+	if err := store.NewYAML(dir, store.DefaultLang, nil).SetItems("red", []store.Item{
+		{Word: "red", Form: store.FormCloze, Stem: "The ___ light", Answer: "red", At: at},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.NewYAML(dir, "es", nil).SetItems("red", []store.Item{
+		{Word: "red", Form: store.FormCloze, Stem: "La ___ social", Answer: "red", At: at},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct{ lang, want string }{
+		{"en", "The ___ light"},
+		{"es", "La ___ social"},
+	} {
+		got, err := store.NewYAML(dir, store.Lang(tc.lang), nil).Items("red")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0].Stem != tc.want {
+			t.Errorf("%s items for red = %+v, want the stem %q", tc.lang, got, tc.want)
+		}
+	}
+}
+
+// A hand-edited, truncated or older-build facts file reads as ABSENT rather than
+// as a half-trusted record.
+//
+// The band is the reason. Rank answers -1 for anything off the scale, which
+// sorts BELOW A1, so a surviving nonsense band would silently pitch every
+// distractor at the floor. One re-ask is the cheaper failure by a wide margin.
+func TestUnparseableWordFactsReadAsUnharvested(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"truncated mid-write", "band: C\n  domain:"},
+		{"a band off the scale", "band: B2+\ndomain: Law\nat: 2026-09-04T12:00:00Z\n"},
+		{"a band in prose", "band: intermediate\ndomain: Law\nat: 2026-09-04T12:00:00Z\n"},
+		{"no band at all", "domain: Law\nat: 2026-09-04T12:00:00Z\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "facts", "en"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(dir, "facts", "en", "word.yaml"), tc.body)
+
+			got, err := store.NewYAML(dir, store.DefaultLang, nil).WordFacts("word")
+			if err != nil {
+				t.Fatalf("WordFacts returned an error rather than degrading: %v", err)
+			}
+			if got.Harvested() {
+				t.Errorf("WordFacts = %+v, want unharvested so the word is re-asked", got)
+			}
+		})
+	}
+}
+
+// A domain that no longer parses degrades WITHOUT voiding the record, which is
+// the asymmetry with the band: general is a usable answer and the label table is
+// explicitly allowed to be incomplete, so losing a domain costs a worse question
+// while losing a band would corrupt selection.
+func TestAnUnknownDomainDegradesButKeepsTheBand(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "facts", "en"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "facts", "en", "word.yaml"),
+		"band: C1\ndomain: Astrology\nat: 2026-09-04T12:00:00Z\n")
+
+	got, err := store.NewYAML(dir, store.DefaultLang, nil).WordFacts("word")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Harvested() {
+		t.Fatal("an unknown domain voided the whole record; only a bad band should")
+	}
+	if got.Band != store.C1 {
+		t.Errorf("band = %q, want C1 preserved", got.Band)
+	}
+	if got.Domain != store.DomainGeneral {
+		t.Errorf("domain = %q, want the general fallback", got.Domain)
+	}
+}

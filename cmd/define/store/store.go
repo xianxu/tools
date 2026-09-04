@@ -42,6 +42,27 @@ type Store interface {
 	// Only successful fetches are written here — see cachingFeed for why a
 	// FAILED fetch must not be cached.
 	SetNewsItems(key string, items []NewsItem, at time.Time) error
+	// WordFacts returns what --harvest cached about a word: its CEFR band and its
+	// domain. An unharvested word reads as the zero value, which is NOT an error
+	// — it is the state of every word until the first harvest. WordFacts.At is
+	// what tells the two apart, so this needs no second return value the way
+	// NewsItems does.
+	//
+	// A stored record too damaged to parse also reads as unharvested, on purpose:
+	// both are worth one re-ask, and a half-trusted band would reach the
+	// comparison every distractor rule depends on.
+	WordFacts(key string) (WordFacts, error)
+	// SetWordFacts replaces a word's facts. REPLACES, not merges: a band and a
+	// domain are one judgement made in one call, and a merge would leave a word
+	// holding half of one run and half of another.
+	SetWordFacts(key string, f WordFacts) error
+	// Items returns the practice items authored for a word, or none. A word may
+	// hold several — of different Forms — and #12 picks among the ones it renders.
+	Items(key string) ([]Item, error)
+	// SetItems replaces a word's authored items, for the same reason
+	// SetNewsItems replaces rather than appends: a re-harvest must not silently
+	// double a word's material every run.
+	SetItems(key string, items []Item) error
 	// Forget removes a word from the deck. It does NOT remove events: the deck is
 	// a working set, the log is history, and rewriting the past would corrupt
 	// every statistic derived from it. Reports whether anything was removed;

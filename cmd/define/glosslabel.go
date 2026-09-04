@@ -1,9 +1,11 @@
 package main
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/play"
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // Reading NOAD's own editorial apparatus off the head of a gloss: the usage
@@ -33,25 +35,36 @@ type glossFacts struct {
 	Usable bool
 }
 
-// noadDomainLabels — NOAD's subject-field labels, capitalized in its own style.
+// noadDomainLabels — NOAD's subject-field labels, ordered for prefix matching.
 //
-// A CLOSED TABLE this repo owns, and #35 already argued the case for the shape:
-// originLanguages faced the same objection and answered that a table restating a
-// fact the CDN owns goes stale, while one reading a dictionary's EDITORIAL
-// PROSE does not — the set of field labels a dictionary prints is stable, small,
-// and ours to read. A missing row costs a distractor its axis and it degrades to
-// general; it never produces a wrong question, which is what makes an incomplete
-// table an acceptable state rather than a latent bug.
+// DERIVED from store.Domains(), not restated. The vocabulary itself moved to the
+// store in #10, because the store is what decides which values may be persisted
+// and a word's domain is now cached forever — two copies of a closed set is how
+// "Medicine" here and "medicine" there become two domains in a measure that
+// counts distinct ones. What stays on this side of the D5 seam is what this file
+// is FOR: reading NOAD's editorial prose, including the ordering below.
 //
-// Longest first: "American football" must win over any prefix of it.
-var noadDomainLabels = []string{
-	"American football", "Psychoanalysis", "Archaeology", "Mathematics",
-	"Architecture", "Linguistics", "Philosophy", "Psychology", "Statistics",
-	"Astronomy", "Chemistry", "Computing", "Geometry", "Heraldry", "Medicine",
-	"Military", "Nautical", "Politics", "Theology", "Anatomy", "Baseball",
-	"Biology", "Ecology", "Finance", "Geology", "Grammar", "Cricket", "Physics",
-	"Printing", "Botany", "Mining", "Music", "Zoology", "Bridge", "Chess",
-	"Sports", "Law",
+// Longest first, and COMPUTED rather than hand-maintained: "American football"
+// must win over any prefix of it, and a table whose ordering is an invariant
+// somebody has to remember is one insertion away from being wrong. Sorting by
+// length makes the property hold for every label anyone adds, in either package.
+var noadDomainLabels = sortedByLengthDesc(store.Domains())
+
+// sortedByLengthDesc puts longer labels first so a prefix match cannot stop
+// short. Ties break alphabetically, only so the order is deterministic — nothing
+// depends on which of two equal-length labels is tried first.
+func sortedByLengthDesc(ds []store.Domain) []string {
+	out := make([]string, len(ds))
+	for i, d := range ds {
+		out[i] = string(d)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if len(out[i]) != len(out[j]) {
+			return len(out[i]) > len(out[j])
+		}
+		return out[i] < out[j]
+	})
+	return out
 }
 
 // noadRegisterLabels — the usage labels that mark a sense as non-neutral in TONE

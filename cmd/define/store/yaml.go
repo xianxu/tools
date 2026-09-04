@@ -50,7 +50,11 @@ func NewYAML(dir string, lang Lang, warn io.Writer) *YAML {
 // reached none of them — the deck-in-git class that has now cost four review
 // rounds across three issues. TestGitignoreCoversRuntimeDirs closes the loop the
 // compiler cannot: adding a name here and forgetting .gitignore fails a test.
-var RuntimeDirs = []string{"words", "events", "usage"}
+// APPEND ONLY, at the TAIL. wordsDir, eventsDir, usageDir, factsDir and
+// itemsDir index this slice POSITIONALLY, so inserting a name anywhere but the
+// end silently repoints existing directories at each other — a data migration
+// disguised as a one-line edit.
+var RuntimeDirs = []string{"words", "events", "usage", "facts", "items"}
 
 // The names define writes into the working directory, each with exactly ONE
 // producing function. Guards, migrations and tests DERIVE from these; nothing
@@ -155,6 +159,23 @@ func (y *YAML) userModelFile() string {
 
 // usageDir holds the news cache, one file per word, beside words/ and events/.
 func (y *YAML) usageDir() string { return filepath.Join(y.dir, RuntimeDirs[2]) }
+
+// factsDir and itemsDir are PER-LANGUAGE, mirroring wordsDir.
+//
+// The dividing line stated above is DERIVATION, not storage, and both are
+// derived from the language-scoped deck: a band and a domain are judgements
+// about a word IN A LANGUAGE, and an authored item is a sentence in one. `red`,
+// `once`, `actual` and `sensible` are real words in English and in Spanish with
+// different bands and unrelated meanings. Flat would collide them — and because
+// facts are cached forever and both are REPLACED rather than merged, the
+// collision would be permanent and unwinding it a migration. #23 paid for that
+// lesson once with the learner model; this is the same class, two members
+// further out.
+//
+// The events/ argument does not transfer, for the reason it never does: an event
+// is a fact about a moment, while these are derived from one deck.
+func (y *YAML) factsDir() string { return filepath.Join(y.dir, RuntimeDirs[3], string(y.lang)) }
+func (y *YAML) itemsDir() string { return filepath.Join(y.dir, RuntimeDirs[4], string(y.lang)) }
 
 // SetUserModel writes the learner model.
 //
@@ -529,6 +550,125 @@ func (y *YAML) SetNewsItems(key string, items []NewsItem, at time.Time) error {
 		return err
 	}
 	return writeBytesAtomic(filepath.Join(y.usageDir(), name), b)
+}
+
+// itemsFile is what items/<lang>/<key>.yaml holds: a word's authored items under
+// one key, so the file says what it is when a person opens it.
+type itemsFile struct {
+	Items []Item `yaml:"items"`
+}
+
+// WordFacts reads a word's cached band and domain.
+//
+// A missing file means never harvested, and so does an UNREADABLE one. That is
+// the same degradation NewsItems chooses and for a stronger reason: reading a
+// damaged record as absent costs one model call, while surfacing half of it puts
+// an unvalidated band into the comparison every distractor rule depends on. The
+// warning is how a directory quietly going bad still becomes visible.
+func (y *YAML) WordFacts(key string) (WordFacts, error) {
+	k := Key(key)
+	if k == "" {
+		return WordFacts{}, nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return WordFacts{}, err
+	}
+	b, err := os.ReadFile(filepath.Join(y.factsDir(), name))
+	if os.IsNotExist(err) {
+		return WordFacts{}, nil // never harvested
+	}
+	if err != nil {
+		return WordFacts{}, err
+	}
+	var f WordFacts
+	if err := yaml.Unmarshal(b, &f); err != nil {
+		y.warnf("skipping unreadable %s: %v", name, err)
+		return WordFacts{}, nil
+	}
+	// Re-parsed on the way OUT, not trusted because it is on disk. A file can be
+	// hand-edited, half-written or produced by an older build, and a band that
+	// does not survive ParseBand must not reach Rank — which answers -1 and would
+	// sort the word below A1 rather than refusing it.
+	band, ok := ParseBand(string(f.Band))
+	if !ok {
+		if f.Band != "" {
+			y.warnf("skipping %s: %q is not a CEFR band", name, f.Band)
+		}
+		return WordFacts{}, nil
+	}
+	f.Band = band
+	// A domain that no longer parses degrades to general rather than voiding the
+	// record: unlike a band, general is a usable answer, and the table is
+	// explicitly allowed to be incomplete.
+	f.Domain, _ = ParseDomain(string(f.Domain))
+	return f, nil
+}
+
+func (y *YAML) SetWordFacts(key string, f WordFacts) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(y.factsDir(), 0o755); err != nil {
+		return err
+	}
+	b, err := yaml.Marshal(f)
+	if err != nil {
+		return err
+	}
+	// Atomic, like a word file: this record is REPLACED wholesale and a torn one
+	// would read as a word that is banded but not really.
+	return writeBytesAtomic(filepath.Join(y.factsDir(), name), b)
+}
+
+func (y *YAML) Items(key string) ([]Item, error) {
+	k := Key(key)
+	if k == "" {
+		return nil, nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(filepath.Join(y.itemsDir(), name))
+	if os.IsNotExist(err) {
+		return nil, nil // nothing authored yet
+	}
+	if err != nil {
+		return nil, err
+	}
+	var f itemsFile
+	if err := yaml.Unmarshal(b, &f); err != nil {
+		// One corrupt file must not make the word unusable: reading as
+		// never-authored costs a re-author, which is what an absent file costs.
+		y.warnf("skipping unreadable %s: %v", name, err)
+		return nil, nil
+	}
+	return f.Items, nil
+}
+
+func (y *YAML) SetItems(key string, items []Item) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(y.itemsDir(), 0o755); err != nil {
+		return err
+	}
+	b, err := yaml.Marshal(itemsFile{Items: items})
+	if err != nil {
+		return err
+	}
+	return writeBytesAtomic(filepath.Join(y.itemsDir(), name), b)
 }
 
 // Forget removes one word file. Events are untouched: the deck is a working set,

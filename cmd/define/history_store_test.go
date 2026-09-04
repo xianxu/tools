@@ -90,6 +90,12 @@ func (failingStore) NewsItems(string) ([]store.NewsItem, time.Time, error) {
 	return nil, time.Time{}, errFail
 }
 func (failingStore) SetNewsItems(string, []store.NewsItem, time.Time) error { return errFail }
+func (failingStore) WordFacts(string) (store.WordFacts, error) {
+	return store.WordFacts{}, errFail
+}
+func (failingStore) SetWordFacts(string, store.WordFacts) error { return errFail }
+func (failingStore) Items(string) ([]store.Item, error)         { return nil, errFail }
+func (failingStore) SetItems(string, []store.Item) error        { return errFail }
 
 var errFail = &failErr{}
 

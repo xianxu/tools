@@ -65,11 +65,11 @@
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `store.WordFacts`/`Items` accessors | `cmd/define/store/store.go` | modified | the working directory |
+| `Store` | `cmd/define/store/store.go` | modified | the working directory |
 | `bandTask` / `authorTask` / `vetoTask` | `cmd/define/harvest_*.go` | new | the model, via `llm.Task[T]` |
 | `runHarvest` | `cmd/define/harvest.go` | new | the batch mode |
 
-- **`store.WordFacts`/`Items` accessors** — four methods on the existing `Store` interface, following `NewsItems`/`SetNewsItems` exactly.
+- **`Store`** — gains four methods (`WordFacts`/`SetWordFacts`, `Items`/`SetItems`), following `NewsItems`/`SetNewsItems` exactly.
   - **Injected into:** every consumer already takes `store.Store`; nothing new is threaded.
   - **ARCH-MOCK:** `store.Mem` implements them and `storetest/suite.go` gains rows, so the fake and the YAML store are held to one contract — the suite exists for precisely this and a new surface that skipped it would be the gap `#16 M2` BR-45 closed.
   - **The new directory joins `RuntimeDirs`**, which every guard, migration and test derives from. A hand-typed name would be the second source that comment warns about.
@@ -105,7 +105,7 @@
 - Modify: `cmd/define/store/store.go` (interface), `mem.go`, `yaml.go` (incl. `RuntimeDirs` + `factsDir`), `storetest/suite.go`
 - Modify: `cmd/define/glosslabel.go` — `noadDomainLabels` DERIVES from `store`'s closed set rather than restating it (ARCH-DRY; the ordering and NOAD's capitalization stay here, the vocabulary does not)
 
-- [ ] **Step 1: Write the failing conformance rows**
+- [x] **Step 1: Write the failing conformance rows**
 
 In `storetest/suite.go`, so BOTH implementations are held to them at once:
 
@@ -124,12 +124,12 @@ In `storetest/suite.go`, so BOTH implementations are held to them at once:
 // that fails ParseBand leaves the word unbanded and re-harvestable.
 ```
 
-- [ ] **Step 2: Run against `Mem` and watch it fail to compile**
+- [x] **Step 2: Run against `Mem` and watch it fail to compile**
 
 Run: `go test ./cmd/define/store/...`
 Expected: FAIL — `WordFacts` undefined.
 
-- [ ] **Step 3: Define the types, parse-refusing on `Band` and `Domain`**
+- [x] **Step 3: Define the types, parse-refusing on `Band` and `Domain`**
 
 `Band` is a string type whose parse refuses anything outside `A1`…`C2`. **A model
 returning `B2+` or `intermediate` is a real answer to a badly-posed question**,
@@ -142,7 +142,7 @@ unrecognised answer lands on rather than widening the vocabulary. Then make
 not done while a second copy of the vocabulary sits in `main` (ARCH-PURPOSE), and
 that file's ordering + capitalization concerns stay where they are.
 
-- [ ] **Step 4: Implement on `Mem`, then `YAML`**
+- [x] **Step 4: Implement on `Mem`, then `YAML`**
 
 `YAML` writes `facts/<lang>/<key>.yaml` through the SAME atomic-write helper
 `words/` uses — the shadow-file prefix is already single-sourced, and this must
@@ -160,7 +160,7 @@ three issues.
 `sanitiseFacts` runs on the write, one pass over the struct, for the reason
 `sanitiseModel` gives at `usermodel.go:213`.
 
-- [ ] **Step 5: Run, then commit**
+- [x] **Step 5: Run, then commit**
 
 ```bash
 go test ./cmd/define/store/... && go test ./cmd/define/...

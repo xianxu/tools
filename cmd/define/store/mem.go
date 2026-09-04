@@ -19,9 +19,18 @@ type Mem struct {
 	// cannot back makes the conformance row asserting it unfalsifiable.
 	userModel string
 	news      map[string]newsCache
+	facts     map[string]WordFacts
+	items     map[string][]Item
 }
 
-func NewMem() *Mem { return &Mem{words: map[string]Word{}, news: map[string]newsCache{}} }
+func NewMem() *Mem {
+	return &Mem{
+		words: map[string]Word{},
+		news:  map[string]newsCache{},
+		facts: map[string]WordFacts{},
+		items: map[string][]Item{},
+	}
+}
 
 // newsCache is items plus WHEN, because the timestamp is what distinguishes
 // "fetched and found nothing" from "never fetched".
@@ -133,6 +142,65 @@ func (m *Mem) SetNewsItems(key string, items []NewsItem, at time.Time) error {
 	// their side must not mutate what this store believes it holds.
 	m.news[k] = newsCache{items: append([]NewsItem(nil), items...), at: at}
 	return nil
+}
+
+func (m *Mem) WordFacts(key string) (WordFacts, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.facts[Key(key)], nil
+}
+
+func (m *Mem) SetWordFacts(key string, f WordFacts) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.facts == nil {
+		m.facts = map[string]WordFacts{}
+	}
+	m.facts[k] = f
+	return nil
+}
+
+func (m *Mem) Items(key string) ([]Item, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	its := m.items[Key(key)]
+	if len(its) == 0 {
+		return nil, nil
+	}
+	return copyItems(its), nil
+}
+
+func (m *Mem) SetItems(key string, items []Item) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.items == nil {
+		m.items = map[string][]Item{}
+	}
+	// Copied, not aliased, as SetNewsItems is: the caller keeps its slice and a
+	// later append on their side must not mutate what this store believes it
+	// holds.
+	m.items[k] = copyItems(items)
+	return nil
+}
+
+// copyItems deep-copies far enough to matter: Item's only reference field is
+// Distractors, and sharing that slice is the aliasing SetNewsItems' comment
+// warns about, one level down.
+func copyItems(in []Item) []Item {
+	out := make([]Item, len(in))
+	copy(out, in)
+	for i := range out {
+		out[i].Distractors = append([]string(nil), in[i].Distractors...)
+	}
+	return out
 }
 
 func (m *Mem) Forget(key string) (bool, error) {

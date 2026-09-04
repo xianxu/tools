@@ -19,6 +19,18 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 	day := func(n int) time.Time {
 		return time.Date(2026, 8, n, 12, 0, 0, 0, time.UTC)
 	}
+	// Through the parse rather than a cast: there are deliberately no per-label
+	// constants — the domain set is a data table read off NOAD's prose, and
+	// ParseDomain is the only way in. Using it here means these rows also fail if
+	// the label ever leaves the closed set.
+	domain := func(t *testing.T, name string) store.Domain {
+		t.Helper()
+		d, ok := store.ParseDomain(name)
+		if !ok {
+			t.Fatalf("ParseDomain(%q) refused; it must be in the closed set", name)
+		}
+		return d
+	}
 
 	t.Run("empty store is empty, not an error", func(t *testing.T) {
 		s := newStore(t)
@@ -376,6 +388,155 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 		if len(got) != 1 {
 			t.Errorf("got %d items — the cache key must be store.Key, as the deck's is", len(got))
+		}
+	})
+
+	t.Run("word facts are absent before the first harvest, and absence is not an error", func(t *testing.T) {
+		// The normal state of every word until --harvest runs, exactly as an
+		// absent user model is (#16 M2). A zero At is what says so: WordFacts
+		// carries its own timestamp, so it needs no second return value to
+		// distinguish "never assigned" from "assigned", the way NewsItems needs
+		// one for items it does not timestamp itself.
+		s := newStore(t)
+		f, err := s.WordFacts("sycophantic")
+		if err != nil {
+			t.Fatalf("WordFacts: %v", err)
+		}
+		if f.Harvested() {
+			t.Errorf("WordFacts = %+v, want unharvested", f)
+		}
+	})
+
+	t.Run("word facts round-trip", func(t *testing.T) {
+		s := newStore(t)
+		want := store.WordFacts{Band: store.C1, Domain: domain(t, "Law"), At: day(3)}
+		if err := s.SetWordFacts("certiorari", want); err != nil {
+			t.Fatalf("SetWordFacts: %v", err)
+		}
+		got, err := s.WordFacts("certiorari")
+		if err != nil {
+			t.Fatalf("WordFacts: %v", err)
+		}
+		if !got.Harvested() {
+			t.Fatal("facts read back unharvested")
+		}
+		if got.Band != want.Band || got.Domain != want.Domain || !got.At.Equal(want.At) {
+			t.Errorf("WordFacts = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("a second SetWordFacts REPLACES rather than merging", func(t *testing.T) {
+		// A band is assigned once and reused forever. A write that merged would
+		// leave a word holding a band from one run and a domain from another,
+		// and the cache's whole premise is that these are one judgement.
+		s := newStore(t)
+		if err := s.SetWordFacts("estoppel", store.WordFacts{Band: store.B2, Domain: store.DomainGeneral, At: day(1)}); err != nil {
+			t.Fatalf("SetWordFacts: %v", err)
+		}
+		if err := s.SetWordFacts("estoppel", store.WordFacts{Band: store.C2, Domain: domain(t, "Law"), At: day(2)}); err != nil {
+			t.Fatalf("SetWordFacts again: %v", err)
+		}
+		got, err := s.WordFacts("estoppel")
+		if err != nil {
+			t.Fatalf("WordFacts: %v", err)
+		}
+		if got.Band != store.C2 || got.Domain != domain(t, "Law") || !got.At.Equal(day(2)) {
+			t.Errorf("WordFacts = %+v, want the second write whole", got)
+		}
+	})
+
+	t.Run("word fact keys are normalised the way word keys are", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.SetWordFacts("Hot  Dog", store.WordFacts{Band: store.A2, Domain: store.DomainGeneral, At: day(1)}); err != nil {
+			t.Fatalf("SetWordFacts: %v", err)
+		}
+		got, err := s.WordFacts("hot dog")
+		if err != nil {
+			t.Fatalf("WordFacts: %v", err)
+		}
+		if !got.Harvested() {
+			t.Error("the facts key must be store.Key, as the deck's is")
+		}
+	})
+
+	t.Run("items are absent before authoring, and round-trip once written", func(t *testing.T) {
+		s := newStore(t)
+		got, err := s.Items("sycophantic")
+		if err != nil {
+			t.Fatalf("Items: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("Items = %v, want none", got)
+		}
+
+		want := []store.Item{{
+			Word:        "sycophantic",
+			Form:        store.FormCloze,
+			Stem:        "Reporters described the aide as ___, agreeing with the minister before he finished speaking.",
+			Answer:      "sycophantic",
+			Distractors: []string{"laconic", "punctilious", "querulous"},
+			At:          day(3),
+		}}
+		if err := s.SetItems("sycophantic", want); err != nil {
+			t.Fatalf("SetItems: %v", err)
+		}
+		got, err = s.Items("sycophantic")
+		if err != nil {
+			t.Fatalf("Items after write: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("got %d items, want 1", len(got))
+		}
+		if got[0].Stem != want[0].Stem || got[0].Answer != want[0].Answer || got[0].Form != want[0].Form {
+			t.Errorf("Item = %+v, want %+v", got[0], want[0])
+		}
+		if len(got[0].Distractors) != 3 {
+			t.Errorf("distractors = %v, want 3", got[0].Distractors)
+		}
+		if !got[0].At.Equal(day(3)) {
+			t.Errorf("At = %v, want %v", got[0].At, day(3))
+		}
+	})
+
+	t.Run("a second SetItems replaces rather than appends", func(t *testing.T) {
+		// Same rule as the news cache: the authored set for a word is REPLACED,
+		// so a re-harvest cannot silently double a word's items every run.
+		s := newStore(t)
+		if err := s.SetItems("ephemeral", []store.Item{{Word: "ephemeral", Stem: "old", At: day(1)}}); err != nil {
+			t.Fatalf("SetItems: %v", err)
+		}
+		if err := s.SetItems("ephemeral", []store.Item{{Word: "ephemeral", Stem: "new", At: day(2)}}); err != nil {
+			t.Fatalf("SetItems again: %v", err)
+		}
+		got, err := s.Items("ephemeral")
+		if err != nil {
+			t.Fatalf("Items: %v", err)
+		}
+		if len(got) != 1 || got[0].Stem != "new" {
+			t.Errorf("got %v, want only the newer item", got)
+		}
+	})
+
+	t.Run("a word may hold several items", func(t *testing.T) {
+		// 1:N with a word, which is what lets #12 pick among them and what the
+		// Form field exists to let #13 share.
+		s := newStore(t)
+		want := []store.Item{
+			{Word: "obdurate", Form: store.FormCloze, Stem: "a", Answer: "obdurate", At: day(1)},
+			{Word: "obdurate", Form: store.FormSentence, Stem: "b", Answer: "obdurate", At: day(2)},
+		}
+		if err := s.SetItems("obdurate", want); err != nil {
+			t.Fatalf("SetItems: %v", err)
+		}
+		got, err := s.Items("obdurate")
+		if err != nil {
+			t.Fatalf("Items: %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("got %d items, want 2", len(got))
+		}
+		if got[0].Form == got[1].Form {
+			t.Errorf("both items have Form %q — the discriminator did not survive", got[0].Form)
 		}
 	})
 
