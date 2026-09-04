@@ -337,6 +337,62 @@ above). Each `Mx` row closes with its own `sdlc milestone-close`.
 
 ## Log
 
+### 2026-09-04 — THE CHECKPOINT: the first real batch, read
+
+20 words, live model, deck copied from `~/play40`. Full batch saved at
+`workshop/pensive/000010-m2-first-batch.md`. **This is the row no test replaces,
+and it found two things the green suite could not.**
+
+**The veto fired on real material, both directions, unprompted.** `obsequious`
+vetoed `sycophantic` and `sycophantic` vetoed `obsequious`, each with a reason
+naming the near-synonymy. The committed known-bad case is not a fixture that
+happens to be true; it is the live behaviour.
+
+**The named-subject requirement worked completely.** Every one of 20 stems names
+a real referent: Holyoke Dam, the Eiffel Tower, Alvin Bragg, Hoover Dam,
+Snapchat, Ingrid Bergman, HMS Victory, Lindsey Vonn, Edison at Menlo Park,
+Monument Valley, Uriah Heep, Humphry Davy, Rottnest Island, Usain Bolt, Magnus
+Carlsen. The Spec predicted a model asked for a natural sentence drifts to the
+neutral and unnamed; making it a REQUIREMENT rather than a preference fixed that
+outright.
+
+**PROBLEM 1 — the stems are glosses, and entailment is what caused it.** Roughly
+half the batch defines the word inside the sentence: *"the alewife, the small
+silver herring Alosa pseudoharengus"*, *"a mesa, since it is far too broad to be
+called a butte"*, *"the keel, the single massive timber spine running the whole
+length of her hull bottom"*, *"potassium, a soft silvery metal"*. The system
+prompt says *never write a definition* and the model complied with the letter by
+writing an APPOSITIVE instead.
+
+This is an over-constraint interacting badly, not a prompt bug: **the cheapest
+way to make a stem entail its answer is to define the answer in the stem.** The
+requirement worked exactly as written and produced a reading test rather than a
+vocabulary test — the learner does not need to know the word, only to read the
+definition beside the blank.
+
+**PROBLEM 2 — the distractors are too easy, which is the opposite failure from
+the one we designed against.** `alewife` (a fish) offers `quokka`, `sycophantic`,
+`bailiwick`. No learner picks `sycophantic` for a fish. The whole veto machinery
+defends against a distractor that is ALSO CORRECT, and the live failure is
+distractors that are not remotely plausible.
+
+Measured: `ephemeral` appears as a wrong answer in **8 of 20 items** (40%),
+`pulp` in 6, and the four A1 words (`bank`, `run`, `set`, `light`) select each
+other in every one of their four items. 8 items drew from *any domain, at or
+below band* — the widest useful tier. The tiering reported this honestly, which
+is the tier machinery doing its job; the underlying cause is a 20-word deck with
+no diversity pressure in selection.
+
+**PROBLEM 3 — the M1 band worry, now visible in material.** `alewife`,
+`quokka` and `arrondissement` are all C2, which is rarity rather than
+difficulty. The atlas already recorded `quokka` at C2 as the thing to suspect;
+here it decides which words a C2 learner is offered.
+
+**What is NOT wrong:** the sentence quality is genuinely high, the domains are
+mostly right, and both judges behaved. The failures are in how the constraints
+INTERACT, which is precisely what a green suite cannot see and what this
+checkpoint exists for.
+
 ### 2026-09-04 — M1 boundary review, and one finding worth keeping
 - 2026-09-04: closed M1 — go test ./... green; go vet + gofmt clean; conformance build clean. Done-when 1/2/3/6 pinned (panic seam + no banding during a sitting; request COUNT unchanged on a second run; -agreement=N its own mode writing nothing, floor 0.8 asserted LIVE at mean agreement 1.00 over 8 words x 5 assignments; outage survivors asserted WHOLE). THREE boundary rounds: round 1 FIX-THEN-SHIP 4 Important + 6 Minor, all verified against the tree and fixed in 3c8e784; round 2 produced no verdict (gate/agent failure, no code change); round 3 confirmed all ten addressed — verifying four by REVERTING, not reading — and raised three 2nd-in-family Importants, fixed in 922f7e2 as CLASSES: modes validated as a set via modeCollision (the -forget/-llm-check pair the pairwise fix missed, confirmed against the built binary), the read side canonicalised like the write side with NewsItems recorded as out of the class, and the mutation sweep RUN rather than asserted. THE SWEEP: 13 properties enumerated, each reverted, each reddens a named test — table recorded in the plan Verification section. senseFacts split out of wordSense (ARCH-PURE) so two of the three previously-unpinned properties are table-testable with no dictionary fake. Atlas + README updated.; review verdict: FIX-THEN-SHIP
 
