@@ -1,5 +1,6 @@
 ---
 type: user-model
+level: C1
 updated: 2026-08-25
 window: 2026-08-01..2026-08-25          # 84 lookups, 6 questions
 generated_by: define --reflect (claude-opus-5)

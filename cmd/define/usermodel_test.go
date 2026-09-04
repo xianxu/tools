@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
@@ -398,5 +399,77 @@ func TestEveryUntrustedFieldIsNeutralised(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The read-back half of #10's single-source loop (PQ-1). Authoring needs the
+// learner's band as a VALUE, and this is the only thing that produces one.
+func TestParseLearnerBand(t *testing.T) {
+	const full = `---
+type: user-model
+level: C1
+updated: 2026-08-25
+---
+
+## Level
+
+**C1** — Reaches for precise low-frequency words.
+
+## Corrections
+
+Yours.
+`
+	if got, ok := parseLearnerBand(full); !ok || got != store.C1 {
+		t.Errorf("parseLearnerBand = %q, %v; want C1, true", got, ok)
+	}
+
+	for _, tc := range []struct {
+		name string
+		in   string
+	}{
+		// Every one of these means GENERIC AUTHORING, not an error. The third is
+		// the case that matters most in practice: every learner-model file
+		// written before #10 looks exactly like it.
+		{"no file at all", ""},
+		{"not a learner model", "# notes\n\nlevel: C1\n"},
+		{"a pre-#10 file, with no level key", "---\ntype: user-model\nupdated: 2026-08-25\n---\n\n## Level\n\n**C1** — prose only.\n"},
+		{"a hand-edited band nothing can compare", "---\ntype: user-model\nlevel: fluent\n---\n"},
+		{"an empty band", "---\ntype: user-model\nlevel:\n---\n"},
+		{"frontmatter never terminated", "---\ntype: user-model\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, ok := parseLearnerBand(tc.in); ok {
+				t.Errorf("parseLearnerBand = %q, true; want no band", got)
+			}
+		})
+	}
+
+	// The human-owned section must not be able to change what the generated
+	// region means. A person writing "level: A1" in their own prose is writing
+	// prose, and #17 promises never to rewrite that half.
+	const inCorrections = `---
+type: user-model
+updated: 2026-08-25
+---
+
+## Corrections
+
+level: A1
+`
+	if got, ok := parseLearnerBand(inCorrections); ok {
+		t.Errorf("parseLearnerBand read %q out of ## Corrections; only frontmatter counts", got)
+	}
+}
+
+// Round-trip: what --reflect renders is what authoring reads back. The two
+// halves are in one file precisely so this test can exist.
+func TestLearnerBandRoundTripsThroughTheRenderedModel(t *testing.T) {
+	m := sampleLearnerModel()
+	got, ok := parseLearnerBand(renderUserModel(m, sampleMeta()))
+	if !ok {
+		t.Fatal("the band the renderer wrote does not read back")
+	}
+	if string(got) != m.Level.Band {
+		t.Errorf("round-tripped band = %q, want %q", got, m.Level.Band)
 	}
 }

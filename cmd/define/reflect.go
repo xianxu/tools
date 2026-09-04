@@ -251,12 +251,34 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []dropCl
 	// here while checking name-and-directive on domains — an asymmetry with no
 	// reason behind it, and a band with an empty rationale renders as "**C1** —"
 	// with nothing after the dash.
+	band, bandOK := store.ParseBand(m.Level.Band)
 	switch ev := supported(m.Level.EvidenceWords); {
 	case strings.TrimSpace(m.Level.Band) == "" || strings.TrimSpace(m.Level.Rationale) == "":
 		dropped = append(dropped, dropClaim{Kind: "level", Subject: m.Level.Band,
 			Reason: "no band or no rationale — nothing a reader could check"})
 		m.Level = levelClaim{}
+	case !bandOK:
+		// THE THIRD ARM, and #10 is what made it load-bearing (PQ-1).
+		//
+		// This field was a free-form string for #17's whole life, which was
+		// harmless while its only consumer pasted the file into a prompt — a
+		// model reads "B2+" as well as "B2". #10 makes the band ARITHMETIC:
+		// "the learner's band, or one below" is a comparison, and store.Band's
+		// Rank answers -1 for anything off the scale, which sorts below A1. A
+		// band that reached disk unparsed would silently pitch every selected
+		// distractor at the floor, and nothing downstream could tell.
+		//
+		// Dropped rather than coerced, like every other unusable claim here: a
+		// level nobody can check is worse than no level, and an absent one
+		// already means generic authoring rather than an error.
+		dropped = append(dropped, dropClaim{Kind: "level", Subject: m.Level.Band,
+			Reason: "not one of A1-C2 — the CEFR scale a word's band is compared against"})
+		m.Level = levelClaim{}
 	case len(ev) > 0:
+		// Stored CANONICAL, so "c1 " and "C1" cannot become two spellings on
+		// disk. ParseBand forgives transcription noise; this is where the
+		// forgiveness stops being re-derived on every later read.
+		m.Level.Band = string(band)
 		m.Level.EvidenceWords = ev
 	default:
 		// Naming the REJECTED words, not just the fact: "no evidence in the

@@ -176,7 +176,7 @@ git commit -m "#10 M1: a band and a domain per word, cached like the deck"
 - Create: golden at `cmd/define/testdata/golden/band-prompt.txt` — `llmtest.AssertGolden(t, "testdata", …)` writes into the CALLING package, which is where `askctx_test.go:29` and `reflectprompt_test.go:24` land theirs. `internal/llm/llmtest/testdata/` holds `llmtest`'s own wire fixtures (`stream-sample.sse`, `message-schema.json`) and is not the place for a prompt golden.
 - Modify: `cmd/define/reflect.go` + `cmd/define/usermodel.go` — `#17` writes its band THROUGH `store.ParseBand`, and `renderUserModel` emits `level:` into the frontmatter for `parseLearnerBand` to read back
 
-- [ ] **Step 0: Close the learner-band loop, so `Band` has two deriving consumers**
+- [x] **Step 0: Close the learner-band loop, so `Band` has two deriving consumers**
 
 The Critical finding of round 1, and it comes first because `pickDistractors`
 cannot be written until the learner's band has a source.
