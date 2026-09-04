@@ -3524,3 +3524,48 @@ a calibration ledger stops being evidence.
 produced no verdict at all: the reviewer spent its budget waiting on repeated
 full-suite runs and was cut off mid-sentence. Not a code defect, but it cost a
 round — worth knowing before blaming the diff.
+
+## #10 M2 — what reading real output found that a green suite could not
+
+**Stating a rule in a prompt is not enforcing it.** The author system prompt said
+*"You never explain the word, and you never write a definition"* and half of the
+first twenty items came back as appositive glosses — *"the alewife, the small
+silver herring"*. The model honoured the letter and wrote a definition in a form
+the sentence didn't call a definition. **Showing three wrong shapes and two right
+ones is what worked**, plus a judge field that asks about the shape directly.
+
+**Two requirements can be individually right and jointly impossible.** "The stem
+must entail its answer" and "the stem must never define the word" are each
+defensible, and together they are unsatisfiable for any concrete noun: the
+cheapest way to make a sentence entail a word IS to define it. The second batch
+said so out loud — items rejected because *"no definition is supplied"*, the
+judge citing the absence of the thing the other rule forbids. **When a judge's
+rejection reason cites a rule you deliberately broke, the requirements are
+fighting, not the output.**
+
+**And the resolution was to re-read what the form actually is.** The bar
+"recoverable from the sentence alone" is a fill-in-the-blank criterion, and this
+is MULTIPLE CHOICE — the learner sees four options, so "does any other word fit"
+is a question about the OPTIONS, which the veto already asked per pair. One judge
+was doing the other's job badly. Check what the artifact is before specifying
+what makes it good.
+
+**Ask the free question before the paid one.** An item shipped with `___` already
+in its stem, against an explicit instruction, and BOTH model judges passed it
+because neither was asked. `strings.Contains` would have caught it. Every
+model-judged property should be preceded by the deterministic checks that are
+cheaper and stronger — the same rule as not asking a model for a domain the
+dictionary printed.
+
+**A per-item constraint says nothing about a batch.** Every selection rule was
+about one question, so one eligible word served as the wrong answer in 8 of 20
+items. Nothing was violated; the property nobody had stated was the one that
+mattered. When output is generated in batches, at least one measure has to be
+taken over the batch.
+
+**And a mechanism can be correct while the data starves it.** The diversity fix
+demonstrably works (worst-case reuse 6→4 on a homogeneous pool) and did almost
+nothing on the real deck, because for a C1 Nautical word the whole eligible tier
+was two words. **Measure the fix on the shape that motivated it, not only on a
+constructed one** — and when the limit is the input rather than the code, say so
+instead of adding machinery.

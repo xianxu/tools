@@ -311,7 +311,7 @@ milestoned.
 **Files:**
 - Create: `cmd/define/harvest_item.go`, `cmd/define/harvest_item_test.go`
 
-- [ ] **Step 1: The task, learner-aware**
+- [x] **Step 1: The task, learner-aware**
 
 Reads `#17`'s `user-model.md` through `store.UserModel()` — **an absent file means
 generic authoring, not an error**, which is the normal first-run state. The band
@@ -324,7 +324,7 @@ natural sentence drifts to the neutral and unnamed:
 - the stem must ENTAIL its answer;
 - it must name real people, places or institutions.
 
-- [ ] **Step 2: `topicSpread`, measured with no model**
+- [x] **Step 2: `topicSpread`, measured with no model**
 
 Done-when 5's second half. A judge scoring its own batch's variety is the
 self-oracle problem `atlas/define.md` already records under "Its own oracle" —
@@ -336,7 +336,7 @@ spread of three where there is one — the measure taken with no model is exactl
 the one nothing else can catch being wrong. A test asserts that casing and
 whitespace variants collapse.
 
-- [ ] **Step 3: The entailment judge, on a batch**
+- [x] **Step 3: The entailment judge, on a batch**
 
 An `llm.Task` scoring a batch, with a COMMITTED known-bad stem that must be
 rejected — the same shape Done-when 4 asks of the veto, and the only thing that
@@ -349,7 +349,7 @@ makes a judge's pass meaningful.
 **Files:**
 - Create: `cmd/define/harvest_judge.go`, `cmd/define/harvest_judge_test.go`
 
-- [ ] **Step 0: Declare the move from `#12`, in writing, before building it**
+- [x] **Step 0: Declare the move from `#12`, in writing, before building it**
 
 This task takes three things `#12`'s Done-when currently owns. Do the paperwork
 first, so the ownership is recorded at the moment it moves rather than discovered
@@ -366,19 +366,19 @@ at `#12`'s close:
 - Correct `internal/llm/golden_schema_test.go:11`, which says the veto verdict
   type is one "#12 will define its own". `#10` defines it.
 
-- [ ] **Step 1: A known-bad case, committed**
+- [x] **Step 1: A known-bad case, committed**
 
 Done-when 4 names this precisely: *"the veto is exercised by a committed
 known-bad case"*. A veto that has never rejected anything is a veto nobody has
 seen work.
 
-- [ ] **Step 2: Selection at the learner's band or one below**
+- [x] **Step 2: Selection at the learner's band or one below**
 
 One band BELOW rather than above: a distractor the learner does not know is
 unrejectable — they eliminate it by ignorance rather than by knowing it does not
 fit.
 
-- [ ] **Step 3: Check `play.PickOptions` for reuse (ARCH-DRY)**
+- [x] **Step 3: Check `play.PickOptions` for reuse (ARCH-DRY)**
 
 `#7` already selects options from a live pool at review time. **Before writing a
 second selector, establish whether these are one function with two callers or two
@@ -390,14 +390,14 @@ which may be different enough; that is a finding to record, not to assume.
 
 ### Task 6: pruning, docs, and the stop
 
-- [ ] **Step 1: `prune`, deterministic and bounded (Done-when 7)**
+- [x] **Step 1: `prune`, deterministic and bounded (Done-when 7)**
 
 Deterministic means the same store prunes to the same result — tested by pruning
 twice, not by inspecting one run.
 
-- [ ] **Step 2: README + atlas**
+- [x] **Step 2: README + atlas**
 
-- [ ] **Step 3: GENERATE A REAL BATCH AND READ IT**
+- [x] **Step 3: GENERATE A REAL BATCH AND READ IT**
 
 The checkpoint. Not a test: run `--harvest` against the real model on the real
 deck, and read the items. The question is the project's central one — *how good

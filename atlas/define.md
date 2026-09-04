@@ -1491,17 +1491,46 @@ and one of them is usually also correct. That is the failure "selected, never
 invented" exists to prevent, and removing the field is what makes it structural
 rather than a rule someone has to follow.
 
-Two constraints go in as REQUIREMENTS with the measured counter-example
-attached: the stem must ENTAIL its answer (*"His ___ behaviour was noted by
-all"* fails — almost any adjective fits), and it must NAME a real person, place
-or institution, because a model asked for a natural sentence drifts to the
-neutral and unnamed and an unnamed subject gives the learner nothing to attach
-the word to.
+THREE requirements, each with its counter-example, and **the second and third
+exist because the first batch was read** (see the issue Log — this is what the
+checkpoint bought):
 
-**Judged before selected.** A stem that does not entail its answer cannot be
-rescued by better wrong answers, so the entailment judge runs first and a
-rejected stem never spends a veto call — asserted on the wire. Entailment and
-naming are separate verdict fields so a reader can tell which failed.
+1. the stem must make the word's meaning DO WORK (*"His ___ behaviour was noted
+   by all"* fails — the word is decorative);
+2. it must NEVER GLOSS the word;
+3. it must NAME a real person, place or institution.
+
+**Requirement 2 exists because requirement 1 causes what it forbids.** The
+cheapest way to make a sentence point at a word is to define the word in it, and
+half of the first twenty items came back as appositives — *"the alewife, the
+small silver herring"* — a reading test rather than a vocabulary test. Stating
+the rule was not enough: the system prompt already said *never write a
+definition*. What worked was SHOWING three wrong shapes and two right ones.
+
+**Entailment is scored for a MULTIPLE-CHOICE form, and the first wording was
+conceptually wrong.** It asked whether the word was recoverable *"from the rest
+of the sentence alone"* — a bar for a blank with no options, and unreachable
+without a gloss. The second batch rejected nine of twenty with reasons like
+*"any migratory fish name would fit, AND NO DEFINITION IS SUPPLIED"*: the judge
+citing the absence of the thing the other rule forbids. The learner sees FOUR
+OPTIONS, so whether a specific alternative also fits is the VETO's question,
+asked per pair against the options actually offered. This judge asks the only
+thing the veto cannot — does the sentence make the meaning do work, or is it
+merely a place the word can sit. Rejection went 9 → 1.
+
+**Judged before selected, and CHECKED before judged.** `stemUsesTheWord` is pure
+and runs first: it rejects a stem that does not contain its answer or that
+arrives pre-blanked. The second batch shipped *"...atop the narrow `___` of
+First Mesa"* for `mesa` — the model blanked the word itself against an explicit
+instruction and both judges passed it, because neither was asked. Subtler than
+it looks: that stem DOES contain `mesa`, in the place name, so containment alone
+passes it. A model call to find out whether a string contains a substring would
+be the same mistake as asking one for a domain the dictionary printed.
+
+Then the entailment judge, and only then selection — a stem that fails cannot be
+rescued by better wrong answers, so a rejected one never spends a veto call
+(asserted on the wire). `entails`, `glosses` and `named` are separate verdict
+fields so a batch can be read for WHICH is failing.
 
 ### Selection, and why it is not `play.PickOptions`
 
@@ -1514,6 +1543,30 @@ then any-domain-at-or-below, and only as a last resort above the learner. It
 relaxes the DOMAIN before it relaxes the ceiling, and the tier reached is
 printed — a selector that silently falls back to "any word at all" is
 indistinguishable from one that is working.
+
+**Batch-level diversity pressure**, measured into existence by the first real
+batch: `ephemeral` served as a wrong answer in 8 of 20 items and the four A1
+words selected each other every time. Every other constraint is per-ITEM, so
+nothing stopped one eligible word from serving the whole batch — and a learner
+who meets a word as a wrong answer eight times learns it is never the answer. A
+SORT, not a cap: least-used eligible candidates come first, so repetition is what
+happens when the deck has nothing else rather than the default. A cap would
+refuse to fill an option set, and fewer options is a worse question than a
+repeated one.
+
+**Its limit is deck composition, and that is a fact about decks rather than a
+defect.** Measured on a homogeneous pool the pressure cuts worst-case reuse from
+6 to 4 and uses every word. On the 20-word checkpoint deck it does much less: for
+`keel` (C1 Nautical) the ENTIRE general-at-band tier is two words, because eight
+of twenty are specialists in domains of one. Pressure cannot spread what does not
+exist; the tiering reports it, and a deck of hundreds dilutes it.
+
+**An open question for `#12`, found by reading and not by measuring:** a
+specialist word beside three general ones is identifiable by REGISTER alone —
+`keel` against `ephemeral`, `pulp`, `mesa` is answerable without knowing what a
+keel is. The Spec offers general vocabulary as the fallback and that is what it
+does; whether other SPECIALIST domains at band would beat it is a real question
+the checkpoint deck was too small to answer.
 
 `pickDistractors` and `play.PickOptions` are **two rules, not one with two
 callers**, and the finding is recorded in full at `harvest_item.go`. In short:

@@ -282,11 +282,11 @@ because each names work that exists, not to close a gap.
 
 ## Done when
 
-- [ ] `define --harvest` produces finished items with no review session running,
+- [x] `define --harvest` produces finished items with no review session running,
       and a sitting never waits on it.
-- [ ] Every word carries a CEFR band and a domain, assigned once and cached; a
+- [x] Every word carries a CEFR band and a domain, assigned once and cached; a
       second run over the same word re-reads rather than re-asks.
-- [ ] **The banding is measured, not asserted** — and the measure is named,
+- [x] **The banding is measured, not asserted** — and the measure is named,
       because the model is its own source. Either a hand-labelled held-out sample
       (the honest option, and small: ~100 words settles it), or, if that is
       refused, a STABILITY measure over repeated assignment, which is what the
@@ -298,14 +298,14 @@ because each names work that exists, not to close a gap.
       conformance row. It is separate from the harvesting path because measuring
       N assignments cannot coexist with "one call per unbanded word, zero on a
       second run".
-- [ ] A distractor is never the answer: an LLM judge vetoes a candidate that
+- [x] A distractor is never the answer: an LLM judge vetoes a candidate that
       would also fit the stem, and the veto is exercised by a committed
       known-bad case.
-- [ ] Authored stems ENTAIL their answers, and name real subjects — judged on a
+- [x] Authored stems ENTAIL their answers, and name real subjects — judged on a
       batch, with the topic-spread half measured without a model.
-- [ ] A model outage leaves the existing store usable and untouched; harvesting
+- [x] A model outage leaves the existing store usable and untouched; harvesting
       is the only thing that stops.
-- [ ] Store growth is bounded; pruning is deterministic and tested.
+- [x] Store growth is bounded; pruning is deterministic and tested.
 
 ## Plan
 
@@ -324,15 +324,15 @@ above). Each `Mx` row closes with its own `sdlc milestone-close`.
 - [x] M1 — `--harvest` dispatched as a MODE beside `--forget`; a sitting never
       waits on it (model seam PANICS in the test), a second run makes zero calls,
       and an outage leaves the store untouched.
-- [ ] M2 — authored stems: entailment and named subjects as prompt REQUIREMENTS,
+- [x] M2 — authored stems: entailment and named subjects as prompt REQUIREMENTS,
       learner-aware via `#17`'s model, absent file meaning generic not error.
-- [ ] M2 — `topicSpread` measured with NO model, and a batch entailment judge with
+- [x] M2 — `topicSpread` measured with NO model, and a batch entailment judge with
       a committed known-bad stem.
-- [ ] M2 — distractors SELECTED at band-or-one-below, vetoed by a judge exercised
+- [x] M2 — distractors SELECTED at band-or-one-below, vetoed by a judge exercised
       on a committed known-bad case; and a recorded answer on whether
       `play.PickOptions` is the same rule (ARCH-DRY).
-- [ ] M2 — `prune`: bounded, deterministic, tested by pruning twice.
-- [ ] M2 — **generate a real batch and READ it** before `#12`/`#13`. The
+- [x] M2 — `prune`: bounded, deterministic, tested by pruning twice.
+- [x] M2 — **generate a real batch and READ it** before `#12`/`#13`. The
       checkpoint, and the one row no test replaces.
 
 ## Log
