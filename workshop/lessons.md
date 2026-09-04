@@ -3369,3 +3369,110 @@ to remember — the first pass here ran over `cmd/` and missed both atlas hits.
 And: **a rule recorded only in a plan is a rule that will not be read.** Plans are
 archived to `workshop/history/` at close, which `AGENTS.md` §2 tells the next agent
 not to read. If a round produced a rule, it belongs HERE.
+
+## Mutation testing has to be done, and the tooling for it has to be safe (`#42`, close round 1)
+
+Two failures in one round, both about the same habit.
+
+**A mutation check you did not run is worse than none**, because the tick claims
+it. `#42`'s plan named three required mutation checks for the board's drop; I ran
+two and ticked all three, and the boundary review found that the untested one —
+the palette — could be deleted twice over with the whole suite green. A dropped
+cell would have painted identically to an untouched one while the README promised
+it was struck out.
+
+The fix that generalises is not "run the third check". It is that a palette test
+listing three fields says nothing about a fourth mark, so the check DERIVES from
+the mark set: `play.Marks()` is the extent, `Palette.For` is the one owner of
+mark → sequence, and a new mark with no colour now fails the day it is declared.
+Same shape as `numRegionKinds` guarding the click registry.
+
+**And the scripted revert must not use an empty replacement.** A helper doing
+`s.replace(from, to)` to mutate and `s.replace(to, from)` to restore silently
+PREPENDS the original text at byte 0 when `to` is `""` — Python's `str.replace`
+matches the empty string at every position. Two source files were corrupted into
+`Drop: "\x1b[2;9m", package main`. Mutate by replacing a line with a *different*
+line (`if cond {` → `if false {`), or copy the file aside and copy it back. Never
+restore by replacing an empty string.
+
+(The corruption did prove the point: with both arms missing, exactly the two
+tests that should have failed did.)
+
+## A deletion's blast radius is every artifact that named the thing (`#42`, close rounds 1–2)
+
+Three consecutive review rounds found the same shape: a sweep that fixed the sites
+the previous round named and not the class. `PQ-7` named four files; I fixed four
+and five were left. `BR-3` named five; I fixed five and eleven were left, spread
+over `boardsFor` (deleted in the same window) and comments restating a count that
+had changed.
+
+**The guard that should have caught it existed and could not see it.**
+`TestARemovedDeclarationIsSweptOrRetired` sweeps every artifact for names the
+window removed — but gated on `isCitableName`, which required an EXPORTED or
+`Test*` name, on the reasoning that unexported helpers are not cited in prose.
+That is true of `ids` and `binds` and false of exactly the helpers a codebase
+argues about: `boardsFor` stayed the current account of selection in two atlas
+paragraphs, so the atlas held two contradictory accounts of the rule the issue
+existed to change.
+
+**The interior capital is the discriminator.** A prose-cited unexported name here
+is a compound (`boardsFor`, `choiceFor`, `optionCandidates`); a single lowercase
+word (`ids`, `paint`) is both uncited and a substring of ordinary English. Widening
+on that keeps the noise out and lets the citations in.
+
+**Two more rules from the same rounds:**
+
+- **A comment must not restate a count the code enumerates.** `Mark`'s own doc
+  said "TWO marks and an ABSENCE" three lines above the const block declaring a
+  third. The fix is not the edit — it is that the extent became `Marks()` and the
+  prose defers to it, exactly as `Keys()` already declines to enumerate the label
+  set.
+- **When two guards disagree about one artifact, settle it where "is this a
+  record?" is already decided.** The plan-table guard REQUIRES a plan to name what
+  the window deleted; the retired-symbol guard forbids naming a retired symbol.
+  Neither could yield alone. It belongs in `currentTruthOnly`, so both inherit one
+  answer — and the exemption is self-limiting: only a document carrying a
+  `| deleted |` row gets it, and only for the symbol that row names.
+
+**And the guard's own name for the failure was right:** *"a guard that depends on
+someone remembering has now been remembered late twice."* Every fix above replaces
+remembering with a build failure.
+
+## Fixing a class means pinning the fix, not just widening the rule (`#42`, close round 4)
+
+Round 2 answered "the sweep was the instance, not the class" by widening
+`isCitableName` so the removed-declaration guard could see unexported compound
+names. Round 4 reverted that widening and **the entire suite stayed green** — the
+symbol it was written for had just been swept, so nothing in the tree exercised
+the new clause. The fix that closed a class was itself unpinned, which is the
+family the previous entry in this file is about.
+
+**When a rule's triggering input no longer exists in the tree, the pin is a
+fixture table.** The repo already had the precedent (`TestPlanStatusNormalisesToTheVocabulary`
+exists because no plan writes a bolded status), and the mechanism is eight lines
+from the rule it defends. Supply the input rather than hoping the tree contains
+it.
+
+**Two more from the same round:**
+
+- **Re-wording a comment does not close a "prose restates a count" class.** The
+  replacement said *"THREE marks and an ABSENCE, and `Marks()` below is the EXTENT
+  — a count spelled in prose is a second owner of it"* — spelling the count inside
+  the sentence forbidding it. And it claimed its test "derives its loop from the
+  cycle" while the test read `for range 3`. **Make the code carry the extent and
+  the prose name nothing**: the spelling table is now keyed by mark, the test walks
+  `Marks()`, and a mark with no spelling fails the build instead of silently
+  drawing the default row.
+- **Tense is the discriminator when a concept is retired but its history is worth
+  keeping.** Banning the form's NAME would have reddened ~8 legitimate historical
+  mentions, so round 1 declined the ban — and left seven present-tense claims
+  standing three rounds later. Keying the guard on `"form 2.1 is"`, `"has"`,
+  `"cannot"` catches the claims and leaves `"was"`, `"used to"`, `"before #42"`
+  alone by construction. It found three more the hand-grep had missed.
+
+**And a test that HANGS on the defect is worse than one that misses it.** The
+first version of the mark-spelling walk was `for b.Mode() != m { b.Toggle() }`,
+which never terminates for a mark `Toggle` cannot reach — exactly the mark the
+test exists to catch. A red says what is wrong; a hang says nothing and takes the
+suite with it. Bound every search whose termination depends on the property under
+test.

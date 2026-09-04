@@ -152,8 +152,8 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 
 	// Below one distractor there is nothing to choose BETWEEN, so this is not a
 	// question. Returning nothing rather than a one-option question is what lets
-	// the caller fall back to form 2.1 (D9) instead of showing a learner a
-	// multiple choice with a single answer.
+	// the caller triage the word on a board (D9, #42) instead of showing a learner
+	// a multiple choice with a single answer.
 	if len(distractors) == 0 {
 		return nil
 	}

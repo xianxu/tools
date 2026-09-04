@@ -43,13 +43,13 @@ func records(outs []Outcome) []Outcome {
 
 func twoQuestions() Session {
 	return NewSession([]Question{
-		NewRecall("obsequious", "fawning"),
-		NewRecall("ephemeral", "short-lived"),
+		&fakeForm{word: "obsequious", reveal: "fawning"},
+		&fakeForm{word: "ephemeral", reveal: "short-lived"},
 	})
 }
 
 func TestRevealThenGradeAdvancesAndRecords(t *testing.T) {
-	s, outs := drive(twoQuestions(), reveal, rune_('y'))
+	s, outs := drive(twoQuestions(), reveal, rune_('1'))
 
 	rec := records(outs)
 	if len(rec) != 1 {
@@ -76,7 +76,7 @@ func TestRevealThenGradeAdvancesAndRecords(t *testing.T) {
 // recognition test, false of this one — the learner knows their own recall
 // before they check, and the definition is feedback rather than stimulus.
 func TestCorrectBeforeRevealAdvancesWithNoReveal(t *testing.T) {
-	next, outs := Apply(twoQuestions(), rune_('y'))
+	next, outs := Apply(twoQuestions(), rune_('1'))
 
 	if len(outs) != 1 || outs[0].Kind != OutcomeRecord {
 		t.Fatalf("outcomes = %+v, want exactly one OutcomeRecord — a correct answer earns no reveal", outs)
@@ -97,7 +97,7 @@ func TestCorrectBeforeRevealAdvancesWithNoReveal(t *testing.T) {
 
 // A miss earns the definition, and earns it WITHOUT advancing.
 func TestWrongBeforeRevealRecordsAndReveals(t *testing.T) {
-	next, outs := Apply(twoQuestions(), rune_('n'))
+	next, outs := Apply(twoQuestions(), rune_('2'))
 
 	if len(outs) != 2 {
 		t.Fatalf("outcomes = %+v, want two: the record and the reveal", outs)
@@ -125,9 +125,9 @@ func TestWrongBeforeRevealRecordsAndReveals(t *testing.T) {
 // The verdict is recorded ONCE. Answering again is the learner moving on, not a
 // second assessment — Fold would read a duplicate as another review.
 func TestAKeyAfterAMissAdvancesWithoutRecordingAgain(t *testing.T) {
-	s, _ := Apply(twoQuestions(), rune_('n'))
+	s, _ := Apply(twoQuestions(), rune_('2'))
 
-	next, outs := Apply(s, rune_('n'))
+	next, outs := Apply(s, rune_('2'))
 
 	for _, o := range outs {
 		if o.Kind == OutcomeRecord {
@@ -146,7 +146,7 @@ func TestAKeyAfterAMissAdvancesWithoutRecordingAgain(t *testing.T) {
 // maps BOTH to InputReveal — so without an arm for the graded state they would
 // be dead exactly where the prompt says "any key = next word".
 func TestEnterAndSpaceMoveOnAfterAMiss(t *testing.T) {
-	s, _ := Apply(twoQuestions(), rune_('n'))
+	s, _ := Apply(twoQuestions(), rune_('2'))
 
 	next, outs := Apply(s, reveal)
 
@@ -174,7 +174,7 @@ func TestRevealWithoutGradingThenGrade(t *testing.T) {
 		t.Error("a reveal graded the question; revealing is not answering")
 	}
 
-	next, outs := Apply(s, rune_('y'))
+	next, outs := Apply(s, rune_('1'))
 	if len(outs) != 1 || outs[0].Kind != OutcomeRecord || outs[0].Verdict != Correct {
 		t.Errorf("outcomes = %+v, want one Correct record", outs)
 	}
@@ -191,7 +191,7 @@ func TestRevealWithoutGradingThenGrade(t *testing.T) {
 func TestAnUngradedKeyDoesNotAdvance(t *testing.T) {
 	s, outs := drive(twoQuestions(), reveal, rune_('s'))
 
-	// 's' is not a key Recall grades, so it is ignored entirely rather than
+	// 's' is not a key this form grades, so it is ignored entirely rather than
 	// skipping — this asserts the CURRENT contract: only y/n advance form 2.1.
 	if s.Index != 0 {
 		t.Errorf("index = %d, want 0 — an ungraded key advanced the session", s.Index)
@@ -221,7 +221,7 @@ func TestSkippedVerdictRecordsNothing(t *testing.T) {
 }
 
 func TestAnsweringTheLastQuestionEndsTheSession(t *testing.T) {
-	s, outs := drive(twoQuestions(), reveal, rune_('y'), reveal, rune_('n'))
+	s, outs := drive(twoQuestions(), reveal, rune_('1'), reveal, rune_('2'))
 
 	if !s.Done {
 		t.Error("session is not done after the last answer")
@@ -233,7 +233,7 @@ func TestAnsweringTheLastQuestionEndsTheSession(t *testing.T) {
 		t.Errorf("tally right %d wrong %d, want 1/1", s.Right, s.Wrong)
 	}
 	// And nothing after Done does anything.
-	after, outs := Apply(s, rune_('y'))
+	after, outs := Apply(s, rune_('1'))
 	o := only(t, outs)
 	if o.Kind != OutcomeDone || after.Index != s.Index {
 		t.Errorf("input after Done changed things: %+v", o)
@@ -295,7 +295,7 @@ func TestEveryWordOutcomeNamesItsWord(t *testing.T) {
 	}
 
 	// A miss on a hidden word: records AND reveals, and both name the word.
-	_, outs = Apply(twoQuestions(), rune_('n'))
+	_, outs = Apply(twoQuestions(), rune_('2'))
 	if len(outs) != 2 {
 		t.Fatalf("outcomes = %+v, want a record and a reveal", outs)
 	}
@@ -342,8 +342,10 @@ func TestSessionIsFormAgnostic(t *testing.T) {
 	if !next.Done || next.Right != 1 || next.Wrong != 1 {
 		t.Errorf("done %v right %d wrong %d", next.Done, next.Right, next.Wrong)
 	}
-	// And y/n — form 2.1's keys — mean NOTHING here, which is the proof that the
-	// session never learned them.
+	// And a key this form does NOT grade means nothing, which is the proof that
+	// the session never learned any form's keys. `y` because that is what form
+	// 2.1 graded before #42 deleted it — a session that had absorbed its keys
+	// would still be acting on them.
 	ignored := NewSession([]Question{&fakeForm{word: "alpha"}})
 	after, outs2 := drive(ignored, reveal, rune_('y'))
 	if len(records(outs2)) != 0 || after.Index != 0 {
@@ -351,14 +353,22 @@ func TestSessionIsFormAgnostic(t *testing.T) {
 	}
 }
 
-// fakeForm uses digits and produces every verdict, sharing no key with Recall.
-type fakeForm struct{ word string }
+// fakeForm uses digits and produces every verdict, sharing no key with any
+// shipped form.
+// A `reveal` field so it can stand in where a test needs to SEE the answer text
+// — which is what the tests that borrowed form 2.1 were using it for (#42).
+type fakeForm struct{ word, reveal string }
 
 func (f *fakeForm) Word() string   { return f.word }
 func (f *fakeForm) Prompt() string { return "which one?" }
-func (f *fakeForm) Reveal() string { return "it was the first" }
-func (f *fakeForm) Keys() string   { return "1 = right, 2 = wrong" }
-func (f *fakeForm) Form() string   { return "fake" }
+func (f *fakeForm) Reveal() string {
+	if f.reveal != "" {
+		return f.reveal
+	}
+	return "it was the first"
+}
+func (f *fakeForm) Keys() string { return "1 = right, 2 = wrong" }
+func (f *fakeForm) Form() string { return "fake" }
 func (f *fakeForm) Grade(r rune) (Verdict, bool) {
 	switch r {
 	case '1':
@@ -383,10 +393,10 @@ func TestDropAdvancesRecordsNothingAndNamesTheWord(t *testing.T) {
 				s, _ = drive(s, reveal)
 			}
 			if when == "after a miss" {
-				// 'n', not a digit: twoQuestions() is Recall. Against fakeForm
+				// Against fakeForm
 				// 'n' grades nothing, Graded would never be set, and this row
 				// would silently re-run "before reveal" under another name.
-				s, _ = drive(s, rune_('n'))
+				s, _ = drive(s, rune_('2'))
 			}
 
 			next, outs := Apply(s, Input{Kind: InputDrop})
@@ -417,7 +427,7 @@ func TestDropAdvancesRecordsNothingAndNamesTheWord(t *testing.T) {
 	}
 }
 
-// It works for a form that shares no keys with Recall, because it is the
+// It works for a form that shares no keys with any shipped form, because it is the
 // session's action rather than the form's.
 func TestDropWorksForAnyForm(t *testing.T) {
 	s := NewSession([]Question{&fakeForm{word: "alpha"}})
@@ -440,10 +450,10 @@ func TestDropWorksForAnyForm(t *testing.T) {
 // consult the Session too, making "did we finish" two facts in two places.
 func TestTheOutcomeThatEndsTheSessionSaysSo(t *testing.T) {
 	// One question: revealing then grading it is both a record AND the end.
-	s := NewSession([]Question{NewRecall("obsequious", "fawning")})
+	s := NewSession([]Question{&fakeForm{word: "obsequious", reveal: "fawning"}})
 	s, _ = drive(s, reveal)
 
-	_, outs := Apply(s, rune_('y'))
+	_, outs := Apply(s, rune_('1'))
 	o := only(t, outs)
 
 	if o.Kind != OutcomeRecord {
@@ -457,7 +467,7 @@ func TestTheOutcomeThatEndsTheSessionSaysSo(t *testing.T) {
 func TestAnOutcomeMidSessionDoesNotClaimTheEnd(t *testing.T) {
 	s, _ := drive(twoQuestions(), reveal)
 
-	_, outs := Apply(s, rune_('y'))
+	_, outs := Apply(s, rune_('1'))
 	o := only(t, outs)
 
 	if o.SessionDone {
@@ -469,7 +479,7 @@ func TestQuitAndDropAlsoReportTheEnd(t *testing.T) {
 	if _, outs := Apply(twoQuestions(), quit); !only(t, outs).SessionDone {
 		t.Error("quit did not report the end")
 	}
-	last := NewSession([]Question{NewRecall("w", "d")})
+	last := NewSession([]Question{&fakeForm{word: "w", reveal: "d"}})
 	if _, outs := Apply(last, Input{Kind: InputDrop}); !only(t, outs).SessionDone {
 		t.Error("dropping the last question did not report the end")
 	}
@@ -517,8 +527,8 @@ func TestABatchFormStaysCurrentUntilSpent(t *testing.T) {
 // A single-word form is spent after one answer, which is every form that exists
 // and is the right default for one that does not implement the capability.
 func TestASingleWordFormIsSpentAfterOneAnswer(t *testing.T) {
-	s := NewSession([]Question{NewRecall("alpha", "a"), NewRecall("beta", "b")})
-	s, _ = Apply(s, Input{Kind: InputRune, Rune: 'y'})
+	s := NewSession([]Question{&fakeForm{word: "alpha", reveal: "a"}, &fakeForm{word: "beta", reveal: "b"}})
+	s, _ = Apply(s, Input{Kind: InputRune, Rune: '1'})
 	if s.Index != 1 {
 		t.Errorf("index = %d after one answer, want 1 — a form that holds one word advances", s.Index)
 	}
@@ -605,8 +615,8 @@ func TestEnterSpendsABatchFormAndSpaceDoesNot(t *testing.T) {
 
 	t.Run("a single-word form treats Enter exactly as space", func(t *testing.T) {
 		// The equivalence that keeps 2.1 and 2.3 from noticing the split.
-		reveal := NewSession([]Question{NewRecall("alpha", "a")})
-		finish := NewSession([]Question{NewRecall("alpha", "a")})
+		reveal := NewSession([]Question{&fakeForm{word: "alpha", reveal: "a"}})
+		finish := NewSession([]Question{&fakeForm{word: "alpha", reveal: "a"}})
 		reveal, ro := Apply(reveal, Input{Kind: InputReveal})
 		finish, fo := Apply(finish, Input{Kind: InputFinish})
 		if reveal.Revealed != finish.Revealed || len(ro) != len(fo) || ro[0].Kind != fo[0].Kind {
@@ -658,7 +668,7 @@ func TestTabSwitchesTheModeOfAFormThatHasOne(t *testing.T) {
 	})
 
 	t.Run("a form without a mode is untouched", func(t *testing.T) {
-		s := NewSession([]Question{NewRecall("keel", "the bottom of a ship")})
+		s := NewSession([]Question{&fakeForm{word: "keel", reveal: "the bottom of a ship"}})
 		s, outs := Apply(s, Input{Kind: InputToggle})
 		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
 			t.Errorf("Tab on form 2.1 produced %+v, want nothing", outs)
@@ -672,8 +682,8 @@ func TestTabSwitchesTheModeOfAFormThatHasOne(t *testing.T) {
 		// "any key = next word" deliberately excludes it: a board is never
 		// Graded, so the only thing Tab could advance is a definition the
 		// learner is still reading.
-		s := NewSession([]Question{NewRecall("keel", "the bottom of a ship"), NewRecall("mesa", "a flat-topped hill")})
-		s, _ = Apply(s, Input{Kind: InputRune, Rune: 'n'})
+		s := NewSession([]Question{&fakeForm{word: "keel", reveal: "the bottom of a ship"}, &fakeForm{word: "mesa", reveal: "a flat-topped hill"}})
+		s, _ = Apply(s, Input{Kind: InputRune, Rune: '2'})
 		if !s.Graded {
 			t.Fatal("a miss on a hidden word did not set Graded")
 		}
@@ -714,11 +724,11 @@ func (m *fakeModed) Toggle() {
 // its row stays green untouched.
 func TestAClickDoesNotAnswerANonGridForm(t *testing.T) {
 	for _, q := range []Question{
-		NewRecall("keel", "the bottom of a ship"),
+		&fakeForm{word: "keel", reveal: "the bottom of a ship"},
 		NewChoice("keel", "", []Option{{Gloss: "the bottom of a ship", Correct: true}, {Gloss: "a flat-topped hill"}}),
 		newFakeBatch("alpha", "beta"), // holds many words, but draws no cells
 	} {
-		s := NewSession([]Question{q, NewRecall("mesa", "a flat-topped hill")})
+		s := NewSession([]Question{q, &fakeForm{word: "mesa", reveal: "a flat-topped hill"}})
 		s, outs := Apply(s, Input{Kind: InputMark, Cell: 0})
 		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
 			t.Errorf("%T: a click produced %+v, want nothing", q, outs)
@@ -756,7 +766,7 @@ func (g *fakeGrid) Mark(i int) (Verdict, bool) {
 // matters: it is spent by definition, so routing a refusal through advance would
 // step past the question on a click that hit nothing.
 func TestARefusedClickDoesNotAdvanceAGridThatIsNotABatch(t *testing.T) {
-	s := NewSession([]Question{&fakeGrid{}, NewRecall("mesa", "a flat-topped hill")})
+	s := NewSession([]Question{&fakeGrid{}, &fakeForm{word: "mesa", reveal: "a flat-topped hill"}})
 
 	// The cell this form does not have.
 	s, outs := Apply(s, Input{Kind: InputMark, Cell: 3})
@@ -798,10 +808,10 @@ func TestEveryRecordNamesItsForm(t *testing.T) {
 		in Input
 	}{
 		// The ordinary path: a self-rated yes.
-		{NewRecall("keel", "the bottom of a ship"), Input{Kind: InputRune, Rune: 'y'}},
+		{&fakeForm{word: "keel", reveal: "the bottom of a ship"}, Input{Kind: InputRune, Rune: '1'}},
 		// The MISS branch, which builds its own outcomes rather than going
 		// through advance.
-		{NewRecall("mesa", "a flat-topped hill"), Input{Kind: InputRune, Rune: 'n'}},
+		{&fakeForm{word: "mesa", reveal: "a flat-topped hill"}, Input{Kind: InputRune, Rune: '2'}},
 		{NewChoice("run", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}), Input{Kind: InputRune, Rune: '1'}},
 		{NewChoice("bank", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}), Input{Kind: InputRune, Rune: '2'}},
 		// A board, by key and by click.
@@ -834,7 +844,7 @@ func TestEveryRecordNamesItsForm(t *testing.T) {
 	}
 	// A form is named the same way whatever happened to it.
 	for _, q := range []Question{
-		NewRecall("keel", "d"),
+		&fakeForm{word: "keel", reveal: "d"},
 		NewChoice("keel", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
 		NewBoard(cellsOf("keel"), 80, Palette{}),
 	} {
@@ -893,7 +903,7 @@ func TestEveryInputKindIsAnsweredForABatchForm(t *testing.T) {
 			continue
 		}
 		b := NewBoard(cellsOf("alpha", "beta", "gamma"), 80, Palette{})
-		s := NewSession([]Question{b, NewRecall("mesa", "a flat-topped hill")})
+		s := NewSession([]Question{b, &fakeForm{word: "mesa", reveal: "a flat-topped hill"}})
 		// A rune this form grades, and a cell it has.
 		next, outs := Apply(s, Input{Kind: k, Rune: '0', Cell: 0})
 

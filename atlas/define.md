@@ -1959,8 +1959,11 @@ waved back up forever.
 **A two-rung promotion is earned by an OBSERVATION, never a claim.** `Apply`
 knows whether the learner revealed before answering, so "correct, cold, in a form
 that checked the answer" is something the session saw. Form 2.1's `y` is not
-that — it means *"I knew it"* with nobody checking — so `Recall` declares itself
-through `play.SelfRated` and never earns it. The flag is computed in `Apply`'s
+that — a board's mark means *"I still have that one"* with nobody checking — so
+the board declares itself through `play.SelfRated` and never earns it. Form 2.1
+was the other implementor and the original example; `#42` deleted it, and the
+capability outlived the form that motivated it, which is the point of a
+capability. The flag is computed in `Apply`'s
 `InputRune` arm and PASSED to `advance`, because `advance` zeroes `s.Revealed`
 before it builds the outcome: reading it there would mark every correct answer
 unaided and run the ladder at double speed.
@@ -2055,14 +2058,26 @@ hands the terminal back, so there is no re-entry left to fail.
 **`Question` is the whole of what a session knows about a form.** `Word`,
 `Prompt`, `Reveal`, `Grade`, `Keys`, `Form` — and `Grade` lives on the FORM,
 which is what makes "adding a second form requires no change to the loop" a
-property rather than a promise. Form 2.1 grades `y`/`n`; form 2.3 grades digits;
-form 2.5 grades a cell's printed label; the session never learns any of them.
+property rather than a promise. Form 2.3 grades digits and form 2.5 grades a
+cell's printed label; the session never learns either. (Form 2.1 graded `y`/`n`
+until `#42`, and it is worth keeping in the record because the const that named
+ITS keys is what proved the point — see below.)
 
 **Everything a session needs to know about a form that ISN'T on `Question` is an
-optional capability it ASKS for**, and there are five: `Missed` (why a wrong
+optional capability it ASKS for**, and there are six: `Missed` (why a wrong
 answer was wrong), `SelfRated` (this verdict is a claim, not an observation),
-`Batch` (I hold more than one word), `Moded` (Tab means something to me) and
-`Grid` (I am drawn as cells you click). A type switch on a concrete form would be
+`Batch` (I hold more than one word), `Moded` (Tab means something to me), `Grid`
+(I am drawn as cells you click) and `Dropping` (my last mark asked to REMOVE a
+word rather than rate it).
+
+`Dropping` is `#42`'s, and two things about it are decisions rather than details.
+It is not a fourth `Verdict`: a verdict is what an ANSWER meant, and
+`schedule.Fold` reads verdicts to move boxes, so "remove this word" in front of
+that would make the ladder branch on a thing that is not an answer. And it is
+ONE-SHOT — `advance` asks after every mark, so an implementation that kept
+answering would perform one removal repeatedly, against a word already gone. It
+is asked in `advance` rather than at the two call sites that reach it (a printed
+key, a click), because that is where the two paths meet. A type switch on a concrete form would be
 the thing `#6`'s Done-when forbids, so the session names a capability and takes a
 default when nobody answers. `Grid` is the first one the LOOP asks rather than
 `Apply`.
@@ -2082,7 +2097,7 @@ is asking and a form restating them would be two owners of one fact.
 **Sixteen words on a grid, one mark each, and the SCHEDULER picks it — the first
 time anything here has consulted a box to choose a form.** Selection was a
 capability question until this: form 2.3 when the deck can supply distractors,
-2.1 when it cannot. `boardsFor` partitions the day's keys at **box ≥ 3** and
+2.1 when it cannot. Selection partitioned the day's keys at **box ≥ 3** and
 packs the eligible ones sixteen at a time.
 
 **Box 3 is a starting number, not a derived one**, and it is the only figure in
@@ -2120,7 +2135,7 @@ The general rule: an element whose absence makes the rest MISLEADING outranks
 every element whose absence merely makes it smaller.
 
 **A board can end up in a footer that drops rows.** D15's "never" holds at
-SELECTION — `boardsFor` refuses a board the terminal cannot draw whole — and a
+SELECTION — `packBoards` shrinks a chunk the terminal cannot draw whole, and a
 resize afterwards is a shape nobody chose. The board is not re-selected then: its
 marks are in the log, so sending those words to 2.3 would re-ask words already
 answered. What the footer's order buys is that the losses are SURVIVABLE in
@@ -2165,7 +2180,7 @@ other way — the mark stood where the key was, `[y]` in place of `[3]`, on the
 reasoning that it said "answered" and "this key is spent" at once. An operator
 sitting corrected it: the key is how a mouse-less terminal reaches the cell and
 how a learner reads the grid back, so it is the wrong half to spend. The
-sequences come from `main` through `play.Palette` — green for yes, red for no —
+sequences come from `main` through `play.Palette`, one per mark —
 because `play` is guarded pure and `newPalette` already owns that decision for
 every other surface. Padding is applied OUTSIDE the style, so a painted cell
 occupies exactly the columns an unpainted one does and the click map is
@@ -2217,7 +2232,9 @@ Spec's "a hundred mature words cost what ten fragile ones cost", and it was neve
 a typing claim.
 
 **`ReviewEvent.Form` names which form asked**, on every review event —
-`recall`, `meaning`, `board`. It is TELEMETRY: `Fold` does not read it and must
+`meaning`, `board` — and `recall`, which #42 retired but which the LOG still
+carries for every sitting before it, since history is what happened. It is
+TELEMETRY: `Fold` does not read it and must
 not, or a scheduler would start branching on it. It exists because the board
 promotes on self-report and the two remedies for that — promote more slowly, or
 offer the board less often — are both deferred to be chosen from evidence. The
@@ -2428,7 +2445,7 @@ so "no axis on a right answer" is enforced by the type rather than by a branch a
 caller could forget. `ReviewEvent.Missed` sits ABOVE `At`, because the
 torn-record rule leans on `at:` being the last key on disk.
 
-**Three things send a word to form 2.1**, and the list is DECLARED
+**Three things mean no real test can be built for a word**, and the list is DECLARED
 (`fallbackReasons`, `optionpool.go`) because it was being hand-maintained in the
 code, the README and here, and had already drifted to two, two and one:
 
@@ -2440,11 +2457,45 @@ code, the README and here, and had already drifted to two, two and one:
 3. **the entry defines a different word** — NOAD redirects derived forms to
    their base, so `bargainer` returns the `bargain` entry.
 
-The fallback is invisible to the learner and the sitting stays the length the
-schedule asked for.
+Such a word is TRIAGED on the board rather than tested — `#42`'s whole content,
+and a widening of `#40` D4 rather than a replacement: the box sends a settled word
+there, and this sends a word no test fits. It used to reach form 2.1, which was
+the same instrument as the board (both `SelfRated`, neither retrieving) at sixteen
+times the cost, and it collected that self-report at the box where it is least
+reliable. The fallback stays invisible to the learner and the sitting stays the
+length the schedule asked for.
 
-**Reason 3 is the one that had to be learned.** Form 2.1 shows the whole rendered
-entry, DERIVATIVES line included, so a redirect is harmless under it; form 2.3
+**`play.Marks()` is the EXTENT of the mark set and `Palette.For` its one owner**,
+both `#42`'s. A palette test that listed three fields would say nothing about a
+fourth mark; deriving the loop from `Marks()` means a mark shipped with no colour
+fails the day it is declared — the same move `numRegionKinds` makes for the click
+registry and `BoardLabels` for the key sequence. It exists because the drop's
+colour was added to both the `Palette` and the paint with NEITHER pinned, and both
+halves could be deleted with the whole suite green.
+
+**The board is the fallback, and `Tab` cycles THREE modes because of it**
+(`#42`). Yes, no, then drop — and the order is a UX decision rather than
+arithmetic on the iota: the destructive mode is never one press from the default,
+so a learner reaching for `no` cannot overshoot into a removal. The drop exists
+because the board became the only form some words ever see, and `d` — the
+session's drop key everywhere else — is a CELL key on a grid (`#40` D12). Without
+it the sitting could not curate the deck for exactly the young words it surfaces;
+`define --forget <word>` still works from the command line, so what this buys is
+curation without leaving the sitting.
+
+**The keys row was RE-CUT, not appended to.** `boardFitsIn` charges
+`displayRows(gradePrompt(q), termCols)` into the board's fit, so a row that wraps
+at eighty columns raises the minimum terminal height for every board — on the very
+path `#42` routes untestable young words onto. The old row was 62 columns with two
+of headroom; a third state naively appended would have wrapped, so "Tab switches"
+became "Tab cycles" and "click or key marks" lost its verb, since with three modes
+a click no longer only marks. 59 columns, 75 with the reserved key.
+
+**Reason 3 is the one that had to be learned**, and this paragraph is history
+rather than current behaviour — kept because it names the trade `#42` accepts.
+Form 2.1 showed the whole rendered entry, DERIVATIVES line included, so a redirect
+was harmless under it; the board shows a one-line gloss, so that reveal is what
+retiring the form gave up. Form 2.3
 asserts that ONE gloss IS the word's meaning, records `Correct`, and promotes the
 word on that basis. The same dictionary behaviour is fine under one form and
 wrong under the other, and the assumption was inherited rather than re-examined
@@ -2549,15 +2600,16 @@ property is free from the append-only log (`#3`) and any batching would lose it.
 another, so keying on the flag would hand a nil store to the queue builder and
 panic on the other path.
 
-**Grading before reveal is THE NORMAL PATH** (#24). It used to be ignored, on the
-grounds that a learner cannot rate what they have not seen — true of a
-recognition test, false of a RECALL test, which is what form 2.1 is. The learner
-rates their own recall, which they know before they check; the definition is
-FEEDBACK, not stimulus. Reversing it removed a mandatory keystroke, and the slow
-one, from in front of every correct answer.
+**Grading before reveal is THE NORMAL PATH** (#24), and the argument is form
+2.1's even though `#42` deleted the form — the mechanism it bought is still what
+`Apply` does. It used to be ignored, on the grounds that a learner cannot rate
+what they have not seen — true of a recognition test, false of a RECALL test,
+which is what 2.1 was. The learner rates their own recall, which they know before
+they check; the definition is FEEDBACK, not stimulus. Reversing it removed a
+mandatory keystroke, and the slow one, from in front of every correct answer.
 
-So `y` records and advances with no reveal and no audio, while `n` records the
-miss AND reveals, **staying on the word** — advancing would scroll the answer
+So a correct grade recorded and advanced with no reveal and no audio, while a
+miss recorded AND revealed, **staying on the word** — advancing would scroll the answer
 past unread, which is the entire reason for showing it. That is the one input
 owing the loop TWO effects, and it is why `Apply` returns `[]Outcome`: the
 alternative, a flag on `Outcome`, would make "reveal" expressible two ways.

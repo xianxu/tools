@@ -222,10 +222,10 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
 			//
-			// THE PROMPT WORD IS CLICKABLE (T4). Both forms put the headword on
-			// their first line at column 0 — `Recall.Prompt()` IS the word, and
-			// `Choice.Prompt()` is the word, a blank, then the options — and the
-			// leading "\n" of this write puts it on line 1. That is the whole
+			// THE PROMPT WORD IS CLICKABLE (T4). A single-word form puts the
+			// headword on its first line at column 0 — `Choice.Prompt()` is the
+			// word, a blank, then the options — and the leading "\n" of this
+			// write puts it on line 1. That is the whole
 			// region-finding problem for a prompt: nothing to search for, no
 			// offsets to survive a wrap, because a headword is never wide enough
 			// to wrap.
@@ -294,7 +294,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			//
 			// AND NO RE-SELECTION. The board stays, at the new shape, even if the
 			// terminal is now too short to draw it whole — D15's rule holding
-			// rather than bending. `boardsFor` chooses the form for words not yet
+			// rather than bending. Selection chooses the form for words not yet
 			// asked; this board's marks are already in the log, so "send it to
 			// 2.3 instead" would mean re-asking answered words. What a short
 			// terminal loses is the bar, then the panel, then grid rows — and
@@ -611,10 +611,12 @@ func boardFitsIn(q play.Question, termRows, termCols int) bool {
 // boardPalette is how a board's marks are painted, and it is the ONE place this
 // program decides that.
 //
-// GREEN for yes, RED for no — the two conventions a terminal reader already
-// has, and the pair a learner does not have to be taught. Bold, because the
-// grid's unmarked cells are ordinary weight and the marked ones should separate
-// at a glance rather than on inspection.
+// GREEN for yes and RED for no — the conventions a terminal reader already has,
+// and the pair a learner does not have to be taught. A drop is struck out rather
+// than given a third hue, because a third colour would need teaching and would
+// compete with those two. Bold on the two ratings, because the grid's unmarked
+// cells are ordinary weight and a marked one should separate at a glance rather
+// than on inspection.
 //
 // It comes from `main` because `main` owns the terminal: `play` is mechanically
 // guarded pure, and a form choosing its own escape sequences would be a second
@@ -628,7 +630,12 @@ func boardPalette(opt options) play.Palette {
 	if !opt.color {
 		return play.Palette{}
 	}
-	return play.Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Off: "\x1b[0m"}
+	// DIM STRIKETHROUGH for a removal, not a third hue. Green and red are the two
+	// conventions a terminal reader already has and a learner does not have to be
+	// taught; a third colour would need teaching and would compete with them. A
+	// word on its way out of the deck reads as struck out, which is what it is
+	// (#42).
+	return play.Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Drop: "\x1b[2;9m", Off: "\x1b[0m"}
 }
 
 // boardFooter is the live edge for a board: everything the FORM draws, then the
@@ -646,7 +653,7 @@ func boardPalette(opt options) play.Palette {
 // from: the bar goes first, then the panel, then grid rows.
 //
 // A BOARD CAN END UP IN A FOOTER THAT DROPS ROWS, and D15's "never" was measured
-// wrong (R11). It holds at SELECTION — boardsFor refuses a board the terminal
+// wrong (R11). It holds at SELECTION — `packBoards` refuses a board the terminal
 // cannot draw whole — and a resize afterwards is a shape nobody chose.
 //
 // What the order buys is that the losses are SURVIVABLE in sequence: the bar (a
@@ -819,43 +826,39 @@ func relearnLine(words []string) string {
 // the log can answer.
 const boardBox = 3
 
-// boardsFor splits today's keys into the ones swept on a board and the ones
-// asked one at a time (D4).
+// packBoards splits triage words into the largest boards this terminal can draw
+// WHOLE, and returns the ones it cannot draw at all.
 //
-// SINGLES FIRST, THEN BOARDS, and the order is a choice rather than an
-// accident. Packing is the point of the whole form — sixteen words for sixteen
-// keystrokes is what makes a large deck affordable — and packing cannot preserve
-// the queue's interleaving, because a board formed from words scattered through
-// the queue has to sit somewhere. So retrieval gets the learner's freshest
-// attention and the maintenance sweep comes after.
+// A CHUNK THAT DOES NOT FIT SHRINKS rather than going back to being asked one at
+// a time, which is `#40` D15 widened rather than replaced. D15 sent an unfittable
+// chunk to form 2.3 — a complete answer then, and not available now for the words
+// `#42` newly routes here, since they arrive precisely because no 2.3 could be
+// built. Shrinking is monotone, so the search terminates and finds the largest
+// fit: fewer words never need MORE rows, because `cols` is capped at four and a
+// subset's longest word is no longer than the whole's.
 //
-// The counter-argument is real and now measurable: a tired learner marks
-// everything yes, which is the illusion-of-knowing the Spec worries about.
-// `ReviewEvent.Form` is what will eventually say whether it happens.
+// SO THE LEFTOVER CASE IS ALL-OR-NOTHING, which is worth knowing rather than
+// discovering. A one-word board's height does not depend on the word — one grid
+// row plus two of chrome, and the word is truncated into the width — so either
+// this terminal can draw a board or it can draw none, and `undrawable` is empty
+// or everything.
 //
-// A CHUNK THAT WILL NOT FIT GOES BACK TO SINGLES (D15). A board that cannot be
-// drawn whole is not a board, and form 2.3 is a complete answer rather than a
-// degraded one.
-func boardsFor(keys []string, prog map[string]schedule.Progress, opt options) (single []string, boards [][]string) {
-	var eligible []string
-	for _, k := range keys {
-		if prog[k].Box < boardBox {
-			single = append(single, k)
-			continue
+// The caller owes those words a form: form 2.3 where one can be built, and a skip
+// only where neither is possible. Returning them rather than skipping them here is
+// what keeps that decision at the one place that has the entries (#42 PQ-1).
+func packBoards(words []string, opt options) (boards [][]string, undrawable []string) {
+	for len(words) > 0 {
+		n := min(len(words), play.MaxBoardWords)
+		for n > 0 && !boardFits(words[:n], opt) {
+			n--
 		}
-		eligible = append(eligible, k)
-	}
-	for len(eligible) > 0 {
-		n := min(len(eligible), play.MaxBoardWords)
-		chunk := eligible[:n]
-		eligible = eligible[n:]
-		if boardFits(chunk, opt) {
-			boards = append(boards, chunk)
-			continue
+		if n == 0 {
+			return boards, words
 		}
-		single = append(single, chunk...)
+		boards = append(boards, words[:n])
+		words = words[n:]
 	}
-	return single, boards
+	return boards, nil
 }
 
 // boardFits reports whether this terminal can draw a board of these words whole.
@@ -924,23 +927,37 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 	day := now.Format("2006-01-02")
 	pool := buildPool(d, deck, seedFor("pool", day))
 
-	// THE BOX PICKS THE FORM (D4), and this is the first time anything in this
-	// program has consulted one to choose HOW to ask. Selection was a capability
-	// question until now — form 2.3 when the deck can supply distractors, 2.1
-	// when it cannot — and nothing looked at a box at all.
-	single, boards := boardsFor(keys, held.prog, opt)
-
+	// THE FORM IS PICKED AFTER THE LOOKUP, and that is #42's structural change.
+	//
+	// Selection ran on KEYS, before anything was fetched, because the box was
+	// all it consulted. The rule is now one sentence — **2.3 tests you, the board
+	// triages you** — and its second half is a question about the ENTRY: whether
+	// the deck can build a real test out of it. That is not knowable until the
+	// entry is parsed, so selection moved here.
+	//
+	// A MATURE WORD IS NEVER LOOKED UP FOR ITS OPTIONS. Its box alone sends it to
+	// a board (D4), so asking `optionsFor` would be pool work for a form it will
+	// not take. It is looked up once below, for its gloss, exactly as before.
 	var qs []play.Question
 	marks := map[string]clickable{}
-	for _, key := range single {
-		text, err := d.dict.Lookup(key)
-		if err != nil {
-			// A word in the deck the dictionary no longer knows. Skip it rather
-			// than failing the session: the other words are still worth review.
-			fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
-			continue
+	var triage []string
+	// unaskable counts words dropped for a reason that is NOT a lookup failure, so
+	// an empty sitting can name the cause it actually established rather than the
+	// only cause that used to exist.
+	var unaskable int
+	// The entries parsed on THIS pass, so a word that changes hands is not looked
+	// up twice. A young word that turns out to be untestable goes to the board
+	// loop, which needs the same entry for its gloss.
+	parsed := map[string]Entry{}
+
+	// ask builds form 2.3 for a word whose entry is already in hand, or reports
+	// that it cannot. ONE place renders, so the click map and the question cannot
+	// be built from different strings.
+	ask := func(key string, entry Entry) play.Question {
+		opts := optionsFor(key, entry, pool, seedFor(key, day))
+		if opts == nil {
+			return nil
 		}
-		entry := ParseEntry(text)
 		// THE REGIONS, kept rather than discarded (D7). `play` must never see
 		// them — it is mechanically guarded pure and `Region` lives in main — so
 		// the loop keeps its own word→regions map, built here, where the entry is
@@ -950,40 +967,85 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			// click on the headword replays the word the deck holds, and
 			// deriving it from the entry instead lets the two disagree —
 			// `jalapeno` in the deck against `jalapeño` on the head line, for
-			// which the CDN answers different URLs. Empty means "no click map
-			// wanted", which was true of `--play` until this issue.
+			// which the CDN answers different URLs.
 			Word:  key,
 			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
 		})
 		marks[key] = clickable{text: rendered, regions: rs}
-		// Form 2.3 when the deck can supply distractors, form 2.1 when it
-		// cannot (D9). A young deck is a NORMAL state, not an error, and the
-		// fallback is invisible to the learner — the sitting stays the length
-		// the schedule asked for either way.
-		if q := choiceFor(key, rendered, entry, pool, seedFor(key, day)); q != nil {
+		return play.NewChoice(key, rendered, opts)
+	}
+
+	for _, key := range keys {
+		if held.prog[key].Box >= boardBox {
+			triage = append(triage, key)
+			continue
+		}
+		text, err := d.dict.Lookup(key)
+		if err != nil {
+			// A word in the deck the dictionary no longer knows. Skip it rather
+			// than failing the session: the other words are still worth review.
+			fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
+			continue
+		}
+		entry := ParseEntry(text)
+		if q := ask(key, entry); q != nil {
 			qs = append(qs, q)
 			continue
 		}
-		qs = append(qs, play.NewRecall(key, rendered))
+		// Young, and no real test can be built for it (`fallbackReasons`). It is
+		// TRIAGED rather than asked to rate itself — which is #42 — and the
+		// entry travels with it so the board loop does not re-fetch.
+		parsed[key] = entry
+		triage = append(triage, key)
 	}
+
+	boards, undrawable := packBoards(triage, opt)
+
+	// A TERMINAL TOO SHORT FOR ANY BOARD, which is all-or-nothing (see
+	// packBoards). D15's fallback holds for the words it always covered: form 2.3
+	// where one can be built. Only a word that can be neither drawn nor tested is
+	// skipped, and it says which — both conditions, because both must hold.
+	for _, key := range undrawable {
+		entry, ok := parsed[key]
+		if !ok {
+			text, err := d.dict.Lookup(key)
+			if err != nil {
+				fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
+				continue
+			}
+			entry = ParseEntry(text)
+		}
+		if q := ask(key, entry); q != nil {
+			qs = append(qs, q)
+			continue
+		}
+		unaskable++
+		fmt.Fprintf(stderr, "define: skipping %q: this window is too short to draw a board "+
+			"and no multiple choice can be built for it\n", key)
+	}
+
 	// THE BOARDS, and they are the only questions that need no render: nothing
 	// about a board reaches the buffer, so there is no click map to build and no
 	// definition to wrap. One gloss each — for the panel — is the whole of what
 	// the form takes, and targetCandidate is the same sense form 2.3 asks about.
 	//
 	// A word the dictionary no longer knows is skipped exactly as it is above.
-	// The board only gets SHORTER for it, so the fit boardsFor already checked
+	// The board only gets SHORTER for it, so the fit packBoards already checked
 	// still holds.
 	for _, chunk := range boards {
 		var cells []play.Cell
 		for _, key := range chunk {
-			text, err := d.dict.Lookup(key)
-			if err != nil {
-				fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
-				continue
+			entry, ok := parsed[key]
+			if !ok {
+				text, err := d.dict.Lookup(key)
+				if err != nil {
+					fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
+					continue
+				}
+				entry = ParseEntry(text)
 			}
 			var gloss string
-			if c, ok := targetCandidate(key, ParseEntry(text)); ok {
+			if c, ok := targetCandidate(key, entry); ok {
 				gloss = c.Gloss
 			}
 			cells = append(cells, play.Cell{Word: key, Gloss: gloss})
@@ -993,10 +1055,23 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		}
 	}
 	if len(qs) == 0 {
-		// NOT "nothing due today": words WERE due, and every one of them failed
-		// to look up. Saying nothing is due would send the learner away believing
-		// their deck is clear when the dictionary is the problem.
-		fmt.Fprintf(stderr, "define: %d words are due but none could be looked up\n", len(keys))
+		// NOT "nothing due today": words WERE due. Saying nothing is due would
+		// send the learner away believing their deck is clear when it is not.
+		//
+		// AND THE CAUSE IS THE ONE THE CODE ESTABLISHED. This said "none could be
+		// looked up" for every empty sitting, which was true while a failed lookup
+		// was the only way to drop a word — and #42 added a second: a word the
+		// dictionary answers fine, for which no test can be built and which this
+		// window cannot draw a board for. Reporting a dictionary failure then
+		// sends the learner to check their dictionary about a window that is too
+		// narrow. The population is exactly this issue's subject: a young deck on
+		// a narrow terminal, which ran a full sitting before #42.
+		if unaskable > 0 && unaskable == len(keys) {
+			fmt.Fprintf(stderr, "define: %d words are due but none can be asked in this "+
+				"window — make it taller or wider\n", len(keys))
+		} else {
+			fmt.Fprintf(stderr, "define: %d words are due but none could be looked up\n", len(keys))
+		}
 		return nil, held, 1
 	}
 	held.marks = marks

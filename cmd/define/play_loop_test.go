@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -158,10 +159,29 @@ func gradeKey(t *testing.T, q play.Question, want play.Verdict) string {
 		}
 		t.Fatalf("form 2.3 for %q has no option giving %v: %+v", q.Word(), want, c.Options())
 	}
-	if want == play.Correct {
-		return "y"
+	// A GRID's key marks a CELL, and what that means is the board's MODE, not the
+	// key. Probing it would also be irreversible — Mark refuses a second answer —
+	// so it is answered from the label alphabet and the caller owns the mode.
+	if _, ok := q.(play.Grid); ok {
+		if want != play.Correct {
+			t.Fatalf("a board's key means whatever its MODE is; Tab to `no` and press a "+
+				"label rather than asking gradeKey for %v", want)
+		}
+		return string(play.BoardLabels[0])
 	}
-	return "n"
+	// PROBED, not assumed. This used to end `if want == Correct { return "y" }` —
+	// form 2.1's keys, hardcoded under a doc comment promising "WHICHEVER form q
+	// is". #42 deleted that form, so the fallback graded nothing and every caller
+	// silently stopped answering. A form that is a pure function of its key can
+	// simply be asked.
+	for _, k := range "1234567890abcdefghijklmnopqrstuvwxyz" {
+		if v, ok := q.Grade(k); ok && v == want {
+			return string(k)
+		}
+	}
+	t.Fatalf("no key grades %T (%q) as %v — gradeKey probes, so a form whose Grade is "+
+		"stateful needs its own arm above", q, q.Word(), want)
+	return ""
 }
 
 // THE DONE-WHEN: a full session against a fake store and fake clock records one
@@ -336,7 +356,7 @@ func TestUngradedKeyNeverReachesTheCapturer(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
 	spy := &countingCapturer{}
 	d.capture = spy
-	qs, held := questionsFor(t, d, opt)
+	qs, held := soloSitting(t, d, opt, "sycophantic")
 
 	var out, errb bytes.Buffer
 	// Reveal, then a key form 2.1 does not grade, then interrupt.
@@ -503,7 +523,7 @@ func paintedSitting(t *testing.T, d deps, opt options, qs []play.Question, held 
 // call, but the difference between the transcript and the frame.
 func TestPlayDrawsThroughTheDisplay(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	qs, held := questionsFor(t, d, opt)
+	qs, held := soloSitting(t, d, opt, "sycophantic")
 
 	live, tty := paintedSitting(t, d, opt, qs, held, "\r^", nil)
 
@@ -525,7 +545,7 @@ func TestPlayDrawsThroughTheDisplay(t *testing.T) {
 // pressed. This is the assertion the naive port fails (D4).
 func TestRepeatedKeystrokesDoNotDuplicateTheQuestion(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	qs, held := questionsFor(t, d, opt)
+	qs, held := soloSitting(t, d, opt, "sycophantic")
 
 	// Keys this form does not use: every one is OutcomeNone, so the session
 	// does not move and the only thing that happens is a redraw.
@@ -545,10 +565,13 @@ func TestRepeatedKeystrokesDoNotDuplicateTheQuestion(t *testing.T) {
 // hand-back prints it, so reversing them loses the last line a learner sees.
 func TestPlayTranscriptSurvivesExit(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	qs, held := questionsFor(t, d, opt)
+	qs, held := soloSitting(t, d, opt, "sycophantic")
 
 	var normal bytes.Buffer
-	paintedSitting(t, d, opt, qs, held, "\ry", &normal)
+	// Through gradeKey, which asks the FORM which key means correct — the script
+	// used to spell `y` because form 2.1 graded it, which is the coupling #42's
+	// double exists to break.
+	paintedSitting(t, d, opt, qs, held, "\r"+gradeKey(t, qs[0], play.Correct), &normal)
 
 	if !strings.Contains(normal.String(), "sycophantic") {
 		t.Errorf("the sitting vanished with the alternate screen: %q", normal.String())
@@ -567,12 +590,12 @@ func TestPlayTranscriptSurvivesExit(t *testing.T) {
 // and filing it would be the other bug (Done-when 1).
 func TestTheBarSurvivesEveryState(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	qs, held := questionsFor(t, d, opt)
+	qs, held := soloSitting(t, d, opt, "sycophantic")
 
 	var out, errb bytes.Buffer
 	view := paintInto(&out)
 	// Question, then reveal, then graded, then a resize, then the summary.
-	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\rn^"),
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\r2^"),
 		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
 
 	if len(view.menus) == 0 {
@@ -708,8 +731,7 @@ func loadIn(t *testing.T, bar string) float64 {
 // summary, the hand-back) write to the buffer, which resets the viewport. So the
 // keys are sent one at a time and each frame is read where it is drawn.
 func TestALongRevealPagesRatherThanScrollingTheWordAway(t *testing.T) {
-	d, opt, _ := playRig(t, "sycophantic")
-	qs, held := questionsFor(t, d, opt)
+	d, opt, qs, held := askableRig(t, "sycophantic")
 
 	// A SHORT terminal, which is what makes one entry several screenfuls.
 	//
@@ -917,9 +939,8 @@ func (logRefusingStore) Events(time.Time) ([]store.ReviewEvent, error) {
 // forms, so the region is line 1 of the write — the leading blank is line 0 —
 // at column 0, and a headword is never wide enough to wrap.
 func TestPlayClickOnThePromptWordPlaysIt(t *testing.T) {
-	d, opt, _ := playRig(t, "sycophantic")
+	d, opt, qs, held := askableRig(t, "sycophantic")
 	player := audible(&d, &opt)
-	qs, held := questionsFor(t, d, opt)
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, 80)
@@ -1228,8 +1249,7 @@ func TestAResizeDoesNotMisplaceTheClickMap(t *testing.T) {
 // The fix was one field; this is the row that makes it falsifiable. Deleting
 // `Word: key` left the whole suite green.
 func TestARegionAnswersForTheDeckKeyNotTheHeadword(t *testing.T) {
-	d, opt, _ := playRig(t, "jalapeno")
-	qs, held := questionsFor(t, d, opt)
+	_, _, qs, held := askableRig(t, "jalapeno")
 	if len(qs) == 0 {
 		t.Fatal("no questions: the fake dictionary should resolve jalapeno to the jalapeño entry")
 	}
@@ -1294,9 +1314,8 @@ func TestPlayRepaintsOnResize(t *testing.T) {
 // coverage. fakePlayer is the seam — playAnnounced shells out to afplay(1), so a
 // real player in a test is a real process.
 func TestRevealPlaysThePronunciationByDefault(t *testing.T) {
-	d, opt, _ := playRig(t, "sycophantic")
+	d, opt, qs, held := askableRig(t, "sycophantic")
 	player := audible(&d, &opt) // the default; playRig turns audio off for every other test
-	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
 	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\r^"), playbackConsole(&out, &errb))
@@ -1477,17 +1496,16 @@ func TestAllLookupsFailingIsNotNothingDue(t *testing.T) {
 // So both sides append to ONE ordered log, and the assertion is on the sequence.
 // Falsifiable by reversing the outs iteration and by nothing else.
 func TestAMissRecordsBeforeItPlays(t *testing.T) {
-	d, opt, _ := playRig(t, "sycophantic")
+	d, opt, qs, held := askableRig(t, "sycophantic")
 	audible(&d, &opt)
 	seq := &orderLog{}
 	d.capture = &loggingCapturer{seq: seq}
 	d.player = &loggingPlayer{seq: seq}
-	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
 	// A MISS, not a peek — only a miss owes two outcomes, so only a miss has an
 	// order to get wrong.
-	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("n"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(gradeKey(t, qs[0], play.Wrong)), playbackConsole(&out, &errb))
 
 	if got := seq.first(2); len(got) < 2 || got[0] != "record" || got[1] != "play" {
 		t.Errorf("the sitting did %v, want the record first — a verdict written after the "+
@@ -1661,7 +1679,7 @@ func TestCorrectAnswerPlaysNoAudio(t *testing.T) {
 
 	qs, held := questionsFor(t, d, opt)
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("y"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(gradeKey(t, qs[0], play.Correct)), playbackConsole(&out, &errb))
 
 	if len(fp.Played) != 0 {
 		t.Errorf("played %v for a word the learner got right", fp.Played)
@@ -1682,13 +1700,12 @@ func TestCorrectAnswerPlaysNoAudio(t *testing.T) {
 // mirror (`outs[:1]`, dropping the reveal) and not this one; a slice has two
 // ends and only one was tested.
 func TestAMissPlaysThePronunciationAndRecordsIt(t *testing.T) {
-	d, opt, st := playRig(t, "sycophantic")
+	d, opt, qs, held, st := askableRigStore(t, "sycophantic")
 	fp := audible(&d, &opt)
 	opt.times = 1
 
-	qs, held := questionsFor(t, d, opt)
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("n^"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(gradeKey(t, qs[0], play.Wrong)+"^"), playbackConsole(&out, &errb))
 
 	if len(fp.Played) == 0 {
 		t.Error("a miss played nothing; the definition it earns includes hearing it")
@@ -1705,16 +1722,20 @@ func TestAMissPlaysThePronunciationAndRecordsIt(t *testing.T) {
 
 // Three states, three prompts.
 func TestThePromptSaysWhatTheKeysDo(t *testing.T) {
-	q := play.NewRecall("sycophantic", "a definition")
+	q := &fakeQuestion{word: "sycophantic", reveal: "a definition"}
 	for _, tc := range []struct {
 		name, want, absent string
 		s                  play.Session
 	}{
-		{"unrevealed: the grading keys, straight away", "y = got it, n = missed it", "to reveal",
+		// THE FORM'S OWN KEYS, read off the form rather than spelled here. The
+		// rows used to quote form 2.1's "y = got it, n = missed it", which is
+		// exactly the coupling `Keys()` is on the interface to prevent — and #42
+		// deleting that form is what surfaced it.
+		{"unrevealed: the grading keys, straight away", q.Keys(), "to reveal",
 			play.Session{Questions: []play.Question{q}}},
-		{"peeked: still grading", "y = got it, n = missed it", "any key",
+		{"peeked: still grading", q.Keys(), "any key",
 			play.Session{Questions: []play.Question{q}, Revealed: true}},
-		{"missed: the answer is up, move on", "any key = next word", "y = got it",
+		{"missed: the answer is up, move on", "any key = next word", q.Keys(),
 			play.Session{Questions: []play.Question{q}, Revealed: true, Graded: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1772,12 +1793,15 @@ func TestAMissRecordsTheAxisItChose(t *testing.T) {
 	}
 }
 
-// D9: a young deck falls back to form 2.1, invisibly.
+// D9 AFTER #42: a young deck falls back to the BOARD, invisibly.
 //
 // The learner three lookups in is the NORMAL early state of this tool, not an
-// edge case — and it is the state every new user is in, so a session that broke
-// here would break on first use.
-func TestASittingFallsBackToRecall(t *testing.T) {
+// edge case — it is the state every new user is in, so a session that broke here
+// would break on first use. What changed is WHERE the fallback goes: form 2.1
+// spent a screen and a keystroke per word to collect a self-report the board
+// collects sixteen at a time, and collected it at the box where self-report is
+// least reliable.
+func TestAYoungDeckFallsBackToTheBoard(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		deck     []string
@@ -1785,7 +1809,7 @@ func TestASittingFallsBackToRecall(t *testing.T) {
 	}{
 		// One word: its own entry is the only thing in the pool, and a word is
 		// never its own distractor, so there is nothing to choose between.
-		{"a one-word deck", []string{"sycophantic"}, "*play.Recall"},
+		{"a one-word deck", []string{"sycophantic"}, "*play.Board"},
 		{"two words", []string{"sycophantic", "ephemeral"}, "*play.Choice"},
 		{"a fuller deck", []string{"sycophantic", "ephemeral", "quokka", "mesa", "parrot"}, "*play.Choice"},
 	} {
@@ -1865,13 +1889,13 @@ func typeName(v any) string {
 	switch v.(type) {
 	case *play.Choice:
 		return "*play.Choice"
-	case *play.Recall:
-		return "*play.Recall"
+	case *play.Board:
+		return "*play.Board"
 	}
 	return "unknown"
 }
 
-// The two ways an ENTRY (rather than the deck) sends a word to form 2.1.
+// The two ways an ENTRY (rather than the deck) sends a word to the BOARD.
 //
 // Both are properties of what the dictionary returned, so the deck here is large
 // enough that every other word gets form 2.3 — which is what isolates the entry
@@ -1901,8 +1925,9 @@ func TestASittingFallsBackForAnEntryThatCannotBeAsked(t *testing.T) {
 			if form == "" {
 				t.Fatalf("%q was dropped from the sitting entirely; %d questions", tc.word, len(qs))
 			}
-			if form != "*play.Recall" {
-				t.Errorf("%q got %s — %s, so it cannot be a recognition question", tc.word, form, tc.why)
+			if form != "*play.Board" {
+				t.Errorf("%q got %s — %s, so it cannot be a recognition question and is "+
+					"TRIAGED rather than tested", tc.word, form, tc.why)
 			}
 			if otherForms != "*play.Choice" {
 				t.Errorf("the rest of the deck got %s, so this test is not distinguishing "+
@@ -1953,13 +1978,19 @@ func TestUnaidedAnswerReachesTheLog(t *testing.T) {
 	}
 }
 
-// And form 2.1's `y` never earns it, however fast — one form to the left of the
-// board, and the same overconfidence.
-func TestRecallNeverRecordsUnaided(t *testing.T) {
+// A form that does NOT declare itself self-rated still records unaided only when
+// the session SAW the answer come cold.
+//
+// This row used to be form 2.1's `y`, which #42 deleted. What it is really about
+// survives the deletion: `Unaided` is computed by the session from what it
+// observed, not offered by the form, so a double that says nothing about
+// self-rating still gets the flag decided for it.
+func TestAnUnaidedAnswerIsTheSessionsObservation(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic")
 	var out, errb bytes.Buffer
-	q := play.NewRecall("sycophantic", "the definition")
-	playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), &sittingDeck{}, keysFor("y"), playbackConsole(&out, &errb))
+	q := &fakeQuestion{word: "sycophantic", reveal: "the definition"}
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), &sittingDeck{},
+		keysFor(gradeKey(t, q, play.Correct)), playbackConsole(&out, &errb))
 
 	events := reviewEvents(t, st)
 	if len(events) != 1 {
@@ -1968,9 +1999,15 @@ func TestRecallNeverRecordsUnaided(t *testing.T) {
 	if !events[0].Correct {
 		t.Fatal("the answer was not recorded as correct")
 	}
-	if events[0].Unaided {
-		t.Error("form 2.1's `y` recorded as unaided — it is the learner's claim that " +
-			"they knew it, and nothing checked")
+	// THE COMPLEMENT, and it is the half that belongs here: a form that does not
+	// declare itself self-rated, answered COLD, earns the flag — so the wiring
+	// from Apply through the capturer to disk is live. The other half (a
+	// self-rated form never earning it) is `play`'s own
+	// TestSelfRatedFormsNeverEarnUnaided, over the board.
+	if !events[0].Unaided {
+		t.Error("a cold correct answer on a form that checks the answer did NOT record " +
+			"unaided — the flag is computed in Apply and passed to advance, so a break " +
+			"anywhere on that path silently halves the ladder's speed")
 	}
 }
 
@@ -2038,7 +2075,7 @@ func TestToInputSplitsEnterFromSpaceAndCarriesTab(t *testing.T) {
 // InputFinish exactly as InputReveal for them, so Enter still reveals.
 func TestEnterStillRevealsOnASingleWordForm(t *testing.T) {
 	for _, q := range []play.Question{
-		play.NewRecall("keel", "the bottom of a ship"),
+		&fakeQuestion{word: "keel", reveal: "the bottom of a ship"},
 		play.NewChoice("keel", "", []play.Option{{Gloss: "the bottom of a ship", Correct: true}, {Gloss: "a flat-topped hill"}}),
 	} {
 		s := play.NewSession([]play.Question{q})
@@ -2110,7 +2147,7 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 		// Column 0 of a continuation is column `cols` of the line, and acting on
 		// it lands a permanent mark on whatever word sits at column 0.
 		{"a wrapped entry's continuation row", board, 10, 0, 0, false},
-		{"a form that is not a grid", play.NewRecall("keel", "d"), 7, 0, 0, false},
+		{"a form that is not a grid", &fakeQuestion{word: "keel", reveal: "d"}, 7, 0, 0, false},
 		{"no form at all", nil, 7, 0, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2145,9 +2182,10 @@ func TestAClickOnABoardMarksIt(t *testing.T) {
 	// footer sits at the bottom edge: four entries (the board's own three, plus
 	// the bar) means the grid's only row is viewport row 10-4 = 6.
 	//
-	// The board also writes ONE blank line into the buffer as it opens, which
-	// separates it from the previous question — the operator's fourth note from
-	// a real sitting. It is a buffer line, so it does not move the footer.
+	// The separation from the previous question is a RESERVED FRAME ROW now
+	// (`chromeGap`, #44), not a blank the board writes into the buffer. It sits
+	// above the prompt, so it does not move the footer either — the arithmetic
+	// here is unchanged and the reason for it is not.
 	const termRows, gridRow = 10, 6
 	// The second cell's column, read off what Prompt DREW rather than computed.
 	col := strings.Index(board.Prompt(), "[1] ") + len("[1] ")
@@ -2297,7 +2335,7 @@ func TestABoardsPromptDoesNotOfferTheDropKey(t *testing.T) {
 	}
 	// ...and every single-word form still gets the full set.
 	for _, q := range []play.Question{
-		play.NewRecall("keel", "d"),
+		&fakeQuestion{word: "keel", reveal: "d"},
 		play.NewChoice("keel", "", []play.Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
 	} {
 		if !strings.Contains(gradePrompt(q), sessionKeys) {
@@ -2372,9 +2410,9 @@ func TestAReviewEventNamesItsFormOnDisk(t *testing.T) {
 		key  Key
 		want string
 	}{
-		{"form 2.1, the recall", func(options) play.Question {
-			return play.NewRecall("sycophantic", "behaving obsequiously")
-		}, Key{Kind: KeyRune, Rune: 'y'}, "recall"},
+		// Form 2.1's row is GONE with the form (#42). Two shipped forms remain,
+		// and the claim — the stamp survives CaptureReview and reaches the log —
+		// needs a form, not a particular one.
 		{"form 2.3, the meaning", func(options) play.Question {
 			return play.NewChoice("sycophantic", "", []play.Option{
 				{Gloss: "behaving obsequiously", Correct: true}, {Gloss: "a flat-topped hill"},
@@ -2437,28 +2475,37 @@ func seedBox(t *testing.T, st *store.Mem, word string, n int) {
 // ask. Everything before it was a capability question: form 2.3 when the deck
 // could supply distractors, 2.1 when it could not.
 func TestTheBoxPicksTheForm(t *testing.T) {
-	opt := options{width: defaultCols, rows: defaultRows}
-	prog := map[string]schedule.Progress{
-		"keel": {Box: 0}, "mesa": {Box: 1}, "run": {Box: 2},
-		"bank": {Box: 3}, "set": {Box: 4}, "quokka": {Box: 9},
-	}
-	keys := []string{"keel", "bank", "mesa", "set", "run", "quokka"}
-	single, boards := boardsFor(keys, prog, opt)
+	// RE-POINTED from the deleted box-only partition (the box was all it
+	// consulted, and the rule now also asks the ENTRY). The threshold itself is
+	// unchanged and is still worth its own pin, so this drives the real selection
+	// through todaysQuestions with a deck whose entries can ALL build a 2.3 —
+	// which isolates the BOX as the only thing deciding.
+	d, opt, st := playRig(t, "sycophantic", "quokka", "mesa", "parrot", "concrete", "pulp")
+	atBox(t, st, "quokka", boardBox)   // exactly at the threshold: the board
+	atBox(t, st, "mesa", boardBox+4)   // well past it: the board
+	atBox(t, st, "parrot", boardBox-1) // one short: asked one at a time
+	// `sycophantic` has no history at all — box 0, the common case on a young
+	// deck, and it must not reach the board.
 
-	if want := []string{"keel", "mesa", "run"}; !slices.Equal(single, want) {
-		t.Errorf("asked one at a time: %v, want %v — the boxes under %d, in queue order", single, want, boardBox)
+	qs, _ := questionsFor(t, d, opt)
+	var grid string
+	single := map[string]bool{}
+	for _, q := range qs {
+		if b, ok := q.(*play.Board); ok {
+			grid += unstyled(b.Prompt())
+			continue
+		}
+		single[q.Word()] = true
 	}
-	if len(boards) != 1 {
-		t.Fatalf("%d boards, want one holding the three mature words", len(boards))
+	for _, w := range []string{"quokka", "mesa"} {
+		if !strings.Contains(grid, w) {
+			t.Errorf("%q is box >= %d and did not reach a board", w, boardBox)
+		}
 	}
-	if want := []string{"bank", "set", "quokka"}; !slices.Equal(boards[0], want) {
-		t.Errorf("the board holds %v, want %v — the boxes at or above %d", boards[0], want, boardBox)
-	}
-	// A word with no history at all is box 0, which is the common case on a young
-	// deck and must not reach the board.
-	single, boards = boardsFor([]string{"unheard-of"}, map[string]schedule.Progress{}, opt)
-	if len(boards) != 0 || len(single) != 1 {
-		t.Errorf("a word with no history produced %d boards and %d singles, want 0 and 1", len(boards), len(single))
+	for _, w := range []string{"parrot", "sycophantic"} {
+		if !single[w] {
+			t.Errorf("%q is box < %d and was not asked one at a time", w, boardBox)
+		}
 	}
 }
 
@@ -2466,15 +2513,15 @@ func TestTheBoxPicksTheForm(t *testing.T) {
 func TestBoardsArePackedToTheLabelAlphabet(t *testing.T) {
 	opt := options{width: defaultCols, rows: 60}
 	var keys []string
-	prog := map[string]schedule.Progress{}
 	for i := range 40 {
-		k := fmt.Sprintf("word%02d", i)
-		keys = append(keys, k)
-		prog[k] = schedule.Progress{Box: 5}
+		keys = append(keys, fmt.Sprintf("word%02d", i))
 	}
-	single, boards := boardsFor(keys, prog, opt)
-	if len(single) != 0 {
-		t.Errorf("%d words were asked one at a time, want none — every one is eligible", len(single))
+	// RE-POINTED at packBoards, which owns the chunking half of the deleted
+	// the deleted partition. The box half is TestTheBoxPicksTheForm's now; this is about
+	// how many words fit on one board.
+	boards, undrawable := packBoards(keys, opt)
+	if len(undrawable) != 0 {
+		t.Errorf("%d words could not be drawn, want none — a 60-row terminal draws any board", len(undrawable))
 	}
 	var sizes []int
 	for _, b := range boards {
@@ -2505,16 +2552,13 @@ func TestBoardsArePackedToTheLabelAlphabet(t *testing.T) {
 // alternative — a floor in fitFooter — would have broken the budget Paint rests
 // on, and the symptom would have been a click landing on the wrong word.
 func TestAShortTerminalGetsMeaningChoiceNotAClippedBoard(t *testing.T) {
-	prog := map[string]schedule.Progress{}
 	var keys []string
 	for i := range 16 {
-		k := fmt.Sprintf("word%02d", i)
-		keys = append(keys, k)
-		prog[k] = schedule.Progress{Box: 5}
+		keys = append(keys, fmt.Sprintf("word%02d", i))
 	}
 	// Tall enough: a 16-word board at 80 columns is four grid rows plus its own
 	// two, and the prompt and bar make eight.
-	if _, boards := boardsFor(keys, prog, options{width: defaultCols, rows: 8}); len(boards) != 1 {
+	if boards, _ := packBoards(keys, options{width: defaultCols, rows: 8}); len(boards) != 1 {
 		t.Errorf("an 8-row terminal offered %d boards, want 1", len(boards))
 	}
 	for _, tc := range []struct {
@@ -2533,14 +2577,61 @@ func TestAShortTerminalGetsMeaningChoiceNotAClippedBoard(t *testing.T) {
 		{"very narrow, where the prompt takes four rows", options{width: 24, rows: 13}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			single, boards := boardsFor(keys, prog, tc.opt)
-			if len(boards) != 0 {
-				t.Errorf("%d boards offered on a terminal that cannot draw one whole", len(boards))
+			boards, undrawable := packBoards(keys, tc.opt)
+			// SHRINK-TO-FIT: at seven rows a SMALLER board still draws, which is
+			// #42 widening D15 rather than replacing it — the words stay on the
+			// form the box chose for them wherever the terminal allows it.
+			for _, b := range boards {
+				if !boardFits(b, tc.opt) {
+					t.Errorf("a board of %d was offered on a terminal that cannot draw it whole", len(b))
+				}
 			}
-			if len(single) != len(keys) {
-				t.Errorf("%d of %d words fell back to being asked one at a time", len(single), len(keys))
+			// And nothing is lost either way: every word is on a board or is
+			// handed back for the caller to find a form for.
+			n := len(undrawable)
+			for _, b := range boards {
+				n += len(b)
+			}
+			if n != len(keys) {
+				t.Errorf("%d of %d words accounted for", n, len(keys))
+			}
+			// ALL-OR-NOTHING when nothing fits: a one-word board's height does not
+			// depend on the word, so a terminal either draws boards or draws none.
+			if len(undrawable) != 0 && len(boards) != 0 {
+				t.Errorf("%d boards alongside %d undrawable words — the leftover case "+
+					"is meant to be all-or-nothing", len(boards), len(undrawable))
 			}
 		})
+	}
+}
+
+// D15'S FALLBACK SURVIVES #42, and this is the row the plan-quality gate caught a
+// Critical on.
+//
+// Shrink-then-skip is right for a word no test can be built for — that is why it
+// is on a board at all — and WRONG for a mature word, which is on a board because
+// its BOX sent it there and can usually still take a 2.3. Applied to both, a
+// 19-column terminal would skip every due word on a mature deck and then report
+// that none could be looked up, which is false. Today that terminal runs a full
+// sitting.
+func TestANarrowTerminalFallsBackToChoiceBeforeSkipping(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "quokka", "mesa", "parrot", "concrete", "pulp")
+	for _, w := range []string{"sycophantic", "quokka", "mesa", "parrot", "concrete", "pulp"} {
+		atBox(t, st, w, boardBox+2) // every word mature: without the fallback, every word skipped
+	}
+	// Too narrow for any board at all (below minWrapWidth).
+	opt.width, opt.rows = 12, 60
+
+	qs, _ := questionsFor(t, d, opt)
+
+	if len(qs) == 0 {
+		t.Fatal("a narrow terminal produced no questions at all — the mature deck was " +
+			"skipped wholesale instead of falling back to form 2.3")
+	}
+	for _, q := range qs {
+		if _, ok := q.(*play.Board); ok {
+			t.Errorf("a board was offered on a terminal that cannot draw one")
+		}
 	}
 }
 
@@ -2677,7 +2768,7 @@ func TestABoardWithNothingToRelearnWritesNoLine(t *testing.T) {
 // read "0 of 2".
 func TestTheBarCountsWordsNotSlots(t *testing.T) {
 	qs := []play.Question{
-		play.NewRecall("keel", "d"),
+		&fakeQuestion{word: "keel", reveal: "d"},
 		play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), 80, play.Palette{}),
 		play.NewChoice("run", "", []play.Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
 	}
@@ -3050,7 +3141,7 @@ func TestDOnABoardIsNotACellLabel(t *testing.T) {
 	keys2 <- Key{Kind: KeyRune, Rune: 'd'}
 	keys2 <- Key{Kind: KeyInterrupt}
 	close(keys2)
-	playSession(t.Context(), d2, opt2, play.NewSession([]play.Question{play.NewRecall("quokka", "d")}), held2, keys2,
+	playSession(t.Context(), d2, opt2, play.NewSession([]play.Question{&fakeQuestion{word: "quokka", reveal: "d"}}), held2, keys2,
 		console{view: live2, finish: func() {}, stdout: live2, stderr: &errb})
 	deck2, err := st2.Deck()
 	if err != nil {
@@ -3705,4 +3796,459 @@ func TestABoardWritesNothingToTheBuffer(t *testing.T) {
 	}
 	keys <- Key{Kind: KeyInterrupt}
 	<-done
+}
+
+// atBox drives a word up the ladder with real review events, so its box is what
+// `schedule.Fold` derives rather than what a test asserts.
+//
+// EVENTS, not a Progress map: `todaysQuestions` folds the log itself, so a test
+// that handed it a map would be testing a function this path does not call.
+//
+// DATED FAR IN THE PAST, and that is not decoration — the ladder widens as
+// `floor(1.6**box)` days, so a word reviewed into box 7 today is not due for
+// twenty-six more and would simply not be in the queue. A selection test needs
+// the word DUE, so the reviews end four hundred days back and every box up to
+// about twelve is overdue at the rig's clock.
+func atBox(t *testing.T, st *store.Mem, word string, box int) {
+	t.Helper()
+	const longAgo = -400
+	for i := range box {
+		if err := st.AppendEvent(store.ReviewEvent{
+			Word: word, Kind: store.EventReviewed, Correct: true,
+			At: aDay.AddDate(0, 0, longAgo+i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// ONE RULE PICKS THE FORM: 2.3 tests you, the board triages you (#42).
+//
+// | box >= 3                        | the board |
+// | box <= 2, distractors available | form 2.3  |
+// | box <= 2, distractors NOT       | the board |
+//
+// The third row is this issue. A word no real test can be built for used to get
+// form 2.1 — a whole screen and a keystroke to collect a self-report the board
+// collects sixteen at a time, and collected at the box where self-report is least
+// reliable, because the word has not been learned yet.
+//
+// BOTH SIDES, over a deck that spans the threshold: a young testable word must
+// still reach 2.3, or this test would pass on a build that sent everything to a
+// board.
+func TestUntestableWordsReachABoardAtEveryBox(t *testing.T) {
+	// `bases` is untestable by ENTRY: every sense is a cross-reference ("plural
+	// form of base1"), so there is no definition to be the right answer. The rest
+	// of the deck is large enough that everything else can build a 2.3, which is
+	// what isolates the entry as the cause rather than the deck size.
+	d, opt, st := playRig(t, "bases", "sycophantic", "quokka", "mesa", "parrot", "concrete")
+	atBox(t, st, "quokka", 5) // mature: the board by BOX
+	// `bases` stays box 0: young, and untestable by entry.
+
+	qs, _ := questionsFor(t, d, opt)
+
+	// Read off the FORM'S OWN OUTPUT rather than an accessor added for the test:
+	// a board's grid is what the learner sees, so "is this word on a board" is
+	// answered by the grid. Short words at 80 columns, so nothing truncates.
+	var grids string
+	form := map[string]string{}
+	for _, q := range qs {
+		if b, ok := q.(*play.Board); ok {
+			grids += unstyled(b.Prompt())
+			continue
+		}
+		form[q.Word()] = typeName(q)
+	}
+	formOf := func(word string) string {
+		if strings.Contains(grids, word) {
+			return "board"
+		}
+		if f, ok := form[word]; ok {
+			return f
+		}
+		return "not in the sitting at all"
+	}
+
+	if got := formOf("bases"); got != "board" {
+		t.Errorf("`bases` got %q, want the board — every sense of its entry is a "+
+			"cross-reference, so no real test can be built and it must be TRIAGED "+
+			"rather than asked to rate itself", got)
+	}
+	if got := formOf("quokka"); got != "board" {
+		t.Errorf("a box-5 word got %q, want the board — #40 D4 is unchanged", got)
+	}
+	if got := formOf("sycophantic"); got != "*play.Choice" {
+		t.Errorf("a young TESTABLE word got %q, want form 2.3 — if everything reaches "+
+			"a board this test is not distinguishing the two rules", got)
+	}
+}
+
+// A WORD THAT CAN BE NEITHER TESTED NOR DRAWN IS SKIPPED, BY CAUSE (#42).
+//
+// The last resort, and the only one: form 2.3 needs distractors this deck cannot
+// supply, and the window cannot draw a board. The word is skipped for the sitting
+// with both conditions named — because both must hold — exactly as a word the
+// dictionary cannot find is.
+//
+// AND THE SITTING CONTINUES. A skip that ended it would pass a test that only
+// checked the message, so the other words are asserted still asked.
+func TestAWordNeitherTestableNorDrawableIsSkippedWithItsCause(t *testing.T) {
+	// A one-word deck: nothing to draw distractors from, so no 2.3 is possible.
+	// Plus a second word that CAN be asked, to prove the sitting survives.
+	d, opt, st := playRig(t, "bases", "sycophantic", "quokka", "mesa")
+	_ = st
+	// Too narrow for any board, so `bases` — which no 2.3 can be built for — has
+	// nowhere left to go.
+	opt.width, opt.rows = 12, 60
+
+	var out, errb bytes.Buffer
+	qs, _, code := todaysQuestions(d, opt, &out, &errb)
+	if code != 0 {
+		t.Fatalf("todaysQuestions = %d; the sitting ended instead of skipping one word", code)
+	}
+	msg := errb.String()
+	if !strings.Contains(msg, "bases") {
+		t.Errorf("nothing was said about the skipped word:\n%s", msg)
+	}
+	for _, cause := range []string{"too short", "multiple choice"} {
+		if !strings.Contains(msg, cause) {
+			t.Errorf("the skip does not name %q — both conditions must hold, so both are "+
+				"worth saying:\n%s", cause, msg)
+		}
+	}
+	if len(qs) == 0 {
+		t.Fatal("one unaskable word emptied the whole sitting")
+	}
+	for _, q := range qs {
+		if q.Word() == "bases" {
+			t.Errorf("`bases` was skipped in the message and asked anyway")
+		}
+	}
+}
+
+// DONE-WHEN 5: retiring 2.1 must not make a young sitting LONGER.
+//
+// THE BASELINE IS NAMED, not read out of the tree: form 2.1 cost ONE SCREEN PER
+// WORD, so that is what "no longer than it was" means — and it stays checkable
+// after the form it describes is deleted. A test comparing against whatever the
+// tree does today would assert nothing the day the tree changes.
+func TestRetiringRecallDoesNotLengthenAYoungSitting(t *testing.T) {
+	words := []string{"sycophantic", "ephemeral", "quokka", "mesa", "parrot"}
+	for n := 1; n <= len(words); n++ {
+		d, opt, _ := playRig(t, words[:n]...)
+		qs, _ := questionsFor(t, d, opt)
+		if len(qs) > n {
+			t.Errorf("a %d-word deck asks %d questions; form 2.1 asked one screen per word, "+
+				"so anything above %d is a sitting made longer by retiring it", n, len(qs), n)
+		}
+		if got := sittingWords(qs); got != n {
+			t.Errorf("a %d-word deck reviews %d words — every due word must still be asked "+
+				"about, whatever form it lands on", n, got)
+		}
+	}
+}
+
+// fakeQuestion is a one-word form for tests about the LOOP rather than about a
+// form (#42).
+//
+// It exists because `play.Recall` was being used for this: a deck of one word
+// produced form 2.1 deterministically, so a test that needed "some single-word
+// question" asked for a one-word deck and got one. `#42` deleted that form — an
+// untestable word is triaged on a board now — and a board is a different SHAPE:
+// it draws in the footer rather than the buffer, and Enter finishes it rather
+// than revealing. Every test that broke was one that had borrowed a shipped form
+// as a double.
+//
+// SO IT IS A DOUBLE, and it grades digits, sharing no key with any shipped form —
+// the same discipline `play`'s own `fakeForm` follows, and for the same reason:
+// a test that types `y` because the form under it happens to grade `y` is
+// asserting the form's key semantics from inside a test about the session.
+type fakeQuestion struct{ word, prompt, reveal string }
+
+func (f *fakeQuestion) Word() string   { return f.word }
+func (f *fakeQuestion) Prompt() string { return cmp.Or(f.prompt, f.word) }
+func (f *fakeQuestion) Reveal() string { return cmp.Or(f.reveal, "the answer") }
+func (f *fakeQuestion) Keys() string   { return "1 = right, 2 = wrong" }
+func (f *fakeQuestion) Form() string   { return "fake" }
+func (f *fakeQuestion) Grade(r rune) (play.Verdict, bool) {
+	switch r {
+	case '1':
+		return play.Correct, true
+	case '2':
+		return play.Wrong, true
+	}
+	return play.Skipped, false
+}
+
+// soloSitting is one double and the deck a sitting holds, for the tests that used
+// to get both from a one-word deck.
+func soloSitting(t *testing.T, d deps, opt options, word string) ([]play.Question, *sittingDeck) {
+	t.Helper()
+	_, held := questionsFor(t, d, opt)
+	return []play.Question{&fakeQuestion{word: word}}, held
+}
+
+// askableRigStore is askableRig plus the store, for the tests that read the log
+// back. Same rig, one more return — split so the common case is not four values
+// where three will do.
+func askableRigStore(t *testing.T, word string) (deps, options, []play.Question, *sittingDeck, *store.Mem) {
+	t.Helper()
+	d, opt, qs, held := askableRig(t, word)
+	st, ok := d.deck.(*store.Mem)
+	if !ok {
+		t.Fatalf("the rig's deck is %T, not the in-memory store this helper hands back", d.deck)
+	}
+	return d, opt, qs, held, st
+}
+
+// askableRig is a deck big enough that every word can build a real form 2.3, and
+// the QUESTION for the word the test is about.
+//
+// Tests that wanted "one real rendered single-word question" used to get it from a
+// ONE-WORD deck, which produced form 2.1 deterministically. `#42` triages such a
+// word onto a board instead — a different shape, drawn in the footer and finished
+// by Enter — so a test about regions, clicks or playback needs the deck to be able
+// to build a real test for it. Five words is enough.
+//
+// It returns the question BY WORD rather than qs[0], because the queue's order is
+// the schedule's business and a test that assumed a position would break the day
+// the schedule changed for reasons that have nothing to do with it.
+func askableRig(t *testing.T, word string) (deps, options, []play.Question, *sittingDeck) {
+	t.Helper()
+	extra := []string{"quokka", "mesa", "parrot", "concrete", "pulp"}
+	d, opt, _ := playRig(t, append([]string{word}, extra...)...)
+	qs, held := questionsFor(t, d, opt)
+	for _, q := range qs {
+		if q.Word() == word {
+			if _, grid := q.(play.Grid); grid {
+				t.Fatalf("%q was triaged onto a board; this rig exists to give a real "+
+					"single-word question, so the deck is not supplying distractors", word)
+			}
+			return d, opt, []play.Question{q}, held
+		}
+	}
+	t.Fatalf("%q is not in the sitting at all", word)
+	return deps{}, options{}, nil, nil
+}
+
+// A DROP ON A BOARD REACHES store.Forget (#42).
+//
+// DRIVEN THROUGH playSession rather than by calling Mark, because the WIRING is
+// the claim: a board that records a drop the loop never acts on leaves every
+// `play` test green while the word sits in the deck untouched.
+//
+// It matters because #42 makes the board the only form some words ever see, and
+// `d` — the session's drop key everywhere else — is a cell key here (#40 D12: a
+// grid has no single current word). Without this the sitting would lose its
+// ability to curate the deck for exactly the young words it surfaces.
+func TestDroppingAWordOnABoardRemovesItFromTheDeck(t *testing.T) {
+	const termRows = 24
+	// Set per subtest from the board's own layout, so a click lands where the
+	// form drew the word rather than where the test guessed.
+	var boardGridRow, boardCellCol int
+	for _, tc := range []struct {
+		name string
+		mark func(keys chan Key)
+	}{
+		// A KEY AND A CLICK ARE ONE ACT reached two ways, so both are driven —
+		// the keyboard path is the one a mouse-owning developer never presses,
+		// and the one a mouse-less terminal has.
+		{"by key", func(keys chan Key) {
+			keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[1])}
+		}},
+		{"by click", func(keys chan Key) {
+			// The grid's only row, and the second cell's column read off what
+			// Prompt DREW rather than computed. Pinned, the footer sits at the
+			// bottom edge: the board's three rows plus the bar means the grid is
+			// at viewport row termRows-4.
+			keys <- Key{Kind: KeyClick, Row: boardGridRow, Col: boardCellCol}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, st := playRig(t, "quokka", "mesa", "parrot")
+			_, held := questionsFor(t, d, opt)
+			board := play.NewBoard(boardCells("quokka", "mesa", "parrot"), opt.width, play.Palette{})
+			boardGridRow = termRows - board.Rows() - 1 // the bar is the last footer row
+			boardCellCol = strings.Index(board.Prompt(), "[1] ") + len("[1] ")
+			if boardCellCol < 1 {
+				t.Fatalf("no second cell in %q", board.Prompt())
+			}
+
+			tty := &syncBuf{}
+			live := newPinnedScreen(tty, termRows, opt.width)
+			live.interval = -1
+			var errb bytes.Buffer
+
+			keys := make(chan Key, 5)
+			keys <- Key{Kind: KeyTab} // yes -> no
+			keys <- Key{Kind: KeyTab} // no -> drop
+			tc.mark(keys)
+			keys <- Key{Kind: KeyInterrupt}
+			close(keys)
+
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+				console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+			deck, err := st.Deck()
+			if err != nil {
+				t.Fatal(err)
+			}
+			left := map[string]bool{}
+			for _, w := range deck {
+				left[store.Key(w.Text)] = true
+			}
+			if left["mesa"] {
+				t.Errorf("`mesa` was dropped on the board and is still in the deck — the form "+
+					"recorded a removal the loop never performed; deck %v", left)
+			}
+			// AND ONLY THAT WORD. A drop that took its neighbours would be the
+			// worst kind of bug here: irreversible, and invisible until a sitting
+			// comes up short.
+			for _, w := range []string{"quokka", "parrot"} {
+				if !left[w] {
+					t.Errorf("%q left the deck too — a drop names ONE cell", w)
+				}
+			}
+			// A REMOVAL IS NOT A REVIEW: nothing about it reaches the schedule,
+			// or a word on its way out would be demoted on the way.
+			for _, e := range reviewEvents(t, st) {
+				if store.Key(e.Word) == "mesa" {
+					t.Errorf("the drop wrote a review event: %+v", e)
+				}
+			}
+		})
+	}
+}
+
+// A DROP WRITES EXACTLY ONE TRANSCRIPT LINE (#42 PQ-4).
+//
+// The loop already reports every removal — "removed %q from the deck" — as it
+// happens, which is where `relearnLine`'s own reasoning wants it. The first draft
+// of this issue planned a `dropped:` line at board close as relearn's sibling;
+// that would have been a SECOND OWNER of one fact, and the batching that makes
+// sense for `relearn:` (a board's no-marks are only knowable once it closes) does
+// not apply to a removal, which is knowable immediately.
+//
+// So the pin is that there is one line, not that there is a new one.
+func TestADropOnABoardIsReportedOnce(t *testing.T) {
+	d, opt, _ := playRig(t, "quokka", "mesa", "parrot")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot"), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	keys := make(chan Key, 6)
+	keys <- Key{Kind: KeyTab}
+	keys <- Key{Kind: KeyTab}
+	keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[1])}
+	// Two more keystrokes AFTER the drop: a Tab and a refused click. Either one
+	// re-firing the removal is what a sticky `Dropped()` looks like.
+	keys <- Key{Kind: KeyTab}
+	keys <- Key{Kind: KeyClick, Row: 0, Col: 0}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	script := unstyled(live.Transcript())
+	if n := strings.Count(script, "removed"); n != 1 {
+		t.Errorf("the transcript says %q %d times, want once — a Tab or a refused click "+
+			"after a drop must not perform it again:\n%s", "removed", n, script)
+	}
+	if !strings.Contains(script, `"mesa"`) {
+		t.Errorf("the removal does not name the word:\n%s", script)
+	}
+}
+
+// AN EMPTY SITTING NAMES THE CAUSE THE CODE ESTABLISHED (#42 BR-2).
+//
+// "None could be looked up" was true while a failed lookup was the only way a due
+// word could fall out of a sitting. `#42` added a second: a word the dictionary
+// answers perfectly well, for which no multiple choice can be built and whose
+// window cannot draw a board. Reporting a dictionary failure then sends the
+// learner to check their dictionary about a window that is too narrow.
+//
+// The population is exactly this issue's subject — a young deck on a narrow
+// terminal, which ran a full sitting before `#42` retired form 2.1.
+func TestAnEmptySittingNamesWhyItIsEmpty(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		deck        []string
+		width       int
+		want, avoid string
+	}{
+		{
+			// The dictionary answers; there is simply no form for the word here.
+			name: "unaskable in this window", deck: []string{"bases"}, width: 12,
+			want: "can be asked in this window", avoid: "looked up",
+		},
+		{
+			// The original cause, unchanged: the dictionary is the problem.
+			name: "the dictionary cannot answer", deck: []string{"rizz"}, width: defaultCols,
+			want: "could be looked up", avoid: "in this window",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, _ := playRig(t, tc.deck...)
+			opt.width = tc.width
+
+			var out, errb bytes.Buffer
+			qs, _, code := todaysQuestions(d, opt, &out, &errb)
+			if len(qs) != 0 || code == 0 {
+				t.Fatalf("the sitting is not empty (%d questions, code %d); this test asserts "+
+					"nothing unless it is", len(qs), code)
+			}
+			if !strings.Contains(errb.String(), tc.want) {
+				t.Errorf("the summary does not say %q:\n%s", tc.want, errb.String())
+			}
+			if strings.Contains(errb.String(), tc.avoid) {
+				t.Errorf("the summary blames %q, which is not what happened:\n%s", tc.avoid, errb.String())
+			}
+		})
+	}
+}
+
+// EVERY MARK A BOARD CAN LAND HAS A SEQUENCE, and `boardPalette` is the one place
+// this program decides them (#42 BR-1).
+//
+// DERIVED FROM THE MARK SET rather than listing three fields, so a fourth mark
+// cannot ship with no colour: `play.Marks()` is the extent, and a mark missing
+// from the palette fails here the day it is declared. That is the same shape as
+// `numRegionKinds` guarding the click registry — an enumeration the code owns
+// instead of one a test restates.
+func TestEveryBoardMarkHasAPaintedSequence(t *testing.T) {
+	pal := boardPalette(options{color: true})
+	seen := map[string]play.Mark{}
+	for _, m := range play.Marks() {
+		seq := pal.For(m)
+		if m == play.Unmarked {
+			if seq != "" {
+				t.Errorf("Unmarked is painted %q — an untouched cell must carry no sequence", seq)
+			}
+			continue
+		}
+		if seq == "" {
+			t.Errorf("mark %v has no sequence, so a cell carrying it paints as untouched — "+
+				"and the learner cannot see what they answered", m)
+			continue
+		}
+		if other, dup := seen[seq]; dup {
+			t.Errorf("marks %v and %v share the sequence %q, so two answers read as one "+
+				"on screen", m, other, seq)
+		}
+		seen[seq] = m
+	}
+	// ...and -no-color paints nothing at all. `--play` refuses to run there
+	// (BR-3), so this is belt — and it is the configuration a colourless rig
+	// silently runs in, which is how #40's wrap Critical stayed invisible.
+	off := boardPalette(options{color: false})
+	for _, m := range play.Marks() {
+		if seq := off.For(m); seq != "" {
+			t.Errorf("mark %v paints %q with no palette", m, seq)
+		}
+	}
 }

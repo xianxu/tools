@@ -53,7 +53,7 @@ func TestTheSessionNamesNoForm(t *testing.T) {
 		}
 		code.WriteString(line + "\n")
 	}
-	for _, form := range []string{"Board", "Choice", "Recall"} {
+	for _, form := range []string{"Board", "Choice"} {
 		for _, ref := range []string{"*" + form, "(" + form + ")", form + "{"} {
 			if strings.Contains(code.String(), ref) {
 				t.Errorf("session.go names %q in code — the session must ask a CAPABILITY, never a form (#6's Done-when)", ref)

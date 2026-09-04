@@ -11,7 +11,7 @@ import (
 //
 // All of it happens HERE, in main, because it reads the dictionary: play
 // receives finished Candidates and never parses prose (D5, D5a). The division is
-// the same one Recall uses — already-rendered text in, no rendering inside.
+// the same one the board uses — finished text in, no rendering inside.
 
 // poolCap bounds the dictionary work one sitting costs.
 //
@@ -109,7 +109,7 @@ func optionCandidates(word string, e Entry) []play.Candidate {
 // sense in document order — the first block's, whenever that block has one at
 // all. Not ok when the entry offers no definition anywhere: an entry that is
 // nothing but cross-references (`bases` — "plural form of base1") cannot be the
-// answer to a recognition question, so the caller falls back to form 2.1.
+// answer to a recognition question, so the caller triages the word on a board.
 //
 // Unlike optionCandidates this takes the first usable sense of ANY axis, not
 // the first unlabelled one. The target is what the learner looked up; a `rare`
@@ -138,7 +138,7 @@ func targetCandidate(word string, e Entry) (play.Candidate, bool) {
 // "did you know this word". Form 2.3 cannot: it asserts that ONE gloss IS the
 // meaning of the word on screen, marks it Correct, and promotes the word in the
 // schedule on the strength of it. So the entry has to be checked, and a redirect
-// falls back to form 2.1 — the same route `bases` takes.
+// is triaged on a board instead — the same route `bases` takes.
 //
 // `Headword()` alone is NOT the check, which is why this walks the token run:
 // the head is built from `fields[0]` (parse.go:436), so it returns "hot" for
@@ -222,10 +222,29 @@ var fallbackReasons = []string{
 // define the prompted word (a NOAD derivative redirect — see entryDefines), the
 // entry offers no usable definition at all (`bases`, every sense a
 // cross-reference), or the deck has not yet grown enough distractors (D9 — a
-// learner three lookups in). The caller falls back to form 2.1, which is
-// invisible to the learner and keeps the sitting the length the schedule asked
+// learner three lookups in). The caller TRIAGES the word on a board (#42), which
+// is invisible to the learner and keeps the sitting the length the schedule asked
 // for.
 func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint64) *play.Choice {
+	opts := optionsFor(word, e, pool, seed)
+	if opts == nil {
+		return nil
+	}
+	return play.NewChoice(word, rendered, opts)
+}
+
+// optionsFor is whether this entry can be form 2.3 AT ALL, and with which
+// options. Nil means it cannot.
+//
+// SPLIT FROM choiceFor so SELECTION can ask without paying a Render (#42). The
+// form is chosen after the lookup now — "can this word have distractors" is only
+// knowable once the entry is parsed — and a word that turns out to be triaged
+// would otherwise have been wrapped, coloured and click-mapped for a form it
+// never takes.
+//
+// It is also the whole of the DECISION, so the three fallback reasons all live on
+// this side of the split and `fallbackReasons` still describes one function.
+func optionsFor(word string, e Entry, pool []play.Candidate, seed uint64) []play.Option {
 	// No entryDefines call here: targetCandidate guards itself, and so does
 	// optionCandidates. A check at this level is what let the distractor path
 	// through unguarded once already.
@@ -247,7 +266,7 @@ func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint6
 	if len(opts) < 2 {
 		return nil
 	}
-	return play.NewChoice(word, rendered, opts)
+	return opts
 }
 
 // seedFor is a question's seed: FNV-1a over the parts.

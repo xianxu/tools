@@ -136,7 +136,7 @@ type Outcome struct {
 	// every correct answer, which is D8: a right answer writes no finding.
 	//
 	// On Outcome rather than returned from Grade because only SOME forms have
-	// it. Widening Grade would make form 2.1 answer a question it cannot.
+	// it. Widening Grade would have made form 2.1 give an answer it did not have.
 	Axis Axis
 	// Unaided marks a right answer given COLD — the form checked it against an
 	// answer it already knew, and no reveal preceded it. False on every wrong
@@ -377,7 +377,7 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 			// GRADING BEFORE A REVEAL IS THE NORMAL PATH, and it used to be
 			// refused here on the grounds that "a learner cannot rate what they
 			// have not seen". That is true of a recognition test and false of a
-			// RECALL test, which is what form 2.1 is: the learner rates their own
+			// RECALL test, which is what form 2.1 was: the learner rated their own
 			// recall, which they know before they check, and the definition is
 			// FEEDBACK rather than stimulus. Getting it backwards put a mandatory
 			// keystroke in front of every correct answer (#24).
@@ -448,6 +448,14 @@ func advance(s Session, q Question, v Verdict, unaided bool) (Session, Outcome) 
 		}
 	}
 
+	// A REMOVAL, asked HERE because this is the one place both mark paths meet —
+	// the printed key and the click — so the question is put once rather than at
+	// two call sites that could drift (#42). It is asked only after a mark
+	// actually landed, which is what keeps it from re-firing on a Tab or a
+	// refused click.
+	if word, ok := droppedBy(q); ok {
+		return s, Outcome{Kind: OutcomeDrop, Word: word, SessionDone: s.Done}
+	}
 	if v == Skipped {
 		// Not an assessment. schedule.Fold would read a recorded skip as a miss
 		// and demote the word.
@@ -458,7 +466,7 @@ func advance(s Session, q Question, v Verdict, unaided bool) (Session, Outcome) 
 
 // Missed is implemented by forms whose WRONG answers carry a kind.
 //
-// Optional deliberately. Form 2.1 cannot say why a recall failed — the learner
+// Optional deliberately. Form 2.1 could not say why a recall failed — the learner
 // simply did not remember — so requiring every form to answer would make the
 // interface lie for the one form that has no answer. Apply asks and takes
 // AxisNone when nobody answers, which is also what a correct answer reports.
@@ -476,6 +484,33 @@ func missedAxis(q Question) Axis {
 		return m.MissedAxis()
 	}
 	return AxisNone
+}
+
+// Dropping is implemented by a form whose last mark asked for a word to be
+// REMOVED from the deck rather than rated (#42).
+//
+// Optional, exactly as Missed is: most forms have no such gesture, and widening
+// Question would make every one of them answer a question it cannot. A type
+// switch on *Board here is the thing #6's Done-when forbids.
+//
+// NOT A VERDICT, and that is the design decision it encodes. Verdict is what an
+// ANSWER meant, and `schedule.Fold` reads verdicts to move boxes — a fourth one
+// meaning "remove this word" would put deck curation in front of the ladder and
+// make every consumer branch on it.
+//
+// ONE-SHOT BY CONTRACT: `advance` asks after every mark, so an implementation
+// that kept answering would perform one removal repeatedly, against a word
+// already gone.
+type Dropping interface {
+	Dropped() (string, bool)
+}
+
+// droppedBy asks a question whether its last mark was a removal.
+func droppedBy(q Question) (string, bool) {
+	if d, ok := q.(Dropping); ok {
+		return d.Dropped()
+	}
+	return "", false
 }
 
 // Batch is implemented by forms that hold MORE THAN ONE word.

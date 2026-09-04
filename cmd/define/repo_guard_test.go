@@ -637,6 +637,31 @@ func currentTruthOnly(t *testing.T, name, text string) string {
 		}
 		text = text[:i]
 	}
+	// A DOCUMENT THAT DECLARES A SYMBOL DELETED IS THE RECORD OF THAT DELETION,
+	// so its account of the symbol is a record too (#42).
+	//
+	// Two guards disagreed and neither could settle it alone:
+	// `TestPlanTableStatusMatchesTheChangeWindow` REQUIRES a plan's Core-concepts
+	// table to name what the window removed and checks it against the diff, while
+	// `TestNoArtifactNamesARetiredSymbol` forbids a current-truth artifact from
+	// naming a retired symbol. The plan cannot both name it and not.
+	//
+	// Settled HERE because "is this text a record" is this function's whole
+	// question, so both guards inherit one answer instead of being taught it
+	// separately. The exemption is SELF-LIMITING in two directions: only a
+	// document carrying a `| deleted |` row gets it, and only for the symbol that
+	// row names — so a plan cannot quiet a guard about anything it did not
+	// declare, and no other artifact is exempted at all.
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.HasPrefix(line, "| ") || !strings.HasSuffix(strings.TrimSpace(line), "| deleted |") {
+			continue
+		}
+		name := strings.Trim(strings.SplitN(line, "|", 3)[1], " `")
+		if name == "" {
+			continue
+		}
+		text = regexp.MustCompile("`?"+regexp.QuoteMeta(name)+"`?").ReplaceAllString(text, "")
+	}
 	// THE SECOND DISCARDING RULE, and R10's premise assertion applies to it too.
 	//
 	// Splitting on "\n### " means a closed section runs to the NEXT "### " — which
@@ -1021,6 +1046,17 @@ func checkPlanName(t *testing.T, root, plan, name, path, status string, checked 
 // down. Everything after that is mechanical, and the list can only shrink as
 // history archives.
 var retiredSymbolNames = map[string]string{
+	// #42 split selection in two: the box partition moved into todaysQuestions'
+	// one loop (it must run BEFORE the lookup, so it cannot be a function over a
+	// parsed entry) and the packing half became packBoards.
+	//
+	// NO ROW FOR `Recall`, the form deleted in the same window, and the omission
+	// is deliberate: "recall" is ordinary English this program uses constantly for
+	// the editor's up-arrow history, so a row would fire on `history.go`,
+	// `repl.go` and half the atlas over text that has nothing to do with the form.
+	// What IS retired there is the routing CLAIM, and `retiredPhrases` carries it
+	// — a phrase, not a word, which is the distinction that map's own doc makes.
+	"boardsFor":       "packBoards, plus the box partition inside todaysQuestions",
 	"deckDeps":        "newLangDeps",
 	"newDeck":         "newLangDeps",
 	"MigrateFlatDeck": "MigrateToLanguages",
@@ -1095,6 +1131,40 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 var retiredPhrases = map[string]string{
 	"toggle row":      "the prompt row — `Board.Keys` states the live mark (#40 R11)",
 	"footer's toggle": "the prompt row — `Board.Keys` states the live mark (#40 R11)",
+	// #42 deleted form 2.1. The FORM's name is not banned — several comments
+	// legitimately explain why something exists by naming the form it was built
+	// for, and the atlas keeps the argument that produced `Keys()`. What is
+	// retired is the ROUTING CLAIM: nothing falls back to it any more, because it
+	// is not there to fall back to.
+	//
+	// The phrase, not the word, exactly as the two rows above are phrases. It was
+	// worth writing down because the tree-wide sweep this issue ran caught four
+	// files and missed five more — the instance, not the class (#42 BR-3).
+	"back to form 2.1": "a word no test can be built for is TRIAGED on a board (#42)",
+	// TENSE IS THE DISCRIMINATOR, and it is what closes this class (#42 BR-12).
+	//
+	// Round 1 declined a bare ban on the form's NAME because ~8 historical mentions
+	// would redden — correctly: a comment that explains why something exists by
+	// naming the form it was built for is right, and the atlas keeps the argument
+	// that produced `Keys()`. But declining the ban left the class open, and three
+	// rounds later seven production doc comments still said form 2.1 IS, HAS or
+	// CANNOT — present tense about a form the tree does not contain, one of them
+	// three lines from a block a previous round had rewritten.
+	//
+	// So the rows are keyed on the tense rather than the name. "was", "used to"
+	// and "before #42" are untouched by construction, which is exactly the
+	// distinction the sweep needed and the bare name could not express.
+	"form 2.1 is":              "form 2.1 WAS — #42 retired it; a word no test fits is triaged on a board",
+	"form 2.1 has":             "form 2.1 HAD — #42 retired it",
+	"form 2.1 cannot":          "form 2.1 COULD NOT — #42 retired it",
+	"form 2.1 grades":          "form 2.1 GRADED — #42 retired it",
+	"form 2.1 shows":           "form 2.1 SHOWED — #42 retired it",
+	"form 2.1 answer":          "form 2.1 ANSWERED — #42 retired it",
+	"2.1 or 2.3":               "form 2.3 alone — #42 retired 2.1",
+	"falls back to 2.1":        "a word no test can be built for is TRIAGED on a board (#42)",
+	"back to Recall":           "a word no test can be built for is TRIAGED on a board (#42)",
+	"fallback to form":         "a word no test can be built for is TRIAGED on a board (#42)",
+	"falls back to the recall": "a word no test can be built for is TRIAGED on a board (#42)",
 }
 
 // No current-truth artifact describes a drawn element the tool no longer draws.
@@ -1608,13 +1678,34 @@ func treeDeclares(t *testing.T, root, name string) bool {
 }
 
 // isCitableName reports whether a removed declaration is one an artifact would
-// actually name: a Test, a Fuzz target, or an exported identifier.
+// actually name: a Test, a Fuzz target, an exported identifier, or an unexported
+// camelCase one with an interior capital.
 //
-// Unexported helpers like `ids` or `binds` are not cited in prose, and searching
-// artifacts for them produces substring noise rather than findings.
+// THE LAST CLAUSE IS #42's, and it is the second finding in its family. This
+// filter read "exported or Test*", on the reasoning that unexported helpers are
+// not cited in prose. That is true of `ids` and `binds` and false of exactly the
+// helpers this codebase argues about: `boardsFor` was deleted alongside `Recall`
+// and stayed the current account of selection in six current-truth sites,
+// including two atlas paragraphs — so the atlas held two contradictory accounts
+// of the very rule the issue existed to change, and the guard written to catch
+// that could not see it.
+//
+// The interior capital is what separates the two populations. A prose-cited
+// unexported helper in this repo is a compound (`boardsFor`, `choiceFor`,
+// `optionCandidates`); a single lowercase word (`ids`, `binds`, `paint`) is both
+// uncited AND a substring of ordinary English, which is the noise the original
+// clause was avoiding. So the noise is still excluded and the citations are not.
 func isCitableName(name string) bool {
-	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Fuzz") ||
-		(name != "" && name[0] >= 'A' && name[0] <= 'Z')
+	if strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Fuzz") {
+		return true
+	}
+	if name == "" {
+		return false
+	}
+	if name[0] >= 'A' && name[0] <= 'Z' {
+		return true
+	}
+	return strings.ContainsFunc(name[1:], func(r rune) bool { return r >= 'A' && r <= 'Z' })
 }
 
 // A DOC COMMENT'S FIRST WORD IS THE NAME OF THE DECLARATION IT SITS ON.
@@ -1776,4 +1867,78 @@ func declaredIn(f *ast.File) map[string]bool {
 		}
 	}
 	return out
+}
+
+// isCitableName's own fixture table (#42 BR-11).
+//
+// The 2ND finding in the `pin-that-cannot-fail` family, and the same shape as the
+// one eight lines above `TestPlanStatusNormalisesToTheVocabulary`: the widening
+// that answered BR-7 — letting the removed-declaration sweep see unexported
+// compound names — was GREEN WHEN REVERTED. `boardsFor` is swept from the tree
+// now, so no artifact in the repo exercises the new clause, and the fix that
+// closed a class was itself unpinned.
+//
+// A FIXTURE TABLE is the answer for exactly that reason: the input the rule cares
+// about is one this tree no longer contains, so it has to be supplied rather than
+// found. The rows below are the two populations the clause separates — prose-cited
+// compounds, and the single lowercase words that are substrings of ordinary
+// English.
+func TestIsCitableNameSeparatesCitedNamesFromNoise(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		// The population the widening exists for: unexported, compound, and cited
+		// in prose. `boardsFor` is the one that went stale in two atlas paragraphs
+		// while the guard could not see it.
+		{"boardsFor", true},
+		{"choiceFor", true},
+		{"optionCandidates", true},
+		{"todaysQuestions", true},
+		// The population the original clause was right to exclude: a single
+		// lowercase word is both uncited and a substring of ordinary English, so
+		// sweeping for it reports noise rather than findings.
+		{"ids", false},
+		{"binds", false},
+		{"paint", false},
+		{"ask", false},
+		// Unchanged by the widening: exported names and test entry points.
+		{"Marks", true},
+		{"TestSomething", true},
+		{"FuzzSomething", true},
+		// Degenerate.
+		{"", false},
+		{"a", false},
+	} {
+		if got := isCitableName(tc.name); got != tc.want {
+			t.Errorf("isCitableName(%q) = %v, want %v — a name in the cited population that "+
+				"this returns false for is a stale mention no guard will find, and a noise "+
+				"word it returns true for is a sweep that reports substrings",
+				tc.name, got, tc.want)
+		}
+	}
+}
+
+// currentTruthOnly exempts a `| deleted |` row's OWN symbol, and nothing else
+// (#42 BR-11).
+//
+// The other half of the round-2 fix that was green when reverted: the exemption
+// resolves a genuine conflict between two guards, and the tree exercises only the
+// passing case. Its risk is over-reach — an exemption that quieted a guard about
+// symbols the document never declared would silently widen every artifact's
+// licence — so both directions are supplied here rather than hoped for.
+func TestADeletedRowExemptsOnlyItsOwnSymbol(t *testing.T) {
+	const doc = "| `boardsFor` | `x.go` | deleted |\n\n" +
+		"Prose naming boardsFor, which the row above declares deleted.\n" +
+		"Prose naming somethingElse, which it does not.\n"
+	got := currentTruthOnly(t, "workshop/plans/fixture-plan.md", doc)
+
+	if strings.Contains(got, "boardsFor") {
+		t.Errorf("the declared symbol survived the filter, so the guard it exists to quiet "+
+			"still fires on the document that recorded the deletion:\n%s", got)
+	}
+	if !strings.Contains(got, "somethingElse") {
+		t.Errorf("an undeclared symbol was stripped too — the exemption must be limited to "+
+			"what a `| deleted |` row NAMES, or a plan quiets every guard at once:\n%s", got)
+	}
 }

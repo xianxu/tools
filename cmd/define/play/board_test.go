@@ -142,9 +142,14 @@ func TestAMarkLandsTheActiveMode(t *testing.T) {
 	if v, _ := b.Mark(1); v != Wrong {
 		t.Errorf("a No-mode mark graded %v, want Wrong", v)
 	}
+	// TWO more Tabs to come back round: the cycle is three since #42 added drop.
+	b.Toggle()
+	if b.Mode() != Dropped {
+		t.Fatalf("the second Tab gave %v, want Dropped", b.Mode())
+	}
 	b.Toggle()
 	if b.Mode() != Yes {
-		t.Errorf("Tab did not flip back: mode is %v", b.Mode())
+		t.Errorf("Tab did not come back round: mode is %v", b.Mode())
 	}
 	// AND Keys() IS WHERE THE MODE IS SHOWN (R11). It had a footer row of its
 	// own, and a resize measured what that costs: fitFooter drops from the END,
@@ -163,9 +168,15 @@ func TestAMarkLandsTheActiveMode(t *testing.T) {
 	if !strings.Contains(no, "[no]") || strings.Contains(no, "[yes]") {
 		t.Errorf("Keys() in No mode = %q, want the live mark bracketed", no)
 	}
-	// Same width, so the line does not jump under a key pressed twice.
-	if columnsIn(yes) != columnsIn(no) {
-		t.Errorf("the two spellings are %d and %d columns:\n%q\n%q", columnsIn(yes), columnsIn(no), yes, no)
+	b.Toggle()
+	drop := b.Keys()
+	if !strings.Contains(drop, "[drop]") || strings.Contains(drop, "[no]") {
+		t.Errorf("Keys() in Dropped mode = %q, want the live mark bracketed", drop)
+	}
+	// Same width, so the line does not jump under a key pressed repeatedly.
+	if columnsIn(yes) != columnsIn(no) || columnsIn(no) != columnsIn(drop) {
+		t.Errorf("the three spellings are %d, %d and %d columns:\n%q\n%q\n%q",
+			columnsIn(yes), columnsIn(no), columnsIn(drop), yes, no, drop)
 	}
 	// And nothing BELOW the grid says it a second time.
 	for _, line := range strings.Split(b.Prompt(), "\n") {
@@ -234,7 +245,7 @@ func TestABoardIsSpentOnlyWhenEveryCellIsMarked(t *testing.T) {
 	}
 }
 
-// A BOARD OF THREE (D5). The board is what boardsFor could fill, not always
+// A BOARD OF THREE (D5). The board is what the caller could fill, not always
 // sixteen, and every part of it has to work at that size.
 func TestABoardOfThreeIsAWholeBoard(t *testing.T) {
 	words := []string{"keel", "mesa", "run"}
@@ -351,11 +362,18 @@ func TestPromptLabelsEveryWord(t *testing.T) {
 // the cell and how a learner reads the grid back, so it is the wrong half to
 // spend on saying "answered".
 func TestAMarkedCellIsPaintedAndKeepsItsKey(t *testing.T) {
-	pal := Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Off: "\x1b[0m"}
+	// EVERY MARK'S SEQUENCE, so no arm of the paint can be deleted unnoticed. The
+	// drop was added to the Palette and to `paint` with neither pinned, and both
+	// could be removed with the whole suite green — a dropped cell would then have
+	// painted identically to an untouched one while the README promised otherwise
+	// (#42 BR-1).
+	pal := Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Drop: "\x1b[2;9m", Off: "\x1b[0m"}
 	b := NewBoard(cellsOf(sixteen...), 100, pal)
 	b.Mark(2)
 	b.Toggle()
 	b.Mark(7)
+	b.Toggle()
+	b.Mark(9)
 	p := b.Prompt()
 
 	// THE KEYS ARE ALL STILL THERE, marked or not.
@@ -371,6 +389,13 @@ func TestAMarkedCellIsPaintedAndKeepsItsKey(t *testing.T) {
 	if !strings.Contains(p, pal.No+"[7] "+sixteen[7]+pal.Off) {
 		t.Errorf("cell 7 is not painted as a no:\n%s", p)
 	}
+	if !strings.Contains(p, pal.Drop+"[9] "+sixteen[9]+pal.Off) {
+		t.Errorf("cell 9 is not painted as a drop:\n%s", p)
+	}
+	// THREE DISTINCT sequences, or two marks read as one on screen.
+	if pal.Yes == pal.No || pal.No == pal.Drop || pal.Yes == pal.Drop {
+		t.Error("two marks share a sequence, so the test cannot tell them apart either")
+	}
 	// An unmarked cell carries no sequence at all.
 	if strings.Contains(p, pal.Yes+"[0] ") || strings.Contains(p, pal.No+"[0] ") {
 		t.Errorf("an unmarked cell is painted:\n%s", p)
@@ -383,8 +408,9 @@ func TestAMarkedCellIsPaintedAndKeepsItsKey(t *testing.T) {
 		t.Errorf("an unpalletted board emitted an escape:\n%q", plain.Prompt())
 	}
 	// AND Marked() reports the state without anyone parsing colour back out.
-	if b.Marked(2) != Yes || b.Marked(7) != No || b.Marked(0) != Unmarked {
-		t.Errorf("Marked() = %v/%v/%v, want Yes/No/Unmarked", b.Marked(2), b.Marked(7), b.Marked(0))
+	if b.Marked(2) != Yes || b.Marked(7) != No || b.Marked(9) != Dropped || b.Marked(0) != Unmarked {
+		t.Errorf("Marked() = %v/%v/%v/%v, want Yes/No/Dropped/Unmarked",
+			b.Marked(2), b.Marked(7), b.Marked(9), b.Marked(0))
 	}
 }
 
@@ -597,8 +623,11 @@ func TestTabFlipsTheBoardsModeThroughApply(t *testing.T) {
 	if len(outs) != 1 || outs[0].Verdict != Wrong {
 		t.Errorf("a mark after Tab produced %+v, want Wrong", outs)
 	}
+	if _, ok := Apply(s, Input{Kind: InputToggle}); b.Mode() != Dropped {
+		t.Errorf("a second Tab left the mode at %v, want Dropped; outs %+v", b.Mode(), ok)
+	}
 	if _, ok := Apply(s, Input{Kind: InputToggle}); b.Mode() != Yes {
-		t.Errorf("a second Tab left the mode at %v, want Yes; outs %+v", b.Mode(), ok)
+		t.Errorf("a third Tab left the mode at %v, want Yes; outs %+v", b.Mode(), ok)
 	}
 }
 
@@ -726,7 +755,7 @@ func TestTheChromeRowsAreNotCells(t *testing.T) {
 // It was arithmetic that happened to match rather than a construction that had
 // to: with no grid rows the separator produced two blanks instead of one, so an
 // empty board's Prompt yielded four lines while Rows() said three. Unreachable
-// through boardsFor, and that is exactly why it needs a test — the invariant is
+// through the packing caller, and that is exactly why it needs a test — the invariant is
 // defended in Word() and panelLine() and was dropped here.
 func TestRowsIsWhatPromptDraws(t *testing.T) {
 	for n := 0; n <= MaxBoardWords; n++ {
@@ -833,4 +862,167 @@ func TestABoardRelaysOutForTheWidthItIsDrawnAt(t *testing.T) {
 			t.Errorf("after Resize(%d) the board reports itself spent after two marks", w)
 		}
 	}
+}
+
+// TAB CYCLES THREE MODES, and the order is a UX decision rather than arithmetic
+// on the iota (#42).
+//
+// Yes → No → Dropped, so the DESTRUCTIVE mode is never one Tab from the default:
+// a learner reaching for `no` cannot overshoot into a removal, and the mode they
+// are most likely to want is the one they start in.
+func TestTabCyclesThreeModes(t *testing.T) {
+	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}, {Word: "run"}}, 80, Palette{})
+	for i, want := range []Mark{No, Dropped, Yes, No} {
+		b.Toggle()
+		if got := b.Mode(); got != want {
+			t.Fatalf("Tab %d gave mode %v, want %v — the cycle is Yes → No → Dropped, "+
+				"so the destructive mode is never one press from the default", i+1, got, want)
+		}
+	}
+}
+
+// A DROPPED CELL RECORDS NO REVIEW. Its verdict is Skipped, which the session
+// never writes — a drop is not an assessment, and recording one as a miss would
+// demote a word on its way out of the deck.
+func TestADroppedCellRecordsNothing(t *testing.T) {
+	if got := Dropped.Verdict(); got != Skipped {
+		t.Errorf("Dropped.Verdict() = %v, want Skipped — a removal is not an answer, and "+
+			"schedule.Fold reads verdicts to move boxes", got)
+	}
+	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}}, 80, Palette{})
+	b.Toggle()
+	b.Toggle() // into drop mode
+	if v, ok := b.Mark(0); !ok || v != Skipped {
+		t.Errorf("marking a cell in drop mode gave (%v, %v), want (Skipped, true)", v, ok)
+	}
+	// ...and it IS marked, so Enter's sweep leaves it alone and a second press
+	// cannot drop it twice.
+	if got := b.Marked(0); got != Dropped {
+		t.Errorf("cell 0 is %v after a drop, want Dropped", got)
+	}
+	if rest := b.Rest(Wrong); len(rest) != 1 || rest[0] != "mesa" {
+		t.Errorf("Enter swept %v, want only the unmarked word — a dropped cell is not "+
+			"unmarked and must not be answered on the way out", rest)
+	}
+}
+
+// THE FORM SAYS WHICH WORD WAS DROPPED, through a capability rather than a type
+// switch — one-shot, so the same removal cannot be performed twice.
+func TestABoardNamesTheWordItDropped(t *testing.T) {
+	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}}, 80, Palette{})
+	if _, ok := b.Dropped(); ok {
+		t.Error("a board with no marks claims a drop")
+	}
+	b.Toggle()
+	b.Toggle()
+	b.Mark(1)
+	word, ok := b.Dropped()
+	if !ok || word != "mesa" {
+		t.Fatalf("Dropped() = (%q, %v), want (\"mesa\", true)", word, ok)
+	}
+	// ONE-SHOT. Asked again — which the loop does on the next frame, and after a
+	// refused click — it must not name the word a second time, or the removal is
+	// performed twice against a word already gone.
+	if _, ok := b.Dropped(); ok {
+		t.Error("Dropped() answered twice for one drop — the loop asks it per mark, so a " +
+			"sticky answer removes the same word on every following keystroke")
+	}
+	// A yes after a drop is a MARK, not a drop.
+	b.Toggle()
+	b.Mark(0)
+	if _, ok := b.Dropped(); ok {
+		t.Error("a yes mark claimed to be a drop")
+	}
+}
+
+// ALL THREE MODE SPELLINGS ARE THE SAME WIDTH, and the row fits eighty columns
+// with the session's reserved key beside it.
+//
+// NOT COSMETIC: `boardFitsIn` charges `displayRows(gradePrompt(q), termCols)` into
+// the board's fit, so a row that wraps at 80 raises the minimum terminal height
+// for EVERY board — on the path #42 routes untestable young words onto, where
+// there is no form 2.1 left to fall back to. The existing refusal-row pin cannot
+// catch this: it compares the refusal against the keys row, and both grow
+// together.
+func TestEveryModeSpellingIsTheSameWidthAndFitsEighty(t *testing.T) {
+	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}}, 80, Palette{})
+	want := visibleColumns(b.Keys())
+	// DERIVED FROM Marks(), not `for range 3` (#42 BR-13). A literal count cannot
+	// see a mark added to the set, and the proof is the mutation that found this:
+	// with a fourth mark in `Marks()` and `Toggle`, this loop stayed green while
+	// `Keys()` silently returned the yes spelling for the unwritten mode.
+	//
+	// Unmarked is skipped: it is the ABSENCE of a mark, never a mode Tab lands on.
+	for _, m := range Marks() {
+		if m == Unmarked {
+			continue
+		}
+		toMode(t, b, m)
+		got := visibleColumns(b.Keys())
+		if got != want {
+			t.Errorf("mode %v spells a %d-column row; the first was %d — the line must not "+
+				"jump under a key pressed to be pressed again", b.Mode(), got, want)
+		}
+		// The reserved half a board gets is `quitKey` — `d` is a cell key here.
+		if total := got + len(", ") + len("Ctrl-C to stop"); total > 80 {
+			t.Errorf("mode %v: the prompt row is %d columns with the reserved keys, over 80 — "+
+				"it wraps, and boardFitsIn charges the wrapped height to every board",
+				b.Mode(), total)
+		}
+	}
+}
+
+// EVERY MARK HAS A SPELLING, derived from the extent rather than from a count
+// (#42 BR-13).
+//
+// `Keys()` is the one statement of what the next click will MEAN, and R11 made it
+// the last thing a short window gives up because every mark is irreversible. It
+// used to be a switch whose default returned the yes spelling, so a mark added to
+// `Marks()` and to `Toggle` and forgotten there drew "marking [yes] …" while the
+// mode was something else — proven by mutation, and green in every test at the
+// time.
+func TestEveryMarkHasASpelling(t *testing.T) {
+	b := NewBoard([]Cell{{Word: "keel"}}, 80, Palette{})
+	for _, m := range Marks() {
+		if m == Unmarked {
+			continue // the absence of a mark, never a mode Tab lands on
+		}
+		spelling, ok := modeSpellings[m]
+		if !ok {
+			t.Errorf("mark %v has no prompt-row spelling, so the board would state a mode "+
+				"it is not in on the row a learner reads before an irreversible click", m)
+			continue
+		}
+		toMode(t, b, m)
+		if got := b.Keys(); got != spelling {
+			t.Errorf("in mode %v Keys() = %q, want %q", m, got, spelling)
+		}
+	}
+	// ...and no spelling for a mark that is not in the set, which would be wording
+	// nothing can reach.
+	if len(modeSpellings) != len(Marks())-1 {
+		t.Errorf("%d spellings for %d marks (less Unmarked) — a spelling with no mark is "+
+			"dead wording, and a mark with no spelling hits the loud default",
+			len(modeSpellings), len(Marks())-1)
+	}
+}
+
+// toMode cycles Tab until the board is in mode m, and FAILS rather than looping
+// forever if it never gets there (#42 BR-13).
+//
+// BOUNDED, and the bound is the finding: the first version of the callers below
+// spun `for b.Mode() != m { b.Toggle() }`, which HANGS for a mark `Toggle` does
+// not reach — exactly the mark these tests exist to catch. A test that hangs on
+// the defect is worse than one that misses it: a red says what is wrong, a hang
+// says nothing and takes the suite with it.
+func toMode(t *testing.T, b *Board, m Mark) {
+	t.Helper()
+	for range len(Marks()) + 1 {
+		if b.Mode() == m {
+			return
+		}
+		b.Toggle()
+	}
+	t.Fatalf("Tab never reaches mode %v — it is in Marks() but not in Toggle's cycle, "+
+		"so nothing on the board can ever land it", m)
 }

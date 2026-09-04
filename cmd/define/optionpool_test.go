@@ -359,7 +359,7 @@ func TestNoQuestionDrawsTwoOptionsFromOneEntry(t *testing.T) {
 // `a priori` — two genuinely different entries can share it, and using it as a
 // dedup key silently drops one of their options. A learner with both `hot dog`
 // and `hot` in the deck would lose a distractor, and on a small deck lose the
-// form entirely to Recall.
+// form entirely and be triaged onto a board instead.
 func TestEntryIdentityDistinguishesEntriesHeadwordConflates(t *testing.T) {
 	d := testDict(t)
 	ids := map[string]string{}

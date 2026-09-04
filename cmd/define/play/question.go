@@ -27,12 +27,14 @@ package play
 type Verdict int
 
 const (
-	// NO SHIPPED FORM PRODUCES Skipped today. Form 2.1 returns (Skipped, false)
-	// for a key it does not use, which the session ignores entirely — so the
-	// verdict is never acted on. It exists because the SESSION needs it:
-	// `InputDrop` advances through `advance(s, q, Skipped)`, and a later form
-	// (2.3's "I do not know" option) will produce it directly. Recorded because a
-	// verdict with no producer looks like dead code until you know why.
+	// A FORM DOES PRODUCE Skipped now, and this comment used to say none did.
+	// `#42`'s `Dropped` mark maps to it, so `Board.Mark` returns (Skipped, true)
+	// for a cell being removed — which is the point: a removal is not an
+	// assessment, and Skipped is the verdict the session declines to record.
+	//
+	// It is also still returned as (Skipped, FALSE) by every form for a key it
+	// does not grade, which the session ignores entirely. The two are different
+	// claims and the bool is what separates them.
 	//
 	// Skipped is deliberately the ZERO value: Grade returns (Skipped, false) for
 	// a key it does not use, so a form that forgets to name a verdict on its
@@ -48,9 +50,9 @@ const (
 //
 // The Done-when says adding a second form must require no change to the loop.
 // That is a property of THIS interface rather than a promise, which is why it
-// exists before there is a second form — and why Grade lives here: form 2.1's
-// y/n and form 2.3's 1/2/3/4 are the same shape to the session, because the
-// session never learns what either key means.
+// exists before there is a second form — and why Grade lives here: form 2.3's
+// 1/2/3/4 and the board's printed labels are the same shape to the session,
+// because the session never learns what either key means.
 type Question interface {
 	// Word is the deck key the answer is recorded against, already normalised.
 	Word() string

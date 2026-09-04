@@ -25,12 +25,19 @@ package play
 
 // Mark is what a cell says, and what the board's MODE is set to.
 //
-// TWO marks and an ABSENCE, which is not a third mark. D7 deleted `unsure`
-// ("I guess unsure means no") along with the whole EventUnsure mechanism the
-// first draft had drawn around it.
+// `Marks()` below is the EXTENT of this set, and prose must not restate it — a
+// count spelled here is a second owner, which is how this comment came to say "TWO
+// marks" three lines above the const block declaring another (#42). It said
+// "THREE" for one round after that, which is the same defect with a different
+// number, so it now says neither.
+//
+// The two that survive from `#40` are `Yes` and `No`; D7 deleted `unsure` ("I
+// guess unsure means no") along with the whole EventUnsure mechanism the first
+// draft had drawn around it, and `#42` added `Dropped` — a removal rather than a
+// rating, which is why it is a mark and not a Verdict.
 //
 // Unmarked is the zero value deliberately, and it is the reason this is not just
-// a Verdict: a cell has three states and a verdict has no way to say "nobody has
+// a Verdict: a cell can be untouched, and a verdict has no way to say "nobody has
 // answered this one". Verdict's own zero is Skipped, which means something else
 // entirely — a word the learner declined — and spending it on "untouched" would
 // have made Rest's job unstateable.
@@ -40,6 +47,18 @@ const (
 	Unmarked Mark = iota
 	Yes
 	No
+	// Dropped is a cell REMOVED from the deck rather than rated (#42).
+	//
+	// Its Verdict is Skipped, which is what keeps it out of the schedule: a
+	// removal is not an assessment, and recording one as a miss would demote a
+	// word on its way out. `Rest` already skips anything not Unmarked, so Enter's
+	// sweep leaves a dropped cell alone for free.
+	//
+	// It is a MARK rather than a fourth Verdict because Verdict is what an ANSWER
+	// meant, and `schedule.Fold` reads verdicts to move boxes — "remove this
+	// word" in front of that would be a category error the ladder would have to
+	// branch on.
+	Dropped
 )
 
 // Verdict is what a mark means to the schedule: Yes climbs the ladder, No falls
@@ -118,7 +137,7 @@ const (
 // Cell is one word on the board and the ONE-LINE gloss shown when it is marked.
 //
 // The gloss arrives finished, exactly as Choice takes rendered Options and
-// Recall takes a rendered definition: extracting a sense, reading NOAD's labels
+// Choice takes rendered Options: extracting a sense, reading NOAD's labels
 // and rejecting an entry that defines a different word all need the dictionary,
 // and this package imports nothing.
 //
@@ -142,9 +161,10 @@ type Cell struct {
 // them: the padding is computed from the plain word and applied OUTSIDE the
 // style, so a styled cell occupies exactly the columns an unstyled one does.
 type Palette struct {
-	Yes string // starts the style for a cell marked yes
-	No  string // ...and for one marked no
-	Off string // ends either
+	Yes  string // starts the style for a cell marked yes
+	No   string // ...and for one marked no
+	Drop string // ...and for one being removed from the deck
+	Off  string // ends any of them
 }
 
 // Board is one grid. Pointer receivers: it REMEMBERS every mark, which is the
@@ -164,6 +184,9 @@ type Board struct {
 	// the mark WHERE THE KEY WAS — saying "answered" by taking away the thing
 	// the keyboard needs, on the one path a mouse-less terminal has.
 	pal Palette
+	// dropping is set by a mark landed in Dropped mode and cleared by the reader,
+	// which is what makes Dropped() one-shot.
+	dropping bool
 	// last is the cell most recently marked, and it is what Word() reports.
 	// advance builds Outcome{Word: q.Word()} at a call site that knows nothing
 	// about grids, so the form has to answer "which word did that just mean".
@@ -197,7 +220,7 @@ type Board struct {
 //
 // More than MaxBoardWords is CAPPED rather than rejected, and nothing is lost by
 // it: a word this board does not ask about gets no event, so its box does not
-// move and it is due again tomorrow. The caller (boardsFor) packs in
+// move and it is due again tomorrow. The caller (`packBoards`) packs in
 // MaxBoardWords chunks and is pinned there; this is the belt.
 func NewBoard(cells []Cell, width int, pal Palette) *Board {
 	if len(cells) > MaxBoardWords {
@@ -335,7 +358,7 @@ func (b *Board) Prompt() string {
 	//
 	// Concatenation got this wrong for an empty board: with no grid rows the
 	// separator's "\n\n" produced two blanks instead of one, so Prompt yielded
-	// four lines where Rows() said three. Unreachable — boardsFor never builds an
+	// four lines where Rows() said three. Unreachable — the caller never builds an
 	// empty board — but Word() and panelLine() both defend the empty case, and an
 	// invariant held in three places and dropped in a fourth is worse than one
 	// held nowhere.
@@ -403,13 +426,10 @@ func (b *Board) cellText(i int) string {
 // paint is the sequence that starts this cell's style: empty for an unmarked
 // cell, and for a board built with no palette.
 func (b *Board) paint(i int) string {
-	switch b.marks[i] {
-	case Yes:
-		return b.pal.Yes
-	case No:
-		return b.pal.No
-	}
-	return ""
+	// THROUGH Palette.For, which is the one owner of mark → sequence. Spelling the
+	// mapping again here would be a second owner, and the failure is silent: a
+	// mark painted one way in the form and another in the test that checks it.
+	return b.pal.For(b.marks[i])
 }
 
 // Marked reports how cell i is marked, for a caller that must see the state
@@ -448,21 +468,49 @@ func (b *Board) Reveal() string { return "" }
 // Tab and Enter ARE named here even though both are session Input kinds, and
 // that is deliberate: sessionKeys in the loop is the set that is true WHATEVER
 // form is asking, and neither of these is. Enter finishes a form only when the
-// form holds many words, and Tab reaches nothing at all on 2.1 or 2.3. The form
+// form holds many words, and Tab reaches nothing at all on form 2.3. The form
 // is the only thing that can describe them truthfully.
 //
-// The label set is NOT enumerated. It has a hole at `d` and it is printed beside
-// every word, so spelling "0-9 a-c e-g" here would be a second owner of the
-// sequence and a harder thing to read than the grid itself.
+// The label set is NOT enumerated. It is printed beside every word, so spelling
+// it out here would be a second owner of the sequence and a harder thing to read
+// than the grid itself. (This used to say the set "has a hole at `d`" — it had
+// one until #40's last round filled it, and the sentence outlived the hole.)
 //
-// Both spellings are the SAME WIDTH, so the line does not jump under a key
-// pressed to be pressed again — and short enough that this plus the session's
-// reserved keys fits eighty columns.
+// Every spelling is the same VISIBLE WIDTH, so the line does not jump under a key
+// pressed to be pressed again — and short enough that it plus the session's
+// reserved key fits eighty columns, which is a budget rather than a preference:
+// `boardFitsIn` charges `displayRows(gradePrompt(q), termCols)` into the board's
+// fit, so a row that wraps raises the minimum terminal height for EVERY board.
+//
+// RE-CUT rather than appended to when the drop arrived (#42). The old row was 62
+// columns and left two of headroom, so a third state naively appended would have
+// wrapped: "Tab switches" became "Tab cycles" and "click or key marks" lost its
+// verb, since with a drop a click no longer only marks.
+//
+// A TABLE KEYED BY MARK, with a LOUD default — and both halves are #42 BR-13's.
+// This was a switch returning the yes spelling as its fallback, so a mark added to
+// `Marks()` and to `Toggle` and forgotten HERE drew the yes row while the mode was
+// something else: the prompt row is the one statement of what the next click will
+// mean, and R11 made it the last thing a short window gives up precisely because
+// every mark is irreversible. A map cannot silently answer for a key it lacks.
 func (b *Board) Keys() string {
-	if b.mode == Yes {
-		return "marking [yes] no, Tab switches, click or key marks, Enter ends"
+	if s, ok := modeSpellings[b.mode]; ok {
+		return s
 	}
-	return "marking yes [no], Tab switches, click or key marks, Enter ends"
+	// UNREACHABLE, and it says so rather than guessing: TestEveryMarkHasASpelling
+	// derives its loop from Marks(), so a mark with no row fails the build. This
+	// arm exists because the alternative — returning any spelling — states a mode
+	// the board is not in, on the row a learner reads before an irreversible click.
+	return "marking ?, Tab cycles, click or key, Enter ends"
+}
+
+// modeSpellings is the prompt row per mark, and it is the ONE place the wording
+// lives. A map rather than a switch so `Marks()` can be walked against its keys —
+// an extent the code owns, checked rather than restated.
+var modeSpellings = map[Mark]string{
+	Yes:     "marking [yes] no drop, Tab cycles, click or key, Enter ends",
+	No:      "marking yes [no] drop, Tab cycles, click or key, Enter ends",
+	Dropped: "marking yes no [drop], Tab cycles, click or key, Enter ends",
 }
 
 // Mode is the mark a click will land. Not on any interface — the form states its
@@ -476,13 +524,25 @@ func (b *Board) Mode() Mark { return b.mode }
 // word's next real test.
 func (b *Board) Form() string { return "board" }
 
-// Toggle flips the mode. This is what Tab means on a board.
+// Toggle cycles the mode. This is what Tab means on a board.
+//
+// The ORDER is a UX decision rather than arithmetic on the iota
+// (#42): Yes → No → Dropped, so the destructive mode is never one press from the
+// default. A learner reaching for `no` cannot overshoot into a removal, and the
+// mode they most often want is the one they start in.
+//
+// Written as a switch for that reason — `(b.mode % 3) + 1` would be shorter and
+// would hide the decision, and the day a fourth mode arrives the order question
+// has to be asked again rather than answered by an increment.
 func (b *Board) Toggle() {
-	if b.mode == Yes {
+	switch b.mode {
+	case Yes:
 		b.mode = No
-		return
+	case No:
+		b.mode = Dropped
+	default:
+		b.mode = Yes
 	}
-	b.mode = Yes
 }
 
 // Grade marks the cell whose printed key is k.
@@ -493,8 +553,12 @@ func (b *Board) Toggle() {
 // mouse-owning developer never presses, and it is the one a mouse-less terminal
 // has (Done-when 6).
 //
-// Case-insensitive, as form 2.1 is. `d` and `D` never arrive: toInput takes them
-// first, and boardLabels has no cell for them either way.
+// Case-insensitive, as every key path here is. AND `d` DOES ARRIVE: the session
+// reserves that key only for forms with a single current word to remove, and
+// hands it to a grid as an ordinary cell key (#40 D12) — this comment used to
+// claim the opposite ("`d` and `D` never arrive… boardLabels has no cell for them
+// either way"), which #40's own final round falsified when it put `d` back in the
+// alphabet. Corrected in #42, the issue about that key.
 func (b *Board) Grade(k rune) (Verdict, bool) {
 	if k >= 'A' && k <= 'Z' {
 		k += 'a' - 'A'
@@ -527,7 +591,29 @@ func (b *Board) Mark(i int) (Verdict, bool) {
 	}
 	b.marks[i] = b.mode
 	b.last = i
+	// The drop is ARMED here and disarmed by the reader, so it is one-shot: the
+	// loop asks `Dropped()` on every mark, and a sticky answer would remove the
+	// same word again on the next keystroke — against a word already gone.
+	b.dropping = b.mode == Dropped
 	return b.mode.Verdict(), true
+}
+
+// Dropped is the word the last mark asked to REMOVE, once (#42).
+//
+// It implements the session's `Dropping` capability rather than being reached by
+// a type switch on *Board — the same shape as `Missed` and `SelfRated`, and the
+// reason is `#6`'s Done-when: a session that knew what a board IS would have to
+// change for every future form.
+//
+// ONE-SHOT, and that is the whole of its correctness. `Apply` asks after each
+// mark lands; an answer that persisted would re-emit the removal on the next Tab
+// or refused click, performing one act twice.
+func (b *Board) Dropped() (string, bool) {
+	if !b.dropping {
+		return "", false
+	}
+	b.dropping = false
+	return b.cells[b.last].Word, true
 }
 
 // CellAt is which cell a click landed on, given a position INSIDE the grid
@@ -697,4 +783,29 @@ func trimRight(s string) string {
 		end--
 	}
 	return s[:end]
+}
+
+// Marks is every mark a cell can carry, in cycle order, and it is the EXTENT of
+// the set (#42).
+//
+// Exported so a caller enumerates them rather than restating them — the same move
+// `BoardLabels` made for the key sequence and `numRegionKinds` made for the click
+// registry. A palette that a test checked by listing three fields would say
+// nothing about a fourth mark; deriving the loop from here means a new mark
+// arrives already covered, or fails loudly.
+func Marks() []Mark { return []Mark{Unmarked, Yes, No, Dropped} }
+
+// For is the sequence that paints this mark, and the Palette is the one owner of
+// that mapping — so a caller asking "how is a drop drawn" cannot answer it from a
+// field it picked itself.
+func (p Palette) For(m Mark) string {
+	switch m {
+	case Yes:
+		return p.Yes
+	case No:
+		return p.No
+	case Dropped:
+		return p.Drop
+	}
+	return ""
 }
