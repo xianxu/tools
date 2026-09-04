@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -31,6 +32,12 @@ func TestAgreement(t *testing.T) {
 		// time cannot score 1.0 on the half that parsed.
 		{"off-scale answers count against stability", []store.Band{store.C1, store.C1, "B2+", "intermediate"}, 0.5},
 		{"all off-scale is zero", []store.Band{"B2+", "advanced"}, 0},
+		// CASING IS NOT DISAGREEMENT. ParseBand calls case and space transcription
+		// noise; counting the raw answer made a perfectly stable model score 0.67
+		// and fail a floor whose prescribed remedy is the expensive hand-labelled
+		// sample this issue defers.
+		{"casing is not disagreement", []store.Band{store.C1, "c1", store.C1}, 1},
+		{"trailing space is not disagreement", []store.Band{store.C1, "C1 "}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := agreement(tc.in); math.Abs(got-tc.want) > 1e-9 {
@@ -44,7 +51,7 @@ func TestAgreement(t *testing.T) {
 // task conditionally drops and a golden is what makes that visible.
 func TestBandPromptGolden(t *testing.T) {
 	llmtest.AssertGolden(t, "testdata", "band-prompt",
-		renderBandPrompt("sycophantic", "behaving or done in an obsequious way in order to gain advantage", ""))
+		renderBandPrompt(store.DefaultLang, "sycophantic", "behaving or done in an obsequious way in order to gain advantage", ""))
 }
 
 func TestBandPromptWithAKnownDomainGolden(t *testing.T) {
@@ -53,7 +60,7 @@ func TestBandPromptWithAKnownDomainGolden(t *testing.T) {
 		t.Fatal(`ParseDomain("Law") refused`)
 	}
 	llmtest.AssertGolden(t, "testdata", "band-prompt-known-domain",
-		renderBandPrompt("certiorari", "Law a writ by which a higher court reviews a lower court's decision", law))
+		renderBandPrompt(store.DefaultLang, "certiorari", "Law a writ by which a higher court reviews a lower court's decision", law))
 }
 
 // The closed set must actually REACH the model. A prompt that asks for "the
@@ -61,13 +68,13 @@ func TestBandPromptWithAKnownDomainGolden(t *testing.T) {
 // despite a parse that refuses one — the parse would then silently answer
 // `general` for everything and topicSpread would read 1.0 forever.
 func TestBandPromptCarriesTheClosedDomainSet(t *testing.T) {
-	got := renderBandPrompt("sycophantic", "", "").Prompt
+	got := renderBandPrompt(store.DefaultLang, "sycophantic", "", "").Prompt
 	for _, d := range store.Domains() {
-		if !contains(got, string(d)) {
+		if !strings.Contains(got, string(d)) {
 			t.Errorf("the prompt never names the domain %q", d)
 		}
 	}
-	if !contains(got, "general") {
+	if !strings.Contains(got, "general") {
 		t.Error("the prompt never offers `general`, which is the common and correct answer")
 	}
 }
@@ -79,22 +86,39 @@ func TestBandPromptDoesNotAskForAKnownDomain(t *testing.T) {
 	if !ok {
 		t.Fatal(`ParseDomain("Law") refused`)
 	}
-	got := renderBandPrompt("certiorari", "", law).Prompt
-	if contains(got, "EXACTLY this list") {
+	got := renderBandPrompt(store.DefaultLang, "certiorari", "", law).Prompt
+	if strings.Contains(got, "EXACTLY this list") {
 		t.Error("the prompt still enumerates the domain set although the dictionary already answered")
 	}
-	if !contains(got, "already known from the dictionary") {
+	if !strings.Contains(got, "already known from the dictionary") {
 		t.Error("the prompt does not tell the model the domain is settled")
 	}
 }
 
-func contains(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && (func() bool {
-		for i := 0; i+len(needle) <= len(haystack); i++ {
-			if haystack[i:i+len(needle)] == needle {
-				return true
-			}
-		}
-		return false
-	})()
+// The language reaches the model, because facts are stored per-language and a
+// Spanish deck is a shipped path. A prompt asserting English while writing
+// facts/es/ would be wrong FOREVER — the cache is never re-examined.
+func TestBandPromptCarriesTheLanguage(t *testing.T) {
+	en := renderBandPrompt(store.DefaultLang, "red", "", "").Prompt
+	es := renderBandPrompt(store.Lang("es"), "red", "", "").Prompt
+	if en == es {
+		t.Fatal("the prompt is identical in two languages; `red` is a different word in each")
+	}
+	if !strings.Contains(es, "`es`") {
+		t.Errorf("the Spanish prompt never names its language: %q", es)
+	}
+	// And no language is asserted anywhere a caller cannot override.
+	if strings.Contains(renderBandPrompt(store.Lang("es"), "red", "", "").System, "English") {
+		t.Error("the system prompt still hardcodes English")
+	}
+}
+
+// An empty Lang is DefaultLang, not an empty code in the prompt: every other
+// store constructor makes the same substitution, and a caller predating
+// languages must not produce a request naming no language at all.
+func TestBandPromptDefaultsTheLanguage(t *testing.T) {
+	if got, want := renderBandPrompt("", "red", "", "").Prompt,
+		renderBandPrompt(store.DefaultLang, "red", "", "").Prompt; got != want {
+		t.Error("an empty Lang did not default the way NewYAML does")
+	}
 }

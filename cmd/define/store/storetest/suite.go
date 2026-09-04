@@ -7,6 +7,7 @@
 package storetest
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -442,6 +443,82 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 		if got.Band != store.C2 || got.Domain != domain(t, "Law") || !got.At.Equal(day(2)) {
 			t.Errorf("WordFacts = %+v, want the second write whole", got)
+		}
+	})
+
+	t.Run("a damaged record reads as unharvested from EVERY implementation", func(t *testing.T) {
+		// The Store interface promises this, so the suite is where it belongs —
+		// it landed in yaml_test.go only, and Mem quietly disagreed: it handed
+		// back an off-scale band as harvested while YAML refused it. A fake that
+		// holds a state the real store cannot is the gap this suite exists to
+		// close, and here the fake was the PERMISSIVE one, which is the direction
+		// that hides a bug rather than inventing one.
+		s := newStore(t)
+		if err := s.SetWordFacts("word", store.WordFacts{
+			Band: "B2+", Domain: "Astrology", At: day(1),
+		}); err != nil {
+			t.Fatalf("SetWordFacts: %v", err)
+		}
+		got, err := s.WordFacts("word")
+		if err != nil {
+			t.Fatalf("WordFacts: %v", err)
+		}
+		if got.Harvested() {
+			t.Errorf("WordFacts = %+v, want unharvested: an off-scale band must never "+
+				"reach Rank, which answers -1 and sorts below A1", got)
+		}
+	})
+
+	t.Run("a band is stored CANONICAL, so casing is not two facts", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.SetWordFacts("word", store.WordFacts{
+			Band: "c1", Domain: "law", At: day(1),
+		}); err != nil {
+			t.Fatalf("SetWordFacts: %v", err)
+		}
+		got, err := s.WordFacts("word")
+		if err != nil {
+			t.Fatalf("WordFacts: %v", err)
+		}
+		if got.Band != store.C1 {
+			t.Errorf("band = %q, want the canonical C1", got.Band)
+		}
+		if got.Domain != domain(t, "Law") {
+			t.Errorf("domain = %q, want the canonical Law", got.Domain)
+		}
+	})
+
+	t.Run("model text in an item is neutralised on the way in", func(t *testing.T) {
+		// Stem, Answer and Distractors are the first free-text model fields this
+		// store persists, and the board renders them one per line. A distractor
+		// carrying a newline forges a row there — the same class as the band that
+		// forged a "define: ..." diagnostic in #17. Neutralised at the WRITE so
+		// every render site is safe without remembering to be.
+		s := newStore(t)
+		if err := s.SetItems("word", []store.Item{{
+			Word:        "word",
+			Stem:        "a stem\nwith a forged second line",
+			Answer:      "word\r\nand another",
+			Distractors: []string{"one\ntwo"},
+		}}); err != nil {
+			t.Fatalf("SetItems: %v", err)
+		}
+		got, err := s.Items("word")
+		if err != nil {
+			t.Fatalf("Items: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("got %d items, want 1", len(got))
+		}
+		for _, field := range []string{got[0].Stem, got[0].Answer} {
+			if strings.ContainsAny(field, "\r\n") {
+				t.Errorf("%q kept a line break", field)
+			}
+		}
+		for _, d := range got[0].Distractors {
+			if strings.ContainsAny(d, "\r\n") {
+				t.Errorf("distractor %q kept a line break", d)
+			}
 		}
 	})
 

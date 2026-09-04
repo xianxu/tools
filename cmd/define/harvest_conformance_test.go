@@ -54,7 +54,7 @@ func TestBandingIsStableAgainstTheLiveService(t *testing.T) {
 	for _, w := range bandingWords {
 		bands := make([]store.Band, 0, rounds)
 		for range rounds {
-			claim, err := llm.Run(t.Context(), client, bandTask(w, "", store.Domain("")))
+			claim, err := llm.Run(t.Context(), client, bandTask(store.DefaultLang, w, "", store.Domain("")))
 			if err != nil {
 				conformance.SkipOrFail(t, "banding "+w, err)
 			}
@@ -89,7 +89,7 @@ func TestBandClaimShapeAgainstTheLiveService(t *testing.T) {
 		conformance.SkipOrFail(t, "no model configured", err)
 	}
 
-	claim, err := llm.Run(t.Context(), llm.New(cfg), bandTask("certiorari", "", store.Domain("")))
+	claim, err := llm.Run(t.Context(), llm.New(cfg), bandTask(store.DefaultLang, "certiorari", "", store.Domain("")))
 	if err != nil {
 		conformance.SkipOrFail(t, "banding certiorari", err)
 	}

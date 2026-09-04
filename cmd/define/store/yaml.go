@@ -617,7 +617,7 @@ func (y *YAML) SetWordFacts(key string, f WordFacts) error {
 	if err := os.MkdirAll(y.factsDir(), 0o755); err != nil {
 		return err
 	}
-	b, err := yaml.Marshal(f)
+	b, err := yaml.Marshal(sanitiseFacts(f))
 	if err != nil {
 		return err
 	}
@@ -664,7 +664,7 @@ func (y *YAML) SetItems(key string, items []Item) error {
 	if err := os.MkdirAll(y.itemsDir(), 0o755); err != nil {
 		return err
 	}
-	b, err := yaml.Marshal(itemsFile{Items: items})
+	b, err := yaml.Marshal(itemsFile{Items: sanitiseItems(items)})
 	if err != nil {
 		return err
 	}

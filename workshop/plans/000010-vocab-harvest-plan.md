@@ -457,3 +457,40 @@ Ledger: `workshop/plans/000010-vocab-harvest-plan-gate.md`.
   `AssertGolden`'s callers put theirs.
 - **Minor 2 — `--limit` (default 200)** bounds a run's model calls, with
   `poolCap = 40` as the precedent for bounding batch work explicitly.
+
+### 2026-09-04 — M1 boundary review: 4 Important, 6 Minor, all addressed
+
+**Reason.** `sdlc milestone-close --issue 10 --milestone M1` returned
+FIX-THEN-SHIP. Sidecar: `workshop/plans/000010-vocab-harvest-m1-review.md`. Every
+finding was checked against the tree; all held.
+
+**The one worth remembering: BR-4, a plan step ticked for code that was never
+written.** Task 1 Step 4 named `sanitiseFacts`/`sanitiseItem`, the plan had
+pre-rejected "the parse covers it" in writing, and neither function existed. The
+gate's PQ-6 was recorded as *addressed* on the strength of plan prose alone. **A
+finding is disposed by the CODE, not by the paragraph promising it** — and a
+ticked checkbox is the weakest possible evidence, because ticking it is the
+cheapest thing in the loop.
+
+**Deltas.**
+
+- **BR-1 — `agreement` keyed the RAW band**, so `["C1","c1","C1"]` scored 0.67
+  and a perfectly stable model could fail the 0.8 floor whose prescribed remedy
+  is the expensive hand-labelled sample. Keyed on the parsed value; two
+  regression rows added. The dead tie-break `sort` went with it.
+- **BR-2 + BR-4 share one fix, which is the class.** `sanitiseFacts`/
+  `sanitiseItem` now live in `store` and are called by BOTH implementations at
+  the write, so canonicalisation and neutralisation are the INTERFACE's
+  guarantee rather than YAML's. That also closes the divergence BR-2 found —
+  `Mem` returned an off-scale band as harvested where `YAML` refused it, the fake
+  being the permissive one, which is the direction that hides bugs. Three rows
+  moved into `storetest/suite.go`, where the plan said to put them.
+- **BR-3 — the band prompt hardcoded English** while `facts/<lang>/` exists
+  precisely because Spanish decks are live. The language is threaded and asserted;
+  the system prompt names no language.
+- **Minors** — the unreachable `-agreement` default is wired, `-agreement` is
+  bounded above, `-limit` with `-agreement` and `--harvest` with `--play`/
+  `--reflect` now refuse instead of silently dropping a mode, the loop-invariant
+  dictionary lookup is hoisted, `contains` is `strings.Contains`, and the
+  **computed longest-first ordering is pinned** — the review verified an inverted
+  comparator left the whole package green, and it now reddens.

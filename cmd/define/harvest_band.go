@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -25,11 +24,22 @@ type bandClaim struct {
 	Domain string `json:"domain"`
 }
 
-const bandSystem = "You place English vocabulary on the CEFR scale. " +
+// bandSystem names no language, because the facts this task produces are stored
+// PER-LANGUAGE and a Spanish working directory is a shipped path — the deck,
+// the language setting and the learner model are all scoped to it (#23). An
+// English-asserting prompt writing a Spanish word's facts would be wrong FOREVER — the cache is never re-examined, and
+// the plan's own word for undoing a bad forever-cache is "a migration". The
+// language travels in the prompt body instead, where the word is.
+//
+// CEFR is a Council of Europe framework defined for many languages, so the scale
+// itself needs no per-language wording.
+const bandSystem = "You place vocabulary on the CEFR scale. " +
 	"Answer about the WORD as a learner would meet it, not about the rarest sense a dictionary records."
 
 // renderBandPrompt builds the request for one word. Pure — a word in, an
 // llm.Request out — so the golden is what the transport actually sends.
+//
+// lang is threaded rather than assumed: see bandSystem.
 //
 // knownDomain is the dictionary's answer when it had one. NOAD prints a subject
 // field on specialist senses, readGloss already extracts it, and re-asking a
@@ -37,10 +47,14 @@ const bandSystem = "You place English vocabulary on the CEFR scale. " +
 // make: it costs money, it is slower, and it is LESS reliable than the
 // editorial label it would be second-guessing. When it is set, the prompt says
 // so and asks only for the band.
-func renderBandPrompt(word, gloss string, knownDomain store.Domain) llm.Request {
+func renderBandPrompt(lang store.Lang, word, gloss string, knownDomain store.Domain) llm.Request {
 	var b strings.Builder
+	if lang == "" {
+		lang = store.DefaultLang
+	}
 
-	fmt.Fprintf(&b, "## The word\n\n%s\n\n", word)
+	fmt.Fprintf(&b, "## The word\n\n%s\n\nIt is a word of the language with IETF code `%s`, "+
+		"and the band must be that language's CEFR scale.\n\n", word, lang)
 	if strings.TrimSpace(gloss) != "" {
 		fmt.Fprintf(&b, "Its dictionary sense:\n\n%s\n\n", strings.TrimSpace(gloss))
 	}
@@ -107,22 +121,20 @@ func agreement(bands []store.Band) float64 {
 	}
 	counts := map[store.Band]int{}
 	for _, b := range bands {
-		if _, ok := store.ParseBand(string(b)); ok {
-			counts[b]++
+		// Keyed on the PARSED band, not the raw answer. ParseBand documents case
+		// and surrounding space as transcription noise rather than a different
+		// answer, so counting the raw string would score a perfectly stable model
+		// that varied its casing at 0.67 — below the conformance floor whose
+		// prescribed remedy is the expensive hand-labelled sample this issue
+		// defers. Two spellings of one fact, one canonical and one not (ARCH-DRY).
+		if parsed, ok := store.ParseBand(string(b)); ok {
+			counts[parsed]++
 		}
 	}
 	best := 0
-	// Ties broken by the higher band only so the result is deterministic;
-	// nothing depends on which of two equally-common bands wins, and a word
-	// splitting evenly is unstable either way.
-	keys := make([]store.Band, 0, len(counts))
-	for b := range counts {
-		keys = append(keys, b)
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].Rank() > keys[j].Rank() })
-	for _, b := range keys {
-		if counts[b] > best {
-			best = counts[b]
+	for _, n := range counts {
+		if n > best {
+			best = n
 		}
 	}
 	return float64(best) / float64(len(bands))

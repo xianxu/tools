@@ -292,7 +292,7 @@ because each names work that exists, not to close a gap.
       refused, a STABILITY measure over repeated assignment, which is what the
       cache actually depends on. A row that says "checked" without naming the
       reference is the one shape this row may not take.
-      **Mechanism (2026-09-04):** `--harvest --agreement[=N]`, a mode of its own
+      **Mechanism (2026-09-04):** `--harvest -agreement[=N]` (bare = 5), a mode of its own
       that re-asks a sample of K=20 already-banded words N=5 times and writes
       nothing; floor `agreement >= 0.8`, asserted against the real service in the
       conformance row. It is separate from the harvesting path because measuring
@@ -336,6 +336,26 @@ above). Each `Mx` row closes with its own `sdlc milestone-close`.
       checkpoint, and the one row no test replaces.
 
 ## Log
+
+### 2026-09-04 — M1 boundary review, and one finding worth keeping
+
+FIX-THEN-SHIP: 4 Important, 6 Minor, all verified against the tree and all
+addressed. Deltas in the plan's `## Revisions`; sidecar at
+`workshop/plans/000010-vocab-harvest-m1-review.md`.
+
+**BR-4 is the lesson.** A plan step naming `sanitiseFacts`/`sanitiseItem` was
+TICKED and neither function existed — and the plan-quality gate's PQ-6 had been
+disposed as *addressed* on the strength of that prose. A finding is disposed by
+code, not by the paragraph promising it, and a ticked checkbox is the weakest
+evidence in the loop because ticking it costs nothing. The fix landed the class:
+one pass over the struct, in `store`, called by both implementations — which also
+closed BR-2, where `Mem` accepted an off-scale band that `YAML` refused.
+
+**BR-1 is the one that would have hurt quietly.** `agreement` keyed the raw band,
+so casing scored as disagreement and a perfectly stable model could fail the
+conformance floor — whose message prescribes building the hand-labelled sample
+this issue deliberately defers. The measure M1 claims as *measured* was the thing
+measured wrongly.
 
 ### 2026-09-04 — M1 implemented
 

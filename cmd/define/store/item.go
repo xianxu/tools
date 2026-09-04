@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // WordFacts is what is cached about a word FOREVER: its band and its domain.
 //
@@ -64,3 +67,61 @@ type Item struct {
 	Distractors []string  `yaml:"distractors,omitempty"`
 	At          time.Time `yaml:"at"`
 }
+
+// sanitiseFacts and sanitiseItem neutralise and canonicalise on the WRITE, once,
+// for BOTH implementations.
+//
+// Here rather than in each store because the guarantee is the INTERFACE's, not
+// YAML's. Store.WordFacts promises a damaged record reads as unharvested, and
+// before this existed that promise was a YAML implementation detail: Mem handed
+// back whatever it was given, so `SetWordFacts(w, {Band: "B2+"})` read back
+// harvested from the fake and unharvested from the real store. A fake that can
+// hold a state the real one cannot is the exact gap storetest exists to close
+// (#16 M2, BR-45), and this time the divergence was in the direction that
+// matters: the fake was the permissive one.
+//
+// ONE PASS OVER THE STRUCT, which is the placement sanitiseModel argues for at
+// cmd/define/usermodel.go:213 and the reason it exists — two earlier rounds
+// neutralised the fields a finding happened to list and missed the ones it did
+// not. Adding a field to Item now makes this the one place to add a line, and
+// every RENDER site is automatically safe.
+//
+// The parses are a narrower guarantee than neutralisation and NOT a substitute:
+// Band and Domain are closed sets, while Stem, Answer and Distractors are free
+// model text that later reaches a terminal.
+func sanitiseFacts(f WordFacts) WordFacts {
+	// Canonicalised, not merely checked. ParseBand forgives case and space as
+	// transcription noise, so storing the raw answer would keep "c1" and "C1"
+	// as two spellings of one fact on disk — the second source everything else
+	// here is written to avoid.
+	if b, ok := ParseBand(string(f.Band)); ok {
+		f.Band = b
+	} else {
+		// Refused at the boundary: an off-scale band must not reach Rank, which
+		// answers -1 and sorts below A1. Zeroing At is what makes the record read
+		// as unharvested, so the word is re-asked rather than silently mispitched.
+		return WordFacts{}
+	}
+	f.Domain, _ = ParseDomain(string(f.Domain))
+	return f
+}
+
+func sanitiseItem(i Item) Item {
+	i.Word = Key(i.Word)
+	i.Stem = oneLine(i.Stem)
+	i.Answer = oneLine(i.Answer)
+	for n := range i.Distractors {
+		i.Distractors[n] = oneLine(i.Distractors[n])
+	}
+	return i
+}
+
+// oneLine collapses model text to a single line.
+//
+// Item.Stem, Answer and Distractors are the first free-text model fields this
+// store persists, and #40's board renders them one per line into a grid. A
+// distractor carrying a newline forges a row there the same way a band carrying
+// one forged a "define: ..." diagnostic in #17 — the class is untrusted text
+// reaching ANY structured output, and the store is the one place every consumer
+// of these fields shares.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

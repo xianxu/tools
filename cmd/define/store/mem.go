@@ -160,7 +160,7 @@ func (m *Mem) SetWordFacts(key string, f WordFacts) error {
 	if m.facts == nil {
 		m.facts = map[string]WordFacts{}
 	}
-	m.facts[k] = f
+	m.facts[k] = sanitiseFacts(f)
 	return nil
 }
 
@@ -187,7 +187,7 @@ func (m *Mem) SetItems(key string, items []Item) error {
 	// Copied, not aliased, as SetNewsItems is: the caller keeps its slice and a
 	// later append on their side must not mutate what this store believes it
 	// holds.
-	m.items[k] = copyItems(items)
+	m.items[k] = sanitiseItems(items)
 	return nil
 }
 
@@ -199,6 +199,16 @@ func copyItems(in []Item) []Item {
 	copy(out, in)
 	for i := range out {
 		out[i].Distractors = append([]string(nil), in[i].Distractors...)
+	}
+	return out
+}
+
+// sanitiseItems is the write-side pass, applied by both stores so the fake
+// cannot hold text the real one would have neutralised.
+func sanitiseItems(in []Item) []Item {
+	out := copyItems(in)
+	for i := range out {
+		out[i] = sanitiseItem(out[i])
 	}
 	return out
 }

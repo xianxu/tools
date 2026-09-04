@@ -29,9 +29,18 @@ const harvestLimit = 200
 //
 // K words, N times each, is 100 calls — deliberately its own invocation rather
 // than something --harvest does on the way past. See runHarvestAgreement.
+//
+// agreementRounds is the DEFAULT a bare -agreement takes, which is what the
+// issue's Done-when and the plan both describe. It was declared and never read
+// in the first cut, so `-agreement` without a number was a flag error and the
+// documented shape did not exist.
+//
+// agreementMaxRounds bounds the other end: K x N calls with no ceiling is the
+// same unbounded-batch shape --limit exists to prevent, one flag over.
 const (
-	agreementSample = 20
-	agreementRounds = 5
+	agreementSample    = 20
+	agreementRounds    = 5
+	agreementMaxRounds = 25
 )
 
 // harvestOptions is what the flags decide.
@@ -99,7 +108,7 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 		}
 
 		gloss, known := wordSense(d, w.Text)
-		claim, err := llm.Run(ctx, client, bandTask(w.Text, gloss, known))
+		claim, err := llm.Run(ctx, client, bandTask(d.lang, w.Text, gloss, known))
 		if err != nil {
 			// STOP, and leave the store as it is. Everything banded before this
 			// point is already durable — each word is written atomically as it is
@@ -181,10 +190,12 @@ func runHarvestAgreement(ctx context.Context, d deps, client llm.Client, deck []
 
 	total := 0.0
 	for _, w := range sample {
+		// Hoisted: the dictionary's answer does not change between rounds, and
+		// asking it N times was N ParseEntry walks per word for one result.
+		gloss, known := wordSense(d, w.Text)
 		bands := make([]store.Band, 0, rounds)
 		for i := 0; i < rounds; i++ {
-			gloss, known := wordSense(d, w.Text)
-			claim, err := llm.Run(ctx, client, bandTask(w.Text, gloss, known))
+			claim, err := llm.Run(ctx, client, bandTask(d.lang, w.Text, gloss, known))
 			if err != nil {
 				fmt.Fprintf(errOut, "define: measurement stopped: %v\n", err)
 				return 1
@@ -208,8 +219,8 @@ func runHarvestAgreement(ctx context.Context, d deps, client llm.Client, deck []
 // bandTask is the one place a word becomes a request, so --harvest and the
 // measurement mode cannot drift into asking different questions — which would
 // make the measurement a report about a prompt nobody runs.
-func bandTask(word, gloss string, known store.Domain) llm.Task[bandClaim] {
-	req := renderBandPrompt(word, gloss, known)
+func bandTask(lang store.Lang, word, gloss string, known store.Domain) llm.Task[bandClaim] {
+	req := renderBandPrompt(lang, word, gloss, known)
 	return llm.Task[bandClaim]{Name: req.Task, System: req.System, Prompt: req.Prompt}
 }
 

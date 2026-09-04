@@ -430,7 +430,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	playFlag := fs.Bool("play", false, "review the words due today")
 	harvest := fs.Bool("harvest", false, "band the deck and author practice items, ahead of time")
 	harvestLimitFlag := fs.Int("limit", 0, "words --harvest may ask the model about in one run (0 = the default cap)")
-	agreementFlag := fs.Int("agreement", 0, "measure banding STABILITY over N assignments and write nothing")
+	agreementFlag := fs.Int("agreement", 0, "measure banding STABILITY over N assignments and write nothing (0 with the flag set = the default rounds)")
 	count := fs.Int("count", 20, "how many words a review session offers")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, "usage: define [flags] [word]\n\n"+
@@ -592,6 +592,23 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	case *agreementFlag < 0 || *harvestLimitFlag < 0:
 		fmt.Fprintln(stderr, "define: -limit and -agreement cannot be negative")
 		return 2
+	case *agreementFlag > agreementMaxRounds:
+		// Bounded like -limit, and for the same reason: K words x N rounds with
+		// no ceiling is the unbounded batch --limit exists to prevent.
+		fmt.Fprintf(stderr, "define: -agreement is capped at %d rounds\n", agreementMaxRounds)
+		return 2
+	// SAID, not silently ignored. -limit bounds how many words are ASKED ABOUT,
+	// and the measurement mode has its own fixed sample — so the two do not
+	// compose, and honouring one of two flags is the shape this file's -raw
+	// comment warns about.
+	case isSet(fs, "agreement") && isSet(fs, "limit"):
+		fmt.Fprintln(stderr, "define: -limit does not apply to -agreement; it measures a fixed sample")
+		return 2
+	// Two modes on one line is two commands on one line, exactly as -forget with
+	// a word is. Previously --play silently won.
+	case *harvest && (*playFlag || *reflect):
+		fmt.Fprintln(stderr, "define: -harvest is a mode of its own; do not combine it with -play or -reflect")
+		return 2
 	// cmdAsk is exempted for the same reason cmdCommand is: a question is
 	// multi-word by nature, so counting words would reject the thing the flag
 	// exists to accept (BR-20's shape).
@@ -665,9 +682,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// needs the deck, the dictionary and the clock, so it belongs after
 	// withStore built them (#17 D5's rule, unchanged).
 	if *harvest {
+		rounds := *agreementFlag
+		if isSet(fs, "agreement") && rounds == 0 {
+			rounds = agreementRounds // a bare -agreement means the documented default
+		}
 		return runHarvest(ctx, d, opt, harvestOptions{
 			limit:     *harvestLimitFlag,
-			agreement: *agreementFlag,
+			agreement: rounds,
 		}, stdout, stderr)
 	}
 

@@ -2,11 +2,13 @@ task:   word-band
 model:  
 effort: 
 --- system ---
-You place English vocabulary on the CEFR scale. Answer about the WORD as a learner would meet it, not about the rarest sense a dictionary records.
+You place vocabulary on the CEFR scale. Answer about the WORD as a learner would meet it, not about the rarest sense a dictionary records.
 --- prompt ---
 ## The word
 
 certiorari
+
+It is a word of the language with IETF code `en`, and the band must be that language's CEFR scale.
 
 Its dictionary sense:
 

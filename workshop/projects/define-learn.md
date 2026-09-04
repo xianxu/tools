@@ -444,11 +444,17 @@ concrete rather than a triumph — a consistently wrong scale scores 1.00 too, a
 `quokka` at C2 is reporting rarity rather than any level a learner is at. If M2's
 distractors read as mispitched, this is the first thing to suspect.
 
-**Calibration: est 3.94 / actual 2.16 = 1.82, an OVER-estimate** — the same
-direction as `#39` (1.85) and against `#40`/`#42`/`#44`. The four boundary rows
-are the likely cause: M1's review is booked at 0.62 of the 3.94 and the milestone
-had no remediation round at all. Worth watching at M2, where the judged half
-lands.
+**Calibration: est 3.94 / actual 2.66 = 1.48, an OVER-estimate** — the same
+direction as `#39` (1.85) and against `#40`/`#42`/`#44`, though by less than the
+first draft of this paragraph claimed. That draft said "the milestone had no
+remediation round at all" and was written BEFORE the boundary gate ran; the
+review then returned FIX-THEN-SHIP with four Important findings, and remediating
+them is most of the gap between 2.16h and the closing figure. Recorded rather
+than quietly corrected, because predeclaring an outcome and then measuring it is
+exactly how a calibration ledger stops being evidence.
+
+The boundary rows were booked at 0.62 of the 3.94 and that was roughly right; the
+task rows were the over-estimate.
 
 ### tools#10 — item authoring + harvest
 
