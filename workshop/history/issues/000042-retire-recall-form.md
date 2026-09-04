@@ -1,10 +1,10 @@
 ---
 id: 000042
-status: codecomplete
+status: done
 deps: [tools#40, tools#44]
 github_issue:
 created: 2026-09-01
-updated: 2026-09-03
+updated: 2026-09-04
 estimate_hours: 3.89
 started: 2026-09-02T12:31:27-07:00
 actual_hours: 10.85
