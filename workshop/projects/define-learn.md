@@ -408,7 +408,7 @@ bug rather than an unavailable service.
 ### tools#10 M1 — a band and a domain per word, cached forever
 
 **est:** 3.94 (M1's share of the issue's 7.94)
-**actual:** 2.16h
+**actual:** 2.58h
 **closed:** 2026-09-04
 
 `define --harvest` bands the deck ahead of time: `facts/<lang>/` holds one record
@@ -444,7 +444,7 @@ concrete rather than a triumph — a consistently wrong scale scores 1.00 too, a
 `quokka` at C2 is reporting rarity rather than any level a learner is at. If M2's
 distractors read as mispitched, this is the first thing to suspect.
 
-**Calibration: est 3.94 / actual 2.66 = 1.48, an OVER-estimate** — the same
+**Calibration: est 3.94 / actual 2.58 = 1.53, an OVER-estimate** — the same
 direction as `#39` (1.85) and against `#40`/`#42`/`#44`, though by less than the
 first draft of this paragraph claimed. That draft said "the milestone had no
 remediation round at all" and was written BEFORE the boundary gate ran; the
