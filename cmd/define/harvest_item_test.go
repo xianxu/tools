@@ -40,7 +40,7 @@ level: C1
 ## Corrections
 
 | domain | share | read off | what to do about it |
-| Astrology | 99% | none | this is a person writing their own table |
+| Chemistry | 99% | none | this is a person writing their own table |
 `
 	got := parseLearnerDomains(md)
 
@@ -62,9 +62,13 @@ level: C1
 	// The human-owned section must not reach selection. #17 promises never to
 	// rewrite ## Corrections, so reading a table there would let the one
 	// un-generated region change what the generated region means.
+	// CHEMISTRY, not a made-up label: ParseDomain refuses `Astrology` anyway, so
+	// the original fixture could not tell the section guard from the parse. This
+	// one is a real NOAD domain, so only the guard keeps it out.
 	for _, d := range got {
-		if strings.EqualFold(string(d), "Astrology") {
-			t.Error("a table in ## Corrections reached the domain fold")
+		if strings.EqualFold(string(d), "Chemistry") {
+			t.Error("a table in ## Corrections reached the domain fold; #17 promises never to " +
+				"rewrite that section, so reading it lets the human-owned half change the generated half")
 		}
 	}
 }
@@ -423,5 +427,57 @@ func TestStemUsesTheWord(t *testing.T) {
 				t.Errorf("stemUsesTheWord(%q, %q) = %v, want %v", tc.stem, tc.word, got, tc.want)
 			}
 		})
+	}
+}
+
+// The learner-domain tier: #17's parsed domains are what selection does
+// arithmetic on, which is what makes them a delivered consumer rather than a
+// value nothing reads.
+func TestPickDistractorsPrefersALearnerDomainOverGeneral(t *testing.T) {
+	law, med := mustDomain(t, "Law"), mustDomain(t, "Medicine")
+	// The ANSWER is a Medicine word; the learner reads Law. There is no other
+	// Medicine word, so the tier under test is what decides between the Law word
+	// and the general one.
+	target := store.WordFacts{Band: store.C1, Domain: med, At: harvestClock}
+	pool := sortedBanded([]bandedWord{
+		banded("legal-word", store.C1, law),
+		banded("ordinary-word", store.C1, store.DomainGeneral),
+	})
+
+	got, tier := pickDistractors("x", target,
+		learnerFacts{Band: store.C1, Domains: []store.Domain{law}}, pool, 1, 3, nil)
+	if tier != tierLearnerDomain {
+		t.Errorf("tier = %v, want the learner-domain tier", tier)
+	}
+	if len(got) != 1 || got[0] != "legal-word" {
+		t.Errorf("got %v, want the word from a domain the learner reads — a specialist word "+
+			"beside general ones is identifiable by register alone", got)
+	}
+
+	// And with NO learner model the tier must not fire, or it would match
+	// everything and jump ahead of general vocabulary on every first run.
+	got, tier = pickDistractors("x", target, learnerFacts{Band: store.C1}, pool, 1, 3, nil)
+	if tier == tierLearnerDomain {
+		t.Errorf("the learner-domain tier fired with no learner model (got %v)", got)
+	}
+}
+
+// An empty domain list reads NO domain, not every domain.
+func TestLearnerReads(t *testing.T) {
+	law := mustDomain(t, "Law")
+	l := learnerFacts{Domains: []store.Domain{law}}
+	if !l.reads(law) {
+		t.Error("a domain the learner reads reported false")
+	}
+	if l.reads(mustDomain(t, "Medicine")) {
+		t.Error("a domain the learner does not read reported true")
+	}
+	// general is the NEXT tier's job; matching it here would make the two tiers
+	// the same tier.
+	if l.reads(store.DomainGeneral) || l.reads("") {
+		t.Error("general or empty matched the learner-domain tier")
+	}
+	if (learnerFacts{}).reads(law) {
+		t.Error("a learner with no model reads every domain")
 	}
 }

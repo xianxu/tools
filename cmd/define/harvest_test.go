@@ -96,6 +96,19 @@ func scriptAll(f *llmtest.Fake, n int) {
 // construction, so the band is always present there and never in the other.
 func authorKey(word string) string { return "\n\n" + word + " (CEFR" }
 
+// preBand marks every deck word harvested, so a test's budget reaches the
+// authoring pass instead of being spent on banding.
+func preBand(t *testing.T, d deps) {
+	t.Helper()
+	for _, w := range allDeckWords() {
+		if err := d.deck.SetWordFacts(w, store.WordFacts{
+			Band: store.C1, Domain: store.DomainGeneral, At: harvestClock,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // allDeckWords is deckWord's full range, so scriptAll covers whatever a rig
 // asked for without each test restating its deck.
 func allDeckWords() []string {

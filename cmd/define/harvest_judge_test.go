@@ -400,3 +400,27 @@ func TestEntailPromptDoesNotDemandUniqueRecoverability(t *testing.T) {
 		t.Error("the judge still asks for recoverability from bare context, which forces a gloss")
 	}
 }
+
+// The budget charges the VETO's inner loop too, not only the outer passes.
+//
+// The veto runs up to three calls per item, so a budget that skipped it could be
+// exceeded threefold by a deck whose items all pass judging — which is the good
+// case, not an edge case.
+func TestTheBudgetChargesTheVeto(t *testing.T) {
+	d, fake, _ := harvestRig(t, 8)
+	preBand(t, d) // so the budget reaches authoring rather than being spent on banding
+	scriptAll(fake, 80)
+
+	const limit = 7
+	var out, errOut bytes.Buffer
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: limit}, &out, &errOut); code != 0 {
+		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+	}
+	if got := countTask(fake, markVeto); got == 0 {
+		t.Fatal("no veto calls at all, so this assertion cannot fail")
+	}
+	if got := len(fake.Requests()); got > limit {
+		t.Errorf("made %d model calls with -limit %d (veto alone: %d); the veto's inner loop "+
+			"must charge the budget like every other call site", got, limit, countTask(fake, markVeto))
+	}
+}

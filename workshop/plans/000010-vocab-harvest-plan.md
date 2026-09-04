@@ -449,6 +449,31 @@ can the material get* — and no green suite answers it.
       precedence, the axis filter — were the three with no pin, and `senseFacts`
       was split out of `wordSense` so the last two are table-testable with no
       dictionary fake (ARCH-PURE).
+
+      **M2's OWN sweep, run 2026-09-04 after that milestone's review.** The row
+      above is M1's, and ticking it for M2 was the finding: *a milestone's
+      Verification sweep is not satisfied by a previous milestone's table.* M2's
+      22 properties, each reverted, each reddening a named test:
+
+      entailment gates authoring · the gloss verdict rejects · the named
+      requirement rejects · the free stem check runs first · the veto drops a
+      candidate · an all-vetoed word is not written · `-limit` bounds model calls
+      · the budget charges the veto · batch diversity pressure · the answer is
+      never its own distractor · the band ceiling holds · the learner-domain tier
+      · learner-band fallback to the word · `topicSpread` parses before counting
+      · `blankOut` hides the answer · `wordAt` requires a word boundary · the
+      pre-blanked stem is refused · the judges take the language · `prune` caps
+      at the write · `prune`'s tie-break · `Form` is refused at the write · the
+      learner-domain fold skips `## Corrections`.
+
+      **Four came back GREEN on the first pass and are now pinned**, and two of
+      those four were pinned by tests that already existed and could not fail:
+      `prune`'s tie-break was asserted by pruning the SAME slice twice, so a
+      prune returning its input agreed with itself perfectly; and the
+      `## Corrections` guard used `Astrology`, which `ParseDomain` refuses
+      anyway, so the fixture could not tell the guard from the parse. **A pin
+      whose fixture cannot reach the branch is the same failure as no pin**, and
+      it is invisible to everything except reverting the code.
 - [ ] **The generated batch, read by the operator.** The one row no test replaces.
 
 ---

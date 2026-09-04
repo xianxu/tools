@@ -38,8 +38,20 @@ func TestPruneIsDeterministic(t *testing.T) {
 		items = append(items, store.Item{Word: "w", Stem: stem, At: at})
 	}
 
-	first := store.PruneForTest(items, 3)
-	second := store.PruneForTest(items, 3)
+	// SHUFFLED before each call, so the survivors can only agree if the sort
+	// decides them. The first version passed the same slice twice, so a prune
+	// that returned its input unchanged agreed with itself perfectly and the
+	// tie-break could be deleted with the suite green.
+	shuffled := func(seed int) []store.Item {
+		out := append([]store.Item(nil), items...)
+		for i := len(out) - 1; i > 0; i-- {
+			j := (seed*7 + i*13) % (i + 1)
+			out[i], out[j] = out[j], out[i]
+		}
+		return out
+	}
+	first := store.PruneForTest(shuffled(1), 3)
+	second := store.PruneForTest(shuffled(2), 3)
 	if len(first) != 3 {
 		t.Fatalf("pruned to %d, want the cap of 3", len(first))
 	}
