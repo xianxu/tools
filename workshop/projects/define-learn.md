@@ -248,7 +248,8 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       Small, and it finishes the language thread rather than leaving Spanish
       half-delivered.
 - [x] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
-- [ ] authored practice items — a CEFR band and a domain per word (cached forever), and stems the model writes offline; distractors SELECTED at the learner's band or one below [tools#10]
+- [x] authored practice items — a CEFR band and a domain per word, cached forever and assigned once; two closed vocabularies in the store, the dictionary answering the domain where it can [tools#10 M1]
+- [ ] authored practice items — stems the model writes offline; distractors SELECTED at the learner's band or one below and vetoed. **STOP HERE and read a real batch** [tools#10 M2]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [x] spaced repetition rework — one unbounded ladder, `floor(1.6**box)`, no ceiling [tools#39]
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]
@@ -403,6 +404,52 @@ answers **200 with an error body** on overload, which the taxonomy reads as our
 bug rather than an unavailable service.
 
 <a id="tools-10"></a>
+<a id="tools-10-m1"></a>
+### tools#10 M1 — a band and a domain per word, cached forever
+
+**est:** 3.94 (M1's share of the issue's 7.94)
+**actual:** 2.16h
+**closed:** 2026-09-04
+
+`define --harvest` bands the deck ahead of time: `facts/<lang>/` holds one record
+per word — a CEFR band and a subject domain — assigned once and re-read forever,
+with `items/<lang>/` waiting for M2. `--limit` bounds a run, an outage leaves
+what was already bought intact, and a sitting never touches any of it.
+
+**The plan-quality gate paid for itself here, and the Critical is the thing worth
+preserving.** The plan justified a new `store.Band` by saying `#17` "already
+assigns the learner one". It does not — `#17`'s band was a bare `string` reaching
+disk as prose, readable only as raw markdown that gets pasted into a prompt. That
+was harmless for `#17`'s whole life because a model reads "B2+" as well as "B2",
+and it stops being harmless the moment the band is arithmetic. A new type beside
+it would have been the second spelling the rationale claimed to avoid, and
+`pickDistractors`' other input had no source at all. So `--reflect` now validates
+through `ParseBand` and the learner model carries a `level:` frontmatter key —
+the single source is enforced rather than asserted (ARCH-PURPOSE). **The general
+lesson: a false belief about existing code does its worst damage when it is cited
+as a design rationale**, because it then shapes what gets built rather than just
+what gets said.
+
+**A better design fell out of a second finding.** `readGloss` already extracts
+NOAD's printed subject field, so most words get a domain from the DICTIONARY with
+no model call — the model went from the source to the fallback. The closed set
+moved into `store`, `glosslabel.go` derives from it, and its longest-first
+ordering became computed rather than a hand-maintained invariant.
+
+**What the measure said, and what it did not.** `--harvest -agreement N` is its
+own mode writing nothing, because measuring N assignments cannot coexist with
+"one call per unbanded word, zero on a second run". Against the live service:
+**mean agreement 1.00 over 8 words x 5 assignments**. That is the caveat made
+concrete rather than a triumph — a consistently wrong scale scores 1.00 too, and
+`quokka` at C2 is reporting rarity rather than any level a learner is at. If M2's
+distractors read as mispitched, this is the first thing to suspect.
+
+**Calibration: est 3.94 / actual 2.16 = 1.82, an OVER-estimate** — the same
+direction as `#39` (1.85) and against `#40`/`#42`/`#44`. The four boundary rows
+are the likely cause: M1's review is booked at 0.62 of the 3.94 and the milestone
+had no remediation round at all. Worth watching at M2, where the judged half
+lands.
+
 ### tools#10 — item authoring + harvest
 
 **status:** open — the material-quality checkpoint
@@ -736,6 +783,8 @@ guards could fail.
 [tools#27]: #tools-27
 [tools#18 M1]: #tools-27
 [tools#18 M2]: #tools-18-m2
+[tools#10 M1]: #tools-10-m1
+[tools#10 M2]: #tools-10
 [tools#19]: ../issues/000019-llm-overloaded.md
 [tools#23]: ../issues/000023-deck-language.md
 [tools#23 M1]: #tools-23-m1
