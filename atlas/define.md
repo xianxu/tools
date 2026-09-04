@@ -1490,8 +1490,22 @@ of the path that runs daily.
 The unit test owns the ARITHMETIC on synthetic bands; a fake seeded to vary would
 report how the fake was seeded. The FLOOR (0.8 over five assignments) is asserted
 against the live service, which is the only place the fraction says anything
-about a model. Measured 2026-09-04: **1.00 across eight words**, five assignments
-each.
+about a model.
+
+**The floor is measured on the prompt PRODUCTION SENDS**, and that is not a
+detail. The first version of the row passed a bare word — no gloss, no known
+domain — so it floored a shape `--harvest` essentially never sends, since every
+English deck word in NOAD has a gloss. It now derives `gloss, known` through
+`senseFacts` exactly as `runHarvest` does. Measured 2026-09-04 on that shape:
+**1.00 across eight words**, five assignments each, with the known-domain branch
+exercised by three of them.
+
+**One thing the re-measure exposed, worth carrying into M2:** the
+dictionary-first domain is only as good as the FIRST labelled sense. `run` came
+back `Cricket` and `set` came back `Printing` — correct readings of NOAD's
+document order, and close to arbitrary as a description of what those words
+mostly mean. For a highly polysemous word the label is a coin toss among its
+specialist senses, and `pickDistractors` will select on it.
 
 **It is STABILITY, not correctness, and the distinction is load-bearing.** A
 model that is confidently and consistently wrong scores 1.00 here, and every
@@ -1505,7 +1519,17 @@ more about rarity than about any level a learner is at.
 
 ## Entry modes
 
-`run` dispatches modes first (`-forget`), then on argument count. The function
+`run` validates the MODE SET first, then dispatches, then judges argument count.
+
+**Modes are mutually exclusive, checked in ONE enumeration** (`modeCollision`
+over a `modes` slice `run` and its table test share). Not pairwise: `#10` added
+`-harvest` and the pairwise fix refused it beside `--play` and `--reflect` while
+`-forget` and `--llm-check` — which dispatch above that switch — still swallowed
+it in silence. A sixth mode is now covered by construction. This is a **breaking
+change to the CLI**: `define --llm-check --play` and `define -forget w --play`
+used to run the first mode reached and now exit `2`.
+
+Beyond the set check, `run` dispatches modes first (`-forget`), then on argument count. The function
 every path converges on is **`lookupAndRender`**, not `defineOnce` — the raw
 editor bypasses `defineOnce` entirely, which is why capture lives one level down.
 

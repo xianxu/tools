@@ -37,9 +37,12 @@ const agreementFloor = 0.8
 // A spread of registers and levels, because a floor measured only on words the
 // model finds easy is a floor measured on nothing. `run` and `set` are here
 // deliberately: common polysemous words are where banding should be least stable.
+// Every one is in the committed corpus, so the gloss the production path sends
+// is actually present — a word the fake dictionary lacks would silently fall
+// back to the bare shape this row exists to stop measuring.
 var bandingWords = []string{
-	"certiorari", "sycophantic", "ephemeral", "defenestrate",
-	"quokka", "run", "set", "obdurate",
+	"sycophantic", "ephemeral", "defenestrate", "quokka",
+	"run", "set", "record", "alewife",
 }
 
 func TestBandingIsStableAgainstTheLiveService(t *testing.T) {
@@ -48,13 +51,29 @@ func TestBandingIsStableAgainstTheLiveService(t *testing.T) {
 		conformance.SkipOrFail(t, "no model configured", err)
 	}
 	client := llm.New(cfg)
+	// THE PROMPT PRODUCTION SENDS, not a bare word.
+	//
+	// bandTask exists so --harvest and the measurement mode cannot ask different
+	// questions, and the first cut of this row broke that from the outside: it
+	// passed an empty gloss and no known domain, so it floored a shape --harvest
+	// essentially never sends — every English deck word in NOAD has a gloss. The
+	// milestone's one MEASURED claim came from the glossless prompt.
+	//
+	// testDict is in-package and unconstrained by the build tag, so the row can
+	// derive exactly what runHarvest derives.
+	dict := testDict(t)
 
 	const rounds = 5
 	total := 0.0
 	for _, w := range bandingWords {
+		var gloss string
+		var known store.Domain
+		if raw, err := dict.Lookup(w); err == nil {
+			gloss, known = senseFacts(w, ParseEntry(raw))
+		}
 		bands := make([]store.Band, 0, rounds)
 		for range rounds {
-			claim, err := llm.Run(t.Context(), client, bandTask(store.DefaultLang, w, "", store.Domain("")))
+			claim, err := llm.Run(t.Context(), client, bandTask(store.DefaultLang, w, gloss, known))
 			if err != nil {
 				conformance.SkipOrFail(t, "banding "+w, err)
 			}
@@ -65,7 +84,7 @@ func TestBandingIsStableAgainstTheLiveService(t *testing.T) {
 			bands = append(bands, store.Band(claim.Band))
 		}
 		a := agreement(bands)
-		t.Logf("%-14s agreement %.2f  %v", w, a, bands)
+		t.Logf("%-14s agreement %.2f  %v  (gloss %t, domain %q)", w, a, bands, gloss != "", known)
 		total += a
 	}
 
@@ -89,9 +108,15 @@ func TestBandClaimShapeAgainstTheLiveService(t *testing.T) {
 		conformance.SkipOrFail(t, "no model configured", err)
 	}
 
-	claim, err := llm.Run(t.Context(), llm.New(cfg), bandTask(store.DefaultLang, "certiorari", "", store.Domain("")))
+	dict := testDict(t)
+	raw, err := dict.Lookup("record")
 	if err != nil {
-		conformance.SkipOrFail(t, "banding certiorari", err)
+		t.Fatalf("record is not in the committed corpus: %v", err)
+	}
+	gloss, known := senseFacts("record", ParseEntry(raw))
+	claim, err := llm.Run(t.Context(), llm.New(cfg), bandTask(store.DefaultLang, "record", gloss, known))
+	if err != nil {
+		conformance.SkipOrFail(t, "banding record", err)
 	}
 	if _, ok := store.ParseBand(claim.Band); !ok {
 		t.Errorf("the live service answered band %q, which ParseBand refuses — "+

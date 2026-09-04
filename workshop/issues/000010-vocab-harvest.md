@@ -338,6 +338,7 @@ above). Each `Mx` row closes with its own `sdlc milestone-close`.
 ## Log
 
 ### 2026-09-04 — M1 boundary review, and one finding worth keeping
+- 2026-09-04: closed M1 — go test ./... green; go vet + gofmt clean; conformance build clean. Done-when 1/2/3/6 pinned (panic seam + no banding during a sitting; request COUNT unchanged on a second run; -agreement=N its own mode writing nothing, floor 0.8 asserted LIVE at mean agreement 1.00 over 8 words x 5 assignments; outage survivors asserted WHOLE). THREE boundary rounds: round 1 FIX-THEN-SHIP 4 Important + 6 Minor, all verified against the tree and fixed in 3c8e784; round 2 produced no verdict (gate/agent failure, no code change); round 3 confirmed all ten addressed — verifying four by REVERTING, not reading — and raised three 2nd-in-family Importants, fixed in 922f7e2 as CLASSES: modes validated as a set via modeCollision (the -forget/-llm-check pair the pairwise fix missed, confirmed against the built binary), the read side canonicalised like the write side with NewsItems recorded as out of the class, and the mutation sweep RUN rather than asserted. THE SWEEP: 13 properties enumerated, each reverted, each reddens a named test — table recorded in the plan Verification section. senseFacts split out of wordSense (ARCH-PURE) so two of the three previously-unpinned properties are table-testable with no dictionary fake. Atlas + README updated.; review verdict: FIX-THEN-SHIP
 
 FIX-THEN-SHIP: 4 Important, 6 Minor, all verified against the tree and all
 addressed. Deltas in the plan's `## Revisions`; sidecar at
@@ -369,10 +370,18 @@ way past.
 **Done-when 2 (assigned once, re-read after)** — pinned on the request COUNT, not
 on files existing. Mutation-tested: removing the cache check reddens it.
 
-**Done-when 3 (the banding is MEASURED)** — `--harvest -agreement N`, its own
+**Done-when 3 (the banding is MEASURED)** — `--harvest -agreement=N`, its own
 mode, writing nothing. Ran against the live service: **mean agreement 1.00 over
 8 words x 5 assignments**, floor 0.8. Reported with its caveat everywhere it
 appears.
+
+**Corrected at the boundary (round 4, I-1):** the first measurement was taken on
+a BARE WORD — no gloss, no known domain — while `--harvest` sends both. The
+number was right and it was a number about the wrong prompt. Re-measured on the
+production shape: still 1.00, now with the known-domain branch exercised. The
+lesson is narrower than "the test was wrong": `bandTask` exists precisely so the
+two modes cannot ask different questions, and the conformance row broke that
+from OUTSIDE the abstraction by handing it different arguments.
 
 **Done-when 6 (an outage leaves the store usable)** — pinned by failing the fake
 mid-batch and asserting what survived is WHOLE, not merely present.

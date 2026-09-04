@@ -436,13 +436,19 @@ no model call — the model went from the source to the fallback. The closed set
 moved into `store`, `glosslabel.go` derives from it, and its longest-first
 ordering became computed rather than a hand-maintained invariant.
 
-**What the measure said, and what it did not.** `--harvest -agreement N` is its
+**What the measure said, and what it did not.** `--harvest -agreement=N` is its
 own mode writing nothing, because measuring N assignments cannot coexist with
-"one call per unbanded word, zero on a second run". Against the live service:
-**mean agreement 1.00 over 8 words x 5 assignments**. That is the caveat made
-concrete rather than a triumph — a consistently wrong scale scores 1.00 too, and
-`quokka` at C2 is reporting rarity rather than any level a learner is at. If M2's
-distractors read as mispitched, this is the first thing to suspect.
+"one call per unbanded word, zero on a second run". Against the live service, on
+the prompt production actually sends: **mean agreement 1.00 over 8 words x 5
+assignments**.
+
+That is the caveat made concrete rather than a triumph. A consistently wrong
+scale scores 1.00 too, and the live bands say so: `quokka` at C2 reports rarity
+rather than any level a learner is at, and the dictionary-first domain returned
+`Cricket` for `run` and `Printing` for `set` — correct readings of NOAD's
+document order and close to arbitrary as descriptions of those words. Both land
+in `pickDistractors`, so if M2's material reads mispitched these are the first
+two things to suspect.
 
 **Calibration: est 3.94 / actual 4.03 = 0.98 — very nearly exact, and the route
 there is the useful part.** The first draft of this paragraph read "actual 2.16h,

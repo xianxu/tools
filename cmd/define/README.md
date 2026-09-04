@@ -394,6 +394,11 @@ scale is right.
 and exits `1`. If the model becomes unavailable mid-run, everything already
 banded is saved and only the harvesting stops.
 
+**One mode at a time.** `-harvest`, `--play`, `--reflect`, `-forget` and
+`--llm-check` are modes, and asking for two on one line is a usage error (exit
+`2`) rather than a guess at which you meant. Previously whichever dispatched
+first silently won.
+
 ## What it writes, where you run it
 
 **`define` reads and writes the current directory.** *Every* successful lookup —
@@ -415,7 +420,10 @@ events/2026-08-21.yaml     append-only, one file per day (named in UTC)
 facts/en/sycophantic.yaml  a word's CEFR band and domain, written by
                            --harvest and never re-asked; per language, because
                            `red` is a different word in English and Spanish
-items/en/sycophantic.yaml  practice items authored ahead of time, per language
+items/en/sycophantic.yaml  practice items authored ahead of time, per
+                           language. Nothing writes this yet — authoring is the
+                           next milestone; the directory is here because the
+                           facts above are what it will be authored from
 lang.txt                   which language this directory is in
 user-model.en.md           written by --reflect, read to pitch answers; one per
                            language, because it is read off that language's

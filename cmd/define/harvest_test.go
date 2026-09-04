@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -470,3 +471,97 @@ func TestRunRefusesTwoModes(t *testing.T) {
 		})
 	}
 }
+
+// I-3's class: a guard that only exists on the run() path is pinned THROUGH
+// run().
+//
+// Round 3 named the enumeration and one member of it was swept. The rest are
+// here, derived from the switch arms rather than from what anyone remembered:
+// every arm that refuses, plus the bare-flag default, plus the wiring hop.
+//
+// These are regression pins, not bug reports — each behaves correctly today. The
+// exposure is that runHarvest's own tests construct deps directly, so they begin
+// AFTER the hop that fills them, which is the class news_test.go names.
+func TestRunHarvestUsageErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		args       []string
+	}{
+		{"a word beside -harvest", "takes no word", []string{"-harvest", "sycophantic"}},
+		{"-limit without -harvest", "only mean anything with", []string{"-limit", "5", "sycophantic"}},
+		{"-agreement without -harvest", "only mean anything with", []string{"-agreement", "3", "sycophantic"}},
+		{"a negative -limit", "cannot be negative", []string{"-harvest", "-limit", "-1"}},
+		{"a negative -agreement", "cannot be negative", []string{"-harvest", "-agreement", "-1"}},
+		{"-agreement past its cap", "is capped at", []string{"-harvest", "-agreement", "9999"}},
+		{"-limit with -agreement", "does not apply to -agreement", []string{"-harvest", "-agreement", "3", "-limit", "5"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			code := run(t.Context(), tc.args, testDeps(t), strings.NewReader(""), &out, &errb)
+			if code != 2 {
+				t.Errorf("exit = %d, want 2 (stderr %q)", code, errb.String())
+			}
+			if !strings.Contains(errb.String(), tc.want) {
+				t.Errorf("stderr = %q, want it to mention %q", errb.String(), tc.want)
+			}
+		})
+	}
+}
+
+// The bare -agreement default, and the WIRING HOP.
+//
+// Both are things runHarvest's own tests structurally cannot see: they build
+// deps by hand, so they start after `d = d.withStore(...)` has filled d.deck,
+// d.dict and d.lang. This drives the whole program, so the hop is exercised —
+// the class news_test.go calls "a test that constructs the struct begins AFTER
+// the hop that fills its fields", three issues and counting.
+func TestRunHarvestThroughTheWiringHop(t *testing.T) {
+	// testDeps loads the committed dictionary corpus from a RELATIVE path, so it
+	// is built before the chdir — openStore is what must see the temp directory,
+	// not the fixture loader.
+	d := testDeps(t)
+	fake := llmtest.NewFake(t)
+	fake.Script("", llmtest.Reply{Text: bandReply})
+
+	dir := t.TempDir()
+	st := store.NewYAML(dir, store.DefaultLang, nil)
+	if err := st.Upsert(store.Word{
+		Text: "sycophantic", FirstSeen: harvestClock, LastSeen: harvestClock, Lookups: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	d.newStore = openStore // the real wiring, not a hand-filled struct
+	d.clock = store.FixedClock(harvestClock)
+	d.newLLM = llm.New
+	d.getenv = envFor(fake.URL)
+
+	var out, errb bytes.Buffer
+	if code := run(t.Context(), []string{"-harvest"}, d, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr %q", code, errb.String())
+	}
+	// The deck the hop opened is the deck that was banded.
+	f, err := st.WordFacts("sycophantic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Harvested() {
+		t.Error("run() reached runHarvest but nothing was banded; the store wiring did not arrive")
+	}
+
+	// And a bare -agreement takes the documented default rather than erroring.
+	var out2, errb2 bytes.Buffer
+	for range agreementRounds {
+		fake.Script("", llmtest.Reply{Text: bandReply})
+	}
+	if code := run(t.Context(), []string{"-harvest", "-agreement", "0"}, d,
+		strings.NewReader(""), &out2, &errb2); code != 0 {
+		t.Fatalf("-agreement=0 exit = %d, stderr %q", code, errb2.String())
+	}
+	if !strings.Contains(out2.String(), "x "+itoa(agreementRounds)+" assignment") {
+		t.Errorf("-agreement=0 did not take the default of %d rounds: %q", agreementRounds, out2.String())
+	}
+}
+
+func itoa(n int) string { return fmt.Sprintf("%d", n) }

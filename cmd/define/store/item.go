@@ -48,6 +48,21 @@ const (
 	FormSentence Form = "sentence"
 )
 
+// forms is the closed set, and ParseForm is the only way in.
+var forms = []Form{FormCloze, FormSentence}
+
+// ParseForm reads a form, refusing anything outside the set. An empty form is
+// not an error here — Item's zero value is a legitimate intermediate state — but
+// an unrecognised one is, and it degrades to empty rather than being stored.
+func ParseForm(s string) (Form, bool) {
+	for _, f := range forms {
+		if string(f) == s {
+			return f, true
+		}
+	}
+	return "", false
+}
+
 // Item is one finished practice item, authored offline and stored complete.
 //
 // COMPLETE is the point. A review sitting must stay instant, free and offline,
@@ -138,6 +153,13 @@ func sanitiseItems(in []Item) []Item {
 // one.
 func sanitiseItem(i Item) Item {
 	i.Word = Key(i.Word)
+	// Form refuses like Band and Domain do. It was the one persisted vocabulary
+	// in this store that did not, and #13 adds a third value — an unrecognised
+	// form reaching a renderer that switches on it is a question nothing knows
+	// how to draw. Empty rather than a guess, so the item is visibly unusable.
+	if _, ok := ParseForm(string(i.Form)); !ok {
+		i.Form = ""
+	}
 	i.Stem = oneLine(i.Stem)
 	i.Answer = oneLine(i.Answer)
 	for n := range i.Distractors {

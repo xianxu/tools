@@ -409,8 +409,8 @@ can the material get* — and no green suite answers it.
 
 ## Verification
 
-- [ ] `go test ./...` green; `go vet ./...` and `gofmt -l` clean.
-- [ ] `go test -tags conformance ./...` green — the band task's live row is new, and `#11`'s existing rows must still pass.
+- [x] `go test ./...` green; `go vet ./...` and `gofmt -l` clean. (At the M1 boundary.)
+- [x] `go test -tags conformance ./...` — the band task's live rows RAN against the real service at the M1 boundary (mean agreement 1.00 over 8 words x 5 assignments, on the production prompt shape), and `#11`'s existing rows still pass.
 - [x] Every property this milestone states as delivered, mutated — revert the
       code, watch a NAMED test redden (`workshop/lessons.md`, "A pin that cannot
       fail is not a pin").
@@ -435,6 +435,15 @@ can the material get* — and no green suite answers it.
       | longest-first ordering | RED |
       | facts are per-language | RED |
       | the band is re-parsed off disk | RED |
+
+      **Extended at round 4 (I-3)**, because the 13 above were drawn from the
+      atlas's claims rather than from the diff's BRANCHES. The `run()`-path
+      members — six usage-error arms, the bare-`-agreement` default, and the
+      `withStore`→`runHarvest` hop that fills `d.lang`/`d.dict` — are now pinned
+      by `TestRunHarvestUsageErrors` and `TestRunHarvestThroughTheWiringHop`.
+      The hop matters on its own: `runHarvest`'s other tests construct `deps` by
+      hand, so they begin AFTER the hop that fills it — the class `news_test.go`
+      names, three issues and counting.
 
       The three the review found green — language threading, dictionary
       precedence, the axis filter — were the three with no pin, and `senseFacts`
@@ -557,3 +566,52 @@ still unwritten":
 diff with no test, partly because it took `deps` and called the dictionary before
 doing purely-derivable extraction. `senseFacts` is the pure half, and two of the
 three green mutations became table-testable with no fake the moment it existed.
+
+### 2026-09-04 — M1 boundary review, round 4: the gate converged, and one measured claim was wrong
+
+**Reason.** Round 4 disposed all ten prior findings and reported no open
+blockers. It raised five more; three Important were demoted past the round cap
+and would have been picked up by NO later gate, so they were fixed under the
+FIX-THEN-SHIP protocol (#174) before the close commit rather than deferred.
+
+**I-1 is the one that mattered, and it invalidated a claim rather than a line of
+code.** The conformance row measured `bandTask(lang, word, "", "")` — a bare word
+— while `--harvest` sends the dictionary gloss and often a known domain. Every
+English deck word in NOAD has a gloss, so the floor was asserted on a shape
+production essentially never sends, and the "mean agreement 1.00 over 8 words"
+reported in the Log, the atlas and the project came from it.
+
+`bandTask` exists precisely so the two modes cannot ask different questions, and
+the conformance row broke that **from outside the abstraction**, by handing it
+different arguments. A seam only constrains callers that go through it. The row
+now derives `gloss, known` through `senseFacts` exactly as `runHarvest` does;
+re-measured, still 1.00, with the known-domain branch exercised by three words —
+and every place reporting the number now says which shape it was taken on.
+
+**What the re-measure exposed, which is worth more than the number:** the
+dictionary-first domain is only as good as the FIRST labelled sense. `run` came
+back `Cricket`, `set` came back `Printing`. Both are correct readings of NOAD's
+document order and close to arbitrary as descriptions of those words — and
+`pickDistractors` will select on them in M2.
+
+**I-2 — the mode rule was a breaking CLI change documented nowhere.**
+`define --llm-check --play` used to run the first mode reached and now exits 2.
+Recorded in the README and the atlas's `Entry modes` section.
+
+**I-3 — `property-without-a-pin`, 3rd in family.** Round 3 wrote down a
+seven-member enumeration and round 3's remediation swept one. The rest are pinned
+now, through `run()` rather than by calling `runHarvest` directly, which also
+covers the wiring hop.
+
+**Minors swept as classes, not sites:** `doc-predeclares-outcome` (the README's
+`items/` listing now says nothing writes it yet — the third member of that family
+after the project prose and the flag help), and `inert-mechanism` (`store.Bands()`
+had no production caller while the prompt hand-restated the scale; it now
+enumerates it, as the domain half already did). `Item.Form` gained `ParseForm`,
+so every persisted vocabulary in this store refuses at the boundary.
+
+**One process note the review raised, not a code finding.** The gate ledger
+records `protocol_error: no valid findings block` for rounds 2 and 3, so its
+machine-readable half never saw round 3's three Importants or their remediation.
+The narrative here and in the issue `## Log` is the accurate record; a reader
+trusting the ledger alone would conclude nothing was fixed.

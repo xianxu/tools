@@ -60,9 +60,18 @@ func renderBandPrompt(lang store.Lang, word, gloss string, knownDomain store.Dom
 	}
 
 	b.WriteString("## What to answer\n\n")
-	b.WriteString("**band** — the CEFR level at which a learner would be expected to KNOW this word: " +
-		"one of A1, A2, B1, B2, C1, C2, and nothing else. Not a range, not a `+`, not a word like " +
-		"\"intermediate\". Judge the word's ordinary current usage.\n\n")
+	// The scale is ENUMERATED from store.Bands(), not restated. The domain half
+	// below already derives from store.Domains() and is pinned; a hand-typed
+	// "A1, A2, B1, B2, C1, C2" was the last second spelling of a closed set in
+	// this file, and an accessor added to be the single source is wired to its
+	// consumer or it does not exist (ARCH-DRY).
+	scale := make([]string, 0, len(store.Bands()))
+	for _, x := range store.Bands() {
+		scale = append(scale, string(x))
+	}
+	fmt.Fprintf(&b, "**band** — the CEFR level at which a learner would be expected to KNOW this word: "+
+		"one of %s, and nothing else. Not a range, not a `+`, not a word like "+
+		"\"intermediate\". Judge the word's ordinary current usage.\n\n", strings.Join(scale, ", "))
 
 	if knownDomain != "" {
 		// Stated rather than omitted: the model reads better with the domain in

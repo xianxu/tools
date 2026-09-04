@@ -124,6 +124,122 @@ rounds:
       boundary: M1
       blocked: true
       protocol_error: no valid findings block
+    - "n": 4
+      timestamp: "2026-09-04T14:18:39-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: Keyed on ParseBand; verified by revert — TestAgreement goes red on three rows, and the dead sort is gone.
+          round: 4
+        - id: BR-2
+          disposition: addressed
+          note: sanitiseFacts at the write in both stores; verified by revert — two storetest rows redden against Mem.
+          round: 4
+        - id: BR-3
+          disposition: addressed
+          note: Language threaded at both call sites; verified by revert to store.DefaultLang — TestHarvestSendsTheDecksLanguage reddens.
+          round: 4
+        - id: BR-4
+          disposition: addressed
+          note: sanitiseFacts/sanitiseItem exist in store/item.go, called by Mem and YAML, held by storetest rather than by plan prose.
+          round: 4
+        - id: BR-5
+          disposition: addressed
+          note: The sort and its import are gone; agreementRounds is read at main.go:707 and `-harvest -agreement=0` clears the guards on the built binary.
+          round: 4
+        - id: BR-6
+          disposition: addressed
+          note: TestDomainLabelsAreLongestFirst pins the computed ordering; the plan's sweep records it RED under an inverted comparator.
+          round: 4
+        - id: BR-7
+          disposition: addressed
+          note: harvest_band_test.go uses strings.Contains throughout; no hand-rolled contains remains.
+          round: 4
+        - id: BR-8
+          disposition: addressed
+          note: wordSense is hoisted above the per-round loop at harvest.go:195.
+          round: 4
+        - id: BR-9
+          disposition: addressed
+          note: modeCollision plus five guards; all six behaviours confirmed against the built binary, and the collision arm reddens on revert. The remaining pin gap is raised separately as a family repeat.
+          round: 4
+        - id: BR-10
+          disposition: addressed
+          note: The project now records actual 4.03h and corrects the pre-declared "no remediation round" prose in place rather than overwriting it.
+          round: 4
+      findings:
+        - id: BR-11
+          severity: Important
+          title: the conformance floor and the reported 1.00 measure a prompt shape --harvest never sends
+          detail: |-
+            harvest_conformance_test.go:57 and :92 call bandTask(DefaultLang, w, "", "") — no gloss and
+            never the known-domain branch — while runHarvest and runHarvestAgreement both pass
+            wordSense's gloss and known domain (harvest.go:110-111, 195-198). bandTask exists so the
+            measurement cannot become "a report about a prompt nobody runs"; the conformance row is that
+            drift. bandingWords has the 8 entries the Log, atlas and project all report as "mean
+            agreement 1.00 over 8 words x 5 assignments", so the milestone's one measured claim was taken
+            at the bare shape. testDict is in-package and usable under the conformance tag, so deriving
+            gloss+known via senseFacts is cheap; otherwise record in the file why the bare shape is the
+            right thing to floor.
+          family: measurement-off-the-production-path
+          round: 4
+        - id: BR-12
+          severity: Important
+          title: mode exclusivity changes previously-accepted invocations and appears in no user-facing doc
+          detail: |-
+            main.go:582-593 now refuses any two of -llm-check/-forget/-play/-reflect/-harvest with exit 2.
+            At base there was no cross-mode guard, so `define -llm-check -play`, `define -forget w -play`
+            and `define -play -reflect` each ran the first mode reached. The change is correct and it is
+            a breaking CLI change: README says nothing, and atlas/define.md:1506 "Entry modes" still reads
+            "run dispatches modes first (-forget), then on argument count" with a table listing only
+            -forget. Two lines in that section and a sentence in README close it.
+          family: behaviour-change-undocumented
+          round: 4
+        - id: BR-13
+          severity: Important
+          title: six of the seven run()-path members round 3 enumerated are still unpinned
+          detail: |-
+            This is the 2nd finding in family property-without-a-pin. Do NOT fix the sites — the rule is
+            that a guard or a dependency existing only on the run() path is pinned through run(), and the
+            enumeration is mechanical. Round 3 wrote the list down: the six new switch arms plus the
+            agreementRounds default branch. Only the collision arm was pinned; grep over *_test.go for
+            "takes no word", "only mean anything with", "cannot be negative", "is capped at",
+            "does not apply to -agreement" and "agreementRounds" returns nothing. Measured prevalence 6 of
+            7; all six verified correct today against the built binary, so this is regression exposure.
+            The same rule reaches one member the list missed: TestHarvestSendsTheDecksLanguage and
+            TestTheDictionaryDomainBeatsTheModel set d.lang/d.dict by hand and call runHarvest directly,
+            beginning after the d.withStore hop that fills them — the wiring-hop class news_test.go:410
+            says has now cost three issues.
+          family: property-without-a-pin
+          round: 4
+        - id: BR-14
+          severity: Minor
+          title: README's directory listing promises items/<lang>/*.yaml, which M1 never writes
+          detail: |-
+            This is the 2nd finding in family doc-predeclares-outcome. Do NOT fix the line — round 3 fixed
+            the -harvest flag help for the identical reason and stated the rule ("shipped user-facing text
+            describes the shipped milestone; forward capability lives in the plan"). Sweep the enumeration
+            that rule implies: flag help, README prose, README file listing, atlas, project row. README.md
+            lists items/en/sycophantic.yaml unqualified although nothing calls SetItems in M1; the atlas
+            gets it right by tagging items/ as #10 M2. Measured prevalence in this family: 3.
+          family: doc-predeclares-outcome
+          round: 4
+        - id: BR-15
+          severity: Minor
+          title: store.Bands() has no production caller while the band prompt hand-restates the six levels
+          detail: |-
+            This is the 2nd finding in family inert-mechanism (BR-5's agreementRounds was the first). Do
+            NOT fix the site — the rule is that an accessor added to be the single source is wired to its
+            consumer or it does not exist. store.Bands() (vocab.go:36) is referenced only by vocab_test.go,
+            while harvest_band.go:64 types "one of A1, A2, B1, B2, C1, C2" into the prompt. The domain half
+            of the same prompt enumerates store.Domains() and is pinned by
+            TestBandPromptCarriesTheClosedDomainSet; the band half is a second spelling with no pin
+            (ARCH-DRY). Practical risk is low — CEFR is a fixed six-point scale.
+          family: inert-mechanism
+          round: 4
+      boundary: M1
+      blocked: false
 ---
 
 # Gate ledger — tools#10 (boundary-review)
@@ -197,15 +313,72 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 
 **Protocol error:** no valid findings block — this round contributed no findings.
 
+## Round 4 — 2026-09-04T14:18:39-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — addressed — Keyed on ParseBand; verified by revert — TestAgreement goes red on three rows, and the dead sort is gone.
+- BR-2 — addressed — sanitiseFacts at the write in both stores; verified by revert — two storetest rows redden against Mem.
+- BR-3 — addressed — Language threaded at both call sites; verified by revert to store.DefaultLang — TestHarvestSendsTheDecksLanguage reddens.
+- BR-4 — addressed — sanitiseFacts/sanitiseItem exist in store/item.go, called by Mem and YAML, held by storetest rather than by plan prose.
+- BR-5 — addressed — The sort and its import are gone; agreementRounds is read at main.go:707 and `-harvest -agreement=0` clears the guards on the built binary.
+- BR-6 — addressed — TestDomainLabelsAreLongestFirst pins the computed ordering; the plan's sweep records it RED under an inverted comparator.
+- BR-7 — addressed — harvest_band_test.go uses strings.Contains throughout; no hand-rolled contains remains.
+- BR-8 — addressed — wordSense is hoisted above the per-round loop at harvest.go:195.
+- BR-9 — addressed — modeCollision plus five guards; all six behaviours confirmed against the built binary, and the collision arm reddens on revert. The remaining pin gap is raised separately as a family repeat.
+- BR-10 — addressed — The project now records actual 4.03h and corrects the pre-declared "no remediation round" prose in place rather than overwriting it.
+
+### Raised
+
+- **BR-11** [Important] `measurement-off-the-production-path` the conformance floor and the reported 1.00 measure a prompt shape --harvest never sends
+  harvest_conformance_test.go:57 and :92 call bandTask(DefaultLang, w, "", "") — no gloss and
+  never the known-domain branch — while runHarvest and runHarvestAgreement both pass
+  wordSense's gloss and known domain (harvest.go:110-111, 195-198). bandTask exists so the
+  measurement cannot become "a report about a prompt nobody runs"; the conformance row is that
+  drift. bandingWords has the 8 entries the Log, atlas and project all report as "mean
+  agreement 1.00 over 8 words x 5 assignments", so the milestone's one measured claim was taken
+  at the bare shape. testDict is in-package and usable under the conformance tag, so deriving
+  gloss+known via senseFacts is cheap; otherwise record in the file why the bare shape is the
+  right thing to floor.
+- **BR-12** [Important] `behaviour-change-undocumented` mode exclusivity changes previously-accepted invocations and appears in no user-facing doc
+  main.go:582-593 now refuses any two of -llm-check/-forget/-play/-reflect/-harvest with exit 2.
+  At base there was no cross-mode guard, so `define -llm-check -play`, `define -forget w -play`
+  and `define -play -reflect` each ran the first mode reached. The change is correct and it is
+  a breaking CLI change: README says nothing, and atlas/define.md:1506 "Entry modes" still reads
+  "run dispatches modes first (-forget), then on argument count" with a table listing only
+  -forget. Two lines in that section and a sentence in README close it.
+- **BR-13** [Important] `property-without-a-pin` six of the seven run()-path members round 3 enumerated are still unpinned
+  This is the 2nd finding in family property-without-a-pin. Do NOT fix the sites — the rule is
+  that a guard or a dependency existing only on the run() path is pinned through run(), and the
+  enumeration is mechanical. Round 3 wrote the list down: the six new switch arms plus the
+  agreementRounds default branch. Only the collision arm was pinned; grep over *_test.go for
+  "takes no word", "only mean anything with", "cannot be negative", "is capped at",
+  "does not apply to -agreement" and "agreementRounds" returns nothing. Measured prevalence 6 of
+  7; all six verified correct today against the built binary, so this is regression exposure.
+  The same rule reaches one member the list missed: TestHarvestSendsTheDecksLanguage and
+  TestTheDictionaryDomainBeatsTheModel set d.lang/d.dict by hand and call runHarvest directly,
+  beginning after the d.withStore hop that fills them — the wiring-hop class news_test.go:410
+  says has now cost three issues.
+- **BR-14** [Minor] `doc-predeclares-outcome` README's directory listing promises items/<lang>/*.yaml, which M1 never writes
+  This is the 2nd finding in family doc-predeclares-outcome. Do NOT fix the line — round 3 fixed
+  the -harvest flag help for the identical reason and stated the rule ("shipped user-facing text
+  describes the shipped milestone; forward capability lives in the plan"). Sweep the enumeration
+  that rule implies: flag help, README prose, README file listing, atlas, project row. README.md
+  lists items/en/sycophantic.yaml unqualified although nothing calls SetItems in M1; the atlas
+  gets it right by tagging items/ as #10 M2. Measured prevalence in this family: 3.
+- **BR-15** [Minor] `inert-mechanism` store.Bands() has no production caller while the band prompt hand-restates the six levels
+  This is the 2nd finding in family inert-mechanism (BR-5's agreementRounds was the first). Do
+  NOT fix the site — the rule is that an accessor added to be the single source is wired to its
+  consumer or it does not exist. store.Bands() (vocab.go:36) is referenced only by vocab_test.go,
+  while harvest_band.go:64 types "one of A1, A2, B1, B2, C1, C2" into the prompt. The domain half
+  of the same prompt enumerates store.Domains() and is pinned by
+  TestBandPromptCarriesTheClosedDomainSet; the band half is a second spelling with no pin
+  (ARCH-DRY). Practical risk is low — CEFR is a fixed six-point scale.
+
 ## Open findings
 
-- **BR-1** [Important] `parse-result-not-canonicalised` agreement counts raw band strings, so "c1" and "C1" score as disagreement
-- **BR-2** [Important] `store-contract-unheld-by-suite` Mem and YAML disagree about a damaged WordFacts record, and storetest has no row
-- **BR-3** [Important] `language-scope-not-threaded` bandTask hardcodes "English vocabulary" while facts are stored per-language
-- **BR-4** [Important] `plan-element-ticked-unbuilt` sanitiseFacts/sanitiseItem do not exist although the plan step naming them is ticked
-- **BR-5** [Minor] `inert-mechanism` the sort in agreement cannot affect the result, and agreementRounds is unused
-- **BR-6** [Minor] `property-without-a-pin` the computed longest-first label ordering has no test
-- **BR-7** [Minor] `stdlib-reimplemented` hand-rolled contains in harvest_band_test.go duplicates strings.Contains
-- **BR-8** [Minor] `loop-invariant-work` runHarvestAgreement re-runs wordSense inside the per-round loop
-- **BR-9** [Minor] `flag-silently-ignored` -limit is ignored in -agreement mode, N is unbounded, and --play --harvest drops a mode
-- **BR-10** [Minor] `doc-predeclares-outcome` the project's M1 calibration prose was written before this gate ran
+- **BR-11** [Important] `measurement-off-the-production-path` the conformance floor and the reported 1.00 measure a prompt shape --harvest never sends
+- **BR-12** [Important] `behaviour-change-undocumented` mode exclusivity changes previously-accepted invocations and appears in no user-facing doc
+- **BR-13** [Important] `property-without-a-pin` six of the seven run()-path members round 3 enumerated are still unpinned
+- **BR-14** [Minor] `doc-predeclares-outcome` README's directory listing promises items/<lang>/*.yaml, which M1 never writes
+- **BR-15** [Minor] `inert-mechanism` store.Bands() has no production caller while the band prompt hand-restates the six levels
