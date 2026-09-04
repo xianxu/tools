@@ -96,7 +96,7 @@ func TestPickDistractorsHoldsTheRule(t *testing.T) {
 		banded("sycophantic", store.C1, law), // the answer itself
 	}
 
-	got, tier := pickDistractors("sycophantic", target, store.C1, sortedBanded(pool), 2, 7, nil)
+	got, tier := pickDistractors("sycophantic", target, learnerFacts{Band: store.C1}, sortedBanded(pool), 2, 7, nil)
 
 	if tier != tierSameDomain {
 		t.Errorf("tier = %v, want same-domain — the pool can supply it", tier)
@@ -129,7 +129,7 @@ func TestPickDistractorsNeverReachesAboveTheLearner(t *testing.T) {
 		banded("above-two", store.C1, law),
 		banded("above-three", store.C2, law),
 	}
-	got, tier := pickDistractors("x", target, store.B1, sortedBanded(pool), 3, 1, nil)
+	got, tier := pickDistractors("x", target, learnerFacts{Band: store.B1}, sortedBanded(pool), 3, 1, nil)
 	// Nothing at or below B1 exists, so selection must WIDEN and say so rather
 	// than reaching up.
 	if tier != tierAboveBand {
@@ -149,7 +149,7 @@ func TestPickDistractorsWidensThroughGeneralAndSaysSo(t *testing.T) {
 		banded("ordinary-one", store.C1, store.DomainGeneral),
 		banded("ordinary-two", store.B2, store.DomainGeneral),
 	}
-	got, tier := pickDistractors("x", target, store.C1, sortedBanded(pool), 3, 1, nil)
+	got, tier := pickDistractors("x", target, learnerFacts{Band: store.C1}, sortedBanded(pool), 3, 1, nil)
 	if tier != tierGeneral {
 		t.Errorf("tier = %v, want general — no same-domain word exists but level-matched general ones do", tier)
 	}
@@ -173,7 +173,7 @@ func TestPickDistractorsWithoutALearnerBandUsesTheWords(t *testing.T) {
 		banded("one-below", store.A2, law),
 		banded("far-above", store.C2, law),
 	}
-	got, tier := pickDistractors("x", target, "", sortedBanded(pool), 2, 3, nil)
+	got, tier := pickDistractors("x", target, learnerFacts{}, sortedBanded(pool), 2, 3, nil)
 	if tier != tierSameDomain {
 		t.Errorf("tier = %v, want same-domain", tier)
 	}
@@ -198,8 +198,8 @@ func TestPickDistractorsIsDeterministic(t *testing.T) {
 	}
 	pool = sortedBanded(pool)
 
-	first, _ := pickDistractors("x", target, store.C1, pool, 3, 42, nil)
-	second, _ := pickDistractors("x", target, store.C1, pool, 3, 42, nil)
+	first, _ := pickDistractors("x", target, learnerFacts{Band: store.C1}, pool, 3, 42, nil)
+	second, _ := pickDistractors("x", target, learnerFacts{Band: store.C1}, pool, 3, 42, nil)
 	if strings.Join(first, ",") != strings.Join(second, ",") {
 		t.Errorf("same seed gave %v then %v", first, second)
 	}
@@ -208,7 +208,7 @@ func TestPickDistractorsIsDeterministic(t *testing.T) {
 	// answers by elimination.
 	varied := false
 	for s := uint64(1); s < 40 && !varied; s++ {
-		other, _ := pickDistractors("x", target, store.C1, pool, 3, s, nil)
+		other, _ := pickDistractors("x", target, learnerFacts{Band: store.C1}, pool, 3, s, nil)
 		if strings.Join(other, ",") != strings.Join(first, ",") {
 			varied = true
 		}
@@ -315,30 +315,46 @@ func TestPickDistractorsSpreadsAcrossABatch(t *testing.T) {
 	pool = sortedBanded(pool)
 	target := store.WordFacts{Band: store.C1, Domain: law, At: harvestClock}
 
-	served := map[string]int{}
-	for _, answer := range []string{"a", "b", "c", "d", "e", "f"} {
-		got, _ := pickDistractors(answer, target, store.C1, pool, 3, seedFor("t", answer), served)
-		for _, w := range got {
-			served[store.Key(w)]++
+	// Worst-case reuse WITH and WITHOUT the pressure, on the same pool and the
+	// same seeds. Asserted as a COMPARISON rather than against a fixed threshold:
+	// the first version of this test checked `worst > 3` and passed with the
+	// pressure entirely disabled, which is a pin that cannot fail.
+	run := func(withPressure bool) (int, int) {
+		served := map[string]int{}
+		var m map[string]int
+		if withPressure {
+			m = served
 		}
+		for _, answer := range []string{"a", "b", "c", "d", "e", "f"} {
+			got, _ := pickDistractors(answer, target, learnerFacts{Band: store.C1}, pool, 3,
+				seedFor("t", answer), m)
+			for _, w := range got {
+				served[store.Key(w)]++
+			}
+		}
+		worst := 0
+		for _, n := range served {
+			if n > worst {
+				worst = n
+			}
+		}
+		return worst, len(served)
 	}
 
-	worst := 0
-	for _, n := range served {
-		if n > worst {
-			worst = n
-		}
+	offWorst, offDistinct := run(false)
+	onWorst, onDistinct := run(true)
+
+	if onWorst >= offWorst {
+		t.Errorf("worst-case reuse %d with pressure vs %d without — the pressure changes nothing",
+			onWorst, offWorst)
 	}
-	// Six items x three options = 18 slots over 10 words. Perfectly even is 1.8,
-	// so 3 leaves real slack for the eligibility constraints; without pressure the
-	// same word took 6 of 6.
-	if worst > 3 {
-		t.Errorf("one word served as a distractor %d times across 6 items (counts %v); "+
-			"the batch is leaning on whichever words happen to be eligible", worst, served)
+	if onDistinct <= offDistinct {
+		t.Errorf("%d distinct words with pressure vs %d without — the pressure spreads nothing",
+			onDistinct, offDistinct)
 	}
-	// And the pressure must not COST coverage: every item still got its options.
-	if len(served) < 6 {
-		t.Errorf("only %d distinct words were used across the batch: %v", len(served), served)
+	// And it must not COST coverage: every item still gets its options.
+	if onDistinct < 6 {
+		t.Errorf("only %d distinct words used across 6 items", onDistinct)
 	}
 }
 
@@ -353,7 +369,7 @@ func TestDiversityPressureNeverStarvesAnItem(t *testing.T) {
 	target := store.WordFacts{Band: store.C1, Domain: law, At: harvestClock}
 	// Both candidates already heavily used; the item must still be filled.
 	served := map[string]int{"only-one": 99, "only-two": 99}
-	got, _ := pickDistractors("x", target, store.C1, pool, 3, 1, served)
+	got, _ := pickDistractors("x", target, learnerFacts{Band: store.C1}, pool, 3, 1, served)
 	if len(got) != 2 {
 		t.Errorf("got %v, want both candidates — pressure orders, it must not exclude", got)
 	}
@@ -370,8 +386,8 @@ func TestDiversityPressureIsOptional(t *testing.T) {
 	pool = sortedBanded(pool)
 	target := store.WordFacts{Band: store.C1, Domain: law, At: harvestClock}
 
-	withNil, _ := pickDistractors("x", target, store.C1, pool, 3, 9, nil)
-	withEmpty, _ := pickDistractors("x", target, store.C1, pool, 3, 9, map[string]int{})
+	withNil, _ := pickDistractors("x", target, learnerFacts{Band: store.C1}, pool, 3, 9, nil)
+	withEmpty, _ := pickDistractors("x", target, learnerFacts{Band: store.C1}, pool, 3, 9, map[string]int{})
 	if strings.Join(withNil, ",") != strings.Join(withEmpty, ",") {
 		t.Errorf("nil gave %v and an empty map gave %v; an unused map must not reorder", withNil, withEmpty)
 	}

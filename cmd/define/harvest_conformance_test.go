@@ -19,6 +19,7 @@ package main
 // ignore.
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -129,5 +130,135 @@ func TestBandClaimShapeAgainstTheLiveService(t *testing.T) {
 	if _, ok := store.ParseDomain(claim.Domain); !ok {
 		t.Errorf("the live service answered domain %q, which is outside the closed set "+
 			"the prompt enumerated; it will degrade to general", claim.Domain)
+	}
+}
+
+// M2's three tasks against the live service (ARCH-MOCK).
+//
+// The plan committed to "a live conformance row each" and M2 shipped with none —
+// on the milestone whose JUDGES are the whole product. A unit suite driven
+// entirely by llmtest.Fake cannot see the fake and the service disagreeing about
+// a schema, and a vetoVerdict whose `fits` field the service stops emitting is a
+// missing-required error only if something reads a real body.
+
+func TestAuthoredStemShapeAgainstTheLiveService(t *testing.T) {
+	cfg, err := llm.Resolve(realGetenv)
+	if err != nil {
+		conformance.SkipOrFail(t, "no model configured", err)
+	}
+	client := llm.New(cfg)
+
+	// A RATE, not a never. The live model DOES sometimes return a stem with the
+	// word already blanked, against an explicit instruction — measured here the
+	// first time this row ran: "dismissed the biography as a ___ portrait of
+	// Rupert Murdoch". That is why stemUsesTheWord exists and runs before either
+	// judge, so production already handles it.
+	//
+	// What this row is for is the RATE: if the prompt ever regresses so far that
+	// most stems come back unusable, authoring silently stops producing material
+	// while every unit test stays green. Asserting "never" would instead redden
+	// on a behaviour we have already defended against.
+	words := []string{"sycophantic", "ephemeral", "keel", "bailiwick", "quokka", "potassium"}
+	usable := 0
+	for _, w := range words {
+		got, err := llm.Run(t.Context(), client, authorTask(store.DefaultLang, w, "",
+			store.WordFacts{Band: store.C1, Domain: store.DomainGeneral}, learnerFacts{}))
+		if err != nil {
+			conformance.SkipOrFail(t, "authoring "+w, err)
+		}
+		ok := stemUsesTheWord(got.Stem, w)
+		if ok {
+			usable++
+		}
+		t.Logf("%-12s usable=%-5v %q", w, ok, got.Stem)
+	}
+
+	// Two thirds. Below that the guard is throwing away more material than it is
+	// protecting, and the prompt is the thing to fix rather than the threshold.
+	if usable*3 < len(words)*2 {
+		t.Errorf("only %d of %d live stems were usable; the author prompt is producing material "+
+			"the deterministic guard rejects, so authoring would silently stall", usable, len(words))
+	}
+}
+
+// THE COMMITTED KNOWN-BAD PAIR, live. The checkpoint showed the real model gets
+// this right in both directions across three batches, so it is cheap — and it is
+// the row that proves the veto is a real check rather than a fixture.
+func TestTheVetoRejectsANearSynonymAgainstTheLiveService(t *testing.T) {
+	cfg, err := llm.Resolve(realGetenv)
+	if err != nil {
+		conformance.SkipOrFail(t, "no model configured", err)
+	}
+	client := llm.New(cfg)
+	const stem = "The Times of London dismissed Oliver Stone's Putin interviews as sycophantic, " +
+		"and the Kremlin reprinted long extracts within the week."
+
+	near, err := llm.Run(t.Context(), client, vetoTask(store.DefaultLang, "sycophantic", stem, "obsequious"))
+	if err != nil {
+		conformance.SkipOrFail(t, "vetoing obsequious", err)
+	}
+	if !near.Fits {
+		t.Errorf("the live veto passed `obsequious` beside `sycophantic` (%q) — a question with "+
+			"two correct options teaches nothing, and this pair is the case the veto exists for",
+			near.Reason)
+	}
+
+	// And it must not reject EVERYTHING: a veto that always fires would leave
+	// every word unauthored, and the unit suite cannot tell the two apart.
+	far, err := llm.Run(t.Context(), client, vetoTask(store.DefaultLang, "sycophantic", stem, "quokka"))
+	if err != nil {
+		conformance.SkipOrFail(t, "vetoing quokka", err)
+	}
+	if far.Fits {
+		t.Errorf("the live veto rejected `quokka` as also fitting (%q); it is rejecting everything",
+			far.Reason)
+	}
+}
+
+// The entailment judge, live, on the stem the Spec opens with and on one the
+// checkpoint produced. Both directions, for the same reason as the veto's row.
+func TestTheEntailJudgeAgainstTheLiveService(t *testing.T) {
+	cfg, err := llm.Resolve(realGetenv)
+	if err != nil {
+		conformance.SkipOrFail(t, "no model configured", err)
+	}
+	client := llm.New(cfg)
+
+	for _, tc := range []struct {
+		name, stem  string
+		wantEntails bool
+		wantGloss   bool
+	}{
+		{"the Spec's own bad stem", "His sycophantic behaviour was noted by all.", false, false},
+		{
+			"a glossed stem, which ENTAILS and must still be caught",
+			"Each spring biologists count the alewife, the small silver herring that leaves the " +
+				"Atlantic to spawn upstream in fresh water.",
+			true, true,
+		},
+		{
+			"a stem the checkpoint produced",
+			"The Times of London dismissed Oliver Stone's Putin interviews as sycophantic, and the " +
+				"Kremlin reprinted long extracts within the week.",
+			true, false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			word := "sycophantic"
+			if strings.Contains(tc.stem, "alewife") {
+				word = "alewife"
+			}
+			got, err := llm.Run(t.Context(), client, entailTask(store.DefaultLang, word, tc.stem))
+			if err != nil {
+				conformance.SkipOrFail(t, "judging "+word, err)
+			}
+			t.Logf("entails=%v glosses=%v named=%v — %s", got.Entails, got.Glosses, got.Named, got.Reason)
+			if got.Glosses != tc.wantGloss {
+				t.Errorf("glosses = %v, want %v (%s)", got.Glosses, tc.wantGloss, got.Reason)
+			}
+			if !tc.wantGloss && got.Entails != tc.wantEntails {
+				t.Errorf("entails = %v, want %v (%s)", got.Entails, tc.wantEntails, got.Reason)
+			}
+		})
 	}
 }

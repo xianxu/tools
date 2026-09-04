@@ -174,7 +174,7 @@ func TestAnUnentailedStemIsRejected(t *testing.T) {
 // requirement, not a preference: an unnamed subject gives the learner no
 // referent to attach the word to.
 func TestAStemThatNamesNobodyIsRejected(t *testing.T) {
-	d, fake, st := harvestRig(t, 1)
+	d, fake, st := harvestRig(t, 3)
 	for range 12 {
 		fake.Script(markEntail, llmtest.Reply{
 			Text: `{"entails":true,"glosses":false,"named":false,"reason":"the subject is \"a manager\""}`,
@@ -186,12 +186,26 @@ func TestAStemThatNamesNobodyIsRejected(t *testing.T) {
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
 		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
 	}
-	items, err := st.Items(deckWord(0))
-	if err != nil {
-		t.Fatal(err)
+	// The pass must have RUN — a rig too small to author would satisfy the
+	// assertion below without the requirement doing anything.
+	if strings.Contains(out.String(), "skipped authoring") {
+		t.Fatalf("authoring never ran, so this pin cannot fail: %q", out.String())
 	}
-	if len(items) > 0 {
-		t.Error("an unnamed stem was authored; naming is a requirement, not a preference")
+	if got := countTask(fake, markEntail); got == 0 {
+		t.Fatal("the judge was never consulted, so the named requirement was never exercised")
+	}
+	for i := range 3 {
+		items, err := st.Items(deckWord(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) > 0 {
+			t.Errorf("%q: an unnamed stem was authored; naming is a requirement, not a preference",
+				deckWord(i))
+		}
+	}
+	if !strings.Contains(errOut.String(), "stem rejected") {
+		t.Errorf("the rejection was silent: %q", errOut.String())
 	}
 }
 
@@ -236,13 +250,13 @@ func TestTheBatchReportsItsTopicSpread(t *testing.T) {
 // BLANKED sentence, or every candidate looks wrong beside one that already
 // contains the right answer.
 func TestJudgePromptGoldens(t *testing.T) {
-	llmtest.AssertGolden(t, "testdata", "entail-prompt", renderEntailPrompt(knownBadAnswer, knownBadStem))
+	llmtest.AssertGolden(t, "testdata", "entail-prompt", renderEntailPrompt(store.DefaultLang, knownBadAnswer, knownBadStem))
 	llmtest.AssertGolden(t, "testdata", "veto-prompt",
-		renderVetoPrompt(knownBadAnswer, knownBadStem, knownBadCandidate))
+		renderVetoPrompt(store.DefaultLang, knownBadAnswer, knownBadStem, knownBadCandidate))
 }
 
 func TestVetoPromptHidesTheAnswer(t *testing.T) {
-	got := renderVetoPrompt(knownBadAnswer, knownBadStem, knownBadCandidate).Prompt
+	got := renderVetoPrompt(store.DefaultLang, knownBadAnswer, knownBadStem, knownBadCandidate).Prompt
 	// The STEM is blanked. Asserted on the sentence rather than by counting the
 	// word across the whole prompt: the instructions legitimately name it twice
 	// more — once as the intended answer, once in the near-synonym example — and
@@ -306,7 +320,7 @@ func TestAGlossedStemIsRejectedEvenThoughItEntails(t *testing.T) {
 // The three conditions are separate FIELDS, so a batch can be read for which one
 // is failing — and the gloss field is what the checkpoint added.
 func TestEntailPromptAsksAllThreeSeparately(t *testing.T) {
-	got := renderEntailPrompt(knownBadAnswer, knownBadStem).Prompt
+	got := renderEntailPrompt(store.DefaultLang, knownBadAnswer, knownBadStem).Prompt
 	for _, want := range []string{"**entails**", "**glosses**", "**named**"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the judge is never asked %s", want)
@@ -373,7 +387,7 @@ func TestAStemWithoutItsWordNeverReachesAJudge(t *testing.T) {
 // citing "no definition is supplied", which is the gloss rule's own forbidden
 // thing offered as grounds for rejection.
 func TestEntailPromptDoesNotDemandUniqueRecoverability(t *testing.T) {
-	got := renderEntailPrompt(knownBadAnswer, knownBadStem).Prompt
+	got := renderEntailPrompt(store.DefaultLang, knownBadAnswer, knownBadStem).Prompt
 	if !strings.Contains(got, "beside three other options") {
 		t.Error("the judge is not told this is a multiple-choice form")
 	}

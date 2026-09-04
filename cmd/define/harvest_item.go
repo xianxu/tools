@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm"
 )
@@ -35,6 +36,25 @@ type learnerFacts struct {
 	Band    store.Band
 	Domains []store.Domain
 	Model   string
+}
+
+// reads reports whether the learner reads in a domain — the arithmetic half of
+// #17's domain claims, which is what makes them a delivered consumer rather than
+// a parsed value nothing looks at.
+//
+// A learner with no model reads in NO domain rather than every domain: an empty
+// list must not silently make this tier match everything, which would put it
+// ahead of general vocabulary for every word on a first run.
+func (l learnerFacts) reads(d store.Domain) bool {
+	if d == "" || d == store.DomainGeneral {
+		return false // general is the next tier's job, not this one's
+	}
+	for _, x := range l.Domains {
+		if x == d {
+			return true
+		}
+	}
+	return false
 }
 
 // readLearner loads the learner model, or returns the zero value.
@@ -162,12 +182,12 @@ type bandedWord struct {
 // used counts how many items across the batch each word has already served as a
 // distractor for. Optional — a nil map means no diversity pressure, which is what
 // every unit test wants and what a single-item run gets.
-func pickDistractors(answer string, target store.WordFacts, learner store.Band, pool []bandedWord, n int, seed uint64, servedSoFar map[string]int) ([]string, selectionTier) {
+func pickDistractors(answer string, target store.WordFacts, learner learnerFacts, pool []bandedWord, n int, seed uint64, servedSoFar map[string]int) ([]string, selectionTier) {
 	// The learner's band when there is one; otherwise the ANSWER's own band, so
 	// generic authoring still pitches distractors at the word rather than at the
 	// whole scale. Recorded because it is a real decision: with no learner model
 	// there is no "the learner's band" to be one below of.
-	at := learner
+	at := learner.Band
 	if at.Rank() < 0 {
 		at = target.Band
 	}
@@ -189,7 +209,11 @@ func pickDistractors(answer string, target store.WordFacts, learner store.Band, 
 	for i := range order {
 		order[i] = i
 	}
-	shuffleInts(newHarvestPRNG(seed), order)
+	// play's own shuffle, not a copy of it (ARCH-DRY). The first cut hand-rolled
+	// one with a different seeding step, so "the same algorithm" produced a
+	// different sequence — a duplicate whose comment claimed kinship it did not
+	// have.
+	play.ShuffleInts(seed, order)
 
 	// atOrBelow is the CEILING, and it is the constraint widening must never
 	// relax before it has relaxed everything else. A word above the learner is
@@ -209,6 +233,22 @@ func pickDistractors(answer string, target store.WordFacts, learner store.Band, 
 	}{
 		{tierSameDomain, func(c bandedWord) bool {
 			return c.Facts.Domain == target.Domain && inBand(c.Facts.Band)
+		}},
+		// THE LEARNER'S OWN DOMAINS, before general vocabulary.
+		//
+		// The Spec's row reads "items are pitched at the right level AND DRAWN
+		// FROM THE DOMAINS THE LEARNER ACTUALLY READS IN", and until this tier
+		// existed the domain half was parsed and read by nothing — the band half
+		// derived and the domain half was documentation.
+		//
+		// It sits here rather than first because the ANSWER's own domain still
+		// wins: a legal word's best wrong answers are other legal words. This is
+		// what to do when that runs out, and it beats general vocabulary because
+		// a specialist word beside three general ones is identifiable by register
+		// alone — which is the open question the M2 checkpoint recorded, answered
+		// here for the domains we know the learner reads.
+		{tierLearnerDomain, func(c bandedWord) bool {
+			return learner.reads(c.Facts.Domain) && inBand(c.Facts.Band)
 		}},
 		{tierGeneral, func(c bandedWord) bool {
 			return c.Facts.Domain == store.DomainGeneral && inBand(c.Facts.Band)
@@ -281,6 +321,7 @@ type selectionTier int
 
 const (
 	tierSameDomain selectionTier = iota
+	tierLearnerDomain
 	tierGeneral
 	tierAnyDomain
 	tierAboveBand
@@ -290,6 +331,8 @@ func (t selectionTier) String() string {
 	switch t {
 	case tierSameDomain:
 		return "same domain, at band"
+	case tierLearnerDomain:
+		return "a domain the learner reads, at band"
 	case tierGeneral:
 		return "general vocabulary, at band"
 	case tierAnyDomain:
@@ -371,30 +414,6 @@ func renderAuthorPrompt(lang store.Lang, word, gloss string, facts store.WordFac
 	return llm.Request{Task: authorTaskName, System: authorSystem, Prompt: b.String(), Schema: schema}
 }
 
-// newHarvestPRNG and shuffleInts are the authoring-side deterministic shuffle.
-//
-// Not play's: that package imports NOTHING by design (D5a) and hand-rolls its
-// own, and reaching into it would either export an internal or drag the store's
-// vocabulary across that seam. Same algorithm, stated once here — see the
-// recorded ARCH-DRY finding on pickDistractors vs play.PickOptions.
-type harvestPRNG struct{ s uint64 }
-
-func newHarvestPRNG(seed uint64) *harvestPRNG { return &harvestPRNG{s: seed*6364136223846793005 + 1} }
-
-func (p *harvestPRNG) next() uint64 {
-	p.s ^= p.s << 13
-	p.s ^= p.s >> 7
-	p.s ^= p.s << 17
-	return p.s
-}
-
-func shuffleInts(p *harvestPRNG, xs []int) {
-	for i := len(xs) - 1; i > 0; i-- {
-		j := int(p.next() % uint64(i+1))
-		xs[i], xs[j] = xs[j], xs[i]
-	}
-}
-
 // sortedBanded gives a run a stable candidate order before the seeded shuffle,
 // so two runs over the same deck select the same options.
 func sortedBanded(in []bandedWord) []bandedWord {
@@ -428,17 +447,37 @@ func stemUsesTheWord(stem, word string) bool {
 	if strings.Contains(stem, "___") {
 		return false
 	}
-	i := strings.Index(lower, target)
-	if i < 0 {
-		return false
+	return wordAt(lower, target) >= 0
+}
+
+// wordAt is the ONE definition of "where does this word occur in this stem",
+// shared by stemUsesTheWord and blankOut. Returns -1 for absent.
+//
+// Two spellings of one predicate is how "The settlement was reached" passed the
+// containment check for `set` and was then rendered to the veto as
+// "The ___tlement was reached": one function found a match the other blanked
+// wrongly. Scanning EVERY occurrence rather than the first also fixes the
+// converse — a stem where the word appears as a substring before appearing
+// properly was falsely rejected.
+//
+// A WHOLE WORD at the start: `set` is not satisfied by `sunset`, nor `run` by
+// `brunch`. Inflections may FOLLOW (`runs`, `keels`), because a stem using a
+// word naturally often inflects it and refusing that pushes the model back
+// toward the stilted constructions the gloss rule already fought.
+func wordAt(lowerStem, lowerWord string) int {
+	if lowerWord == "" {
+		return -1
 	}
-	// A WHOLE WORD, not a substring: `set` must not be satisfied by `sunset`, and
-	// `run` not by `brunch`. Inflections are allowed to follow (`ran` will not
-	// match, but `runs` and `keels` will), because a stem using the word
-	// naturally often inflects it and rejecting that would push the model back
-	// toward the stilted constructions the gloss rule already fought.
-	if i > 0 && isWordByte(lower[i-1]) {
-		return false
+	for from := 0; from < len(lowerStem); {
+		i := strings.Index(lowerStem[from:], lowerWord)
+		if i < 0 {
+			return -1
+		}
+		at := from + i
+		if at == 0 || !isWordByte(lowerStem[at-1]) {
+			return at
+		}
+		from = at + 1
 	}
-	return true
+	return -1
 }

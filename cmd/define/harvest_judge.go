@@ -82,9 +82,17 @@ const entailSystem = "You judge whether a sentence teaches a word by using it. "
 	"You are strict: most sentences do not."
 
 // renderEntailPrompt asks whether a stem entails its answer. Pure.
-func renderEntailPrompt(word, stem string) llm.Request {
+//
+// lang is threaded for the reason bandSystem states at length: every
+// request-rendering function on a per-language path takes a store.Lang and says
+// so in the prompt. A Spanish stem judged by a prompt that never names its
+// language is judged against English intuitions.
+func renderEntailPrompt(lang store.Lang, word, stem string) llm.Request {
 	var b strings.Builder
-	fmt.Fprintf(&b, "## The item\n\nWord: %s\n\nSentence: %s\n\n", word, stem)
+	if lang == "" {
+		lang = store.DefaultLang
+	}
+	fmt.Fprintf(&b, "## The item\n\nLanguage: `%s`\n\nWord: %s\n\nSentence: %s\n\n", lang, word, stem)
 	b.WriteString("## What to judge\n\n")
 	// THE MULTIPLE-CHOICE FRAMING, and the second checkpoint is what forced it.
 	//
@@ -143,10 +151,13 @@ const vetoSystem = "You check whether a wrong answer is actually wrong. " +
 // invites the model to rank rather than to judge, and the failure this exists to
 // catch is a single candidate that happens to fit — which a ranking hides by
 // putting it second.
-func renderVetoPrompt(answer, stem, candidate string) llm.Request {
+func renderVetoPrompt(lang store.Lang, answer, stem, candidate string) llm.Request {
 	var b strings.Builder
-	fmt.Fprintf(&b, "## The question\n\nSentence: %s\n\nThe intended answer is **%s**.\n\n"+
-		"A wrong answer being considered: **%s**\n\n", blankOut(stem, answer), answer, candidate)
+	if lang == "" {
+		lang = store.DefaultLang
+	}
+	fmt.Fprintf(&b, "## The question\n\nLanguage: `%s`\n\nSentence: %s\n\nThe intended answer is **%s**.\n\n"+
+		"A wrong answer being considered: **%s**\n\n", lang, blankOut(stem, answer), answer, candidate)
 	b.WriteString("## What to judge\n\n")
 	b.WriteString("**fits** — would `" + candidate + "` ALSO make the sentence true and natural? " +
 		"Answer yes if a careful reader could defend it as correct, even if it is a worse fit than " +
@@ -171,8 +182,11 @@ func renderVetoPrompt(answer, stem, candidate string) llm.Request {
 // #12 owns the real blanking — stem, plural, hyphenation — where it is the
 // learner who must not see it.
 func blankOut(stem, answer string) string {
-	lower, target := strings.ToLower(stem), strings.ToLower(answer)
-	i := strings.Index(lower, target)
+	lower, target := strings.ToLower(stem), strings.ToLower(strings.TrimSpace(answer))
+	// Through wordAt, the same predicate stemUsesTheWord uses. Two spellings of
+	// "where is the word" rendered "The settlement was reached" as
+	// "The ___tlement was reached".
+	i := wordAt(lower, target)
 	if i < 0 {
 		return stem
 	}

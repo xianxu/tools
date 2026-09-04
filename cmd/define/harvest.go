@@ -54,6 +54,31 @@ type harvestOptions struct {
 	agreement int
 }
 
+// budget is what -limit actually bounds: MODEL CALLS.
+//
+// One counter threaded through every pass, charged next to each llm.Run —
+// banding, authoring, the entailment judge and the veto's inner loop alike.
+//
+// The first cut counted SUCCESSES per pass, which is not the resource the flag
+// names: a word rejected by any judge fell through without charging anything, so
+// a run whose judge rejected everything made one author call and one entail call
+// per deck word against a documented ceiling of 200. It also spent the same
+// value twice, once per pass, so `-limit 200` could cost 400 calls plus the
+// veto's. A flag's declared effect has to hold on every pass the run takes, and
+// the counter it increments has to be the resource it names.
+type budget struct{ left int }
+
+// spend charges one call and reports whether it was affordable.
+func (b *budget) spend() bool {
+	if b.left <= 0 {
+		return false
+	}
+	b.left--
+	return true
+}
+
+func (b *budget) spent() bool { return b.left <= 0 }
+
 // runHarvest assigns a band and a domain to every unbanded word in the deck.
 //
 // A BATCH path, and the only one in this program that may block: a review
@@ -92,11 +117,13 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 	if limit <= 0 {
 		limit = harvestLimit
 	}
+	// ONE budget for the whole invocation, both passes.
+	bud := &budget{left: limit}
 
 	var asked, skipped, refused int
 	for _, w := range deck {
-		if asked >= limit {
-			fmt.Fprintf(out, "define: stopped at the --limit of %d; run again to continue\n", limit)
+		if bud.spent() {
+			fmt.Fprintf(out, "define: stopped at the --limit of %d model call(s); run again to continue\n", limit)
 			break
 		}
 		// The cache check comes FIRST, before anything reaches for the network.
@@ -112,6 +139,7 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 		}
 
 		gloss, known := wordSense(d, w.Text)
+		bud.spend()
 		claim, err := llm.Run(ctx, client, bandTask(d.lang, w.Text, gloss, known))
 		if err != nil {
 			// STOP, and leave the store as it is. Everything banded before this
@@ -156,7 +184,7 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 	}
 	fmt.Fprintln(out, ".")
 
-	return runAuthoring(ctx, d, client, limit, out, errOut)
+	return runAuthoring(ctx, d, client, bud, limit, out, errOut)
 }
 
 // runAuthoring writes practice items for banded words that have none.
@@ -166,7 +194,7 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 // it has a level. That ordering is why a single --harvest does both rather than
 // authoring being its own flag — the two are one job with a dependency, not two
 // jobs a person chooses between.
-func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out, errOut io.Writer) int {
+func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, limit int, out, errOut io.Writer) int {
 	deck, err := d.deck.Deck()
 	if err != nil {
 		fmt.Fprintf(errOut, "define: could not read the deck: %v\n", err)
@@ -188,7 +216,12 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 	}
 	pool = sortedBanded(pool)
 	if len(pool) < 2 {
-		fmt.Fprintln(out, "define: too few banded words to select wrong answers from; harvest more first.")
+		// SAID ON stdout in a form a test can read. A silent skip here is what
+		// made three M2 pins unfalsifiable: a rig with one deck word never
+		// reached authoring at all, so assertions of the form "nothing was
+		// authored" were satisfied by a pass that never ran.
+		fmt.Fprintf(out, "define: skipped authoring: %d banded word(s), need at least 2 to select "+
+			"wrong answers from.\n", len(pool))
 		return 0
 	}
 
@@ -202,8 +235,8 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 	served := map[string]int{}
 
 	for _, c := range pool {
-		if authored >= limit {
-			fmt.Fprintf(out, "define: stopped authoring at the --limit of %d; run again to continue\n", limit)
+		if bud.spent() {
+			fmt.Fprintf(out, "define: stopped authoring at the --limit of %d model call(s); run again to continue\n", limit)
 			break
 		}
 		existing, err := d.deck.Items(c.Word)
@@ -217,6 +250,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 		}
 
 		gloss, _ := wordSense(d, c.Word)
+		bud.spend()
 		stem, err := llm.Run(ctx, client, authorTask(d.lang, c.Word, gloss, c.Facts, learner))
 		if err != nil {
 			fmt.Fprintf(errOut, "define: authoring stopped: %v\n", err)
@@ -236,9 +270,11 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 		// THE ENTAILMENT JUDGE, before any distractor is selected. A stem that
 		// does not entail its answer cannot be rescued by better wrong answers,
 		// so judging first is what stops the veto being spent on a doomed item.
-		verdict, err := llm.Run(ctx, client, entailTask(c.Word, stem.Stem))
+		bud.spend()
+		verdict, err := llm.Run(ctx, client, entailTask(d.lang, c.Word, stem.Stem))
 		if err != nil {
 			fmt.Fprintf(errOut, "define: judging stopped: %v\n", err)
+			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
 			return 1
 		}
 		if !verdict.Entails || verdict.Glosses || !verdict.Named {
@@ -248,7 +284,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 		}
 
 		// SELECTED, never invented, and then vetoed one pair at a time.
-		candidates, tier := pickDistractors(c.Word, c.Facts, learner.Band, pool, optionsPerItem,
+		candidates, tier := pickDistractors(c.Word, c.Facts, learner, pool, optionsPerItem,
 			// optionpool's seedFor, reused rather than reimplemented (ARCH-DRY):
 			// it is already variadic, already pinned by TestSeedForIsPinned, and
 			// the property wanted here is the same one — a stable sequence this
@@ -259,12 +295,18 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 			// cached forever, so varying it by day would make two runs of the same
 			// deck produce different material and a bad batch undebuggable.
 			seedFor("harvest-options", c.Word), served)
-		widened[tier]++
 		var kept []string
 		for _, cand := range candidates {
-			v, err := llm.Run(ctx, client, vetoTask(c.Word, stem.Stem, cand))
+			if !bud.spend() {
+				// Out of budget MID-ITEM. The options kept so far still stand —
+				// the veto only ever removes candidates — so this is a smaller
+				// option set rather than a lost item.
+				break
+			}
+			v, err := llm.Run(ctx, client, vetoTask(d.lang, c.Word, stem.Stem, cand))
 			if err != nil {
 				fmt.Fprintf(errOut, "define: the veto stopped: %v\n", err)
+				fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
 				return 1
 			}
 			if v.Fits {
@@ -296,6 +338,11 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 		}
 		authored++
 		domains = append(domains, c.Facts.Domain)
+		// Counted HERE, after the item is written: a batch statistic is taken
+		// over what the batch shipped, not over what it attempted. topicSpread
+		// already did this; the tier report was counting items whose every
+		// candidate was then vetoed.
+		widened[tier]++
 	}
 
 	fmt.Fprintf(out, "define: %d item(s) authored, %d already had material", authored, skipped)
@@ -311,7 +358,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 	// How far selection had to widen is a fact about the DECK, and the difference
 	// between "these wrong answers are pitched" and "these were what was lying
 	// around".
-	for _, t := range []selectionTier{tierGeneral, tierAnyDomain, tierAboveBand} {
+	for _, t := range []selectionTier{tierLearnerDomain, tierGeneral, tierAnyDomain, tierAboveBand} {
 		if widened[t] > 0 {
 			fmt.Fprintf(out, "define: %d item(s) drew options from %s.\n", widened[t], t)
 		}
@@ -327,13 +374,13 @@ func authorTask(lang store.Lang, word, gloss string, facts store.WordFacts, lear
 	return llm.Task[authoredStem]{Name: req.Task, System: req.System, Prompt: req.Prompt}
 }
 
-func entailTask(word, stem string) llm.Task[entailVerdict] {
-	req := renderEntailPrompt(word, stem)
+func entailTask(lang store.Lang, word, stem string) llm.Task[entailVerdict] {
+	req := renderEntailPrompt(lang, word, stem)
 	return llm.Task[entailVerdict]{Name: req.Task, System: req.System, Prompt: req.Prompt}
 }
 
-func vetoTask(answer, stem, candidate string) llm.Task[vetoVerdict] {
-	req := renderVetoPrompt(answer, stem, candidate)
+func vetoTask(lang store.Lang, answer, stem, candidate string) llm.Task[vetoVerdict] {
+	req := renderVetoPrompt(lang, answer, stem, candidate)
 	return llm.Task[vetoVerdict]{Name: req.Task, System: req.System, Prompt: req.Prompt}
 }
 

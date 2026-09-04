@@ -594,6 +594,47 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("a word's items are CAPPED, by every implementation", func(t *testing.T) {
+		// "Growth is bounded" is stated on the Store interface, so it belongs
+		// here. It landed in a Mem-only test, and held for YAML by the
+		// coincidence that both call the same helper — which is the assumption
+		// this suite exists to stop relying on.
+		s := newStore(t)
+		var many []store.Item
+		for i := range store.ItemCap * 3 {
+			many = append(many, store.Item{
+				Word: "w", Form: store.FormCloze, Stem: string(rune('a' + i)), At: day(1),
+			})
+		}
+		if err := s.SetItems("w", many); err != nil {
+			t.Fatalf("SetItems: %v", err)
+		}
+		got, err := s.Items("w")
+		if err != nil {
+			t.Fatalf("Items: %v", err)
+		}
+		if len(got) != store.ItemCap {
+			t.Errorf("stored %d items, want the cap of %d", len(got), store.ItemCap)
+		}
+	})
+
+	t.Run("an unknown Form is refused on the way in", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.SetItems("w", []store.Item{{Word: "w", Form: "telepathy", Stem: "x", At: day(1)}}); err != nil {
+			t.Fatalf("SetItems: %v", err)
+		}
+		got, err := s.Items("w")
+		if err != nil {
+			t.Fatalf("Items: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("got %d items, want 1", len(got))
+		}
+		if got[0].Form != "" {
+			t.Errorf("Form = %q, want it refused — a renderer switching on it knows no such form", got[0].Form)
+		}
+	})
+
 	t.Run("a word may hold several items", func(t *testing.T) {
 		// 1:N with a word, which is what lets #12 pick among them and what the
 		// Form field exists to let #13 share.

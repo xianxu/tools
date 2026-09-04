@@ -59,6 +59,11 @@ type Store interface {
 	// Items returns the practice items authored for a word, or none. A word may
 	// hold several — of different Forms — and #12 picks among the ones it renders.
 	//
+	// ORDERED NEWEST FIRST, ties broken by stem. Not insertion order: the same
+	// pass that bounds and neutralises a word's items sorts them, so the cap
+	// keeps the newest. Stated here rather than only in the atlas because this
+	// comment is where #12 reads the contract.
+	//
 	// READ-SIDE RULE, which this surface and WordFacts both obey: a record read
 	// back out of a RuntimeDirs directory is UNTRUSTED INPUT and goes through the
 	// same canonicalisation its write applies. Not because the writer is

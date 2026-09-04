@@ -470,8 +470,8 @@ correction points at the real lesson. The two `milestone-review` rows booked
 ### tools#10 M2 — authored stems, selected distractors, and the checkpoint
 
 **est:** 4.00 (M2's share of the issue's 7.94)
-**actual:** 1.99h
-**closed:** 2026-09-04
+**actual:** pending — written by the close gate, after the verdict
+**closed:** pending
 
 The model writes the stem; the deck supplies the wrong answers. `authoredStem`
 has no distractors field at all — a model asked for four options writes four it
@@ -518,11 +518,12 @@ little on this deck, because for `keel` the entire general-at-band tier is two
 words — eight of twenty are specialists in domains of one. Pressure cannot
 spread what does not exist.
 
-**Calibration: est 4.00 / actual 1.99 = 2.01, an over-estimate — but read it
-against M1.** M1 also measured as an over-estimate (1.82) until its boundary
-review took three more rounds and closed at 0.98. This figure is pre-review. The
-estimate's own deviation note said the boundary rows were priced low; M1 proved
-it by 3x, and this number should be expected to move the same way.
+**Calibration: pending the gate**, and deliberately left blank rather than
+hedged. The first version of this paragraph carried a pre-review number with a
+note saying it would move — which is the `doc-predeclares-outcome` family's third
+member, and `workshop/lessons.md` already carries the rule it broke: *do not
+write the calibration prose before the gate runs*. A hedged number in a ledger is
+still a number in a ledger.
 
 ### tools#10 — item authoring + harvest
 

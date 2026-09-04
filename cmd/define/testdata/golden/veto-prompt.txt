@@ -6,6 +6,8 @@ You check whether a wrong answer is actually wrong. You are looking for the case
 --- prompt ---
 ## The question
 
+Language: `en`
+
 Sentence: The aide was ___, praising a policy he had privately called unworkable.
 
 The intended answer is **sycophantic**.

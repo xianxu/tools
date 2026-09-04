@@ -192,14 +192,13 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 // thousands stays a directory a person can read.
 const ItemCap = 4
 
-// PruneForTest exposes prune to the package's external test, which is where every
-// other invariant of this surface is asserted from. Exported rather than moving
-// the test in-package: storetest and item_test.go both drive the store the way a
-// consumer does, and a rule tested from inside can pass while the exported path
-// bypasses it.
-func PruneForTest(items []Item, cap int) []Item { return prune(items, cap) }
-
-// prune bounds a word's items and is DETERMINISTIC: the same input prunes to the
+// prune bounds a word's items and is DETERMINISTIC.
+//
+// Its truncation branch is UNREACHABLE from production today: SetItems' only
+// non-test caller writes exactly one item, for words that have none. It is a
+// guard for #13, which adds a second Form wanting its own items — stated here
+// rather than left for a reader to discover that the cap has never fired.
+// : the same input prunes to the
 // same output, every time.
 //
 // Newest first by At, ties broken by Stem — the tie-break is what makes it

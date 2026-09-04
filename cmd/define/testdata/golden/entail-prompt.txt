@@ -6,6 +6,8 @@ You judge whether a sentence teaches a word by using it. You are strict: most se
 --- prompt ---
 ## The item
 
+Language: `en`
+
 Word: sycophantic
 
 Sentence: The aide was sycophantic, praising a policy he had privately called unworkable.

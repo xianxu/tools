@@ -387,12 +387,22 @@ field where it can, at your level or one step below, and never above it. A word
 you do not know is not a wrong answer you can reject; it is one you eliminate by
 ignorance, which teaches nothing.
 
-Two things are checked before an item is kept, and both say so when they fire:
+Four things are checked before an item is kept, and each says so when it fires:
 
-- **the sentence must give the word away.** *"His ___ behaviour was noted by
-  all"* does not — almost any adjective fits — and it is thrown out.
-- **each wrong answer must actually be wrong.** A near-synonym like `obsequious`
-  beside `sycophantic` would also fit the blank, so it is vetoed and dropped.
+- **the sentence must actually contain the word**, unblanked. Checked without
+  asking a model, because it costs nothing to check.
+- **the word's meaning must do the work.** *"His ___ behaviour was noted by
+  all"* is thrown out: the word is decorative there, and the sentence would read
+  the same with almost any adjective. You will see four options, so the word does
+  not have to be the only one in the language that fits — the sentence has to be
+  *about* what it means.
+- **the sentence must not define the word.** *"the alewife, the small silver
+  herring"* is a reading test, not a vocabulary test.
+- **it must name someone or somewhere real** — not "a manager", not "the
+  company".
+
+Then each wrong answer is checked on its own: a near-synonym like `obsequious`
+beside `sycophantic` would also fit the blank, so it is vetoed and dropped.
 
 If nothing survives, the word stays unauthored and the next run tries again. A
 word keeps at most four items; the oldest are dropped.

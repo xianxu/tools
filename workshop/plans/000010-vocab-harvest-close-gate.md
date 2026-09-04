@@ -240,6 +240,208 @@ rounds:
           round: 4
       boundary: M1
       blocked: false
+    - "n": 5
+      timestamp: "2026-09-04T16:37:31-07:00"
+      agent: claude
+      findings:
+        - id: BR-16
+          severity: Critical
+          title: --limit does not bound the authoring pass's model calls
+          detail: |-
+            harvest.go:205 counts successes, not calls: every stem rejected by
+            stemUsesTheWord, by the entailment judge, or by a total veto skips the
+            limit via continue. Measured on a scratch copy at HEAD — 8-word deck, all
+            pre-banded, -limit 2, judge rejecting all — the run made 8 author calls
+            and 8 entail calls, and never printed the "stopped authoring" line.
+            README.md:374, atlas/define.md:1431 and harvestLimit's own doc comment all
+            say the flag bounds a run's calls. This is the 2nd finding in family
+            flag-silently-ignored: do not patch this site. The rule is that a flag's
+            declared effect must hold on every pass the run takes and the counter it
+            increments must be the resource it names — thread one call budget into
+            both runHarvest and runAuthoring, charged next to every llm.Run including
+            the veto's inner loop, and enumerate flag-by-pass cells in the pin.
+          family: flag-silently-ignored
+          round: 5
+        - id: BR-17
+          severity: Critical
+          title: Three headline M2 properties have pins that cannot fail; the sweep row is ticked for M1 only
+          detail: |-
+            Measured by a 22-mutation sweep at 0051c91: 13 red, 9 green. Three greens
+            are confirmed by direct probe. TestAStemThatNamesNobodyIsRejected
+            (harvest_judge_test.go:176) uses harvestRig(t, 1), so runAuthoring bails at
+            len(pool) < 2 and makes zero author, entail and veto calls — the `named`
+            requirement has no pin at all. TestPickDistractorsSpreadsAcrossABatch
+            (harvest_item_test.go:309) passes with pressure fully disabled
+            (worst=3, distinct=9 on a nil map). TestHarvestStopsAtTheLimit's author
+            assertion cannot exceed the limit because banding already capped the pool
+            at 2. Six more mutations were green: prune's tie-break, answer-never-its-
+            own-distractor, sortedBanded, Form's refusal, the learner-band fallback,
+            and the Corrections-section guard. This is the 3rd finding in family
+            property-without-a-pin and workshop/lessons.md already carries the rule.
+            Do not fix nine sites. The rule: a milestone's Verification sweep row is
+            not satisfied by a previous milestone's table — enumerate THIS milestone's
+            properties, revert each, record the named test that reddens. Two class
+            causes to fix structurally: a rig sized below len(pool) >= 2 silently
+            skips the whole authoring pass, and selection assertions that hold only
+            for the one seed passed should assert over a range of seeds.
+          family: property-without-a-pin
+          round: 5
+        - id: BR-18
+          severity: Important
+          title: authorTask, entailTask and vetoTask ship with no live conformance row
+          detail: |-
+            The plan's Test surface (line 94) and its Integration-points block both
+            commit to "a live conformance row each". harvest_conformance_test.go holds
+            only M1's two band rows. Nothing detects drift between llmtest.Fake's
+            canned JSON and the real service for the three schemas this milestone's
+            whole value rests on (ARCH-MOCK). The veto's obsequious/sycophantic pair
+            is already known to work live from the checkpoint, so it is a cheap row.
+          family: task-without-live-conformance
+          round: 5
+        - id: BR-19
+          severity: Important
+          title: learnerFacts.Domains is computed at zero production call sites
+          detail: |-
+            readLearner sets Domains at harvest_item.go:55 and grep finds no non-test
+            reader. pickDistractors filters on target.Domain — the answer word's — and
+            never sees the learner's. The Spec row says items are "drawn from the
+            domains the learner actually reads in"; the field's own doc says the typed
+            halves are "what selection does arithmetic on". Neither is true today.
+            This is the 3rd finding in family inert-mechanism. The rule: a parsed value
+            no production path reads is not a delivered consumer — wire it or delete
+            it, and if the Spec names it, wiring it is the deliverable. Enumeration to
+            sweep in the same round: every learnerFacts field and every pickDistractors
+            return value, grepped for a non-test reader.
+          family: inert-mechanism
+          round: 5
+        - id: BR-20
+          severity: Important
+          title: The entailment and veto prompts carry no store.Lang
+          detail: |-
+            renderEntailPrompt (harvest_judge.go:85) and renderVetoPrompt (:146) take
+            no language, while renderBandPrompt and renderAuthorPrompt both thread it
+            and bandSystem's comment explains why. TestHarvestSendsTheDecksLanguage
+            asserts only reqs[0]. With #18 open and d.lang="es" already exercised, a
+            Spanish stem is judged by an unlabelled prompt whose worked example is
+            English. This is the 2nd finding in family language-scope-not-threaded.
+            The rule: every request-rendering function on a per-language path takes
+            store.Lang and states it, and the wire test asserts it over every request
+            the run sends rather than over reqs[0]. Sweep all four renderers at once.
+          family: language-scope-not-threaded
+          round: 5
+        - id: BR-21
+          severity: Important
+          title: The project row records actual and closed before this gate ran
+          detail: |-
+            workshop/projects/define-learn.md:473-474 states actual 1.99h and
+            closed 2026-09-04, committed in 0051c91 — one commit after aa60fda added
+            the rule to workshop/lessons.md that calibration prose must not be written
+            before the gate runs. The paragraph hedges honestly, but the ledger now
+            holds a number the paragraph itself predicts will move by 3x. This is the
+            3rd finding in family doc-predeclares-outcome. The rule: a project row's
+            actual and closed fields are written by the close gate from measurement,
+            after the verdict, never hand-authored ahead of it; a pre-gate placeholder
+            must read "pending", not a number. Sweep every actual in workshop/projects
+            whose closed predates its issue's Review-Verdict trailer.
+          family: doc-predeclares-outcome
+          round: 5
+        - id: BR-22
+          severity: Important
+          title: The item cap is asserted against Mem only, not in storetest/suite.go
+          detail: |-
+            TestTheStoreCapsAWordsItems constructs store.NewMem() directly;
+            storetest/suite.go was not touched in this window, so YAML is not held to
+            "growth is bounded". It happens to hold because both call the shared
+            sanitiseItems — an implementation coincidence the suite exists to stop
+            relying on. This is the 2nd finding in family store-contract-unheld-by-
+            suite. The rule: any promise stated on the Store interface is asserted in
+            storetest/suite.go, never in a per-implementation test. Enumeration to
+            sweep: the doc comments on Items, SetItems, WordFacts and SetWordFacts —
+            the cap, the newest-first read order, and the read-side canonicalisation
+            rule each need a suite row.
+          family: store-contract-unheld-by-suite
+          round: 5
+        - id: BR-23
+          severity: Minor
+          title: Items() now returns newest-first and the interface contract does not say so
+          detail: |-
+            sanitiseItems calls prune, which sorts on both the read and the write, so
+            items no longer come back in insertion order. atlas/define.md records it;
+            Store.Items' doc comment at store/store.go:60 — where #12 will read the
+            contract — does not. This is the 2nd finding in family behaviour-change-
+            undocumented. The rule: a behaviour promised to a consumer belongs on the
+            interface it is promised through, not only in the atlas.
+          family: behaviour-change-undocumented
+          round: 5
+        - id: BR-24
+          severity: Minor
+          title: stemUsesTheWord and blankOut locate the word by different rules
+          detail: |-
+            stemUsesTheWord (harvest_item.go:418) checks only the leading boundary, so
+            `set` is satisfied by "The settlement was reached"; blankOut
+            (harvest_judge.go:173) then renders "The ___tlement was reached" into the
+            veto prompt. Checking only the first occurrence also falsely rejects a stem
+            where the word appears as a substring before appearing properly.
+          family: two-spellings-of-one-predicate
+          round: 5
+        - id: BR-25
+          severity: Minor
+          title: harvestPRNG duplicates play.prng step-for-step
+          detail: |-
+            harvest_item.go:378-397 restates play/pick.go:168-215. The stated reason
+            (exporting an internal, or dragging store vocabulary across the seam) is
+            weaker than it reads — play.SampleStrings is already exported to main for
+            exactly this, and an int-slice shuffle needs no store types. The seeding
+            also differs, so "same algorithm" produces different sequences for the same
+            seed; the comment overstates the relationship.
+          family: helper-copied-not-shared
+          round: 5
+        - id: BR-26
+          severity: Minor
+          title: The tier report counts items that were never written
+          detail: |-
+            widened[tier]++ at harvest.go:262 runs before the veto, so an item whose
+            candidates are all vetoed still contributes to "N item(s) drew options from
+            X". This is the 2nd finding in family measurement-off-the-production-path.
+            The rule: a batch statistic is taken over what the batch shipped, not over
+            what it attempted — topicSpread already gets this right at harvest.go:298
+            by appending only on success.
+          family: measurement-off-the-production-path
+          round: 5
+        - id: BR-27
+          severity: Minor
+          title: Only the author-call failure reports what was saved before stopping
+          detail: |-
+            harvest.go:229 prints "authored N item(s) before stopping; they are saved";
+            the entail (:241) and veto (:270) failures return 1 with no such line, so
+            an outage during judging leaves the operator without the count the author
+            path gives them.
+          family: inconsistent-failure-reporting
+          round: 5
+        - id: BR-28
+          severity: Minor
+          title: README describes two checks where four conditions reject
+          detail: |-
+            cmd/define/README.md says "Two things are checked" but an item is dropped
+            by the free stem check, by entails, by glosses, by named, or by a total
+            veto. "The sentence must give the word away" is also close to the unique-
+            recoverability framing the checkpoint explicitly retired.
+          family: doc-understates-surface
+          round: 5
+        - id: BR-29
+          severity: Minor
+          title: PruneForTest is exported production API, and prune's truncation is unreachable
+          detail: |-
+            store/item.go:200 exports a symbol for tests only. SetItems has one
+            non-test caller (harvest.go:290), always with exactly one item and only
+            for words with zero items, so ItemCap's truncation branch cannot be reached
+            in production today. That is defensible as a guard for #13 — but say so,
+            and prefer an in-package export_test.go alias over a permanent exported
+            symbol.
+          family: test-only-symbol-in-production-api
+          round: 5
+      boundary: M2
+      blocked: true
 ---
 
 # Gate ledger — tools#10 (boundary-review)
@@ -375,6 +577,137 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   TestBandPromptCarriesTheClosedDomainSet; the band half is a second spelling with no pin
   (ARCH-DRY). Practical risk is low — CEFR is a fixed six-point scale.
 
+## Round 5 — 2026-09-04T16:37:31-07:00 (claude) — BLOCKED
+
+### Raised
+
+- **BR-16** [Critical] `flag-silently-ignored` --limit does not bound the authoring pass's model calls
+  harvest.go:205 counts successes, not calls: every stem rejected by
+  stemUsesTheWord, by the entailment judge, or by a total veto skips the
+  limit via continue. Measured on a scratch copy at HEAD — 8-word deck, all
+  pre-banded, -limit 2, judge rejecting all — the run made 8 author calls
+  and 8 entail calls, and never printed the "stopped authoring" line.
+  README.md:374, atlas/define.md:1431 and harvestLimit's own doc comment all
+  say the flag bounds a run's calls. This is the 2nd finding in family
+  flag-silently-ignored: do not patch this site. The rule is that a flag's
+  declared effect must hold on every pass the run takes and the counter it
+  increments must be the resource it names — thread one call budget into
+  both runHarvest and runAuthoring, charged next to every llm.Run including
+  the veto's inner loop, and enumerate flag-by-pass cells in the pin.
+- **BR-17** [Critical] `property-without-a-pin` Three headline M2 properties have pins that cannot fail; the sweep row is ticked for M1 only
+  Measured by a 22-mutation sweep at 0051c91: 13 red, 9 green. Three greens
+  are confirmed by direct probe. TestAStemThatNamesNobodyIsRejected
+  (harvest_judge_test.go:176) uses harvestRig(t, 1), so runAuthoring bails at
+  len(pool) < 2 and makes zero author, entail and veto calls — the `named`
+  requirement has no pin at all. TestPickDistractorsSpreadsAcrossABatch
+  (harvest_item_test.go:309) passes with pressure fully disabled
+  (worst=3, distinct=9 on a nil map). TestHarvestStopsAtTheLimit's author
+  assertion cannot exceed the limit because banding already capped the pool
+  at 2. Six more mutations were green: prune's tie-break, answer-never-its-
+  own-distractor, sortedBanded, Form's refusal, the learner-band fallback,
+  and the Corrections-section guard. This is the 3rd finding in family
+  property-without-a-pin and workshop/lessons.md already carries the rule.
+  Do not fix nine sites. The rule: a milestone's Verification sweep row is
+  not satisfied by a previous milestone's table — enumerate THIS milestone's
+  properties, revert each, record the named test that reddens. Two class
+  causes to fix structurally: a rig sized below len(pool) >= 2 silently
+  skips the whole authoring pass, and selection assertions that hold only
+  for the one seed passed should assert over a range of seeds.
+- **BR-18** [Important] `task-without-live-conformance` authorTask, entailTask and vetoTask ship with no live conformance row
+  The plan's Test surface (line 94) and its Integration-points block both
+  commit to "a live conformance row each". harvest_conformance_test.go holds
+  only M1's two band rows. Nothing detects drift between llmtest.Fake's
+  canned JSON and the real service for the three schemas this milestone's
+  whole value rests on (ARCH-MOCK). The veto's obsequious/sycophantic pair
+  is already known to work live from the checkpoint, so it is a cheap row.
+- **BR-19** [Important] `inert-mechanism` learnerFacts.Domains is computed at zero production call sites
+  readLearner sets Domains at harvest_item.go:55 and grep finds no non-test
+  reader. pickDistractors filters on target.Domain — the answer word's — and
+  never sees the learner's. The Spec row says items are "drawn from the
+  domains the learner actually reads in"; the field's own doc says the typed
+  halves are "what selection does arithmetic on". Neither is true today.
+  This is the 3rd finding in family inert-mechanism. The rule: a parsed value
+  no production path reads is not a delivered consumer — wire it or delete
+  it, and if the Spec names it, wiring it is the deliverable. Enumeration to
+  sweep in the same round: every learnerFacts field and every pickDistractors
+  return value, grepped for a non-test reader.
+- **BR-20** [Important] `language-scope-not-threaded` The entailment and veto prompts carry no store.Lang
+  renderEntailPrompt (harvest_judge.go:85) and renderVetoPrompt (:146) take
+  no language, while renderBandPrompt and renderAuthorPrompt both thread it
+  and bandSystem's comment explains why. TestHarvestSendsTheDecksLanguage
+  asserts only reqs[0]. With #18 open and d.lang="es" already exercised, a
+  Spanish stem is judged by an unlabelled prompt whose worked example is
+  English. This is the 2nd finding in family language-scope-not-threaded.
+  The rule: every request-rendering function on a per-language path takes
+  store.Lang and states it, and the wire test asserts it over every request
+  the run sends rather than over reqs[0]. Sweep all four renderers at once.
+- **BR-21** [Important] `doc-predeclares-outcome` The project row records actual and closed before this gate ran
+  workshop/projects/define-learn.md:473-474 states actual 1.99h and
+  closed 2026-09-04, committed in 0051c91 — one commit after aa60fda added
+  the rule to workshop/lessons.md that calibration prose must not be written
+  before the gate runs. The paragraph hedges honestly, but the ledger now
+  holds a number the paragraph itself predicts will move by 3x. This is the
+  3rd finding in family doc-predeclares-outcome. The rule: a project row's
+  actual and closed fields are written by the close gate from measurement,
+  after the verdict, never hand-authored ahead of it; a pre-gate placeholder
+  must read "pending", not a number. Sweep every actual in workshop/projects
+  whose closed predates its issue's Review-Verdict trailer.
+- **BR-22** [Important] `store-contract-unheld-by-suite` The item cap is asserted against Mem only, not in storetest/suite.go
+  TestTheStoreCapsAWordsItems constructs store.NewMem() directly;
+  storetest/suite.go was not touched in this window, so YAML is not held to
+  "growth is bounded". It happens to hold because both call the shared
+  sanitiseItems — an implementation coincidence the suite exists to stop
+  relying on. This is the 2nd finding in family store-contract-unheld-by-
+  suite. The rule: any promise stated on the Store interface is asserted in
+  storetest/suite.go, never in a per-implementation test. Enumeration to
+  sweep: the doc comments on Items, SetItems, WordFacts and SetWordFacts —
+  the cap, the newest-first read order, and the read-side canonicalisation
+  rule each need a suite row.
+- **BR-23** [Minor] `behaviour-change-undocumented` Items() now returns newest-first and the interface contract does not say so
+  sanitiseItems calls prune, which sorts on both the read and the write, so
+  items no longer come back in insertion order. atlas/define.md records it;
+  Store.Items' doc comment at store/store.go:60 — where #12 will read the
+  contract — does not. This is the 2nd finding in family behaviour-change-
+  undocumented. The rule: a behaviour promised to a consumer belongs on the
+  interface it is promised through, not only in the atlas.
+- **BR-24** [Minor] `two-spellings-of-one-predicate` stemUsesTheWord and blankOut locate the word by different rules
+  stemUsesTheWord (harvest_item.go:418) checks only the leading boundary, so
+  `set` is satisfied by "The settlement was reached"; blankOut
+  (harvest_judge.go:173) then renders "The ___tlement was reached" into the
+  veto prompt. Checking only the first occurrence also falsely rejects a stem
+  where the word appears as a substring before appearing properly.
+- **BR-25** [Minor] `helper-copied-not-shared` harvestPRNG duplicates play.prng step-for-step
+  harvest_item.go:378-397 restates play/pick.go:168-215. The stated reason
+  (exporting an internal, or dragging store vocabulary across the seam) is
+  weaker than it reads — play.SampleStrings is already exported to main for
+  exactly this, and an int-slice shuffle needs no store types. The seeding
+  also differs, so "same algorithm" produces different sequences for the same
+  seed; the comment overstates the relationship.
+- **BR-26** [Minor] `measurement-off-the-production-path` The tier report counts items that were never written
+  widened[tier]++ at harvest.go:262 runs before the veto, so an item whose
+  candidates are all vetoed still contributes to "N item(s) drew options from
+  X". This is the 2nd finding in family measurement-off-the-production-path.
+  The rule: a batch statistic is taken over what the batch shipped, not over
+  what it attempted — topicSpread already gets this right at harvest.go:298
+  by appending only on success.
+- **BR-27** [Minor] `inconsistent-failure-reporting` Only the author-call failure reports what was saved before stopping
+  harvest.go:229 prints "authored N item(s) before stopping; they are saved";
+  the entail (:241) and veto (:270) failures return 1 with no such line, so
+  an outage during judging leaves the operator without the count the author
+  path gives them.
+- **BR-28** [Minor] `doc-understates-surface` README describes two checks where four conditions reject
+  cmd/define/README.md says "Two things are checked" but an item is dropped
+  by the free stem check, by entails, by glosses, by named, or by a total
+  veto. "The sentence must give the word away" is also close to the unique-
+  recoverability framing the checkpoint explicitly retired.
+- **BR-29** [Minor] `test-only-symbol-in-production-api` PruneForTest is exported production API, and prune's truncation is unreachable
+  store/item.go:200 exports a symbol for tests only. SetItems has one
+  non-test caller (harvest.go:290), always with exactly one item and only
+  for words with zero items, so ItemCap's truncation branch cannot be reached
+  in production today. That is defensible as a guard for #13 — but say so,
+  and prefer an in-package export_test.go alias over a permanent exported
+  symbol.
+
 ## Open findings
 
 - **BR-11** [Important] `measurement-off-the-production-path` the conformance floor and the reported 1.00 measure a prompt shape --harvest never sends
@@ -382,3 +715,17 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-13** [Important] `property-without-a-pin` six of the seven run()-path members round 3 enumerated are still unpinned
 - **BR-14** [Minor] `doc-predeclares-outcome` README's directory listing promises items/<lang>/*.yaml, which M1 never writes
 - **BR-15** [Minor] `inert-mechanism` store.Bands() has no production caller while the band prompt hand-restates the six levels
+- **BR-16** [Critical] `flag-silently-ignored` --limit does not bound the authoring pass's model calls
+- **BR-17** [Critical] `property-without-a-pin` Three headline M2 properties have pins that cannot fail; the sweep row is ticked for M1 only
+- **BR-18** [Important] `task-without-live-conformance` authorTask, entailTask and vetoTask ship with no live conformance row
+- **BR-19** [Important] `inert-mechanism` learnerFacts.Domains is computed at zero production call sites
+- **BR-20** [Important] `language-scope-not-threaded` The entailment and veto prompts carry no store.Lang
+- **BR-21** [Important] `doc-predeclares-outcome` The project row records actual and closed before this gate ran
+- **BR-22** [Important] `store-contract-unheld-by-suite` The item cap is asserted against Mem only, not in storetest/suite.go
+- **BR-23** [Minor] `behaviour-change-undocumented` Items() now returns newest-first and the interface contract does not say so
+- **BR-24** [Minor] `two-spellings-of-one-predicate` stemUsesTheWord and blankOut locate the word by different rules
+- **BR-25** [Minor] `helper-copied-not-shared` harvestPRNG duplicates play.prng step-for-step
+- **BR-26** [Minor] `measurement-off-the-production-path` The tier report counts items that were never written
+- **BR-27** [Minor] `inconsistent-failure-reporting` Only the author-call failure reports what was saved before stopping
+- **BR-28** [Minor] `doc-understates-surface` README describes two checks where four conditions reject
+- **BR-29** [Minor] `test-only-symbol-in-production-api` PruneForTest is exported production API, and prune's truncation is unreachable

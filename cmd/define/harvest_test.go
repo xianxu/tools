@@ -19,8 +19,20 @@ var harvestClock = time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 // harvestRig wires runHarvest against the WIRE-LEVEL fake and a real YAML store
 // in a temp dir, so facts/ is written and read through the production path
 // rather than seeded into a field.
+// harvestRig builds a deck of `words` deck words with the wire-level fake.
+//
+// A rig with fewer than two words cannot exercise authoring at all — runAuthoring
+// needs a pool to select wrong answers from — and a test that asserts "nothing
+// was authored" against such a rig passes for the wrong reason. Three M2 pins
+// were unfalsifiable exactly this way, so the constraint is enforced here rather
+// than left to each test to remember. Pass 0 deliberately when seeding the deck
+// by hand.
 func harvestRig(t *testing.T, words int) (deps, *llmtest.Fake, *store.YAML) {
 	t.Helper()
+	if words == 1 {
+		t.Fatal("harvestRig(1) cannot exercise authoring: runAuthoring needs a pool of at least 2, " +
+			"so every assertion about authoring would pass without the pass running")
+	}
 	fake := llmtest.NewFake(t)
 	dir := t.TempDir()
 	st := store.NewYAML(dir, store.DefaultLang, nil)
@@ -209,24 +221,57 @@ func TestHarvestOutageKeepsWhatWasAlreadyBought(t *testing.T) {
 // priced). Asserted on a deck larger than the limit, which is the only shape
 // where an unbounded loop and a bounded one differ.
 func TestHarvestStopsAtTheLimit(t *testing.T) {
-	d, fake, _ := harvestRig(t, 6)
-	scriptAll(fake, 24)
+	// The deck must EXCEED the limit for the cap to be observable at all. The
+	// first version banded 2 of 6 and then asserted authoring made at most 2
+	// calls — but banding had capped the pool AT 2, so the assertion held with
+	// the check deleted entirely.
+	d, fake, _ := harvestRig(t, 8)
+	scriptAll(fake, 60)
 
+	const limit = 5
 	var out, errOut bytes.Buffer
-	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: 2}, &out, &errOut); code != 0 {
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: limit}, &out, &errOut); code != 0 {
 		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
 	}
-	if got := countTask(fake, markBand); got != 2 {
-		t.Errorf("made %d banding calls with -limit 2; the cap is not enforced", got)
+
+	// -limit names MODEL CALLS, so that is what it must bound — across every
+	// pass, not per pass. Counting successes let a run whose judge rejected
+	// everything make one author call and one entail call per deck word.
+	total := len(fake.Requests())
+	if total > limit {
+		t.Errorf("made %d model calls with -limit %d (band %d, author %d, entail %d, veto %d); "+
+			"the flag names calls and must bound every pass",
+			total, limit, countTask(fake, markBand), countTask(fake, markAuthor),
+			countTask(fake, markEntail), countTask(fake, markVeto))
 	}
-	// The cap bounds BOTH passes, or a 200-word limit still authors the whole deck.
-	if got := countTask(fake, markAuthor); got > 2 {
-		t.Errorf("authored %d items with -limit 2; the cap does not reach the second pass", got)
+	if total == 0 {
+		t.Fatal("no calls at all, so this assertion cannot fail")
 	}
-	// A capped run is a PARTIAL run, not a failure, and it has to say so or the
-	// operator cannot tell it from a finished one.
+	// A capped run is a PARTIAL run and has to say so.
 	if !strings.Contains(out.String(), "run again") {
 		t.Errorf("a capped run did not say it was partial: %q", out.String())
+	}
+}
+
+// The budget survives a pass that rejects everything — the shape that made the
+// original counter wrong, since a rejected word charged nothing.
+func TestTheLimitHoldsWhenEveryStemIsRejected(t *testing.T) {
+	d, fake, _ := harvestRig(t, 8)
+	for range 60 {
+		fake.Script(markEntail, llmtest.Reply{
+			Text: `{"entails":false,"glosses":false,"named":false,"reason":"rejected"}`,
+		})
+	}
+	scriptAll(fake, 60)
+
+	const limit = 6
+	var out, errOut bytes.Buffer
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: limit}, &out, &errOut); code != 0 {
+		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+	}
+	if got := len(fake.Requests()); got > limit {
+		t.Errorf("made %d model calls with -limit %d although every stem was rejected; "+
+			"rejections must charge the budget too", got, limit)
 	}
 }
 
@@ -234,7 +279,7 @@ func TestHarvestStopsAtTheLimit(t *testing.T) {
 // than writing a value the comparison every distractor rule depends on cannot
 // order.
 func TestHarvestRefusesABandOffTheScale(t *testing.T) {
-	d, fake, st := harvestRig(t, 1)
+	d, fake, st := harvestRig(t, 3)
 	fake.Script(markBand, llmtest.Reply{Text: `{"band":"B2+","domain":"Law"}`})
 
 	var out, errOut bytes.Buffer
@@ -461,7 +506,7 @@ func TestTheDictionaryDomainBeatsTheModel(t *testing.T) {
 // the threading is what nothing checked. Asserted on the wire, which is the only
 // place the distinction between the two is visible.
 func TestHarvestSendsTheDecksLanguage(t *testing.T) {
-	d, fake, _ := harvestRig(t, 1)
+	d, fake, _ := harvestRig(t, 3)
 	d.lang = store.Lang("es")
 	scriptAll(fake, 8)
 
