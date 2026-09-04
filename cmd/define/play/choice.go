@@ -5,7 +5,7 @@ package play
 // UP TO four: a young deck supplies two or three, and Keys() names the digits
 // that actually work rather than promising 1-4 (D9).
 //
-// This is a RECOGNITION test, where form 2.1 is a recall test — which is why
+// This is a RECOGNITION test, where form 2.1 was a recall test — which is why
 // this one's content is unanswerable unseen and therefore lives in Prompt, as
 // the Question interface's doc says it must.
 //
@@ -214,7 +214,7 @@ func (c *Choice) Grade(k rune) (Verdict, bool) {
 //
 // An OPTIONAL interface (see Missed in session.go) rather than a widening of
 // Grade: changing Grade's signature would touch every form for a fact only some
-// forms have, and the session would then be carrying a concept form 2.1 has no
+// forms have, and the session would then be carrying a concept form 2.1 had no
 // answer for.
 func (c *Choice) MissedAxis() Axis {
 	if c.chosen < 0 || c.chosen >= len(c.options) || c.options[c.chosen].Correct {

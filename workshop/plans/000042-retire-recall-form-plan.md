@@ -441,7 +441,7 @@ The "Recall, on a young deck" section goes. The board section absorbs it: **one 
 
 `atlas/define.md` names form 2.1 at ~10 sites (`grep -n 'form 2\.1\|Recall'`). Sweep the list, not the first hit — and per `workshop/lessons.md` ("A retraction is not done until `git grep` over the TREE is clean") run the grep over the tree, not `cmd/`.
 
-Three passages are history rather than deletions and should be kept as such: the `#24` grading-before-reveal argument (it explains a mechanism 2.3 still uses), the `SelfRated` paragraph (the board is now its only implementor), and reason 3's "form 2.1 shows the whole rendered entry, so a redirect is harmless under it" — which is the argument this issue's trade-off ACCEPTS, so deleting it deletes the reason the trade-off is a trade-off.
+Three passages are history rather than deletions and should be kept as such: the `#24` grading-before-reveal argument (it explains a mechanism 2.3 still uses), the `SelfRated` paragraph (the board is now its only implementor), and reason 3's account of the whole rendered entry form 2.1 showed, which made a redirect harmless under it — which is the argument this issue's trade-off ACCEPTS, so deleting it deletes the reason the trade-off is a trade-off.
 
 - [x] **Step 4: Run the doc pins and commit**
 

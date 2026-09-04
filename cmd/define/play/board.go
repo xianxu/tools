@@ -25,9 +25,11 @@ package play
 
 // Mark is what a cell says, and what the board's MODE is set to.
 //
-// THREE marks and an ABSENCE, and `Marks()` below is the EXTENT — a count spelled
-// in prose is a second owner of it, which is how this comment came to say "TWO
-// marks" three lines above the const block that declares a third (#42).
+// `Marks()` below is the EXTENT of this set, and prose must not restate it — a
+// count spelled here is a second owner, which is how this comment came to say "TWO
+// marks" three lines above the const block declaring another (#42). It said
+// "THREE" for one round after that, which is the same defect with a different
+// number, so it now says neither.
 //
 // The two that survive from `#40` are `Yes` and `No`; D7 deleted `unsure` ("I
 // guess unsure means no") along with the whole EventUnsure mechanism the first
@@ -466,7 +468,7 @@ func (b *Board) Reveal() string { return "" }
 // Tab and Enter ARE named here even though both are session Input kinds, and
 // that is deliberate: sessionKeys in the loop is the set that is true WHATEVER
 // form is asking, and neither of these is. Enter finishes a form only when the
-// form holds many words, and Tab reaches nothing at all on 2.1 or 2.3. The form
+// form holds many words, and Tab reaches nothing at all on form 2.3. The form
 // is the only thing that can describe them truthfully.
 //
 // The label set is NOT enumerated. It is printed beside every word, so spelling
@@ -474,26 +476,41 @@ func (b *Board) Reveal() string { return "" }
 // than the grid itself. (This used to say the set "has a hole at `d`" — it had
 // one until #40's last round filled it, and the sentence outlived the hole.)
 //
-// EVERY spelling is the SAME WIDTH — one per mark `Toggle` cycles through — so
-// the line does not jump under a key pressed to be pressed again, and short
-// enough that this plus the session's reserved key fits eighty columns.
-// `TestEveryModeSpellingIsTheSameWidthAndFitsEighty` is the pin, and it derives
-// its loop from the cycle rather than counting the spellings here.
+// Every spelling is the same VISIBLE WIDTH, so the line does not jump under a key
+// pressed to be pressed again — and short enough that it plus the session's
+// reserved key fits eighty columns, which is a budget rather than a preference:
+// `boardFitsIn` charges `displayRows(gradePrompt(q), termCols)` into the board's
+// fit, so a row that wraps raises the minimum terminal height for EVERY board.
+//
+// RE-CUT rather than appended to when the drop arrived (#42). The old row was 62
+// columns and left two of headroom, so a third state naively appended would have
+// wrapped: "Tab switches" became "Tab cycles" and "click or key marks" lost its
+// verb, since with a drop a click no longer only marks.
+//
+// A TABLE KEYED BY MARK, with a LOUD default — and both halves are #42 BR-13's.
+// This was a switch returning the yes spelling as its fallback, so a mark added to
+// `Marks()` and to `Toggle` and forgotten HERE drew the yes row while the mode was
+// something else: the prompt row is the one statement of what the next click will
+// mean, and R11 made it the last thing a short window gives up precisely because
+// every mark is irreversible. A map cannot silently answer for a key it lacks.
 func (b *Board) Keys() string {
-	// RE-CUT TO FIT, not appended to (#42). `boardFitsIn` charges
-	// `displayRows(gradePrompt(q), termCols)` into the board's fit, so a row that
-	// wraps at eighty columns raises the minimum terminal height for EVERY board.
-	// The old row was 62 columns and left two of headroom; adding a third state
-	// naively would have wrapped, so "Tab switches" became "Tab cycles" and
-	// "click or key marks" lost its verb — with three modes a click no longer
-	// only marks. 59 columns, 75 with the reserved key.
-	switch b.mode {
-	case No:
-		return "marking yes [no] drop, Tab cycles, click or key, Enter ends"
-	case Dropped:
-		return "marking yes no [drop], Tab cycles, click or key, Enter ends"
+	if s, ok := modeSpellings[b.mode]; ok {
+		return s
 	}
-	return "marking [yes] no drop, Tab cycles, click or key, Enter ends"
+	// UNREACHABLE, and it says so rather than guessing: TestEveryMarkHasASpelling
+	// derives its loop from Marks(), so a mark with no row fails the build. This
+	// arm exists because the alternative — returning any spelling — states a mode
+	// the board is not in, on the row a learner reads before an irreversible click.
+	return "marking ?, Tab cycles, click or key, Enter ends"
+}
+
+// modeSpellings is the prompt row per mark, and it is the ONE place the wording
+// lives. A map rather than a switch so `Marks()` can be walked against its keys —
+// an extent the code owns, checked rather than restated.
+var modeSpellings = map[Mark]string{
+	Yes:     "marking [yes] no drop, Tab cycles, click or key, Enter ends",
+	No:      "marking yes [no] drop, Tab cycles, click or key, Enter ends",
+	Dropped: "marking yes no [drop], Tab cycles, click or key, Enter ends",
 }
 
 // Mode is the mark a click will land. Not on any interface — the form states its
@@ -509,7 +526,7 @@ func (b *Board) Form() string { return "board" }
 
 // Toggle cycles the mode. This is what Tab means on a board.
 //
-// THREE now, and the ORDER is a UX decision rather than arithmetic on the iota
+// The ORDER is a UX decision rather than arithmetic on the iota
 // (#42): Yes → No → Dropped, so the destructive mode is never one press from the
 // default. A learner reaching for `no` cannot overshoot into a removal, and the
 // mode they most often want is the one they start in.

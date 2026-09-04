@@ -1140,7 +1140,28 @@ var retiredPhrases = map[string]string{
 	// The phrase, not the word, exactly as the two rows above are phrases. It was
 	// worth writing down because the tree-wide sweep this issue ran caught four
 	// files and missed five more — the instance, not the class (#42 BR-3).
-	"back to form 2.1":         "a word no test can be built for is TRIAGED on a board (#42)",
+	"back to form 2.1": "a word no test can be built for is TRIAGED on a board (#42)",
+	// TENSE IS THE DISCRIMINATOR, and it is what closes this class (#42 BR-12).
+	//
+	// Round 1 declined a bare ban on the form's NAME because ~8 historical mentions
+	// would redden — correctly: a comment that explains why something exists by
+	// naming the form it was built for is right, and the atlas keeps the argument
+	// that produced `Keys()`. But declining the ban left the class open, and three
+	// rounds later seven production doc comments still said form 2.1 IS, HAS or
+	// CANNOT — present tense about a form the tree does not contain, one of them
+	// three lines from a block a previous round had rewritten.
+	//
+	// So the rows are keyed on the tense rather than the name. "was", "used to"
+	// and "before #42" are untouched by construction, which is exactly the
+	// distinction the sweep needed and the bare name could not express.
+	"form 2.1 is":              "form 2.1 WAS — #42 retired it; a word no test fits is triaged on a board",
+	"form 2.1 has":             "form 2.1 HAD — #42 retired it",
+	"form 2.1 cannot":          "form 2.1 COULD NOT — #42 retired it",
+	"form 2.1 grades":          "form 2.1 GRADED — #42 retired it",
+	"form 2.1 shows":           "form 2.1 SHOWED — #42 retired it",
+	"form 2.1 answer":          "form 2.1 ANSWERED — #42 retired it",
+	"2.1 or 2.3":               "form 2.3 alone — #42 retired 2.1",
+	"falls back to 2.1":        "a word no test can be built for is TRIAGED on a board (#42)",
 	"back to Recall":           "a word no test can be built for is TRIAGED on a board (#42)",
 	"fallback to form":         "a word no test can be built for is TRIAGED on a board (#42)",
 	"falls back to the recall": "a word no test can be built for is TRIAGED on a board (#42)",
@@ -1846,4 +1867,78 @@ func declaredIn(f *ast.File) map[string]bool {
 		}
 	}
 	return out
+}
+
+// isCitableName's own fixture table (#42 BR-11).
+//
+// The 2ND finding in the `pin-that-cannot-fail` family, and the same shape as the
+// one eight lines above `TestPlanStatusNormalisesToTheVocabulary`: the widening
+// that answered BR-7 — letting the removed-declaration sweep see unexported
+// compound names — was GREEN WHEN REVERTED. `boardsFor` is swept from the tree
+// now, so no artifact in the repo exercises the new clause, and the fix that
+// closed a class was itself unpinned.
+//
+// A FIXTURE TABLE is the answer for exactly that reason: the input the rule cares
+// about is one this tree no longer contains, so it has to be supplied rather than
+// found. The rows below are the two populations the clause separates — prose-cited
+// compounds, and the single lowercase words that are substrings of ordinary
+// English.
+func TestIsCitableNameSeparatesCitedNamesFromNoise(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		// The population the widening exists for: unexported, compound, and cited
+		// in prose. `boardsFor` is the one that went stale in two atlas paragraphs
+		// while the guard could not see it.
+		{"boardsFor", true},
+		{"choiceFor", true},
+		{"optionCandidates", true},
+		{"todaysQuestions", true},
+		// The population the original clause was right to exclude: a single
+		// lowercase word is both uncited and a substring of ordinary English, so
+		// sweeping for it reports noise rather than findings.
+		{"ids", false},
+		{"binds", false},
+		{"paint", false},
+		{"ask", false},
+		// Unchanged by the widening: exported names and test entry points.
+		{"Marks", true},
+		{"TestSomething", true},
+		{"FuzzSomething", true},
+		// Degenerate.
+		{"", false},
+		{"a", false},
+	} {
+		if got := isCitableName(tc.name); got != tc.want {
+			t.Errorf("isCitableName(%q) = %v, want %v — a name in the cited population that "+
+				"this returns false for is a stale mention no guard will find, and a noise "+
+				"word it returns true for is a sweep that reports substrings",
+				tc.name, got, tc.want)
+		}
+	}
+}
+
+// currentTruthOnly exempts a `| deleted |` row's OWN symbol, and nothing else
+// (#42 BR-11).
+//
+// The other half of the round-2 fix that was green when reverted: the exemption
+// resolves a genuine conflict between two guards, and the tree exercises only the
+// passing case. Its risk is over-reach — an exemption that quieted a guard about
+// symbols the document never declared would silently widen every artifact's
+// licence — so both directions are supplied here rather than hoped for.
+func TestADeletedRowExemptsOnlyItsOwnSymbol(t *testing.T) {
+	const doc = "| `boardsFor` | `x.go` | deleted |\n\n" +
+		"Prose naming boardsFor, which the row above declares deleted.\n" +
+		"Prose naming somethingElse, which it does not.\n"
+	got := currentTruthOnly(t, "workshop/plans/fixture-plan.md", doc)
+
+	if strings.Contains(got, "boardsFor") {
+		t.Errorf("the declared symbol survived the filter, so the guard it exists to quiet "+
+			"still fires on the document that recorded the deletion:\n%s", got)
+	}
+	if !strings.Contains(got, "somethingElse") {
+		t.Errorf("an undeclared symbol was stripped too — the exemption must be limited to "+
+			"what a `| deleted |` row NAMES, or a plan quiets every guard at once:\n%s", got)
+	}
 }

@@ -50,9 +50,9 @@ const (
 //
 // The Done-when says adding a second form must require no change to the loop.
 // That is a property of THIS interface rather than a promise, which is why it
-// exists before there is a second form — and why Grade lives here: form 2.1's
-// y/n and form 2.3's 1/2/3/4 are the same shape to the session, because the
-// session never learns what either key means.
+// exists before there is a second form — and why Grade lives here: form 2.3's
+// 1/2/3/4 and the board's printed labels are the same shape to the session,
+// because the session never learns what either key means.
 type Question interface {
 	// Word is the deck key the answer is recorded against, already normalised.
 	Word() string

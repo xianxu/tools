@@ -611,10 +611,12 @@ func boardFitsIn(q play.Question, termRows, termCols int) bool {
 // boardPalette is how a board's marks are painted, and it is the ONE place this
 // program decides that.
 //
-// GREEN for yes, RED for no — the two conventions a terminal reader already
-// has, and the pair a learner does not have to be taught. Bold, because the
-// grid's unmarked cells are ordinary weight and the marked ones should separate
-// at a glance rather than on inspection.
+// GREEN for yes and RED for no — the conventions a terminal reader already has,
+// and the pair a learner does not have to be taught. A drop is struck out rather
+// than given a third hue, because a third colour would need teaching and would
+// compete with those two. Bold on the two ratings, because the grid's unmarked
+// cells are ordinary weight and a marked one should separate at a glance rather
+// than on inspection.
 //
 // It comes from `main` because `main` owns the terminal: `play` is mechanically
 // guarded pure, and a form choosing its own escape sequences would be a second

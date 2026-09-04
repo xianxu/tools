@@ -3437,3 +3437,42 @@ on that keeps the noise out and lets the citations in.
 **And the guard's own name for the failure was right:** *"a guard that depends on
 someone remembering has now been remembered late twice."* Every fix above replaces
 remembering with a build failure.
+
+## Fixing a class means pinning the fix, not just widening the rule (`#42`, close round 4)
+
+Round 2 answered "the sweep was the instance, not the class" by widening
+`isCitableName` so the removed-declaration guard could see unexported compound
+names. Round 4 reverted that widening and **the entire suite stayed green** — the
+symbol it was written for had just been swept, so nothing in the tree exercised
+the new clause. The fix that closed a class was itself unpinned, which is the
+family the previous entry in this file is about.
+
+**When a rule's triggering input no longer exists in the tree, the pin is a
+fixture table.** The repo already had the precedent (`TestPlanStatusNormalisesToTheVocabulary`
+exists because no plan writes a bolded status), and the mechanism is eight lines
+from the rule it defends. Supply the input rather than hoping the tree contains
+it.
+
+**Two more from the same round:**
+
+- **Re-wording a comment does not close a "prose restates a count" class.** The
+  replacement said *"THREE marks and an ABSENCE, and `Marks()` below is the EXTENT
+  — a count spelled in prose is a second owner of it"* — spelling the count inside
+  the sentence forbidding it. And it claimed its test "derives its loop from the
+  cycle" while the test read `for range 3`. **Make the code carry the extent and
+  the prose name nothing**: the spelling table is now keyed by mark, the test walks
+  `Marks()`, and a mark with no spelling fails the build instead of silently
+  drawing the default row.
+- **Tense is the discriminator when a concept is retired but its history is worth
+  keeping.** Banning the form's NAME would have reddened ~8 legitimate historical
+  mentions, so round 1 declined the ban — and left seven present-tense claims
+  standing three rounds later. Keying the guard on `"form 2.1 is"`, `"has"`,
+  `"cannot"` catches the claims and leaves `"was"`, `"used to"`, `"before #42"`
+  alone by construction. It found three more the hand-grep had missed.
+
+**And a test that HANGS on the defect is worse than one that misses it.** The
+first version of the mark-spelling walk was `for b.Mode() != m { b.Toggle() }`,
+which never terminates for a mark `Toggle` cannot reach — exactly the mark the
+test exists to catch. A red says what is wrong; a hang says nothing and takes the
+suite with it. Bound every search whose termination depends on the property under
+test.

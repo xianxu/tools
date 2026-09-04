@@ -31,7 +31,8 @@ type ReviewEvent struct {
 	Question string `yaml:"question,omitempty"`
 	// Missed is WHY a wrong answer was wrong, when the form can say: the axis of
 	// the option the learner picked ("domain", "register", "general"). #7's
-	// form 2.3 sets it; form 2.1 cannot, because a failed recall has no kind.
+	// form 2.3 sets it; the board does not, because a mark carries no error kind
+	// (nor could form 2.1, which #42 retired — a failed recall had no kind either).
 	//
 	// Empty on every correct answer and omitted from the file (D8) — writing
 	// something on a right answer would put a word in the log that #17 M2's

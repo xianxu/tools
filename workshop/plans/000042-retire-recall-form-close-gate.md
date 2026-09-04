@@ -178,6 +178,103 @@ rounds:
       agent: claude
       blocked: true
       protocol_error: no valid findings block
+    - "n": 4
+      timestamp: "2026-09-03T23:11:35-07:00"
+      agent: claude
+      dispose:
+        - id: BR-4
+          disposition: not-addressed
+          note: Still three copies at play_loop.go:981, :1009, :1038; Minor and explicitly declined with a stated reason.
+          round: 4
+        - id: BR-5
+          disposition: not-addressed
+          note: play/board.go:594-599 still reads b.cells[b.last]; no dropWord field. No path interleaves Rest with an armed drop today.
+          round: 4
+        - id: BR-7
+          disposition: addressed
+          note: Six sites swept (tree grep clean) and isCitableName widened — but the guard half is unpinned; raised as new under pin-that-cannot-fail.
+          round: 4
+        - id: BR-8
+          disposition: addressed
+          note: All five named sites corrected; the residual restatements the fix itself introduced are raised as the 2nd in that family.
+          round: 4
+        - id: BR-9
+          disposition: addressed
+          note: atlas/define.md:2468 documents both, plan Core-concepts gains Marks and Palette.For rows, and a Revisions entry explains the late addition.
+          round: 4
+        - id: BR-10
+          disposition: not-addressed
+          note: Reproduced at HEAD with playRig("bases","rizz") at width 12 — stderr still prints "2 words are due but none could be looked up".
+          round: 4
+      findings:
+        - id: BR-11
+          severity: Important
+          title: BR-7's rule fix — the isCitableName widening — can be reverted with the entire suite green
+          detail: |-
+            2ND FINDING IN THIS FAMILY — do not add one assertion; fix the rule. Verified in a pinned scratch
+            worktree at HEAD: replacing the interior-capital clause at repo_guard_test.go:1677 with `return false`
+            leaves `go test ./...` green in every package, and separately deleting the `"boardsFor"` row at :1059
+            is also green because currentTruthOnly's new exemption already strips the plan's mentions. So both
+            halves of the round-2 fix are individually revertible with nothing noticing. The rule is already
+            written at repo_guard_test.go:1477 ("A finding-fix with no test that reddens without it is not
+            addressed") and in lessons.md, and the mechanism is eight lines below it:
+            TestPlanStatusNormalisesToTheVocabulary is a fixture table for planStatus precisely because no plan in
+            the tree exercises its branches. Give isCitableName the same fixture table (boardsFor/choiceFor true,
+            ids/binds/paint false, Test*/Fuzz*/exported true, "" false).
+          family: pin-that-cannot-fail
+          round: 4
+        - id: BR-12
+          severity: Important
+          title: Seven production doc comments still predicate on form 2.1 in the present tense, three lines from the block round 2 rewrote
+          detail: |-
+            3RD FINDING IN THIS FAMILY — do not fix the seven sites; fix the rule. `git grep -n 'form 2\.1|2\.1 or'`
+            over non-test Go returns nine hits, seven present tense: play/choice.go:8 ("where form 2.1 is a recall
+            test"), :217 ("a concept form 2.1 has no answer for"), play/question.go:53 ("form 2.1's y/n and form
+            2.3's 1/2/3/4 are the same shape") on the central Question interface, play/session.go:139 ("would make
+            form 2.1 answer a question it cannot") and :380 ("which is what form 2.1 is"), store/event.go:34 ("form
+            2.3 sets it; form 2.1 cannot") on a persisted field, and play/board.go:469 ("Tab reaches nothing at all
+            on 2.1 or 2.3") — three lines above the comment BR-8's fix rewrote. Atlas and README are clean, so the
+            residue is entirely Go doc comments. THE RULE: the sweep's input set is the retired CONCEPT, not only
+            the removed SYMBOL, and the discriminator round 1 needed is TENSE rather than the bare name. Round 1
+            declined a bare ban because ~8 historical mentions would redden; retiredPhrases already matches phrases
+            case-insensitively over currentTruthOnly across production Go, so tense-keyed rows ("form 2.1 is",
+            "form 2.1 has", "form 2.1 cannot", "form 2.1's", "2.1 or 2.3") close the class while leaving
+            "was"/"used to"/"before #42" alone by construction.
+          family: retraction-not-swept-over-the-tree
+          round: 4
+        - id: BR-13
+          severity: Important
+          title: The count class was closed by re-wording, and the new wording restates the count — including the comment that declares the rule, and a false claim about the test that pins it
+          detail: |-
+            2ND FINDING IN THIS FAMILY — do not re-word again. play/board.go:28 reads "THREE marks and an ABSENCE,
+            and `Marks()` below is the EXTENT — a count spelled in prose is a second owner of it", spelling the
+            count in the sentence that forbids it; :512 repeats "THREE now"; play_loop.go:614 still gives the
+            palette as "GREEN for yes, RED for no" for a three-sequence palette. The sharp one is board.go:480-481,
+            which claims TestEveryModeSpellingIsTheSameWidthAndFitsEighty "derives its loop from the cycle rather
+            than counting the spellings here" while play/board_test.go:950 is `for range 3`. Proven by mutation: I
+            added an Unsure mark to the const block, Marks() and Toggle — TestEveryBoardMarkHasAPaintedSequence went
+            red ("mark 4 has no sequence") and the spelling test stayed green, with Keys()' switch silently
+            returning the [yes] default for the unwritten mode. So this window built the extent owner and wired it
+            to the palette only; the prompt row, which R11 says is the last thing a short window gives up, has none.
+            Derive the spelling loop from play.Marks() and give Keys() a loud default, then let the comments defer
+            to that instead of asserting a property the test does not have.
+          family: comment-restates-a-count-the-code-owns
+          round: 4
+        - id: BR-14
+          severity: Minor
+          title: The `| deleted |` exemption strips the symbol from the whole document, not just the row, and this plan already relies on it
+          detail: |-
+            repo_guard_test.go:658-662 ReplaceAllString's the row's symbol out of the entire artifact, so a document
+            carrying one deleted-row gets a blind spot for that name everywhere in it. The plan already uses it:
+            Step 8a still says "`boardsFor` is called from five places" and the PQ-6 block "`boardsFor` records
+            singles-first-then-boards", both present tense and both now invisible to
+            TestNoArtifactNamesARetiredSymbol. The comment's "self-limiting in two directions" claim is true across
+            documents and symbols but not within a document. Also: the match is unanchored (no `\b`), and the
+            HasSuffix("| deleted |") test only fires on three-column tables, so a deleted row in the
+            four-column Integration-points table gets no exemption at all.
+          family: guard-exemption-wider-than-its-warrant
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#42 (boundary-review)
@@ -293,11 +390,73 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 
 **Protocol error:** no valid findings block — this round contributed no findings.
 
+## Round 4 — 2026-09-03T23:11:35-07:00 (claude) — passed
+
+### Disposed
+
+- BR-4 — not-addressed — Still three copies at play_loop.go:981, :1009, :1038; Minor and explicitly declined with a stated reason.
+- BR-5 — not-addressed — play/board.go:594-599 still reads b.cells[b.last]; no dropWord field. No path interleaves Rest with an armed drop today.
+- BR-7 — addressed — Six sites swept (tree grep clean) and isCitableName widened — but the guard half is unpinned; raised as new under pin-that-cannot-fail.
+- BR-8 — addressed — All five named sites corrected; the residual restatements the fix itself introduced are raised as the 2nd in that family.
+- BR-9 — addressed — atlas/define.md:2468 documents both, plan Core-concepts gains Marks and Palette.For rows, and a Revisions entry explains the late addition.
+- BR-10 — not-addressed — Reproduced at HEAD with playRig("bases","rizz") at width 12 — stderr still prints "2 words are due but none could be looked up".
+
+### Raised
+
+- **BR-11** [Important] `pin-that-cannot-fail` BR-7's rule fix — the isCitableName widening — can be reverted with the entire suite green
+  2ND FINDING IN THIS FAMILY — do not add one assertion; fix the rule. Verified in a pinned scratch
+  worktree at HEAD: replacing the interior-capital clause at repo_guard_test.go:1677 with `return false`
+  leaves `go test ./...` green in every package, and separately deleting the `"boardsFor"` row at :1059
+  is also green because currentTruthOnly's new exemption already strips the plan's mentions. So both
+  halves of the round-2 fix are individually revertible with nothing noticing. The rule is already
+  written at repo_guard_test.go:1477 ("A finding-fix with no test that reddens without it is not
+  addressed") and in lessons.md, and the mechanism is eight lines below it:
+  TestPlanStatusNormalisesToTheVocabulary is a fixture table for planStatus precisely because no plan in
+  the tree exercises its branches. Give isCitableName the same fixture table (boardsFor/choiceFor true,
+  ids/binds/paint false, Test*/Fuzz*/exported true, "" false).
+- **BR-12** [Important] `retraction-not-swept-over-the-tree` Seven production doc comments still predicate on form 2.1 in the present tense, three lines from the block round 2 rewrote
+  3RD FINDING IN THIS FAMILY — do not fix the seven sites; fix the rule. `git grep -n 'form 2\.1|2\.1 or'`
+  over non-test Go returns nine hits, seven present tense: play/choice.go:8 ("where form 2.1 is a recall
+  test"), :217 ("a concept form 2.1 has no answer for"), play/question.go:53 ("form 2.1's y/n and form
+  2.3's 1/2/3/4 are the same shape") on the central Question interface, play/session.go:139 ("would make
+  form 2.1 answer a question it cannot") and :380 ("which is what form 2.1 is"), store/event.go:34 ("form
+  2.3 sets it; form 2.1 cannot") on a persisted field, and play/board.go:469 ("Tab reaches nothing at all
+  on 2.1 or 2.3") — three lines above the comment BR-8's fix rewrote. Atlas and README are clean, so the
+  residue is entirely Go doc comments. THE RULE: the sweep's input set is the retired CONCEPT, not only
+  the removed SYMBOL, and the discriminator round 1 needed is TENSE rather than the bare name. Round 1
+  declined a bare ban because ~8 historical mentions would redden; retiredPhrases already matches phrases
+  case-insensitively over currentTruthOnly across production Go, so tense-keyed rows ("form 2.1 is",
+  "form 2.1 has", "form 2.1 cannot", "form 2.1's", "2.1 or 2.3") close the class while leaving
+  "was"/"used to"/"before #42" alone by construction.
+- **BR-13** [Important] `comment-restates-a-count-the-code-owns` The count class was closed by re-wording, and the new wording restates the count — including the comment that declares the rule, and a false claim about the test that pins it
+  2ND FINDING IN THIS FAMILY — do not re-word again. play/board.go:28 reads "THREE marks and an ABSENCE,
+  and `Marks()` below is the EXTENT — a count spelled in prose is a second owner of it", spelling the
+  count in the sentence that forbids it; :512 repeats "THREE now"; play_loop.go:614 still gives the
+  palette as "GREEN for yes, RED for no" for a three-sequence palette. The sharp one is board.go:480-481,
+  which claims TestEveryModeSpellingIsTheSameWidthAndFitsEighty "derives its loop from the cycle rather
+  than counting the spellings here" while play/board_test.go:950 is `for range 3`. Proven by mutation: I
+  added an Unsure mark to the const block, Marks() and Toggle — TestEveryBoardMarkHasAPaintedSequence went
+  red ("mark 4 has no sequence") and the spelling test stayed green, with Keys()' switch silently
+  returning the [yes] default for the unwritten mode. So this window built the extent owner and wired it
+  to the palette only; the prompt row, which R11 says is the last thing a short window gives up, has none.
+  Derive the spelling loop from play.Marks() and give Keys() a loud default, then let the comments defer
+  to that instead of asserting a property the test does not have.
+- **BR-14** [Minor] `guard-exemption-wider-than-its-warrant` The `| deleted |` exemption strips the symbol from the whole document, not just the row, and this plan already relies on it
+  repo_guard_test.go:658-662 ReplaceAllString's the row's symbol out of the entire artifact, so a document
+  carrying one deleted-row gets a blind spot for that name everywhere in it. The plan already uses it:
+  Step 8a still says "`boardsFor` is called from five places" and the PQ-6 block "`boardsFor` records
+  singles-first-then-boards", both present tense and both now invisible to
+  TestNoArtifactNamesARetiredSymbol. The comment's "self-limiting in two directions" claim is true across
+  documents and symbols but not within a document. Also: the match is unanchored (no `\b`), and the
+  HasSuffix("| deleted |") test only fires on three-column tables, so a deleted row in the
+  four-column Integration-points table gets no exemption at all.
+
 ## Open findings
 
 - **BR-4** [Minor] `duplicated-block-should-be-a-helper` The Lookup / skip-message / ParseEntry block is copy-pasted three times inside todaysQuestions
 - **BR-5** [Minor] `derived-state-depends-on-call-order` Board.Dropped() reads b.cells[b.last], so its correctness rests on b.last not having moved since the arming Mark
-- **BR-7** [Important] `retraction-not-swept-over-the-tree` boardsFor was deleted by this window and is still the current account of selection in six current-truth sites, including the atlas's Form 2.5 section
-- **BR-8** [Important] `comment-restates-a-count-the-code-owns` Five current-truth comments restate an extent this window changed, including Mark's own doc three lines above the const that falsifies it
-- **BR-9** [Important] `new-surface-undocumented` play.Marks() and Palette.For are new exported surface with no atlas entry and no Core-concepts row
 - **BR-10** [Minor] `message-names-a-cause-the-code-did-not-establish` The empty-sitting summary still misattributes when the deck mixes lookup failures with unaskable words
+- **BR-11** [Important] `pin-that-cannot-fail` BR-7's rule fix — the isCitableName widening — can be reverted with the entire suite green
+- **BR-12** [Important] `retraction-not-swept-over-the-tree` Seven production doc comments still predicate on form 2.1 in the present tense, three lines from the block round 2 rewrote
+- **BR-13** [Important] `comment-restates-a-count-the-code-owns` The count class was closed by re-wording, and the new wording restates the count — including the comment that declares the rule, and a false claim about the test that pins it
+- **BR-14** [Minor] `guard-exemption-wider-than-its-warrant` The `| deleted |` exemption strips the symbol from the whole document, not just the row, and this plan already relies on it

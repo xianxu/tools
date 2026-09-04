@@ -1,12 +1,13 @@
 ---
 id: 000042
-status: working
+status: codecomplete
 deps: [tools#40, tools#44]
 github_issue:
 created: 2026-09-01
-updated: 2026-09-02
+updated: 2026-09-03
 estimate_hours: 3.89
 started: 2026-09-02T12:31:27-07:00
+actual_hours: 10.85
 ---
 
 # retire form 2.1: the board is the fallback when a real test cannot be built
@@ -221,6 +222,8 @@ Single-pass: one review boundary, so plain checkboxes rather than `Mx` tags.
 
 ## Log
 
+
+- 2026-09-03: closed — go test ./... green; go vet + gofmt clean; go test -tags conformance ./cmd/define green (136s). Rounds 1-2 blockers all fixed at the RULE and mutation-verified where mutable: BR-1 the palette check DERIVES from play.Marks() with Palette.For the one owner (both arms reverted, both redden named tests); BR-2 the empty-sitting summary names the cause the code established, not the only cause that used to exist (reverted, reddens); BR-3 five stale routing claims swept plus retiredPhrases rows keyed on the retired CLAIM not the form name; BR-7 the guard that should have caught boardsFor existed and was blind — isCitableName widened to unexported names with an interior capital, red on all six sites immediately; BR-8 five extent restatements now defer to Marks() rather than restating a count; BR-9 both new exported symbols documented in atlas + plan with a Revisions note that they arrived at the boundary. One finding was a CONFLICT between two guards (plan-table requires naming what was deleted, retired-symbol forbids it), settled in currentTruthOnly with an exemption self-limiting to the symbol a deleted-row names. Deliberate non-fix recorded: no retiredSymbolNames row for Recall, since recall is ordinary English this program uses for up-arrow history. BR-4 and BR-5 remain open Minors, declined with reasons in the issue Log. Round 3 was an ABORTED run — a 401 revoked the OAuth token mid-review, so it recorded no findings and no verdict; the ledger names the cause and the round was committed rather than erased. NOT VERIFIED BY ME: the operator sitting the plan Verification asks for — the binary is rebuilt and current but I cannot press keys, so drop-mode legibility on a live prompt row is unconfirmed.; review verdict: FIX-THEN-SHIP
 ### 2026-09-01
 
 Filed from `#40`'s first operator sitting. The screenshot that prompted it showed
@@ -431,3 +434,39 @@ declined with reasons worth keeping:
 `#10` (authored practice items) is the one the project is actually waiting on —
 its Breakdown calls it "the material-quality checkpoint … stop here and read the
 output before building the forms that consume it". `#8`, `#12`, `#13` follow.
+
+### 2026-09-03 — close round 4: the rule fixes were themselves unpinned
+
+Round 3 was an ABORTED run — a 401 revoked the OAuth token ~14 minutes into the
+review, so it recorded no findings and no verdict, and the gate refused to
+finalize. Committed rather than erased: the ledger and sidecar both name the
+cause, and deleting a round that was genuinely attempted would falsify the record
+to keep the round count down.
+
+Round 4 passed with FIX-THEN-SHIP and demoted three Importants past the round cap.
+All three were fixed before this close commit, per `#174`.
+
+- **BR-11 — the fix for BR-7 was green when reverted.** Widening `isCitableName`
+  closed a class; nothing pinned the widening, because `boardsFor` had just been
+  swept out of the tree so no artifact exercised the new clause. **When a rule's
+  triggering input no longer exists, the pin is a fixture table** — the precedent
+  was eight lines away in the same file. Both halves now have one, and both
+  reverts redden.
+- **BR-13 — the count class was closed by re-wording, and the new wording restated
+  the count**, inside the sentence forbidding it, while claiming its test derived
+  from the cycle when the test read `for range 3`. Fixed in the CODE rather than
+  the prose: `Keys()` is a table keyed by mark with a loud default, the spelling
+  test walks `Marks()`, and `TestEveryMarkHasASpelling` fails the build for a mark
+  with no row. The review's own mutation is what proved it — a fourth mark made
+  `Keys()` silently draw the yes row for the wrong mode.
+- **BR-12 — seven production comments still said form 2.1 IS, HAS or CANNOT.**
+  Round 1 declined a bare ban on the name because ~8 historical mentions are
+  legitimate, and that left the class open for three rounds. **Tense is the
+  discriminator**: `retiredPhrases` rows keyed on "form 2.1 is/has/cannot" catch
+  the claims and spare "was"/"used to"/"before #42" by construction. They found
+  three more the hand-grep had missed.
+
+One more worth recording: the first version of the mark-spelling walk HUNG on the
+mutation instead of failing, because `for b.Mode() != m { b.Toggle() }` never
+terminates for a mark `Toggle` cannot reach — the exact mark the test exists to
+catch. Bounded, with a `t.Fatalf` naming the cause.

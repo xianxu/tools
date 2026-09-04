@@ -947,7 +947,17 @@ func TestABoardNamesTheWordItDropped(t *testing.T) {
 func TestEveryModeSpellingIsTheSameWidthAndFitsEighty(t *testing.T) {
 	b := NewBoard([]Cell{{Word: "keel"}, {Word: "mesa"}}, 80, Palette{})
 	want := visibleColumns(b.Keys())
-	for range 3 {
+	// DERIVED FROM Marks(), not `for range 3` (#42 BR-13). A literal count cannot
+	// see a mark added to the set, and the proof is the mutation that found this:
+	// with a fourth mark in `Marks()` and `Toggle`, this loop stayed green while
+	// `Keys()` silently returned the yes spelling for the unwritten mode.
+	//
+	// Unmarked is skipped: it is the ABSENCE of a mark, never a mode Tab lands on.
+	for _, m := range Marks() {
+		if m == Unmarked {
+			continue
+		}
+		toMode(t, b, m)
 		got := visibleColumns(b.Keys())
 		if got != want {
 			t.Errorf("mode %v spells a %d-column row; the first was %d — the line must not "+
@@ -959,6 +969,60 @@ func TestEveryModeSpellingIsTheSameWidthAndFitsEighty(t *testing.T) {
 				"it wraps, and boardFitsIn charges the wrapped height to every board",
 				b.Mode(), total)
 		}
+	}
+}
+
+// EVERY MARK HAS A SPELLING, derived from the extent rather than from a count
+// (#42 BR-13).
+//
+// `Keys()` is the one statement of what the next click will MEAN, and R11 made it
+// the last thing a short window gives up because every mark is irreversible. It
+// used to be a switch whose default returned the yes spelling, so a mark added to
+// `Marks()` and to `Toggle` and forgotten there drew "marking [yes] …" while the
+// mode was something else — proven by mutation, and green in every test at the
+// time.
+func TestEveryMarkHasASpelling(t *testing.T) {
+	b := NewBoard([]Cell{{Word: "keel"}}, 80, Palette{})
+	for _, m := range Marks() {
+		if m == Unmarked {
+			continue // the absence of a mark, never a mode Tab lands on
+		}
+		spelling, ok := modeSpellings[m]
+		if !ok {
+			t.Errorf("mark %v has no prompt-row spelling, so the board would state a mode "+
+				"it is not in on the row a learner reads before an irreversible click", m)
+			continue
+		}
+		toMode(t, b, m)
+		if got := b.Keys(); got != spelling {
+			t.Errorf("in mode %v Keys() = %q, want %q", m, got, spelling)
+		}
+	}
+	// ...and no spelling for a mark that is not in the set, which would be wording
+	// nothing can reach.
+	if len(modeSpellings) != len(Marks())-1 {
+		t.Errorf("%d spellings for %d marks (less Unmarked) — a spelling with no mark is "+
+			"dead wording, and a mark with no spelling hits the loud default",
+			len(modeSpellings), len(Marks())-1)
+	}
+}
+
+// toMode cycles Tab until the board is in mode m, and FAILS rather than looping
+// forever if it never gets there (#42 BR-13).
+//
+// BOUNDED, and the bound is the finding: the first version of the callers below
+// spun `for b.Mode() != m { b.Toggle() }`, which HANGS for a mark `Toggle` does
+// not reach — exactly the mark these tests exist to catch. A test that hangs on
+// the defect is worse than one that misses it: a red says what is wrong, a hang
+// says nothing and takes the suite with it.
+func toMode(t *testing.T, b *Board, m Mark) {
+	t.Helper()
+	for range len(Marks()) + 1 {
+		if b.Mode() == m {
+			return
+		}
 		b.Toggle()
 	}
+	t.Fatalf("Tab never reaches mode %v — it is in Marks() but not in Toggle's cycle, "+
+		"so nothing on the board can ever land it", m)
 }

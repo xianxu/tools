@@ -136,7 +136,7 @@ type Outcome struct {
 	// every correct answer, which is D8: a right answer writes no finding.
 	//
 	// On Outcome rather than returned from Grade because only SOME forms have
-	// it. Widening Grade would make form 2.1 answer a question it cannot.
+	// it. Widening Grade would have made form 2.1 give an answer it did not have.
 	Axis Axis
 	// Unaided marks a right answer given COLD — the form checked it against an
 	// answer it already knew, and no reveal preceded it. False on every wrong
@@ -377,7 +377,7 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 			// GRADING BEFORE A REVEAL IS THE NORMAL PATH, and it used to be
 			// refused here on the grounds that "a learner cannot rate what they
 			// have not seen". That is true of a recognition test and false of a
-			// RECALL test, which is what form 2.1 is: the learner rates their own
+			// RECALL test, which is what form 2.1 was: the learner rated their own
 			// recall, which they know before they check, and the definition is
 			// FEEDBACK rather than stimulus. Getting it backwards put a mandatory
 			// keystroke in front of every correct answer (#24).
@@ -466,7 +466,7 @@ func advance(s Session, q Question, v Verdict, unaided bool) (Session, Outcome) 
 
 // Missed is implemented by forms whose WRONG answers carry a kind.
 //
-// Optional deliberately. Form 2.1 cannot say why a recall failed — the learner
+// Optional deliberately. Form 2.1 could not say why a recall failed — the learner
 // simply did not remember — so requiring every form to answer would make the
 // interface lie for the one form that has no answer. Apply asks and takes
 // AxisNone when nobody answers, which is also what a correct answer reports.
