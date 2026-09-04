@@ -196,6 +196,10 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 	var authored, skipped, rejected int
 	var domains []store.Domain
 	widened := map[selectionTier]int{}
+	// How often each word has already served as a wrong answer in THIS batch.
+	// Threaded through selection so a batch spreads its distractors rather than
+	// leaning on whichever words happen to be eligible — see pickDistractors.
+	served := map[string]int{}
 
 	for _, c := range pool {
 		if authored >= limit {
@@ -220,6 +224,15 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 			return 1
 		}
 
+		// THE FREE CHECK FIRST. A stem that does not contain its answer cannot be
+		// rendered as a question, and finding that out costs nothing — so it runs
+		// before the judge is paid to have an opinion about it.
+		if !stemUsesTheWord(stem.Stem, c.Word) {
+			rejected++
+			fmt.Fprintf(errOut, "define: %q: the stem does not use the word; leaving it unauthored\n", c.Word)
+			continue
+		}
+
 		// THE ENTAILMENT JUDGE, before any distractor is selected. A stem that
 		// does not entail its answer cannot be rescued by better wrong answers,
 		// so judging first is what stops the veto being spent on a doomed item.
@@ -228,7 +241,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 			fmt.Fprintf(errOut, "define: judging stopped: %v\n", err)
 			return 1
 		}
-		if !verdict.Entails || !verdict.Named {
+		if !verdict.Entails || verdict.Glosses || !verdict.Named {
 			rejected++
 			fmt.Fprintf(errOut, "define: %q: stem rejected (%s); leaving it unauthored\n", c.Word, verdict.Reason)
 			continue
@@ -245,7 +258,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 			// learner cannot learn a position; an authored item is written ONCE and
 			// cached forever, so varying it by day would make two runs of the same
 			// deck produce different material and a bad batch undebuggable.
-			seedFor("harvest-options", c.Word))
+			seedFor("harvest-options", c.Word), served)
 		widened[tier]++
 		var kept []string
 		for _, cand := range candidates {
@@ -261,6 +274,12 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, limit int, out
 				continue
 			}
 			kept = append(kept, cand)
+		}
+		for _, k := range kept {
+			// Counted only for options that SURVIVED the veto: a vetoed candidate
+			// was never shown, so charging it would push the next item away from a
+			// word this batch has not actually used.
+			served[store.Key(k)]++
 		}
 		if len(kept) == 0 {
 			rejected++

@@ -49,7 +49,18 @@ type entailVerdict struct {
 	// Entails is the whole question: could a reader who did not know the word
 	// work it out from the rest of the sentence?
 	Entails bool `json:"entails"`
-	// Named reports the second requirement — a real person, place or institution
+	// Glosses reports whether the sentence DEFINES the word rather than using it.
+	//
+	// A field of its own because the first real batch showed Entails CAUSES this:
+	// the cheapest way to make a sentence entail a word is to define the word in
+	// it, and half of 20 items came back as appositive glosses that entailed
+	// perfectly. A judge scoring only entailment would have passed every one.
+	//
+	// Inverted sense from the others — true is a REJECTION — because "does it
+	// gloss" is the question a reader asks, and phrasing it as "is it clean"
+	// would make the prompt argue against itself.
+	Glosses bool `json:"glosses"`
+	// Named reports the naming requirement — a real person, place or institution
 	// the reader can picture — separately, because a stem can satisfy one and
 	// fail the other and a single boolean would hide which.
 	Named  bool   `json:"named"`
@@ -75,10 +86,43 @@ func renderEntailPrompt(word, stem string) llm.Request {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## The item\n\nWord: %s\n\nSentence: %s\n\n", word, stem)
 	b.WriteString("## What to judge\n\n")
-	b.WriteString("**entails** — with the word removed, could a reader who did NOT know it work out " +
-		"which word belongs in the blank, from the rest of the sentence alone? If several unrelated " +
-		"words would fit equally well, the answer is no. \"His ___ behaviour was noted by all\" is a NO: " +
-		"almost any adjective fits.\n\n")
+	// THE MULTIPLE-CHOICE FRAMING, and the second checkpoint is what forced it.
+	//
+	// The first wording asked whether the word was recoverable "from the rest of
+	// the sentence alone", and that bar is unreachable without a gloss: nine of
+	// twenty items were rejected with reasons like "any migratory fish name would
+	// fit, AND NO DEFINITION IS SUPPLIED" — the judge citing the absence of the
+	// very thing the gloss rule forbids. The two requirements contradicted each
+	// other for every concrete noun.
+	//
+	// The learner sees FOUR OPTIONS. The question is never "recover this word from
+	// the lexicon", it is "is this the right one of these four" — and whether a
+	// specific alternative also fits is exactly what the veto asks, per pair,
+	// against the options actually offered. So this judge asks the only thing the
+	// veto cannot: does the sentence make the word's MEANING do work, or is it
+	// merely a place the word can sit?
+	b.WriteString("**entails** — does the sentence make the word's MEANING do work?\n\n" +
+		"The learner will see this sentence with the word blanked out, beside three other options, " +
+		"so the word does NOT have to be the only one in the language that fits — it has to be the " +
+		"one this sentence is ABOUT.\n\n" +
+		"NO: \"His ___ behaviour was noted by all\" — the word is decorative; the sentence would " +
+		"read the same with almost any adjective, and nothing in it is about flattery.\n" +
+		"NO: \"___ decreases prosocial intentions\" — a title the word merely appears in.\n" +
+		"YES: \"The Times dismissed Oliver Stone's Putin interviews as ___\" — dismissal, a fawning " +
+		"interview, a reprinting Kremlin: the sentence is about the quality the word names, even " +
+		"though `obsequious` would also fit.\n" +
+		"YES: \"Shipwrights at Chatham laid the ___ of their replica frigate, and the first oak " +
+		"frames will be bolted to it by spring\" — frames bolted to it, laid first: the sentence " +
+		"is about the thing the word names.\n\n" +
+		"A near-synonym also fitting is NOT a reason to answer no. That is the veto's job, and it " +
+		"runs against the actual options.\n\n")
+	b.WriteString("**glosses** — does the sentence DEFINE the word instead of just using it? " +
+		"An appositive (\"the alewife, the small silver herring\"), a relative clause " +
+		"(\"a mesa, which is a flat-topped hill\") or a contrast that explains it " +
+		"(\"a mesa, too broad to be a butte\") are all YES. A sentence that uses the word the way " +
+		"a newspaper would, in front of readers assumed to know it, is NO.\n\n" +
+		"Yes means the item is REJECTED: a sentence carrying its own definition tests reading, " +
+		"not vocabulary.\n\n")
 	b.WriteString("**named** — does the sentence name a real person, place or institution the reader " +
 		"can picture? \"A manager\" and \"the company\" are NO. \"The Senate Judiciary Committee\" is YES.\n\n")
 	b.WriteString("**reason** — one clause, for a human reading a rejected item.\n")

@@ -337,6 +337,68 @@ above). Each `Mx` row closes with its own `sdlc milestone-close`.
 
 ## Log
 
+### 2026-09-04 — the checkpoint, iterated: three batches
+
+Operator asked for both problems fixed and the batch re-run. Both are fixed;
+fixing them exposed two more, also fixed. Final batch:
+`workshop/pensive/000010-m2-batch3.md`.
+
+| | batch 1 | batch 2 | batch 3 |
+|---|---|---|---|
+| authored | 20/20 | 11/20 | **19/20** |
+| appositive glosses | ~10 | 0 | **0** |
+| worst distractor reuse | 8 | 4 | 8 (see below) |
+| veto fired | yes, both ways | yes | yes, both ways |
+
+**The gloss fix worked, and stating the rule was not enough.** The system prompt
+already said *never write a definition* and got ten appositives out of twenty.
+What worked was SHOWING three wrong shapes and two right ones, plus a `glosses`
+field on the judge — separate from `entails`, because a glossed stem entails
+perfectly and a judge scoring only entailment passes every one.
+
+**Fixing it exposed a contradiction I had built in.** Batch 2 rejected 9 of 20
+with reasons like *"any migratory fish name would fit, AND NO DEFINITION IS
+SUPPLIED"* — the judge citing the absence of the very thing the gloss rule
+forbids. The two requirements were mutually exclusive for every concrete noun:
+you cannot make `alewife` uniquely recoverable from bare context without
+describing the fish.
+
+**The error was conceptual, not a prompt bug.** I had specified entailment as
+*"recoverable from the rest of the sentence alone"* — a bar that only makes
+sense for a fill-in-the-blank with no options. **This is a MULTIPLE-CHOICE
+form.** The learner sees four options, so the question is never "recover this
+word from the lexicon", it is "is this the right one of these four" — and
+whether a specific alternative also fits is exactly what the VETO asks, per
+pair, against the options actually offered. The judge now asks the only thing
+the veto cannot: does the sentence make the word's MEANING do work, or is it
+merely a place the word can sit. Rejection went 9 → 1, and the one that remains
+is principled (`gaslighting`: *"nothing in the sentence evokes the
+reality-distorting manipulation the word names"*).
+
+**And batch 2 shipped an item with a blank in it.** *"...has stood atop the
+narrow ___ of First Mesa"* for `mesa` — the model blanked the word itself against
+an explicit instruction, and BOTH judges passed it because neither was asked.
+Now checked deterministically before either judge is paid: no model call to find
+out whether a string contains a substring. Subtler than it looks — that stem does
+contain `mesa`, in the place name, so containment alone passes it; the defect is
+the blank.
+
+**The diversity pressure works and is bounded by the deck, which is the honest
+finding.** Measured on a homogeneous pool it cuts worst-case reuse from 6 to 4
+and uses every word. On THIS deck it does much less, and the reason is
+composition rather than the mechanism: for `keel` (C1 Nautical) the entire
+general-at-band tier is two words — `ephemeral` (C1) and `pulp` (B2) — because
+eight of twenty words are specialists in domains of one. Pressure cannot spread
+what does not exist. The tiering reports it (*7 items drew options from any
+domain, at or below band*), and a real deck of hundreds dilutes it.
+
+**One thing for `#12` to know, found by reading and not by measuring:** a
+specialist word beside three general ones is identifiable by REGISTER alone —
+`keel` against `ephemeral`, `pulp`, `mesa` is answerable without knowing what a
+keel is. The Spec's rule offers general vocabulary as the fallback and that is
+what it does; whether *other specialist domains at band* would beat it is a real
+question this deck is too small to answer.
+
 ### 2026-09-04 — THE CHECKPOINT: the first real batch, read
 
 20 words, live model, deck copied from `~/play40`. Full batch saved at

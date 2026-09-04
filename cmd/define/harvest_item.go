@@ -159,7 +159,10 @@ type bandedWord struct {
 // reached is returned so the caller can say so and a test can see it, because a
 // selector that silently falls back to "any word at all" is indistinguishable
 // from one that is working.
-func pickDistractors(answer string, target store.WordFacts, learner store.Band, pool []bandedWord, n int, seed uint64) ([]string, selectionTier) {
+// used counts how many items across the batch each word has already served as a
+// distractor for. Optional — a nil map means no diversity pressure, which is what
+// every unit test wants and what a single-item run gets.
+func pickDistractors(answer string, target store.WordFacts, learner store.Band, pool []bandedWord, n int, seed uint64, servedSoFar map[string]int) ([]string, selectionTier) {
 	// The learner's band when there is one; otherwise the ANSWER's own band, so
 	// generic authoring still pitches distractors at the word rather than at the
 	// whole scale. Recorded because it is a real decision: with no learner model
@@ -212,6 +215,36 @@ func pickDistractors(answer string, target store.WordFacts, learner store.Band, 
 		}},
 		{tierAnyDomain, func(c bandedWord) bool { return atOrBelow(c.Facts.Band) }},
 		{tierAboveBand, func(c bandedWord) bool { return true }},
+	}
+
+	// DIVERSITY PRESSURE, measured into existence by the first real batch: over
+	// 20 words, `ephemeral` was a wrong answer in 8 items and the four A1 words
+	// selected each other in all four of theirs. Every constraint above is
+	// per-ITEM, so nothing stopped one eligible word from serving the whole
+	// batch — and a learner who meets `ephemeral` as a wrong answer eight times
+	// learns that it is never the answer, which is the opposite of the point.
+	//
+	// A SORT rather than a cap: a cap would refuse to fill an option set on a
+	// small deck, and fewer options is a worse question than a repeated one. The
+	// least-used eligible candidates simply come first, so repetition is what
+	// happens when the deck has nothing else, not the default.
+	//
+	// Stable, and keyed on the shuffled position so equally-used candidates keep
+	// their seeded order — the tie-break must not become a second ordering that
+	// undoes the shuffle.
+	if servedSoFar != nil {
+		place := make(map[int]int, len(order))
+		for pos, i := range order {
+			place[i] = pos
+		}
+		sort.SliceStable(order, func(a, b int) bool {
+			ua := servedSoFar[store.Key(pool[order[a]].Word)]
+			ub := servedSoFar[store.Key(pool[order[b]].Word)]
+			if ua != ub {
+				return ua < ub
+			}
+			return place[order[a]] < place[order[b]]
+		})
 	}
 
 	var out []string
@@ -304,11 +337,29 @@ func renderAuthorPrompt(lang store.Lang, word, gloss string, facts store.WordFac
 	// REQUIREMENTS, not preferences, and the reason is measured: asked for a
 	// natural sentence the model drifts to the neutral and unnamed, and an
 	// unnamed subject gives the learner no referent to attach the word to.
-	b.WriteString("Two requirements:\n\n")
-	b.WriteString("1. **The sentence must ENTAIL the word.** A reader who did not know the word must be " +
-		"able to work out which word belongs in the blank from the rest of the sentence alone. " +
-		"\"His ___ behaviour was noted by all\" fails this: almost any adjective fits.\n")
-	b.WriteString("2. **Name real people, places or institutions.** Not \"a manager\" or \"the company\" — " +
+	b.WriteString("Three requirements:\n\n")
+	b.WriteString("1. **The sentence must POINT AT the word without defining it.** A reader who knows " +
+		"the word must find it the obvious fit; a reader who does not must be left guessing. " +
+		"\"His ___ behaviour was noted by all\" is too loose — almost any adjective fits.\n")
+	// THE APPOSITIVE BAN, and it is stated as its own requirement because the
+	// first batch showed requirement 1 CAUSES this: the cheapest way to make a
+	// sentence point at a word is to define the word in it. Half of 20 items came
+	// back as "the alewife, the small silver herring Alosa pseudoharengus" — a
+	// reading test rather than a vocabulary test, since the learner need only read
+	// the gloss beside the blank.
+	//
+	// Shown rather than described: "do not define it" is what the system prompt
+	// already said, and the model honoured it by writing an appositive instead.
+	b.WriteString("2. **Never gloss the word.** The sentence must not contain a definition of it — " +
+		"not as an appositive, not as a relative clause, not as a contrast. These are all WRONG:\n\n")
+	b.WriteString("   - \"...the run of ___, the small silver herring that spawns upstream.\"\n")
+	b.WriteString("   - \"...classified the landform as a ___, since it is too broad to be a butte.\"\n")
+	b.WriteString("   - \"...the ship's ___, the massive timber spine running the length of her hull.\"\n\n")
+	b.WriteString("   Write instead a sentence in which the word simply DOES ITS WORK, the way a " +
+		"newspaper would use it in front of readers assumed to know it:\n\n")
+	b.WriteString("   - \"Biologists at the Holyoke Dam counted 400,000 ___ climbing the fish lift this spring.\"\n")
+	b.WriteString("   - \"The road climbs 300 metres from the valley floor to the ___ above Monument Valley.\"\n\n")
+	b.WriteString("3. **Name real people, places or institutions.** Not \"a manager\" or \"the company\" — " +
 		"a named subject the reader can picture. This is what the word attaches to in memory.\n\n")
 	b.WriteString("Write the sentence with the word itself present, spelled exactly as given. " +
 		"Do not blank it out; do not quote it; do not explain it afterwards.\n\n")
@@ -350,4 +401,44 @@ func sortedBanded(in []bandedWord) []bandedWord {
 	out := append([]bandedWord(nil), in...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Word < out[j].Word })
 	return out
+}
+
+// stemUsesTheWord reports whether a stem actually contains its answer. Pure, and
+// checked BEFORE any judge is paid.
+//
+// The second checkpoint batch produced "The Hopi village of Walpi has stood atop
+// the narrow ___ of First Mesa" for the word `mesa`: the model blanked the word
+// itself, against an explicit instruction not to, and both judges passed the
+// item because neither was asked. An item whose stem does not contain its answer
+// cannot be rendered as a question at all.
+//
+// Deterministic and free, which is why it runs first: a model call to check
+// whether a string contains a substring would be the same mistake as asking one
+// to derive a domain the dictionary printed.
+func stemUsesTheWord(stem, word string) bool {
+	lower, target := strings.ToLower(stem), strings.ToLower(strings.TrimSpace(word))
+	if target == "" {
+		return false
+	}
+	// ALREADY BLANKED. The shipped case was subtler than "the word is missing":
+	// "...has stood atop the narrow ___ of First Mesa" DOES contain `mesa`, in the
+	// place name, so a containment check alone passes it. The defect is the blank
+	// the model inserted against an explicit instruction — #12 owns blanking, and
+	// a stem that arrives pre-blanked would be blanked twice or not at all.
+	if strings.Contains(stem, "___") {
+		return false
+	}
+	i := strings.Index(lower, target)
+	if i < 0 {
+		return false
+	}
+	// A WHOLE WORD, not a substring: `set` must not be satisfied by `sunset`, and
+	// `run` not by `brunch`. Inflections are allowed to follow (`ran` will not
+	// match, but `runs` and `keels` will), because a stem using the word
+	// naturally often inflects it and rejecting that would push the model back
+	// toward the stilted constructions the gloss rule already fought.
+	if i > 0 && isWordByte(lower[i-1]) {
+		return false
+	}
+	return true
 }

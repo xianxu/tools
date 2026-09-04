@@ -57,13 +57,45 @@ const (
 // scriptAll answers every task, so a test that cares about one pass is not
 // written in terms of the others. n is generous: the fake serves its fallback
 // once a queue is drained, and these replies are all well-formed.
+//
+// The author reply is PER WORD, keyed on the prompt's "## The word" line,
+// because a stem must actually contain its answer — stemUsesTheWord checks that
+// for free before any judge is paid, and one canned sentence would be rejected
+// for every word but the one it happens to name.
 func scriptAll(f *llmtest.Fake, n int) {
+	for _, w := range allDeckWords() {
+		for range n {
+			f.Script(authorKey(w),
+				llmtest.Reply{Text: `{"stem":"Senator Murkowski raised the question of ` + w + ` at the Commerce Committee hearing in Anchorage."}`})
+		}
+	}
 	for range n {
 		f.Script(markBand, llmtest.Reply{Text: bandReply})
-		f.Script(markAuthor, llmtest.Reply{Text: `{"stem":"The Senate confirmed the nominee after a sycophantic hearing."}`})
-		f.Script(markEntail, llmtest.Reply{Text: `{"entails":true,"named":true,"reason":"names the Senate"}`})
+		f.Script(markEntail, llmtest.Reply{Text: `{"entails":true,"glosses":false,"named":true,"reason":"names the committee"}`})
 		f.Script(markVeto, llmtest.Reply{Text: `{"fits":false,"reason":"unrelated meaning"}`})
 	}
+}
+
+// authorKey matches the AUTHOR prompt for one word and nothing else.
+//
+// "## The word\n\n<word>" is not enough: the band prompt opens identically, so
+// that key serves author replies to banding calls and drains the queue. The
+// parenthesised facts are what only authoring carries — its pool is banded by
+// construction, so the band is always present there and never in the other.
+func authorKey(word string) string { return "\n\n" + word + " (CEFR" }
+
+// allDeckWords is deckWord's full range, so scriptAll covers whatever a rig
+// asked for without each test restating its deck.
+func allDeckWords() []string {
+	seen := map[string]bool{}
+	var out []string
+	for i := range 14 {
+		if w := deckWord(i); !seen[w] {
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // countTask reports how many requests carried a task's marker.

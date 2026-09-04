@@ -96,7 +96,7 @@ func TestPickDistractorsHoldsTheRule(t *testing.T) {
 		banded("sycophantic", store.C1, law), // the answer itself
 	}
 
-	got, tier := pickDistractors("sycophantic", target, store.C1, sortedBanded(pool), 2, 7)
+	got, tier := pickDistractors("sycophantic", target, store.C1, sortedBanded(pool), 2, 7, nil)
 
 	if tier != tierSameDomain {
 		t.Errorf("tier = %v, want same-domain — the pool can supply it", tier)
@@ -129,7 +129,7 @@ func TestPickDistractorsNeverReachesAboveTheLearner(t *testing.T) {
 		banded("above-two", store.C1, law),
 		banded("above-three", store.C2, law),
 	}
-	got, tier := pickDistractors("x", target, store.B1, sortedBanded(pool), 3, 1)
+	got, tier := pickDistractors("x", target, store.B1, sortedBanded(pool), 3, 1, nil)
 	// Nothing at or below B1 exists, so selection must WIDEN and say so rather
 	// than reaching up.
 	if tier != tierAboveBand {
@@ -149,7 +149,7 @@ func TestPickDistractorsWidensThroughGeneralAndSaysSo(t *testing.T) {
 		banded("ordinary-one", store.C1, store.DomainGeneral),
 		banded("ordinary-two", store.B2, store.DomainGeneral),
 	}
-	got, tier := pickDistractors("x", target, store.C1, sortedBanded(pool), 3, 1)
+	got, tier := pickDistractors("x", target, store.C1, sortedBanded(pool), 3, 1, nil)
 	if tier != tierGeneral {
 		t.Errorf("tier = %v, want general — no same-domain word exists but level-matched general ones do", tier)
 	}
@@ -173,7 +173,7 @@ func TestPickDistractorsWithoutALearnerBandUsesTheWords(t *testing.T) {
 		banded("one-below", store.A2, law),
 		banded("far-above", store.C2, law),
 	}
-	got, tier := pickDistractors("x", target, "", sortedBanded(pool), 2, 3)
+	got, tier := pickDistractors("x", target, "", sortedBanded(pool), 2, 3, nil)
 	if tier != tierSameDomain {
 		t.Errorf("tier = %v, want same-domain", tier)
 	}
@@ -198,8 +198,8 @@ func TestPickDistractorsIsDeterministic(t *testing.T) {
 	}
 	pool = sortedBanded(pool)
 
-	first, _ := pickDistractors("x", target, store.C1, pool, 3, 42)
-	second, _ := pickDistractors("x", target, store.C1, pool, 3, 42)
+	first, _ := pickDistractors("x", target, store.C1, pool, 3, 42, nil)
+	second, _ := pickDistractors("x", target, store.C1, pool, 3, 42, nil)
 	if strings.Join(first, ",") != strings.Join(second, ",") {
 		t.Errorf("same seed gave %v then %v", first, second)
 	}
@@ -208,7 +208,7 @@ func TestPickDistractorsIsDeterministic(t *testing.T) {
 	// answers by elimination.
 	varied := false
 	for s := uint64(1); s < 40 && !varied; s++ {
-		other, _ := pickDistractors("x", target, store.C1, pool, 3, s)
+		other, _ := pickDistractors("x", target, store.C1, pool, 3, s, nil)
 		if strings.Join(other, ",") != strings.Join(first, ",") {
 			varied = true
 		}
@@ -239,12 +239,13 @@ func TestAuthorPromptWithNoLearnerModelGolden(t *testing.T) {
 		learnerFacts{}))
 }
 
-// The two requirements are REQUIREMENTS in the prompt, not preferences, and the
-// entailment one carries its counter-example. Measured: asked for a natural
-// sentence the model drifts to the neutral and unnamed.
-func TestAuthorPromptStatesBothRequirements(t *testing.T) {
+// All THREE requirements are REQUIREMENTS in the prompt, not preferences, and
+// each carries its counter-example. Measured twice: asked for a natural sentence
+// the model drifts to the neutral and unnamed, and asked to make a sentence
+// entail a word it defines the word (the M2 checkpoint's finding).
+func TestAuthorPromptStatesEveryRequirement(t *testing.T) {
 	got := renderAuthorPrompt(store.DefaultLang, "x", "", store.WordFacts{}, learnerFacts{}).Prompt
-	for _, want := range []string{"ENTAIL", "Name real people", "was noted by all"} {
+	for _, want := range []string{"POINT AT the word", "Never gloss the word", "Name real people", "was noted by all"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the prompt never says %q", want)
 		}
@@ -298,5 +299,113 @@ func TestBlankOut(t *testing.T) {
 		if got := blankOut(tc.stem, tc.answer); got != tc.want {
 			t.Errorf("blankOut(%q, %q) = %q, want %q", tc.stem, tc.answer, got, tc.want)
 		}
+	}
+}
+
+// DIVERSITY PRESSURE, measured into existence by the first real batch: over 20
+// words `ephemeral` served as a wrong answer in 8 items, and the four A1 words
+// selected each other in all four of theirs. A learner who meets one word as a
+// wrong answer eight times learns it is never the answer.
+func TestPickDistractorsSpreadsAcrossABatch(t *testing.T) {
+	law := mustDomain(t, "Law")
+	var pool []bandedWord
+	for _, w := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"} {
+		pool = append(pool, banded(w, store.C1, law))
+	}
+	pool = sortedBanded(pool)
+	target := store.WordFacts{Band: store.C1, Domain: law, At: harvestClock}
+
+	served := map[string]int{}
+	for _, answer := range []string{"a", "b", "c", "d", "e", "f"} {
+		got, _ := pickDistractors(answer, target, store.C1, pool, 3, seedFor("t", answer), served)
+		for _, w := range got {
+			served[store.Key(w)]++
+		}
+	}
+
+	worst := 0
+	for _, n := range served {
+		if n > worst {
+			worst = n
+		}
+	}
+	// Six items x three options = 18 slots over 10 words. Perfectly even is 1.8,
+	// so 3 leaves real slack for the eligibility constraints; without pressure the
+	// same word took 6 of 6.
+	if worst > 3 {
+		t.Errorf("one word served as a distractor %d times across 6 items (counts %v); "+
+			"the batch is leaning on whichever words happen to be eligible", worst, served)
+	}
+	// And the pressure must not COST coverage: every item still got its options.
+	if len(served) < 6 {
+		t.Errorf("only %d distinct words were used across the batch: %v", len(served), served)
+	}
+}
+
+// A cap would refuse to fill an option set on a small deck, and fewer options is
+// a worse question than a repeated one. Pressure ORDERS, it does not exclude.
+func TestDiversityPressureNeverStarvesAnItem(t *testing.T) {
+	law := mustDomain(t, "Law")
+	pool := sortedBanded([]bandedWord{
+		banded("only-one", store.C1, law),
+		banded("only-two", store.C1, law),
+	})
+	target := store.WordFacts{Band: store.C1, Domain: law, At: harvestClock}
+	// Both candidates already heavily used; the item must still be filled.
+	served := map[string]int{"only-one": 99, "only-two": 99}
+	got, _ := pickDistractors("x", target, store.C1, pool, 3, 1, served)
+	if len(got) != 2 {
+		t.Errorf("got %v, want both candidates — pressure orders, it must not exclude", got)
+	}
+}
+
+// A nil map is no pressure, which is what a single-item run and every other
+// unit test wants — and it must not change the seeded order.
+func TestDiversityPressureIsOptional(t *testing.T) {
+	law := mustDomain(t, "Law")
+	var pool []bandedWord
+	for _, w := range []string{"a", "b", "c", "d", "e"} {
+		pool = append(pool, banded(w, store.C1, law))
+	}
+	pool = sortedBanded(pool)
+	target := store.WordFacts{Band: store.C1, Domain: law, At: harvestClock}
+
+	withNil, _ := pickDistractors("x", target, store.C1, pool, 3, 9, nil)
+	withEmpty, _ := pickDistractors("x", target, store.C1, pool, 3, 9, map[string]int{})
+	if strings.Join(withNil, ",") != strings.Join(withEmpty, ",") {
+		t.Errorf("nil gave %v and an empty map gave %v; an unused map must not reorder", withNil, withEmpty)
+	}
+}
+
+// The free check, added by the second checkpoint batch: it produced
+// "...has stood atop the narrow ___ of First Mesa" for the word `mesa` — the
+// model blanked the word itself against an explicit instruction, and both judges
+// passed the item because neither was asked.
+func TestStemUsesTheWord(t *testing.T) {
+	for _, tc := range []struct {
+		name, stem, word string
+		want             bool
+	}{
+		{"present", "Shipwrights laid the keel of the frigate.", "keel", true},
+		{"inflected", "Domtar's mills shipped tonnes of pulp.", "mill", true},
+		{"capitalised", "Mesa country begins north of Flagstaff.", "mesa", true},
+		// THE CASE THAT SHIPPED, and it is subtler than it looks: this stem DOES
+		// contain `mesa`, in the place name "First Mesa" — so a containment check
+		// alone passes it. What is wrong is the blank the model inserted against
+		// an explicit instruction, which #12 would then blank again or not at all.
+		{"the model blanked it itself", "The village stood atop the narrow ___ of First Mesa.", "mesa", false},
+		{"blanked and absent", "A sentence with a ___ in it.", "quokka", false},
+		{"absent entirely", "A sentence about nothing in particular.", "quokka", false},
+		// A substring is not the word. `set` must not be satisfied by `sunset`,
+		// or a stem the learner cannot answer would pass the only free check.
+		{"substring at the end", "The sun dipped below the horizon at sunset.", "set", false},
+		{"substring inside", "They met for brunch in Tromso.", "run", false},
+		{"empty word", "Anything at all.", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stemUsesTheWord(tc.stem, tc.word); got != tc.want {
+				t.Errorf("stemUsesTheWord(%q, %q) = %v, want %v", tc.stem, tc.word, got, tc.want)
+			}
+		})
 	}
 }
