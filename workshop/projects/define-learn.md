@@ -466,6 +466,64 @@ correction points at the real lesson. The two `milestone-review` rows booked
 `#7` took eight rounds and `#44` took five — was right in kind and still low by
 3x.** M2 books 0.75 for its boundary and should be read as optimistic.
 
+<a id="tools-10-m2"></a>
+### tools#10 M2 — authored stems, selected distractors, and the checkpoint
+
+**est:** 4.00 (M2's share of the issue's 7.94)
+**actual:** 1.99h
+**closed:** 2026-09-04
+
+The model writes the stem; the deck supplies the wrong answers. `authoredStem`
+has no distractors field at all — a model asked for four options writes four it
+can justify and one is usually also correct, so removing the field is what makes
+"selected, never invented" structural rather than a rule to follow.
+
+**The checkpoint is the whole value of this milestone, and it changed the
+design three times.** The project's instruction was to stop and read real
+generated items before `#12` and `#13` consume them. Three live batches:
+
+- **Batch 1** — every stem named a real referent (Holyoke Dam, Alvin Bragg, HMS
+  Victory, Usain Bolt), which is the Spec's prediction confirmed: a model asked
+  for a natural sentence drifts to the unnamed, and making it a REQUIREMENT
+  fixed it. But half the items were appositive glosses — *"the alewife, the
+  small silver herring"* — and `ephemeral` was a wrong answer in 8 of 20.
+- **Batch 2** — glosses gone, and 9 of 20 rejected with reasons like *"any
+  migratory fish name would fit, AND NO DEFINITION IS SUPPLIED"*: the judge
+  citing the absence of the thing the gloss rule forbids.
+- **Batch 3** — 19 of 20, zero glosses, one principled rejection.
+
+**Three lessons worth preserving, none of which a green suite could produce.**
+
+*Stating a rule in a prompt is not enforcing it.* The system prompt already said
+*never write a definition*; showing three wrong shapes and two right ones is what
+worked.
+
+*Two requirements can be individually right and jointly impossible.* Entailment
+and no-gloss are unsatisfiable together for any concrete noun, because the
+cheapest way to make a sentence entail a word is to define it. The tell was the
+judge's own rejection reason.
+
+*The resolution was to re-read what the artifact is.* "Recoverable from the
+sentence alone" is a fill-in-the-blank bar; this is MULTIPLE CHOICE, so "does
+another word also fit" is a question about the OPTIONS — which the veto already
+asked, per pair. One judge was doing the other's job badly.
+
+**And ask the free question before the paid one.** Batch 2 shipped an item with
+`___` already in its stem, against an explicit instruction, passed by BOTH model
+judges because neither was asked. `strings.Contains` catches it.
+
+**One limit reported rather than engineered around:** batch-level diversity
+pressure demonstrably works (worst-case reuse 6→4 on a homogeneous pool) and did
+little on this deck, because for `keel` the entire general-at-band tier is two
+words — eight of twenty are specialists in domains of one. Pressure cannot
+spread what does not exist.
+
+**Calibration: est 4.00 / actual 1.99 = 2.01, an over-estimate — but read it
+against M1.** M1 also measured as an over-estimate (1.82) until its boundary
+review took three more rounds and closed at 0.98. This figure is pre-review. The
+estimate's own deviation note said the boundary rows were priced low; M1 proved
+it by 3x, and this number should be expected to move the same way.
+
 ### tools#10 — item authoring + harvest
 
 **status:** open — the material-quality checkpoint
@@ -800,7 +858,7 @@ guards could fail.
 [tools#18 M1]: #tools-27
 [tools#18 M2]: #tools-18-m2
 [tools#10 M1]: #tools-10-m1
-[tools#10 M2]: #tools-10
+[tools#10 M2]: #tools-10-m2
 [tools#19]: ../issues/000019-llm-overloaded.md
 [tools#23]: ../issues/000023-deck-language.md
 [tools#23 M1]: #tools-23-m1
