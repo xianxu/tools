@@ -87,6 +87,40 @@ verification below rather than lowering it.
 **This is the project's material-quality checkpoint.** Stop here and read
 generated items before building the forms that consume them (`#12`, `#13`).
 
+### Two decisions, 2026-09-04
+
+**1. Banding is measured by STABILITY, not against hand labels.** The Done-when
+below names both and calls the hand-labelled sample "the honest option"; the
+operator declined the ~100 words of labelling, which the row explicitly provides
+for ("or, if that is refused"). So this is inside the Spec rather than a
+departure from it.
+
+**What that buys:** the property the cache actually depends on. A band is assigned
+once and reused forever, so what must hold is that the model gives the same word
+the same band — and stability is exactly that, measurable with no human input.
+
+**What it does NOT buy, recorded rather than discovered later:** stability cannot
+detect a model that is confidently and CONSISTENTLY wrong. Every downstream use of
+a band — "the learner's band, or one below", which is the whole distractor rule —
+rests on the scale being right, and a uniformly skewed scale passes a stability
+check perfectly. The measure will therefore be reported as what it is: agreement
+across repeated assignment, with no claim about correctness. If distractors later
+read as mispitched, this is the first thing to suspect and the hand-labelled
+sample is the thing to build.
+
+**2. Two milestones, and the stop between them is real.**
+
+- **M1** — bands and domains per word, cached forever, plus the store. Closes on
+  its own.
+- **M2** — authored stems and the distractor veto. **STOP HERE** and read real
+  generated items before `#12` and `#13` consume them.
+
+The stop is the project's own instruction ("stop here and read the output before
+building the forms that consume it"), and it is why this is milestoned rather than
+single-pass: a lone boundary would put the first review over seven Done-when rows
+of greenfield code with an LLM judge in it, and would let the checkpoint pass as a
+formality.
+
 ## Done when
 
 - [ ] `define --harvest` produces finished items with no review session running,
