@@ -1479,6 +1479,76 @@ learner model.
 `wordsDir`/`eventsDir`/`usageDir` index positionally — inserting elsewhere
 silently repoints three directories at each other.
 
+### Authored items: the model writes the sentence, the deck supplies the options (`#10 M2`)
+
+A second pass inside `--harvest`, after banding, and the ordering is a
+dependency rather than a preference: selection draws from BANDED words, so a
+word cannot supply a distractor until it has a level.
+
+**The model writes the stem and nothing else.** `authoredStem` has no
+distractors field — a model asked for four options writes four it can justify,
+and one of them is usually also correct. That is the failure "selected, never
+invented" exists to prevent, and removing the field is what makes it structural
+rather than a rule someone has to follow.
+
+Two constraints go in as REQUIREMENTS with the measured counter-example
+attached: the stem must ENTAIL its answer (*"His ___ behaviour was noted by
+all"* fails — almost any adjective fits), and it must NAME a real person, place
+or institution, because a model asked for a natural sentence drifts to the
+neutral and unnamed and an unnamed subject gives the learner nothing to attach
+the word to.
+
+**Judged before selected.** A stem that does not entail its answer cannot be
+rescued by better wrong answers, so the entailment judge runs first and a
+rejected stem never spends a veto call — asserted on the wire. Entailment and
+naming are separate verdict fields so a reader can tell which failed.
+
+### Selection, and why it is not `play.PickOptions`
+
+The rule: same domain (or general vocabulary), at the learner's band or one
+below, never the answer. **One band below rather than above** — a word above the
+learner is unrejectable by knowledge.
+
+**Widening is tiered and reported**: same-domain-at-band, then general-at-band,
+then any-domain-at-or-below, and only as a last resort above the learner. It
+relaxes the DOMAIN before it relaxes the ceiling, and the tier reached is
+printed — a selector that silently falls back to "any word at all" is
+indistinguishable from one that is working.
+
+`pickDistractors` and `play.PickOptions` are **two rules, not one with two
+callers**, and the finding is recorded in full at `harvest_item.go`. In short:
+different unit (words vs glosses — PickOptions' entry-identity dedup has no
+analogue when the option IS the word), different constraint (level vs variety of
+axis), different failure cost (one question vs a forever cache), and `play`
+imports nothing by design so it cannot see `store.Band`.
+
+### The veto, and the two committed known-bad cases
+
+Done-when 4 and 5 each demand a case that must be REJECTED, because a judge that
+has never rejected anything is worth what no judge is worth.
+
+- **`obsequious` beside `sycophantic`** — a near-synonym, and under the selection
+  rule it is MORE likely to be chosen than a random word, not less: same domain,
+  same band. The plausibility that makes a good distractor is exactly what makes
+  this the failure mode, and the veto is what earns it. Moved here from `#12`
+  with the selection it belongs to.
+- **`"His sycophantic behaviour was noted by all."`** — the Spec's own opening
+  example of a stem its context does not entail.
+
+The veto asks about ONE pair per call against the BLANKED sentence. One pair
+because a batched "which of these also fit" invites ranking rather than
+judgement, and the failure is a single candidate that happens to fit — which a
+ranking hides by putting it second. Blanked because a sentence with its answer
+still in it makes every candidate look wrong.
+
+### Bounded growth
+
+`store.ItemCap` is four per word, enforced at the WRITE rather than by callers,
+and `prune` is deterministic — newest first, ties broken by stem, so two items
+authored in one run (sharing a timestamp exactly) still prune the same way
+twice. Newest rather than best because nothing here can rank quality, and
+pretending to would be the self-oracle problem again.
+
 ### The measure, and what it does not say
 
 `--harvest -agreement N` re-asks a sample of already-banded words N times and

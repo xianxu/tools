@@ -1,6 +1,7 @@
 package store
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -145,7 +146,11 @@ func sanitiseItems(in []Item) []Item {
 	for i := range out {
 		out[i] = sanitiseItem(out[i])
 	}
-	return out
+	// PRUNED HERE, at the write, beside the other invariants of this surface. A
+	// cap enforced by callers is a cap every future caller has to remember; a cap
+	// enforced by the store is one the store guarantees, which is what "growth is
+	// bounded" has to mean for it to be checkable.
+	return prune(out, ItemCap)
 }
 
 // sanitiseItem neutralises one item. It writes through the Distractors backing
@@ -177,3 +182,53 @@ func sanitiseItem(i Item) Item {
 // reaching ANY structured output, and the store is the one place every consumer
 // of these fields shares.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// ItemCap bounds how many items one word may hold.
+//
+// Growth is per WORD rather than per deck, because that is the axis that grows
+// without limit: a word is re-authored whenever someone deletes its items, and
+// #13 adds a second Form that wants its own. Four is two forms with a spare
+// each — enough that #12 can pick among them, few enough that a deck of
+// thousands stays a directory a person can read.
+const ItemCap = 4
+
+// PruneForTest exposes prune to the package's external test, which is where every
+// other invariant of this surface is asserted from. Exported rather than moving
+// the test in-package: storetest and item_test.go both drive the store the way a
+// consumer does, and a rule tested from inside can pass while the exported path
+// bypasses it.
+func PruneForTest(items []Item, cap int) []Item { return prune(items, cap) }
+
+// prune bounds a word's items and is DETERMINISTIC: the same input prunes to the
+// same output, every time.
+//
+// Newest first by At, ties broken by Stem — the tie-break is what makes it
+// deterministic rather than merely usually-stable, because two items authored in
+// one run share a timestamp exactly. Without it the survivors would depend on
+// map iteration order somewhere upstream, and "pruning twice gives the same
+// result" would pass by luck on small inputs.
+//
+// Newest rather than best: nothing here can rank quality, and pretending to
+// would be the self-oracle problem again. Recency is at least a fact.
+func prune(items []Item, cap int) []Item {
+	if cap <= 0 || len(items) <= cap {
+		out := append([]Item(nil), items...)
+		sortItems(out)
+		return out
+	}
+	out := append([]Item(nil), items...)
+	sortItems(out)
+	return out[:cap]
+}
+
+func sortItems(items []Item) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if !items[i].At.Equal(items[j].At) {
+			return items[i].At.After(items[j].At)
+		}
+		if items[i].Stem != items[j].Stem {
+			return items[i].Stem < items[j].Stem
+		}
+		return items[i].Form < items[j].Form
+	})
+}

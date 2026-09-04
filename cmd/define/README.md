@@ -380,6 +380,23 @@ subject field on a word — `Law`, `Medicine`, `Nautical` — that label is used
 directly and the model is never asked. Most words carry no field at all and are
 simply `general`, which is the common and correct answer.
 
+**It then writes the practice items.** For every banded word without material,
+the model writes one sentence that USES the word — not a definition — and the
+wrong answers are **selected from your own deck**, never invented: same subject
+field where it can, at your level or one step below, and never above it. A word
+you do not know is not a wrong answer you can reject; it is one you eliminate by
+ignorance, which teaches nothing.
+
+Two things are checked before an item is kept, and both say so when they fire:
+
+- **the sentence must give the word away.** *"His ___ behaviour was noted by
+  all"* does not — almost any adjective fits — and it is thrown out.
+- **each wrong answer must actually be wrong.** A near-synonym like `obsequious`
+  beside `sycophantic` would also fit the blank, so it is vetoed and dropped.
+
+If nothing survives, the word stays unauthored and the next run tries again. A
+word keeps at most four items; the oldest are dropped.
+
 **`define --harvest -agreement N` measures how stable the banding is.** It
 re-asks a sample of already-banded words N times each and reports how often the
 answers agree. It writes nothing, so measuring cannot disturb what it measures.
