@@ -334,3 +334,24 @@ findings:
       prints its own cause, so either count each reason and phrase from the tally, or have the summary stop naming
       a cause when the tally is mixed ("none could be asked; see the reasons above").
 ```
+
+---
+
+## Re-review — 2026-09-03T22:51:04-07:00 (unknown)
+
+| field | value |
+|-------|-------|
+| issue | 42 — retire form 2.1: the board is the fallback when a real test cannot be built |
+| repo | tools |
+| issue file | workshop/issues/000042-retire-recall-form.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 6c5f1eb9d826a422af53a6940a1e53728ddcf019..294c6c97e626279d0e22019819382d848b9e7c7f |
+| command | sdlc close --issue 42 |
+| reviewer | claude |
+| timestamp | 2026-09-03T22:51:04-07:00 |
+| verdict | unknown |
+
+## Review
+
+Failed to authenticate. API Error: 401 OAuth access token has been revoked.

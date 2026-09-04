@@ -173,6 +173,11 @@ rounds:
           family: message-names-a-cause-the-code-did-not-establish
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-03T22:51:04-07:00"
+      agent: claude
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#42 (boundary-review)
@@ -283,6 +288,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   a tally of the per-word outcomes, never from one counter compared against the total. Every skip path already
   prints its own cause, so either count each reason and phrase from the tally, or have the summary stop naming
   a cause when the tally is mixed ("none could be asked; see the reasons above").
+
+## Round 3 — 2026-09-03T22:51:04-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 
