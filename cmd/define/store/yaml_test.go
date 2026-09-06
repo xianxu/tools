@@ -708,10 +708,19 @@ func TestPerWordDirsCoverEveryRuntimeDir(t *testing.T) {
 	dir := t.TempDir()
 	y := store.NewYAML(dir, store.DefaultLang, nil)
 	perWord := map[string]bool{}
-	for _, p := range store.PerWordDirsForTest(y) {
-		// The directory NAME, whether or not it is language-scoped.
-		rel := strings.TrimPrefix(p, dir+"/")
-		perWord[strings.SplitN(rel, "/", 2)[0]] = true
+	for _, d := range store.PerWordDirsForTest(y) {
+		rel := strings.TrimPrefix(d.Path, dir+"/")
+		name, _, hasSeg := strings.Cut(rel, "/")
+		perWord[name] = true
+		// THE SECOND AXIS. The first version of this guard classified only
+		// per-word vs history, so usage/ — per-word but FLAT — passed while
+		// `--forget red` in a Spanish directory removed the English deck's news
+		// cache. A directory's declared scoping must match the path it builds,
+		// or the declaration is decoration.
+		if d.Scoped != hasSeg {
+			t.Errorf("%q declares scoped=%v but builds the path %q; a per-word verb is scoped "+
+				"the same way the surface it touches is", name, d.Scoped, rel)
+		}
 	}
 
 	for _, d := range store.RuntimeDirs {

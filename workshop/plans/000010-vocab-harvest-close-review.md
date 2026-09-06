@@ -168,3 +168,153 @@ findings:
       mid-run outage, and "nothing is banded yet" in agreement mode. Measured prevalence
       in this one table: 2 of 2 rows are missing members added by this window.
 ```
+
+---
+
+## Re-review — 2026-09-06T14:23:05-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 10 — authored practice items: level-tagged words, and stems the model writes offline |
+| repo | tools |
+| issue file | workshop/issues/000010-vocab-harvest.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 0b8d9930762168cf52f77c5d0864599f678d3b5d..da5c395ae416e6ed0b934f83a830271bdb321cca |
+| command | sdlc close --issue 10 |
+| reviewer | claude |
+| timestamp | 2026-09-06T14:23:05-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 10 disposes the ten open findings and reviews the one commit no prior round saw (`da5c395`). **BR-45 is genuinely addressed** — I reverted it in a scratch worktree and both halves went red (the `storetest` row fails against `Mem` *and* `YAML`; `TestPerWordDirsCoverEveryRuntimeDir` names `facts` and `items` when they are dropped from the classification), so the fix is the class, not the cell. **Nine findings remain not-addressed**, all carried from round 9 with no intervening commit touching them: BR-14, BR-24, BR-36, BR-37, BR-39, BR-40, BR-41, BR-44, BR-46. Suite is green (`go test ./...`), `go vet` clean under both tag sets, `gofmt` clean. Nothing blocks the gate under the severity contract — the one Important (BR-41) is a missing *mechanism*, not a wrong line — but two of the open Minors are user-visible defects at an issue close, and I would not close without them: **BR-24** ships permanently-cached broken items (`"The ___house at Portland Head"` for `light`, re-measured at HEAD), and **BR-14** now tells a README reader that authoring "is the next milestone" about a surface this milestone shipped.
+
+**1. Strengths**
+
+- `runWithin` (`cmd/define/harvest.go:91`) is the right shape for the `-limit` Critical: there is no way to reach a model without charging, and no way to charge whose refusal isn't an `error` the caller must already handle. Structural, not disciplined.
+- `perWordDirs` + `TestPerWordDirsCoverEveryRuntimeDir` (`cmd/define/store/yaml.go:695`, `yaml_test.go:701`) answers BR-45 with an enumeration derived from `RuntimeDirs` rather than two `os.Remove` calls, and the guard fires on the exact mutation that caused the bug — verified by revert.
+- The ARCH-DRY question the plan asked about `play.PickOptions` is *answered in the tree* (`harvest_item.go:126-160`), with four structural reasons, and `ShuffleInts` was exported rather than copied — a duplicate that had already shipped once with a different seeding step.
+- `topicSpread` parses through `store.ParseDomain` before counting (`harvest_judge.go:33`), so the one no-model measure cannot be inflated by casing; and it is on the production path (`harvest.go:398`), not test-only.
+- The checkpoint genuinely changed the design (appositive glosses 10/20 → 0, the `glosses` verdict field split from `entails`, the pre-blanked-stem check moved ahead of both judges). That is the Done-when row no test replaces, actually doing work.
+
+**2. Critical findings** — none.
+
+**3. Important findings**
+
+- **BR-41 (carried, not-addressed)** — `cmd/define/repo_guard_test.go` has **zero diff** across the whole window, and `retiredPhrases` (:1131) with `currentTruthFiles` (:1623, which binds non-test `.go`, `README`, `atlas/`, `*-plan.md`) is precisely the registry+scope the finding asked for. The three named lines are correct at HEAD; the class mechanism is not. Fourth hand sweep.
+
+**4. Minor findings**
+
+- **New — `Forget` removes the deck entry first, so a mid-way failure reports `false` + error with the word already gone.** Reproduced: with `facts/en/sycophantic.yaml` as a non-empty directory, `Forget` returns `(false, ENOTEMPTY)` while `words/en/sycophantic.yaml` is deleted. `--forget` prints an error and exits 1 on a word it removed; `--play`'s drop path (`play_loop.go:455`) never calls `held.dropped`. Family `inconsistent-failure-reporting`, 3rd. ARCH-ORDER.
+- **New — the classification guard has one axis where the fix crosses two.** `perWordDirs` mixes the language-scoped `words/`/`facts/`/`items/` with the flat `usage/`, so `define --forget red` in an `es` directory deletes the `en` deck's news cache. Family `language-scope-not-threaded`, 3rd. Consequence is a refetch, so it is Minor; the finding is the guard.
+- BR-24, BR-36, BR-37, BR-39, BR-40, BR-44, BR-46, BR-14 — all carried; see dispositions.
+
+**5. Test coverage notes**
+
+Tests pin real logic here: `storetest` holds `Mem` and `YAML` to one contract, the four tasks all have goldens plus wire-level fake tests plus live conformance rows, and the M2 sweep's per-finding revert-checks are real. Two gaps remain visible from the diff: no test enters the two unreachable `errBudget` arms (BR-44 — a per-block coverage assertion over `harvest*.go` is the deliverable), and no test injects a mid-`Forget` removal failure (the new finding above; `os.Remove` on a non-empty directory is a sufficient seam).
+
+**6. Architectural notes**
+
+ARCH-DRY — flag (BR-39). ARCH-PURE — pass; every `Core concepts` PURE row exists at its stated path and its tests run with no IO. ARCH-PURPOSE — flag (BR-41, BR-46, BR-14: three enumerations still hand-maintained). ARCH-MOCK — pass. ARCH-CONSTRAINTS — pass. ARCH-SECURE — pass (`wordFileName` still the single traversal guard across all four dirs). ARCH-ORDER — flag (the new `Forget` finding). One residual worth carrying into `#12`/`#13`: `Mem.Forget` hand-lists its three maps while only `YAML` is covered by the classification guard, so a *future* per-word surface would be caught on one implementation and not the other.
+
+**7. Plan revision recommendations**
+
+A `## Revisions` entry that (a) corrects "M2's 22 properties" to the 24 rows the list actually contains, (b) records the mutation and the named test per row rather than a prose list of property names, and (c) either ticks `- [ ] The generated batch, read by the operator` — the issue's Plan row is ticked and the Log records three batches — or says why the plan's row stays open.
+
+```findings
+dispose:
+  - id: BR-45
+    disposition: addressed
+    note: |
+      Revert-verified in a scratch worktree: the storetest row reddens against BOTH Mem and YAML,
+      and dropping facts/items from perWordDirs reddens TestPerWordDirsCoverEveryRuntimeDir.
+      Residual: Mem.Forget hand-lists its maps and the guard covers YAML only.
+  - id: BR-41
+    disposition: not-addressed
+    note: |
+      repo_guard_test.go has ZERO diff across the window; retiredPhrases (:1131) over
+      currentTruthFiles (:1623, binds non-test .go + README + atlas + plans) is exactly the
+      mechanism asked for and no row was added. The three named lines are correct; the class is not.
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      Re-measured at HEAD by probe - "The settlement"/set, "The lighthouse"/light, "The runway"/run,
+      "Bankruptcy"/bank all pass stemUsesTheWord and blankOut renders "The ___tlement". The fix is not
+      a bare trailing-boundary check: wordIndexIn deliberately allows inflections, so it needs a
+      bounded suffix set (s/es/ed/ing/'s).
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      Worse than round 9 recorded: README.md:459-461 still says "Nothing writes this yet - authoring
+      is the next milestone" about a surface this issue shipped. At issue close that is a false
+      statement in user-facing docs, not a forward-looking one.
+  - id: BR-36
+    disposition: not-addressed
+    note: |
+      Both sites unchanged (store/item.go:200 "// : the same input prunes to the"; harvest_test.go:19-27).
+      A third member measured this round - harvest_item.go:318 documents "tierAnyBand", a constant that
+      never existed (introduced in fd0767b as prose only); unexported names are exempt from the symbol guard.
+  - id: BR-37
+    disposition: not-addressed
+    note: |
+      plan:456 still claims 22 over a list I counted at 24; no mutation or test name per row;
+      plan:492 "The generated batch, read by the operator" still unticked while the issue's row is ticked.
+  - id: BR-39
+    disposition: not-addressed
+    note: |
+      harvest.go:54 still hardcodes optionsPerItem = 3 with a comment naming play.maxOptions as the
+      reason, across a seam this window already widened twice (SampleStrings, ShuffleInts).
+  - id: BR-40
+    disposition: not-addressed
+    note: |
+      Both halves stand at HEAD - the banding loop's exit (harvest.go:148) and runAuthoring's
+      (harvest.go:264) each print for one exhausted budget; store/item.go:212 is func prune(items []Item, max int),
+      shadowing the Go builtin max.
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      harvest.go:81 still says runWithin is the ONLY way this file reaches a model while
+      runHarvestAgreement calls llm.Run at :475; the errBudget arms at :166 and :281 remain unreachable
+      because each loop's bud.spent() exit runs with nothing decrementing before the call.
+  - id: BR-46
+    disposition: not-addressed
+    note: |
+      README.md:589-593 unchanged. The table still declares itself an enumeration and omits mode
+      collision, every -limit/-agreement usage error, and all of --harvest's exit-1 paths.
+findings:
+  - id: new
+    severity: Minor
+    family: inconsistent-failure-reporting
+    title: |
+      Forget deletes the deck entry first, so a partial failure reports "nothing removed" for a word it removed
+    detail: |
+      This is the 3rd finding in family inconsistent-failure-reporting. Do NOT fix the loop order alone.
+      The rule: a multi-step mutation orders its effects so the value it returns is true of what happened,
+      and the enumeration - Forget's four removals, the banding loop's "banded N before stopping", the three
+      authoring outage branches - is walked by a test that injects a failure at each step. Only the authoring
+      branches have that today (TestEveryAuthoringOutagePathReportsSurvivors). Reproduced at HEAD: with
+      facts/en/sycophantic.yaml made a non-empty directory, YAML.Forget returns (false, ENOTEMPTY) while
+      words/en/sycophantic.yaml is already gone - so --forget exits 1 on a word it removed, and play_loop.go:455
+      never calls held.dropped. os.Remove over a non-empty directory is a sufficient seam for the test.
+      ARCH-ORDER: the error path unwinds the sequencing and drops the in-flight effect.
+  - id: new
+    severity: Minor
+    family: language-scope-not-threaded
+    title: |
+      perWordDirs mixes the language-scoped dirs with flat usage/, so forgetting a word in one language clears another's news cache
+    detail: |
+      This is the 3rd finding in family language-scope-not-threaded. Do NOT fix the usage/ row.
+      The rule: a per-word verb is scoped the same way the surface it touches is scoped, and
+      TestPerWordDirsCoverEveryRuntimeDir - which exists precisely to classify every runtime directory -
+      classifies on ONE axis (per-word vs history) while da5c395 crosses a second (scoped vs flat).
+      yaml.go:695 lists wordsDir/usageDir/factsDir/itemsDir; usageDir is RuntimeDirs[2] with no lang segment
+      (yaml.go:161), so `define --forget red` in an es directory removes usage/red.yaml that the en deck
+      populated. Consequence is a refetch, which is why this is Minor; the deliverable is the second axis
+      in the guard, so the next surface added is classified on both.
+```

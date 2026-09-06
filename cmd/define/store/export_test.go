@@ -8,5 +8,21 @@ package store
 // without widening what consumers can call.
 var PruneForTest = prune
 
-// PerWordDirsForTest exposes the classification the Forget guard checks.
-func PerWordDirsForTest(y *YAML) []string { return y.perWordDirs() }
+// PerWordDirsForTest exposes the classification the Forget guard checks, on both
+// axes: the directory's path, and whether it is language-scoped.
+func PerWordDirsForTest(y *YAML) []struct {
+	Path   string
+	Scoped bool
+} {
+	var out []struct {
+		Path   string
+		Scoped bool
+	}
+	for _, d := range y.perWordDirs() {
+		out = append(out, struct {
+			Path   string
+			Scoped bool
+		}{d.path, d.scoped})
+	}
+	return out
+}

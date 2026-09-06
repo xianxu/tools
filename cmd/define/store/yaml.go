@@ -692,8 +692,30 @@ func (y *YAML) SetItems(key string, items []Item) error {
 // TestPerWordDirsCoverEveryRuntimeDir fails when a new runtime directory is
 // added without being classified. #10 added TWO (facts/, items/) and Forget
 // reached neither.
-func (y *YAML) perWordDirs() []string {
-	return []string{y.wordsDir(), y.usageDir(), y.factsDir(), y.itemsDir()}
+func (y *YAML) perWordDirs() []perWordDir {
+	return []perWordDir{
+		{path: y.wordsDir(), scoped: true},
+		// usage/ is FLAT, and that makes forgetting cross-language: `--forget red`
+		// in a Spanish directory removes the news cache the English deck filled.
+		// The cost is a refetch rather than lost work, which is why it is
+		// recorded here rather than migrated — but it is recorded, because the
+		// classification is what the guard checks.
+		{path: y.usageDir(), scoped: false},
+		{path: y.factsDir(), scoped: true},
+		{path: y.itemsDir(), scoped: true},
+	}
+}
+
+// perWordDir is a directory Forget clears, on BOTH axes.
+//
+// TWO axes, because the first version classified on one. "Is it per-word or
+// history" decides whether Forget touches it at all; "is it language-scoped"
+// decides whose copy it touches. usage/ is per-word and flat, so forgetting in
+// one language reaches another's cache — invisible to a guard that only asked
+// the first question.
+type perWordDir struct {
+	path   string
+	scoped bool
 }
 
 // Forget removes everything a word owns. Events are untouched: the deck is a
@@ -721,7 +743,7 @@ func (y *YAML) Forget(key string) (bool, error) {
 	// with no deck entry is debris, and removing it is not "found something".
 	var removed bool
 	for i, dir := range y.perWordDirs() {
-		err := os.Remove(filepath.Join(dir, name))
+		err := os.Remove(filepath.Join(dir.path, name))
 		switch {
 		case err == nil:
 			if i == 0 {

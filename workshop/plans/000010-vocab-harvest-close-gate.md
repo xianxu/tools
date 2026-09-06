@@ -878,6 +878,109 @@ rounds:
           family: doc-understates-surface
           round: 9
       blocked: true
+    - "n": 10
+      timestamp: "2026-09-06T14:23:05-07:00"
+      agent: claude
+      dispose:
+        - id: BR-45
+          disposition: addressed
+          note: |-
+            Revert-verified in a scratch worktree: the storetest row reddens against BOTH Mem and YAML,
+            and dropping facts/items from perWordDirs reddens TestPerWordDirsCoverEveryRuntimeDir.
+            Residual: Mem.Forget hand-lists its maps and the guard covers YAML only.
+          round: 10
+        - id: BR-41
+          disposition: not-addressed
+          note: |-
+            repo_guard_test.go has ZERO diff across the window; retiredPhrases (:1131) over
+            currentTruthFiles (:1623, binds non-test .go + README + atlas + plans) is exactly the
+            mechanism asked for and no row was added. The three named lines are correct; the class is not.
+          round: 10
+        - id: BR-24
+          disposition: not-addressed
+          note: |-
+            Re-measured at HEAD by probe - "The settlement"/set, "The lighthouse"/light, "The runway"/run,
+            "Bankruptcy"/bank all pass stemUsesTheWord and blankOut renders "The ___tlement". The fix is not
+            a bare trailing-boundary check: wordIndexIn deliberately allows inflections, so it needs a
+            bounded suffix set (s/es/ed/ing/'s).
+          round: 10
+        - id: BR-14
+          disposition: not-addressed
+          note: |-
+            Worse than round 9 recorded: README.md:459-461 still says "Nothing writes this yet - authoring
+            is the next milestone" about a surface this issue shipped. At issue close that is a false
+            statement in user-facing docs, not a forward-looking one.
+          round: 10
+        - id: BR-36
+          disposition: not-addressed
+          note: |-
+            Both sites unchanged (store/item.go:200 "// : the same input prunes to the"; harvest_test.go:19-27).
+            A third member measured this round - harvest_item.go:318 documents "tierAnyBand", a constant that
+            never existed (introduced in fd0767b as prose only); unexported names are exempt from the symbol guard.
+          round: 10
+        - id: BR-37
+          disposition: not-addressed
+          note: |-
+            plan:456 still claims 22 over a list I counted at 24; no mutation or test name per row;
+            plan:492 "The generated batch, read by the operator" still unticked while the issue's row is ticked.
+          round: 10
+        - id: BR-39
+          disposition: not-addressed
+          note: |-
+            harvest.go:54 still hardcodes optionsPerItem = 3 with a comment naming play.maxOptions as the
+            reason, across a seam this window already widened twice (SampleStrings, ShuffleInts).
+          round: 10
+        - id: BR-40
+          disposition: not-addressed
+          note: |-
+            Both halves stand at HEAD - the banding loop's exit (harvest.go:148) and runAuthoring's
+            (harvest.go:264) each print for one exhausted budget; store/item.go:212 is func prune(items []Item, max int),
+            shadowing the Go builtin max.
+          round: 10
+        - id: BR-44
+          disposition: not-addressed
+          note: |-
+            harvest.go:81 still says runWithin is the ONLY way this file reaches a model while
+            runHarvestAgreement calls llm.Run at :475; the errBudget arms at :166 and :281 remain unreachable
+            because each loop's bud.spent() exit runs with nothing decrementing before the call.
+          round: 10
+        - id: BR-46
+          disposition: not-addressed
+          note: |-
+            README.md:589-593 unchanged. The table still declares itself an enumeration and omits mode
+            collision, every -limit/-agreement usage error, and all of --harvest's exit-1 paths.
+          round: 10
+      findings:
+        - id: BR-47
+          severity: Minor
+          title: Forget deletes the deck entry first, so a partial failure reports "nothing removed" for a word it removed
+          detail: |-
+            This is the 3rd finding in family inconsistent-failure-reporting. Do NOT fix the loop order alone.
+            The rule: a multi-step mutation orders its effects so the value it returns is true of what happened,
+            and the enumeration - Forget's four removals, the banding loop's "banded N before stopping", the three
+            authoring outage branches - is walked by a test that injects a failure at each step. Only the authoring
+            branches have that today (TestEveryAuthoringOutagePathReportsSurvivors). Reproduced at HEAD: with
+            facts/en/sycophantic.yaml made a non-empty directory, YAML.Forget returns (false, ENOTEMPTY) while
+            words/en/sycophantic.yaml is already gone - so --forget exits 1 on a word it removed, and play_loop.go:455
+            never calls held.dropped. os.Remove over a non-empty directory is a sufficient seam for the test.
+            ARCH-ORDER: the error path unwinds the sequencing and drops the in-flight effect.
+          family: inconsistent-failure-reporting
+          round: 10
+        - id: BR-48
+          severity: Minor
+          title: perWordDirs mixes the language-scoped dirs with flat usage/, so forgetting a word in one language clears another's news cache
+          detail: |-
+            This is the 3rd finding in family language-scope-not-threaded. Do NOT fix the usage/ row.
+            The rule: a per-word verb is scoped the same way the surface it touches is scoped, and
+            TestPerWordDirsCoverEveryRuntimeDir - which exists precisely to classify every runtime directory -
+            classifies on ONE axis (per-word vs history) while da5c395 crosses a second (scoped vs flat).
+            yaml.go:695 lists wordsDir/usageDir/factsDir/itemsDir; usageDir is RuntimeDirs[2] with no lang segment
+            (yaml.go:161), so `define --forget red` in an es directory removes usage/red.yaml that the en deck
+            populated. Consequence is a refetch, which is why this is Minor; the deliverable is the second axis
+            in the guard, so the next surface added is classified on both.
+          family: language-scope-not-threaded
+          round: 10
+      blocked: true
 ---
 
 # Gate ledger — tools#10 (boundary-review)
@@ -1363,6 +1466,61 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   mid-run outage, and "nothing is banded yet" in agreement mode. Measured prevalence
   in this one table: 2 of 2 rows are missing members added by this window.
 
+## Round 10 — 2026-09-06T14:23:05-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-45 — addressed — Revert-verified in a scratch worktree: the storetest row reddens against BOTH Mem and YAML,
+and dropping facts/items from perWordDirs reddens TestPerWordDirsCoverEveryRuntimeDir.
+Residual: Mem.Forget hand-lists its maps and the guard covers YAML only.
+- BR-41 — not-addressed — repo_guard_test.go has ZERO diff across the window; retiredPhrases (:1131) over
+currentTruthFiles (:1623, binds non-test .go + README + atlas + plans) is exactly the
+mechanism asked for and no row was added. The three named lines are correct; the class is not.
+- BR-24 — not-addressed — Re-measured at HEAD by probe - "The settlement"/set, "The lighthouse"/light, "The runway"/run,
+"Bankruptcy"/bank all pass stemUsesTheWord and blankOut renders "The ___tlement". The fix is not
+a bare trailing-boundary check: wordIndexIn deliberately allows inflections, so it needs a
+bounded suffix set (s/es/ed/ing/'s).
+- BR-14 — not-addressed — Worse than round 9 recorded: README.md:459-461 still says "Nothing writes this yet - authoring
+is the next milestone" about a surface this issue shipped. At issue close that is a false
+statement in user-facing docs, not a forward-looking one.
+- BR-36 — not-addressed — Both sites unchanged (store/item.go:200 "// : the same input prunes to the"; harvest_test.go:19-27).
+A third member measured this round - harvest_item.go:318 documents "tierAnyBand", a constant that
+never existed (introduced in fd0767b as prose only); unexported names are exempt from the symbol guard.
+- BR-37 — not-addressed — plan:456 still claims 22 over a list I counted at 24; no mutation or test name per row;
+plan:492 "The generated batch, read by the operator" still unticked while the issue's row is ticked.
+- BR-39 — not-addressed — harvest.go:54 still hardcodes optionsPerItem = 3 with a comment naming play.maxOptions as the
+reason, across a seam this window already widened twice (SampleStrings, ShuffleInts).
+- BR-40 — not-addressed — Both halves stand at HEAD - the banding loop's exit (harvest.go:148) and runAuthoring's
+(harvest.go:264) each print for one exhausted budget; store/item.go:212 is func prune(items []Item, max int),
+shadowing the Go builtin max.
+- BR-44 — not-addressed — harvest.go:81 still says runWithin is the ONLY way this file reaches a model while
+runHarvestAgreement calls llm.Run at :475; the errBudget arms at :166 and :281 remain unreachable
+because each loop's bud.spent() exit runs with nothing decrementing before the call.
+- BR-46 — not-addressed — README.md:589-593 unchanged. The table still declares itself an enumeration and omits mode
+collision, every -limit/-agreement usage error, and all of --harvest's exit-1 paths.
+
+### Raised
+
+- **BR-47** [Minor] `inconsistent-failure-reporting` Forget deletes the deck entry first, so a partial failure reports "nothing removed" for a word it removed
+  This is the 3rd finding in family inconsistent-failure-reporting. Do NOT fix the loop order alone.
+  The rule: a multi-step mutation orders its effects so the value it returns is true of what happened,
+  and the enumeration - Forget's four removals, the banding loop's "banded N before stopping", the three
+  authoring outage branches - is walked by a test that injects a failure at each step. Only the authoring
+  branches have that today (TestEveryAuthoringOutagePathReportsSurvivors). Reproduced at HEAD: with
+  facts/en/sycophantic.yaml made a non-empty directory, YAML.Forget returns (false, ENOTEMPTY) while
+  words/en/sycophantic.yaml is already gone - so --forget exits 1 on a word it removed, and play_loop.go:455
+  never calls held.dropped. os.Remove over a non-empty directory is a sufficient seam for the test.
+  ARCH-ORDER: the error path unwinds the sequencing and drops the in-flight effect.
+- **BR-48** [Minor] `language-scope-not-threaded` perWordDirs mixes the language-scoped dirs with flat usage/, so forgetting a word in one language clears another's news cache
+  This is the 3rd finding in family language-scope-not-threaded. Do NOT fix the usage/ row.
+  The rule: a per-word verb is scoped the same way the surface it touches is scoped, and
+  TestPerWordDirsCoverEveryRuntimeDir - which exists precisely to classify every runtime directory -
+  classifies on ONE axis (per-word vs history) while da5c395 crosses a second (scoped vs flat).
+  yaml.go:695 lists wordsDir/usageDir/factsDir/itemsDir; usageDir is RuntimeDirs[2] with no lang segment
+  (yaml.go:161), so `define --forget red` in an es directory removes usage/red.yaml that the en deck
+  populated. Consequence is a refetch, which is why this is Minor; the deliverable is the second axis
+  in the guard, so the next surface added is classified on both.
+
 ## Open findings
 
 - **BR-14** [Minor] `doc-predeclares-outcome` README's directory listing promises items/<lang>/*.yaml, which M1 never writes
@@ -1373,5 +1531,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-40** [Minor] `inconsistent-failure-reporting` One exhausted budget prints two stopped lines, and prune shadows the builtin cap
 - **BR-41** [Important] `behaviour-change-undocumented` harvestLimit's own doc comment and two plan lines still state -limit's superseded meaning
 - **BR-44** [Minor] `inert-mechanism` runWithin's stated invariant is false and two of its four errBudget branches are unreachable
-- **BR-45** [Important] `store-contract-unheld-by-suite` Forget leaves facts/ and items/ behind, so a forgotten word's bad material is unregenerable
 - **BR-46** [Minor] `doc-understates-surface` README's exit-code table declares itself an enumeration and omits every code this window added
+- **BR-47** [Minor] `inconsistent-failure-reporting` Forget deletes the deck entry first, so a partial failure reports "nothing removed" for a word it removed
+- **BR-48** [Minor] `language-scope-not-threaded` perWordDirs mixes the language-scoped dirs with flat usage/, so forgetting a word in one language clears another's news cache
