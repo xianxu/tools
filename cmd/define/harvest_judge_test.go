@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -549,7 +550,48 @@ func TestTheTierReportCountsOnlyWrittenItems(t *testing.T) {
 	if countTask(fake, markVeto) == 0 {
 		t.Fatal("nothing reached the veto, so this pin cannot fail")
 	}
+	// NOTHING was written, so there is nothing to report a tier for. This only
+	// detects the miscount because every tier is printed — while the report
+	// listed only the WIDENED tiers, a batch like this one (all same-domain)
+	// printed nothing either way and the pin was unfalsifiable.
 	if strings.Contains(out.String(), "drew options from") {
 		t.Errorf("the tier report counted items that were never written: %q", out.String())
+	}
+}
+
+// The other half: a batch that DOES write reports a tier for every item, which
+// is what makes the absence above meaningful.
+func TestTheTierReportCoversEveryWrittenItem(t *testing.T) {
+	d, fake, _ := harvestRig(t, 4)
+	preBand(t, d)
+	scriptAll(fake, 60)
+
+	var out, errOut bytes.Buffer
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
+		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+	}
+	// Parsed off the authoring line, which is not the first line of output —
+	// Sscanf on the whole buffer reads the BANDING line and gets 0.
+	var authored int
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.Contains(line, "item(s) authored") {
+			fmt.Sscanf(strings.TrimPrefix(line, "define: "), "%d item(s) authored", &authored)
+		}
+	}
+	if authored == 0 {
+		t.Fatalf("nothing was authored, so this pin cannot fail: %q", out.String())
+	}
+	var reported int
+	for _, line := range strings.Split(out.String(), "\n") {
+		if !strings.Contains(line, "drew options from") {
+			continue
+		}
+		var n int
+		fmt.Sscanf(strings.TrimPrefix(line, "define: "), "%d item(s)", &n)
+		reported += n
+	}
+	if reported != authored {
+		t.Errorf("%d item(s) authored but %d reported across tiers; every written item's tier "+
+			"is a fact about the deck and belongs in the report:\n%s", authored, reported, out.String())
 	}
 }

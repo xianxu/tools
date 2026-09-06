@@ -87,7 +87,7 @@
 **Operating envelope (ARCH-CONSTRAINTS).** `--harvest` is a BATCH path and the only one in this program that may block: a sitting must never wait on it, which Done-when 1 states and a test enforces by driving a sitting with the model seam made to panic.
 - *Latency:* bounded by `--limit` (below), not "by the deck". One band call per unbanded word **that the dictionary could not already supply a domain for**, one author call per item.
 - *Scale:* a deck of a few thousand. Work is per NEW word, so a second run over an unchanged deck makes ZERO model calls — that is Done-when 2 and it is what keeps the cost from growing with time.
-- *A per-run bound, stated rather than implied.* `--limit` caps the words one `--harvest` run will ask about, defaulting to 200. `poolCap = 40` (`cmd/define/optionpool.go:24`) is this repo's own precedent for bounding batch work with a reason attached; "bounded in practice by the deck" was not a bound, and the first run against a deck of thousands is precisely where an unbounded loop is discovered. Harvesting is resumable by construction — the cache is the progress marker — so a capped run is a partial run, not a failed one.
+- *A per-run bound, stated rather than implied.* `--limit` caps the MODEL CALLS one `--harvest` run may make, defaulting to 200 — counted across banding, authoring and both judges, since a word costs between two and five of them depending on how far it gets. (It capped *words* in the first cut; counting successes per pass meant a rejected word charged nothing, which is the Critical round 7 measured at N+1.) `poolCap = 40` (`cmd/define/optionpool.go:24`) is this repo's own precedent for bounding batch work with a reason attached; "bounded in practice by the deck" was not a bound, and the first run against a deck of thousands is precisely where an unbounded loop is discovered. Harvesting is resumable by construction — the cache is the progress marker — so a capped run is a partial run, not a failed one.
 - *Overload:* a model outage leaves the store untouched and harvesting stops (Done-when 6). `#19` is open on `ErrRequest` mis-classification and is a real risk here, since this is the first path that makes many calls in a row.
 - *Disk:* bounded by `prune`, deterministic, tested (Done-when 7).
 
@@ -282,8 +282,8 @@ disagreeing about the shape of the answer.
 Beside `--forget` and `--llm-check`, which are validated apart from the argument
 count. Reuse that path rather than adding a fourth shape.
 
-`--limit` (default 200) caps the words one run asks about, and `-agreement=N`
-selects the measurement mode from Task 2. A test asserts the cap holds on a deck
+`--limit` (default 200) caps the MODEL CALLS one run makes, across every pass,
+and `-agreement=N` selects the measurement mode from Task 2. A test asserts the cap holds on a deck
 larger than it — `poolCap` has one for the same reason.
 
 - [x] **Step 3: Outage leaves the store untouched (Done-when 6)**

@@ -738,3 +738,216 @@ findings:
       func prune(items []Item, cap int), shadowing the builtin, and
       internal/llm/golden_schema_test.go:15 leaves one comment line past the file's wrap.
 ```
+
+---
+
+## Re-review — 2026-09-06T13:53:26-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 10 — authored practice items: level-tagged words, and stems the model writes offline |
+| repo | tools |
+| issue file | workshop/issues/000010-vocab-harvest.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | aef9d75836bdac7500bd87c58c0bea31725a9e88..c5b3cdab1c6a4e55765a31017c07804719eaabf7 |
+| command | sdlc milestone-close --issue 10 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-09-06T13:53:26-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The code half of M2 is in good shape and the two load-bearing fixes of round 7 are real, not paraphrase — I verified them by reverting on a scratch copy rather than by reading. `runWithin` makes the budget structural (reverting the gate reddens two cells of the new flag×pass table), `Store.Items`' newest-first promise now reddens `storetest` for both `Mem` and `YAML`, the outage-survivor lines redden when deleted, and `sortedBanded` reddens when replaced by a reversal. `go build`, `go vet ./...`, `gofmt -l`, `go test ./...` and `go vet -tags conformance ./...` are all clean at HEAD — run, not assumed. What keeps this from SHIP is one measured fact and its consequences: **the third of the three revert-checks BR-34 asked for does not fail without its fix.** `TestTheTierReportCountsOnlyWrittenItems` stays green with `widened[tier]++` moved back before the veto, because the report loop never prints `tierSameDomain` — the exact gap BR-38 named in the same round and left open. A test written from the same mental model as the fix asserted whatever the fix happened to do, including nothing. Separately, the round-7 doc sweep for BR-32 added two new claims (README + atlas) that the code does not honour, and the `-limit` meaning sweep missed the constant's own doc comment — the member BR-31's rule enumerated by name.
+
+## 1. Strengths
+
+- **`runWithin` is a structural fix, not a site fix** (`harvest.go:88`). Charging happens inside the only function that reaches a model, and the refusal returns as an error every caller already handles — there is no way left to charge without gating. Measured: reverting to charge-then-call gives `-limit 6` → 10 calls and `-limit 12` → 13, reddening `TestTheLimitBoundsEveryPass`.
+- **The flag×pass table finally asserts it entered the pass** (`harvest_test.go:262-302`). Each cell `t.Fatal`s with the per-task counts if its markers never appear, so the "author=0 entail=0 veto=0" failure that made two tests vacuous for two rounds is now self-reporting. `TestTheLimitHoldsWhenEveryStemIsRejected` gained `preBand` plus a `countTask(fake, markEntail) == 0` fatal (`harvest_test.go:322`, `:337`).
+- **The `storetest` row is mutation-confirmed across both implementations** (`storetest/suite.go:597-624`). Flipping `sortItems`' `After` to `Before` reddens `TestMemConformance` and `TestYAMLConformance` together, which is exactly what BR-22's rule asked for.
+- **`sortedBanded` is pinned on the property, not the call** (`harvest_item_test.go:554`): two pools holding the same words in different orders must select the same options. A reversal reddens both that and the ascending-order check.
+- **The three live conformance rows are well-designed** (`harvest_conformance_test.go:143-264`): the author row asserts a *rate* (two-thirds usable) and records a real live observation of a pre-blanked stem; the veto and entail rows both check the negative direction, so "rejects everything" cannot read as success.
+- **`#12`'s three moved Done-when rows were rewritten as satisfied-by-construction rather than deleted** (`000012-vocab-form-cloze.md:53-83`), so a reader sees where they went.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — `harvestLimit`'s own doc comment and two plan lines still state `-limit`'s superseded meaning** (`cmd/define/harvest.go:15`; `workshop/plans/000010-vocab-harvest-plan.md:90`, `:285`).
+
+> **This is the 4th finding in family `behaviour-change-undocumented`.** Do not fix these three lines. The rule has now been *written down twice* and used as a list of noticed sites twice, so restating it a third time is not the deliverable. The rule that covers the class: *when a fix changes what a user-facing contract MEANS, every statement of that meaning is part of the change — and a rule that has failed twice needs a mechanism, not a third statement.*
+
+`harvest.go:15` reads `harvestLimit bounds the words one --harvest run will ask the model about` — the constant's doc comment is the member BR-31's own enumeration named explicitly ("flag help, in-code guard comments, README, atlas, **the constant's doc comment**"), and it sits fourteen lines above `budget`'s comment saying the opposite. `plan:90` (`--limit caps the words one --harvest run will ask about`) and `plan:285` (`caps the words one run asks about`) are the same. Correct at HEAD: `main.go:432`, `main.go:628`, `README.md:374`, `atlas/define.md:1431`. The mechanism this repo already owns is the guard test — `TestProseDoesNotSpellStaleRuntimeArtifactNames` and `TestNoArtifactNamesARetiredSymbol` (`repo_guard_test.go:555`, `:1094`) are the same shape one axis over. A retired-*phrasing* registry, checked over `*.go` comments and `workshop/`/`atlas/` prose, is what turns this rule from discipline into arithmetic.
+
+**N2 — the round's own doc sweep added two claims the code does not honour: the tier is *not* printed for every item** (`cmd/define/README.md:412-416`; `atlas/define.md:1568-1571`; against `harvest.go:394`).
+
+> **This is the 4th finding in family `doc-predeclares-outcome`.** The rule: *a doc sentence describing a code behaviour is a consumer of that behaviour, so it is written from the code at HEAD — not from the design the code was supposed to reach. A sweep that fixes a doc against the plan while a known gap in the code is still open converts an open finding into a false user-facing promise.*
+
+New in `c5b3cda`: README says "Whatever it settled for, it says so", atlas says "the tier reached is printed **for every item**". The report loop is `for _, t := range []selectionTier{tierLearnerDomain, tierGeneral, tierAnyDomain, tierAboveBand}` — `tierSameDomain`, the first and most common tier, is never printed. Measured: a 4-word pre-banded rig authors 4 items at `tierSameDomain` and prints no "drew options from" line at all. This is BR-38's counter, still open, now backed by a documented promise; and the same omission is what makes the tier-report revert-check vacuous (N3).
+
+**N3 — BR-34's third revert-check is green without its fix, so the tier-report finding is disposed by a test that cannot fail** (`cmd/define/harvest_judge_test.go:537-556`).
+
+> **This is the 6th finding in family `property-without-a-pin`.** Do not add a fourth assertion. The rule, already stated and now broken by the commit that closed the findings which produced it: *a revert-check is only a check if the reviewer ran it — write the mutation, run it, and record that it reddened, in the same commit as the fix.* Four of the eleven pins I sampled this round were confirmed by reverting; this one was not, and it reads as protection.
+
+Reverted on a scratch copy at HEAD: moving `widened[tier]++` back above the veto loop leaves `TestTheTierReportCountsOnlyWrittenItems` **green**, because the test asserts the absence of `"drew options from"` and the fixture's tier (`tierSameDomain`, since `preBand` sets every word to `DomainGeneral`) is never printed either way. Adding `tierSameDomain` to the report loop makes the mutated build print `4 item(s) drew options from same domain, at band` and the test reddens — so the pin's fixture cannot reach the branch it names, which is the failure the plan's own sweep block calls out two paragraphs down. Fixing N2 fixes this pin as a side effect; do both, and re-run the mutation.
+
+## 4. Minor findings
+
+- `harvest.go:88` — `runWithin`'s doc says it "is the ONLY way this file reaches a model"; `runHarvestAgreement` (`:462`) calls `llm.Run` directly. Not a bug (that mode has its own K×N bound and `-limit` is refused beside `-agreement`), but it is the load-bearing sentence of BR-30's disposition. Related and same family (**5th in `inert-mechanism`** — the rule is *a branch or value no production path can reach is wired or deleted*): the `errors.Is(err, errBudget)` arms after `bandTask` (`:161`) and after `authorTask` (`:277`) are unreachable, since each loop's `bud.spent()` early exit already ran with nothing decrementing in between. Panic-probed: the whole `cmd/define` suite passes without entering either. The mechanical enumeration this family wants is a per-block coverage assertion over `harvest*.go`, not another site fix.
+- `harvest.go:15` / `:394` — `unavailableToHarvest` is at 0.0% and `selectionTier.String` at 66.7% under the harvest-focused test set; `String`'s uncovered arms are the tiers N2 never prints.
+- `store/item.go:200` — `prune`'s doc still carries the orphaned fragment `// : the same input prunes to the / // same output, every time.`; `harvest_test.go:18-27` still stacks two `harvestRig` doc comments, the second beginning mid-block. Both unfixed for three rounds (see BR-36).
+- `store/item.go:207` — the `cap` → `max` rename moved from one Go builtin to another; `max` has been a builtin since 1.21 and this module is `go 1.26`. `limit` or `n` clears it.
+- `harvest.go:46` — `optionsPerItem = 3` still restates `play.maxOptions - 1` with a comment naming a constant `play` does not export, across a seam that already exports `SampleStrings` and `ShuffleInts`.
+- Measured, unchanged: one exhausted budget prints two "stopped" lines (`-limit 3` and `-limit 5` on an 8-word rig each print `stopped at the --limit` then `stopped authoring at the --limit`).
+- `harvest_item.go:481` — `wordIndexIn` still matches on the leading boundary only: `stemUsesTheWord("The settlement was reached in Albany.", "set")` is `true` and `blankOut` renders `"The ___tlement was reached in Albany."` into the veto prompt. `runoff`/`run` likewise. The inflection allowance is deliberate; `settlement` is not an inflection of `set`. Either require the remainder to be a short inflectional suffix, or say in the doc comment that the check is deliberately loose and `#12` owns the strict rule.
+
+## 5. Test coverage notes
+
+- **Reverted and confirmed RED** (pinned): `runWithin`'s charge-before-call gate → `TestTheLimitBoundsEveryPass` (2 of 4 cells); the entail and veto survivor lines → `TestEveryAuthoringOutagePathReportsSurvivors`; `sortedBanded` → `TestSortedBandedMakesSelectionOrderIndependent`; `sortItems`' newest-first order → the new `storetest` row on both `Mem` and `YAML`, plus `TestPruneKeepsTheNewest`.
+- **Reverted and confirmed GREEN** (not pinned): `widened[tier]++`'s move after the write. See N3.
+- Two of the four `TestTheLimitBoundsEveryPass` cells ("banding", "a limit of one") stay green under the reverted gate, because the loop-top early exit catches those shapes. That is fine — the table as a whole reddens — but worth knowing when reading the mutation record.
+- `## Verification`'s conformance row is still scoped to "at the M1 boundary" and records neither M2's three live rows nor what they returned, though `TestAuthoredStemShapeAgainstTheLiveService`'s comment proves they ran.
+- Per-function coverage on the harvest files is high (`stemUsesTheWord`, `blankOut`, `topicSpread`, `sortedBanded` at 100%); the gaps are `runHarvest` 76.7% and `runHarvestAgreement` 82.1%, which is where the unreachable branches live.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass, one carry-over.** `play.ShuffleInts`, `wordIndexIn`, `isWordRune` and `seedFor` are reuse rather than restatement, and the `play.PickOptions` question is answered in writing with four structural reasons (`harvest_item.go:118-146`). `optionsPerItem` is the single restated constant (Minor).
+- **ARCH-PURE — pass, with one note for `#12`/`#13`.** `pickDistractors`, `topicSpread`, `prune`, `stemUsesTheWord`, `blankOut`, `wordIndexIn` and the four renderers are pure and unit-tested with no IO; `senseFacts` split out of `wordSense` is the right shape. `runAuthoring` now carries the batch loop, the keep/reject policy, the statistics and the IO in one 180-line function, and `#13` adds a second `Form` to it. A pure `decideItem(stem, verdict, kept) -> (Item, rejection)` would make the policy table-testable without the fake — and would have made N3's pin trivial to write correctly.
+- **ARCH-PURPOSE — pass on the code, flag on the docs (N1, N2).** The shadow-sweep over `-limit`'s meaning finds three consumers still restating the superseded contract, and the tier-report sweep produced documentation that outruns the code. Both are the same shape: the enumeration was written and then read as a list of noticed sites.
+- **ARCH-MOCK — pass.** `llmtest.Fake` is at the wire level, `harvestRig` drives the production path through it (and `t.Fatal`s on a rig size that cannot exercise authoring), and three live conformance rows now cover drift for `authorTask`, `entailTask` and `vetoTask`. Production and test flow share the boundary.
+- **ARCH-CONSTRAINTS — pass.** `-limit` is a real bound now and enforced at the call rather than by convention; `-agreement` is capped at 25 rounds; the batch path is unreachable from `--play`, asserted by a panicking seam. Residual: a fresh large deck at the default spends all 200 calls banding and authors nothing, announcing it with two "stopped" lines — true, defensible, and only obliquely stated.
+- **ARCH-SECURE — pass.** The model's stem is untrusted input; it is neutralised at the store on both write and read (`yaml.go:662`), `Band`/`Domain` parse-refuse, a corrupt `items/*.yaml` degrades to never-authored with a warning rather than a crash, and `wordIndexIn` no longer assumes case-folding preserves byte offsets. For `#12`: parse the stem into a typed `(text, answerSpan)` where it arrives rather than re-locating the answer with string arithmetic at each use — that is the general form of both the round-6 panic and the Minor above.
+- **ARCH-ORDER — pass.** Mid-item budget exhaustion abandons rather than writes short (`truncated`), which is pinned. Carried state is small (`bud`, `served`, `widened`, `domains`), resumability is designed (the cache is the progress marker; each word is written atomically), and the interrupting events are enumerated in the code. No goroutines, so no unbounded extent. One inert detail: on truncation, `served` is incremented for candidates of an item that was never written — harmless only because the outer loop breaks immediately after.
+
+## 7. Plan revision recommendations
+
+- **`## Verification`, sweep row (`plan:456`)** — the count is still "22 properties" over a 24-item list, and the block still records neither the mutation nor the named test per row, which is the rule the paragraph directly beneath it states. Either give each row its mutation and its test name, or replace the prose list with a pointer to a runnable sweep artifact. M1's table at least had a verdict column.
+- **`## Verification`, checkpoint row (`plan:492`)** — "The generated batch, read by the operator" is unticked while the `## Plan`'s checkpoint row is ticked, the Log narrates three batches, and two pensive files are committed. Tick it or say why it stays open.
+- **`## Verification`, conformance row (`plan:412`)** — still scoped to "at the M1 boundary". Extend it to record M2's three live rows and what they returned, including the measured pre-blanked-stem observation.
+- **Operating envelope (`plan:88-90`) and Task 3 (`plan:285`)** — restate `-limit` as a model-call budget across banding, authoring, entailment and the veto, and correct "one band call per unbanded word, one author call per item" to the two-to-five calls a word actually costs (N1).
+- **New `## Revisions` entry — "2026-09-06 — M2 boundary round 8"** — record that BR-26's code fix shipped with a pin that passes without it, and that the tier report omits `tierSameDomain`, so the plan's history matches what the gate measured rather than what the previous round's commit message claimed.
+
+```findings
+dispose:
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      Unification is real (both go through wordIndexIn) but the loose rule survives: stemUsesTheWord("The settlement was reached in Albany.","set")=true, blankOut gives "The ___tlement was reached in Albany.".
+  - id: BR-26
+    disposition: addressed
+    note: |
+      widened[tier]++ now runs after SetItems; the counter no longer counts attempts. The missing revert-check stays open under BR-34.
+  - id: BR-27
+    disposition: addressed
+    note: |
+      Mutation-confirmed: deleting the survivor lines on the entail and veto paths reddens TestEveryAuthoringOutagePathReportsSurvivors on both subtests.
+  - id: BR-28
+    disposition: addressed
+  - id: BR-30
+    disposition: addressed
+    note: |
+      runWithin gates structurally; reverting to charge-then-call gives -limit 6 = 10 calls and reddens two cells of the new flag x pass table. Each cell now fatals if its pass was never entered.
+  - id: BR-31
+    disposition: addressed
+    note: |
+      main.go:628 now names MODEL CALLS. The class recurs at harvest.go:15 and plan:90/:285 - raised separately.
+  - id: BR-32
+    disposition: addressed
+    note: |
+      Atlas lists five tiers with tierLearnerDomain second, the open-question paragraph is rewritten, the plan table and "four tasks" are corrected, README gained the tier lines. The new README/atlas claim overstates - raised separately.
+  - id: BR-33
+    disposition: addressed
+    note: |
+      Mutation-confirmed: flipping sortItems' After to Before reddens the new storetest row on both TestMemConformance and TestYAMLConformance.
+  - id: BR-34
+    disposition: not-addressed
+    note: |
+      Two of three confirmed red on revert (survivor lines, sortedBanded). The tier-report member is green on revert - its fixture sits in tierSameDomain, which the report loop never prints.
+  - id: BR-35
+    disposition: addressed
+    note: |
+      000012's three rows are rewritten as satisfied-by-construction with the trigger recorded.
+  - id: BR-36
+    disposition: not-addressed
+    note: |
+      Both sites unchanged at HEAD: store/item.go:200 still carries the orphaned fragment, harvest_test.go:18-27 still stacks two harvestRig doc comments.
+  - id: BR-37
+    disposition: not-addressed
+    note: |
+      plan:456 still says 22 properties over a 24-item list, records no mutation or test name per row, and plan:492 is still unticked.
+  - id: BR-38
+    disposition: not-addressed
+    note: |
+      The dead-fixture half is fixed (the test now preBands and fatals on zero entail calls). widened[tierSameDomain] is still incremented at harvest.go:390 and still absent from the report loop at :394.
+  - id: BR-39
+    disposition: not-addressed
+    note: |
+      optionsPerItem = 3 is unchanged and play.maxOptions is still unexported.
+  - id: BR-40
+    disposition: not-addressed
+    note: |
+      golden_schema_test.go's wrap is fixed. The double stopped line is measured unchanged, and prune's cap -> max rename shadows a different Go builtin (module is go 1.26).
+findings:
+  - id: new
+    severity: Important
+    family: behaviour-change-undocumented
+    title: |
+      harvestLimit's own doc comment and two plan lines still state -limit's superseded meaning
+    detail: |
+      4th in family. harvest.go:15 reads "bounds the words one --harvest run will ask the model
+      about" - the member BR-31's enumeration named by name - fourteen lines above budget's
+      comment saying the opposite; plan:90 and plan:285 repeat it. Correct at HEAD: main.go:432,
+      main.go:628, README:374, atlas:1431. The rule has been written twice and used as a list of
+      noticed sites twice, so the deliverable is the mechanism, not the three lines: a retired-
+      PHRASING registry checked by a repo guard, the same shape as
+      TestProseDoesNotSpellStaleRuntimeArtifactNames and TestNoArtifactNamesARetiredSymbol.
+  - id: new
+    severity: Important
+    family: doc-predeclares-outcome
+    title: |
+      This round's doc sweep promises the tier is printed for every item; the code never prints tierSameDomain
+    detail: |
+      4th in family. New in c5b3cda: README:412-416 "Whatever it settled for, it says so" and
+      atlas:1568-1571 "the tier reached is printed for every item". harvest.go:394 walks only
+      tierLearnerDomain, tierGeneral, tierAnyDomain and tierAboveBand. Measured: a 4-word
+      pre-banded rig authors 4 items at tierSameDomain and prints no "drew options from" line.
+      The rule: a doc sentence describing a code behaviour is a consumer of that behaviour and is
+      written from the code at HEAD, not from the design - a sweep that fixes a doc against the
+      plan while a known code gap (BR-38) is open converts an open finding into a false promise.
+  - id: new
+    severity: Important
+    family: property-without-a-pin
+    title: |
+      TestTheTierReportCountsOnlyWrittenItems passes with its fix reverted, so BR-34's third member is undisposed
+    detail: |
+      6th in family, and it is the pattern the family exists to catch: the commit that closed
+      "three fixes with no failing test" shipped a fourth. Reverted on a scratch copy at HEAD,
+      moving widened[tier]++ back above the veto loop leaves the test green, because preBand puts
+      every word in DomainGeneral so the tier is tierSameDomain, which the report loop never
+      prints. Adding tierSameDomain to the loop makes the mutated build print "4 item(s) drew
+      options from same domain, at band" and the test reddens. The rule: a revert-check is only a
+      check if the author ran it - write the mutation, run it, record that it reddened, in the same
+      commit as the fix. Fixing the report loop fixes this pin as a side effect; do both and re-run.
+  - id: new
+    severity: Minor
+    family: inert-mechanism
+    title: |
+      runWithin's stated invariant is false and two of its four errBudget branches are unreachable
+    detail: |
+      5th in family. harvest.go:88 says runWithin "is the ONLY way this file reaches a model";
+      runHarvestAgreement calls llm.Run directly at :462. Not a bug - that mode has its own K x N
+      bound and -limit is refused beside -agreement - but it is the load-bearing sentence of
+      BR-30's disposition. Same site, same rule: the errors.Is(err, errBudget) arms after bandTask
+      (:161) and after authorTask (:277) cannot fire, because each loop's bud.spent() early exit
+      ran with nothing decrementing in between. Panic-probed: the whole cmd/define suite passes
+      without entering either. The rule is already written - a branch or value no production path
+      reaches is wired or deleted - so the deliverable is the enumeration: a per-block coverage
+      assertion over harvest*.go, which would also have caught BR-38's counter.
+```

@@ -3608,3 +3608,35 @@ site including inner loops.
 domains were parsed into a struct field whose doc comment said selection did
 arithmetic on it; grep found zero production readers. Either wire it or delete
 it — and when the Spec names it, wiring it is the deliverable, not a follow-up.
+
+## #10 M2 rounds 7-8 — a pin written to dispose a finding, itself unfalsifiable
+
+**The sharpest one in this issue.** Round 7 found three fixes with no
+revert-check; I wrote pins for all three; round 8 reverted them and found one
+still green. `TestTheTierReportCountsOnlyWrittenItems` asserted that a
+fully-vetoed batch prints no tier line — and the report only ever printed the
+WIDENED tiers, so a batch that never widened printed nothing either way. The
+assertion was true before the fix and after it.
+
+Two lessons, and the second is the general one:
+
+- **A pin written to dispose a finding gets the same revert-check as the fix.**
+  Otherwise the finding is disposed by an assertion, which is what it was
+  complaining about.
+- **When a report is filtered, a test over the unfiltered case sees nothing.**
+  The report listed four of five tiers; the test's fixture produced the fifth.
+  Any assertion of the form "X does not appear" needs a sibling asserting that X
+  appears when it should, or it passes for the wrong reason forever.
+
+**And a doc claim can be the tell.** The atlas said "the tier reached is printed
+for every item" while the code printed four tiers of five. Writing the sentence
+is what should have surfaced the gap; instead the sentence was written from the
+intent and the code kept its filter. **When you document a claim, check the code
+makes it true — a doc sweep is a chance to find bugs, not just to describe.**
+
+**A flag×resource table is worth writing once.** `-limit` took three rounds and
+two Criticals: it counted successes rather than calls, then charged without
+gating (N+1). What finally fixed it was making the charge structural — one
+function is the only path to the model, it charges before calling, and its
+refusal returns as an error the caller already handles. **A budget you can
+charge without gating on is a budget somebody will charge without gating on.**

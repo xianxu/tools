@@ -12,18 +12,23 @@ import (
 	"github.com/xianxu/tools/internal/llm"
 )
 
-// harvestLimit bounds the words one --harvest run will ask the model about.
+// harvestLimit is the default bound on MODEL CALLS one --harvest run may make.
 //
 // ARCH-CONSTRAINTS. "Bounded in practice by the deck" is not a bound: a deck
 // reaches thousands, this is the first path in the program that makes many calls
 // in a row, and the first run against a large deck is exactly where an unbounded
 // loop is discovered. poolCap has the same shape for the same reason.
 //
+// CALLS, not words, and the distinction was a Critical twice over: the counter a
+// flag increments has to be the resource it names. A word costs between two and
+// five calls depending on how far it gets (band, author, judge, up to three
+// vetoes), so 200 is not 200 words.
+//
 // 200 rather than 40, because unlike a sitting's option pool this work is
 // PERMANENT — every call buys a fact cached forever — and a capped run is a
 // partial run rather than a failed one: the cache is its own progress marker, so
 // running again picks up where this stopped. The number is a cost ceiling per
-// invocation, not a judgement about how many words deserve banding.
+// invocation, not a judgement about how many words deserve harvesting.
 const harvestLimit = 200
 
 // agreementSample and agreementRounds are the measurement mode's shape.
@@ -392,10 +397,15 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		// own batch's variety is the self-oracle problem the atlas records.
 		fmt.Fprintf(out, "define: topic spread %.2f across the batch.\n", topicSpread(domains))
 	}
-	// How far selection had to widen is a fact about the DECK, and the difference
-	// between "these wrong answers are pitched" and "these were what was lying
-	// around".
-	for _, t := range []selectionTier{tierLearnerDomain, tierGeneral, tierAnyDomain, tierAboveBand} {
+	// EVERY tier, including the best one. The first version listed only the
+	// widened tiers, which made two claims false at once: the docs said "the tier
+	// reached is printed for every item", and the pin meant to catch a
+	// miscount could not see a batch that never widened — the most common shape
+	// on a healthy deck, and the one a test naturally builds.
+	//
+	// A batch that drew every option from the answer's own domain is good news,
+	// and worth seeing for the same reason the bad news is.
+	for _, t := range []selectionTier{tierSameDomain, tierLearnerDomain, tierGeneral, tierAnyDomain, tierAboveBand} {
 		if widened[t] > 0 {
 			fmt.Fprintf(out, "define: %d item(s) drew options from %s.\n", widened[t], t)
 		}

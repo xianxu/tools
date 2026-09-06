@@ -249,7 +249,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       half-delivered.
 - [x] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
 - [x] authored practice items — a CEFR band and a domain per word, cached forever and assigned once; two closed vocabularies in the store, the dictionary answering the domain where it can [tools#10 M1]
-- [ ] authored practice items — stems the model writes offline; distractors SELECTED at the learner's band or one below and vetoed. **STOP HERE and read a real batch** [tools#10 M2]
+- [x] authored practice items — stems the model writes offline; distractors SELECTED at the learner's band or one below and vetoed. **STOP HERE and read a real batch** [tools#10 M2]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [x] spaced repetition rework — one unbounded ladder, `floor(1.6**box)`, no ceiling [tools#39]
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]
@@ -470,8 +470,8 @@ correction points at the real lesson. The two `milestone-review` rows booked
 ### tools#10 M2 — authored stems, selected distractors, and the checkpoint
 
 **est:** 4.00 (M2's share of the issue's 7.94)
-**actual:** pending — written by the close gate, after the verdict
-**closed:** pending
+**actual:** 7.91h
+**closed:** 2026-09-06
 
 The model writes the stem; the deck supplies the wrong answers. `authoredStem`
 has no distractors field at all — a model asked for four options writes four it

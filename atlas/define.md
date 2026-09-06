@@ -1563,9 +1563,17 @@ learner is unrejectable by knowledge.
 5. above the learner's band, as a last resort that says so.
 
 It relaxes the DOMAIN before it relaxes the ceiling, and the tier reached is
-printed for every item — `define: N item(s) drew options from <tier>` — because
-a selector that silently falls back to "any word at all" is indistinguishable
-from one that is working.
+printed for every WRITTEN item — `define: N item(s) drew options from <tier>`,
+summed over the batch — because a selector that silently falls back to "any word
+at all" is indistinguishable from one that is working.
+
+**Every tier is printed, including the best one**, and both halves of that
+sentence were once false. Listing only the widened tiers made the doc's own
+"for every item" untrue, and it made the pin against miscounting unfalsifiable:
+a healthy batch that never widened printed nothing either way, which is exactly
+the shape a test naturally builds. The counts are taken AFTER the write, so an
+item whose every candidate was vetoed contributes to nothing — a batch statistic
+describes what the batch shipped.
 
 **Batch-level diversity pressure**, measured into existence by the first real
 batch: `ephemeral` served as a wrong answer in 8 of 20 items and the four A1
