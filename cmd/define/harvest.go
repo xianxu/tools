@@ -296,11 +296,15 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 			// deck produce different material and a bad batch undebuggable.
 			seedFor("harvest-options", c.Word), served)
 		var kept []string
+		truncated := false
 		for _, cand := range candidates {
 			if !bud.spend() {
-				// Out of budget MID-ITEM. The options kept so far still stand —
-				// the veto only ever removes candidates — so this is a smaller
-				// option set rather than a lost item.
+				// Out of budget MID-ITEM. The item is ABANDONED, not written
+				// short: an item is cached forever and a later unbounded run
+				// SKIPS a word that already has material, so writing two
+				// vetted options here would permanently cost this word the third
+				// — a budget limit silently becoming a quality limit.
+				truncated = true
 				break
 			}
 			v, err := llm.Run(ctx, client, vetoTask(d.lang, c.Word, stem.Stem, cand))
@@ -322,6 +326,11 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 			// was never shown, so charging it would push the next item away from a
 			// word this batch has not actually used.
 			served[store.Key(k)]++
+		}
+		if truncated {
+			fmt.Fprintf(out, "define: %q: ran out of budget mid-item; leaving it unauthored so a "+
+				"later run can finish it\n", c.Word)
+			break
 		}
 		if len(kept) == 0 {
 			rejected++

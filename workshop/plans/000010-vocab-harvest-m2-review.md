@@ -315,3 +315,116 @@ findings:
       and prefer an in-package export_test.go alias over a permanent exported
       symbol.
 ```
+
+---
+
+## Re-review — 2026-09-06T10:14:16-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 10 — authored practice items: level-tagged words, and stems the model writes offline |
+| repo | tools |
+| issue file | workshop/issues/000010-vocab-harvest.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | aef9d75836bdac7500bd87c58c0bea31725a9e88..915089b8c0a460e9f174820cf9b918ffd95b22e7 |
+| command | sdlc milestone-close --issue 10 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-09-06T10:14:16-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The remediation commit (`bc74543`) is real work, and I verified it rather than read it: I re-ran an 18-mutation sweep against `915089b` and the M2 pins BR-16/BR-17 named now redden (the `named` requirement, batch diversity pressure, the answer-never-its-own-distractor rule, `Form`'s refusal, the learner-band fallback, the `## Corrections` guard, `prune`'s tie-break, the budget-charges-the-veto rule — all confirmed RED by reverting the code). The learner-domain tier (BR-19) is wired and pinned, three live conformance rows exist (BR-18) and one of them records a real live observation, and the project row's `actual:` is back to `pending` (BR-21). What blocks SHIP is one new Critical I measured: `blankOut` computes byte offsets on `strings.ToLower(stem)` and slices the **original** stem with them, so `blankOut("The Ⱥ institute laid the keel", "keel")` **panics** (`slice bounds out of range [31:30]`) and `blankOut("İstanbul shipwrights laid the keel yesterday.", "keel")` returns `"İstanbul shipwrights laid the___l yesterday."` — the blank eats the space, leaves part of the answer visible, and with a few more such runes emits invalid UTF-8 while leaving `keel` unblanked entirely, i.e. leaking the answer into the veto prompt this function exists to hide it from. Secondarily, a `-limit` that runs out mid-veto still **writes** the item with one or two distractors and caches it forever (a later unbounded run skips it), and the sweep table added to the plan contains a row (`the judges take the language`) that I reverted and found green.
+
+## 1. Strengths
+
+- **The class fixes are real fixes, not paraphrases.** `harvestRig` now `t.Fatal`s on a size that cannot exercise authoring (`harvest_test.go:32`), and `runAuthoring` says `skipped authoring: N banded word(s)` on stdout (`harvest.go:210`) — so the *structural* cause of BR-17 is closed, not just the three tests. `TestAStemThatNamesNobodyIsRejected` now asserts the pass ran before asserting what it produced.
+- **The diversity pin became a comparison instead of a threshold** (`harvest_item_test.go:325-350`): pressure-off vs pressure-on over the same pool and seeds. Mutation-confirmed — deleting the sort block reddens it.
+- **`prune`'s determinism is now proved by shuffling before each call** (`store/item_test.go:38-50`), which is exactly the "the fixture could not reach the branch" failure the previous round found; disabling `sortItems` reddens both prune tests.
+- **`play.ShuffleInts` (`play/pick.go:238`) is the right answer to BR-25** — one shuffle, one seeding step, and the comment now says what was actually wrong with the copy instead of claiming kinship it did not have.
+- **The three live conformance rows are well-designed** (`harvest_conformance_test.go:144-265`): the author row asserts a *rate* rather than a never, and records that the live model really did return a pre-blanked stem — a measured fact, not a hypothetical. The veto row checks both directions so "rejects everything" cannot pass as success.
+- **`isWordByte`'s `b >= 0x80` arm is reused rather than restated**, which is what keeps `wordIndexIn`'s boundary rule correct for the Spanish path `#18` will open (ARCH-DRY).
+
+## 2. Critical findings
+
+**`blankOut` slices the original stem with offsets from its lowercased copy (`cmd/define/harvest_judge.go:189-193`).**
+`wordIndexIn(lower, target)` returns a byte index into `strings.ToLower(stem)`; line 193 applies it to `stem`. Go's `strings.ToLower` changes byte length for 25 runes — 23 shorten (`İ` U+0130, `ẞ` U+1E9E, `Ω` U+2126, `K` U+212A, `Å` U+212B, …) and 2 lengthen (`Ⱥ` U+023A, `Ⱦ` U+023E). Measured at HEAD:
+
+| input | result |
+|---|---|
+| `blankOut("The Ⱥ institute laid the keel", "keel")` | **panic**: `slice bounds out of range [31:30]` |
+| `blankOut("İstanbul shipwrights laid the keel yesterday.", "keel")` | `"İstanbul shipwrights laid the___l yesterday."` |
+| `blankOut("İİİİİİİİİİ keel", "keel")` | `"İİİİİ\xc4___\xb0İİ keel"` — invalid UTF-8, and **`keel` is not blanked at all** |
+
+The stem is model-authored text — untrusted input crossing into this process (ARCH-SECURE) — and the author prompt *requires* naming real people and places, which is precisely where `İstanbul`, `Å`ngström and `Ω` come from. `stemUsesTheWord` uses the same index only as a boolean, so such a stem passes the free check and reaches `renderVetoPrompt` regardless. The failure modes are all three of the bad ones: a crash that kills a paid batch run, a corrupted prompt body, and the answer leaking to the veto — which the function's own doc comment says "would make every candidate look wrong".
+
+Fix sketch: have `wordIndexIn` operate in the caller's coordinate space — either fold case per-rune while walking the original (`strings.EqualFold` on the candidate slice) or return `(start, end)` computed against the original string. Pin it with a table row per length-changing class (`Ⱥ` for the panic, `İ` for the leak) in `TestBlankOut`.
+
+## 3. Important findings
+
+**I1 — a budget-truncated veto loop still writes the item, permanently (`cmd/define/harvest.go:300`, `:326`, `:332`).**
+When `bud.spend()` fails mid-item the loop `break`s with a short `kept`, and because `len(kept) != 0` the item is written anyway. Measured on a pre-banded 8-word rig: `-limit 3` writes `certiorari` with **one** distractor, `-limit 4` with two. A subsequent `-limit 100` run does **not** repair it — `len(existing) > 0` skips the word — so a two-option question is cached forever. This contradicts `TestEveryCandidateVetoedLeavesTheWordUnauthored`'s stated invariant ("an item whose every candidate is vetoed is NOT written with two options"), which holds for the veto and not for the budget. ARCH-ORDER: a bound-exceeded path commits its in-flight effect instead of unwinding it. Fix: require the whole candidate set to be affordable before entering the veto loop, or drop the item when the loop was cut short — a capped run is a partial run, and the item it could not finish is one it did not author.
+
+**I2 — the flag still overruns by one call, and the two tests that claim to pin it never reach the pass (`cmd/define/harvest.go:273`; `harvest_test.go:236`, `:271`).**
+> **This is the 3rd finding in family `flag-silently-ignored`.** Do not patch line 273 alone. The rule that covers it: *every `spend` is a gate as well as a charge — a budget whose refusal is discarded is a counter, not a bound; and a flag×pass cell is pinned only by a test that reaches that pass.*
+
+Line 273 charges the entail call but discards `spend()`'s `false`, so the call is made anyway. Measured: pre-banded 8-word rig, `-limit 6` → **7 model calls**. And the enumeration BR-16 asked for was not written: `TestHarvestStopsAtTheLimit` (rig 8, limit 5) and `TestTheLimitHoldsWhenEveryStemIsRejected` (rig 8, limit 6) both spend the entire budget on **banding** — instrumented, both make `author=0 entail=0 veto=0`, so the second test's scripted rejection reply is never served and the property in its name is untested. Only `TestTheBudgetChargesTheVeto` (which calls `preBand`) reaches authoring. Write the flag×pass table (`-limit`×banding, `-limit`×authoring, `-limit`×veto-inner-loop, `-agreement`×sample) and give each cell a test that provably enters it.
+
+**I3 — the M2 sweep table records a revert that leaves the suite green (`workshop/plans/000010-vocab-harvest-plan.md:465`).**
+> **This is the 4th finding in family `property-without-a-pin`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+The row *"the judges take the language"* is listed among 22 properties "each reverted, each reddening a named test". I reverted it: hardcoding `store.DefaultLang` in `renderEntailPrompt`, `renderVetoPrompt` **and** `renderAuthorPrompt` builds clean and leaves the entire suite green. 20 of the other rows I re-derived independently and they hold, so the table is mostly honest — which is the problem: a hand-written table's one false row is indistinguishable from its twenty true ones, and the only way to find it is to redo the work. The rule: *a milestone's sweep is a runnable artifact, not prose* — commit the reverts as a script (or a `-tags mutation` harness) that emits the table, so a row cannot be recorded without the revert having executed. The family's measured prevalence is now 4 rounds running; each round fixed the sites the previous round named and the enumeration was re-verified by hand each time.
+
+**I4 — `-limit` changed meaning and three of the four places that state it were not updated (`cmd/define/main.go:432`, `:628`; `cmd/define/README.md:374`).**
+> **This is the 3rd finding in family `behaviour-change-undocumented`.** Do NOT fix the README line alone. The rule: *when a fix changes what a user-facing contract MEANS, every statement of that meaning is part of the change — enumerate them (flag help string, in-code guard comments, README, atlas, the constant's doc comment) and re-derive each.*
+
+The flag help still reads `"words --harvest may ask the model about in one run"`, the mode-guard comment still says `-limit bounds how many words are ASKED ABOUT`, and README:374 still says `caps how many words one run will ask about`. Only `atlas/define.md:1431` and `harvestLimit`'s own comment were updated to "calls". A user-visible consequence also went unrecorded: because both passes now share one budget, a fresh 200-word deck at the default spends all 200 calls banding and authors **nothing** until a second run, while README:383 says "It then writes the practice items."
+
+**I5 — the new selection tier is documented nowhere, and the atlas enumeration written this window is now wrong (`atlas/define.md:1541`; `workshop/plans/000010-vocab-harvest-plan.md:69`, `:94`).**
+> **This is the 2nd finding in family `doc-understates-surface`.** Do NOT fix the atlas sentence alone. The rule: *a doc that ENUMERATES a code-side set is a consumer of that set — when the set changes, the enumeration is re-derived, not left at its previous count.*
+
+`tierLearnerDomain` was added in `bc74543` (BR-19's fix) as the **second-priority** tier, so it changes which words are selected; `grep` finds it in no atlas or README text. The atlas paragraph added in `47ed772` still lists four tiers ("same-domain-at-band, then general-at-band, then any-domain-at-or-below, and only as a last resort above the learner") where the code has five. The same rule catches the plan: the Integration-points table and the Test-surface line both say **three** `llm.Task`s while M2 ships four (`entailTask` is absent from both, though it did get a conformance row). Enumeration to sweep: the atlas tier list, the plan's task table and its "three tasks" sentence, and the README's tier-report output lines (`N item(s) drew options from …`), which appear in no doc at all.
+
+**I6 — `Store.Items`' newest-first promise, added this window, has no suite row (`cmd/define/store/store.go:62`; `storetest/suite.go`).**
+BR-22's cap row landed and a bonus `Form` row with it, both mutation-confirmed. But BR-22's enumeration explicitly named three members, and the newest-first read order is still asserted only by the pure `PruneForTest` tests — disabling `sortItems` reddens `TestPruneIsDeterministic`/`TestPruneKeepsTheNewest` and no suite row. The third member (read-side canonicalisation) is correctly recorded as structurally out of scope at `yaml.go:660`, which is the right handling; this one is just missing. One row that writes two items out of order and asserts the order back closes it.
+
+## 4. Minor findings
+
+- `cmd/define/store/item.go:201` — `prune`'s doc comment has a mangled fragment: `// : the same input prunes to the / // same output, every time.` The subject ("DETERMINISTIC") was lost in an edit.
+- `cmd/define/store/item.go:207` — `func prune(items []Item, cap int)` shadows the builtin `cap`.
+- `cmd/define/harvest.go:346` — the tier report loop skips `tierSameDomain`, so `widened[tierSameDomain]` is incremented and never read.
+- `cmd/define/harvest_test.go:271` — `TestTheLimitHoldsWhenEveryStemIsRejected` is a duplicate of `TestHarvestStopsAtTheLimit` under the current rig (see I2); its distinct fixture is dead.
+- A single cap prints two "stopped" lines (`stopped at the --limit` then `stopped authoring at the --limit`) for one exhausted budget.
+- `internal/llm/golden_schema_test.go:15` — the reflowed comment left one line running well past the file's wrap width.
+
+## 5. Test coverage notes
+
+- **The three authoring-pass outage branches are untested.** `authoring stopped` (`harvest.go:255`), `judging stopped` (`:275`) and `the veto stopped` (`:305`) have no test; `grep` finds no assertion on any of those strings. Done-when 6 is ticked and pinned only for the banding pass (`TestHarvestOutageKeepsWhatWasAlreadyBought`, rig 4). Pinning the entail-outage path would also pin BR-27's fix, which currently has no failing-test evidence.
+- **BR-26's fix has no pin either**: moving `widened[tier]++` after the write is invisible to the suite — I reverted it to its pre-fix position and nothing reddened. Asserting the absence of a `drew options from` line inside `TestEveryCandidateVetoedLeavesTheWordUnauthored` is a one-line pin.
+- Likewise the `served[k]++`-only-for-survivors rule (`harvest.go:320`): charging every candidate instead leaves the suite green.
+- **Live rows ran, but the plan does not say so.** The author-shape row's comment records a real live observation, so it was executed; the Verification section's conformance row is still scoped to "at the M1 boundary" and should record M2's three rows and what they returned.
+- `go test ./...`, `go vet ./...`, `gofmt -l` and `go vet -tags conformance ./...` are all clean at `915089b` — verified, not assumed.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass.** `play.ShuffleInts`, `wordIndexIn`, `seedFor` and `isWordByte` are all reuse rather than restatement, and the `play.PickOptions` question was answered in writing with four structural reasons (`harvest_item.go:118-146`) rather than assumed. This is the strongest axis in the diff.
+- **ARCH-PURE — pass, with one note.** `pickDistractors`, `topicSpread`, `prune`, `stemUsesTheWord`, `blankOut` and the four renderers are pure and unit-tested with no IO. `runAuthoring` is now ~150 lines carrying the batch loop, the judging policy, the statistics and the IO together; `#12`/`#13` will add a second `Form` to it. A pure `decideItem(stem, verdict, candidates, vetoes) -> (Item, reason)` would make the reject/keep policy table-testable without the fake, and would have made I1 visible as a returned reason rather than a `break`.
+- **ARCH-PURPOSE — pass on the code, flag on the docs.** The learner-domain tier closed the deferred half of the Spec's row, and `authoredStem` having no distractors field makes "selected, never invented" structural. I4 and I5 are the residue: two fixes changed what the system *means* and the consumers that restate that meaning were not re-derived.
+- **ARCH-MOCK — pass.** `llmtest.Fake` is at the wire level and `harvestRig` drives the production path through it, so production flow and test flow share the boundary; three live conformance rows now cover the drift `#11`'s pattern was built for.
+- **ARCH-CONSTRAINTS — flag (I1, I2).** The declared envelope is now enforced by a real budget, which is the improvement; what is left is that exceeding it by one call is unbounded-by-check rather than by design, and that hitting it degrades a *permanent* artifact instead of stopping cleanly.
+- **ARCH-SECURE — flag (Critical).** The model's stem is untrusted input and is correctly neutralised at the store boundary; it is not treated as untrusted by `blankOut`, which assumes case-folding preserves byte offsets. The general lesson for `#12`, which will do the real blanking: parse the stem into a typed `(text, answerSpan)` at the point it arrives, rather than re-locating the answer with string arithmetic at each use.
+- **ARCH-ORDER — flag (I1).** The run's carried state is small and its resumability is genuinely designed (the cache is the progress marker, each word written atomically). The gap is the interrupting event the caller cannot block: budget exhaustion arriving mid-item unwinds the sequencing but keeps the partial effect. Name which of cancel/queue/preempt/ignore governs it — "ignore and commit what we have" is a choice, but it needs to be a stated one, and here it conflicts with "items are stored COMPLETE".
+
+## 7. Plan revision recommendations
+
+- **`## Revisions` — "M2 boundary review round 5: 2 Critical, 5 Important, 8 Minor, remediated"**: the plan has no Revisions entry for this round at all; the M1 entries stop at round 4. Record what BR-16..BR-29 changed, so the plan's own history matches the code's.
+- **Integration points table (line 69) and Test surface (line 94)**: change "three tasks" to four and add `entailTask` to the table. The "a live conformance row each" sentence is what BR-18 was derived from; it should name the tasks it applies to.
+- **`## Verification`, conformance row**: extend to record M2's three live rows and what they returned (including the pre-blanked-stem observation), rather than leaving the row scoped to M1's banding measurement.
+- **`## Verification`, sweep row**: replace the prose table with a pointer to a runnable sweep artifact (I3), and correct the `the judges take the language` row — it is currently recorded as red and is green.
+- **Core concepts, `pickDistractors` bullet**: the tier list in the plan predates `tierLearnerDomain`; add it and say why it sits second (the answer's own domain still wins), matching `harvest_item.go:262-276`.

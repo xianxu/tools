@@ -96,6 +96,23 @@ func scriptAll(f *llmtest.Fake, n int) {
 // construction, so the band is always present there and never in the other.
 func authorKey(word string) string { return "\n\n" + word + " (CEFR" }
 
+// preBandExcept marks every deck word harvested except one, so a test can drive
+// BOTH passes in one invocation: the unbanded word makes banding run, and the
+// rest are the pool authoring needs.
+func preBandExcept(t *testing.T, d deps, skip string) {
+	t.Helper()
+	for _, w := range allDeckWords() {
+		if w == skip {
+			continue
+		}
+		if err := d.deck.SetWordFacts(w, store.WordFacts{
+			Band: store.C1, Domain: store.DomainGeneral, At: harvestClock,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // preBand marks every deck word harvested, so a test's budget reaches the
 // authoring pass instead of being spent on banding.
 func preBand(t *testing.T, d deps) {
@@ -521,19 +538,47 @@ func TestTheDictionaryDomainBeatsTheModel(t *testing.T) {
 func TestHarvestSendsTheDecksLanguage(t *testing.T) {
 	d, fake, _ := harvestRig(t, 3)
 	d.lang = store.Lang("es")
-	scriptAll(fake, 8)
+	// All but one banded: the unbanded word makes the BANDING pass run, and the
+	// rest make a pool for authoring. Both passes in one invocation is the only
+	// shape that can check every prompt's language at once.
+	preBandExcept(t, d, deckWord(0))
+	scriptAll(fake, 40)
 
 	var out, errOut bytes.Buffer
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
 		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
 	}
+
+	// EVERY request, not reqs[0]. Asserting the first one covered the band
+	// prompt and nothing else — so the author prompt and both judges could stop
+	// receiving d.lang with this test green, which is exactly the gap M1's BR-3
+	// named one layer down: the renderer was pinned and the THREADING was not.
 	reqs := fake.Requests()
-	if len(reqs) == 0 {
-		t.Fatal("no request was sent")
+	if len(reqs) < 4 {
+		t.Fatalf("only %d requests; this run must reach banding, authoring and both judges "+
+			"or the assertion below covers one prompt", len(reqs))
 	}
-	if !strings.Contains(reqs[0].Prompt(), "`es`") {
-		t.Errorf("the request never names the deck's language; a Spanish deck would be "+
-			"banded from an English prompt, forever. Prompt: %s", reqs[0].Prompt())
+	seen := map[string]bool{}
+	for i, r := range reqs {
+		p := r.Prompt()
+		for mark, name := range map[string]string{
+			markBand: "band", markAuthor: "author", markEntail: "entail", markVeto: "veto",
+		} {
+			if strings.Contains(p, mark) {
+				seen[name] = true
+			}
+		}
+		if !strings.Contains(p, "`es`") {
+			t.Errorf("request %d never names the deck's language; a Spanish deck would be "+
+				"banded, authored and judged by English-assuming prompts. Prompt: %s", i, p)
+		}
+	}
+	// The coverage claim itself, so a run that silently stopped reaching a task
+	// cannot make this test pass by having nothing to check.
+	for _, name := range []string{"band", "author", "entail", "veto"} {
+		if !seen[name] {
+			t.Errorf("no %s request was sent, so its language threading is unchecked", name)
+		}
 	}
 }
 

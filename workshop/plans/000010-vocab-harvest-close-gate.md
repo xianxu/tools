@@ -442,6 +442,12 @@ rounds:
           round: 5
       boundary: M2
       blocked: true
+    - "n": 6
+      timestamp: "2026-09-06T10:14:16-07:00"
+      agent: claude
+      boundary: M2
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#10 (boundary-review)
@@ -707,6 +713,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   in production today. That is defensible as a guard for #13 — but say so,
   and prefer an in-package export_test.go alias over a permanent exported
   symbol.
+
+## Round 6 — 2026-09-06T10:14:16-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 

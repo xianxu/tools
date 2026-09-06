@@ -462,9 +462,24 @@ can the material get* — and no green suite answers it.
       never its own distractor · the band ceiling holds · the learner-domain tier
       · learner-band fallback to the word · `topicSpread` parses before counting
       · `blankOut` hides the answer · `wordIndexIn` requires a word boundary · the
-      pre-blanked stem is refused · the judges take the language · `prune` caps
-      at the write · `prune`'s tie-break · `Form` is refused at the write · the
+      pre-blanked stem is refused · every task RECEIVES the deck's language ·
+      `wordIndexIn` returns original-string offsets · a budget exhausted
+      mid-item writes nothing · `prune` caps at the write · `prune`'s tie-break · `Form` is refused at the write · the
       learner-domain fold skips `## Corrections`.
+
+      **One row in the first version of this table was WRONG, and round 6 caught
+      it.** It read "the judges take the language" RED; the reviewer reverted it
+      and found green. Both were right about different mutations: I had mutated
+      the RENDERER, which the prompt golden catches, while the finding was about
+      the THREADING — `entailTask(d.lang, …)` becoming
+      `entailTask(store.DefaultLang, …)` left the whole suite green. That is
+      M1's BR-3 one layer down, and the row is fixed the way BR-3 was: the
+      language test now iterates EVERY request rather than `reqs[0]`, and asserts
+      that all four tasks were actually sent so a run that stopped reaching one
+      cannot pass by having nothing to check. All four threading sites redden.
+
+      **A sweep row is only as good as the mutation behind it** — recording the
+      verdict without recording the mutation is how a green row reads as red.
 
       **Four came back GREEN on the first pass and are now pinned**, and two of
       those four were pinned by tests that already existed and could not fail:

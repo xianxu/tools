@@ -424,3 +424,39 @@ func TestTheBudgetChargesTheVeto(t *testing.T) {
 			"must charge the budget like every other call site", got, limit, countTask(fake, markVeto))
 	}
 }
+
+// A budget that runs out MID-ITEM abandons the item rather than writing it
+// short. An item is cached forever and a later run skips a word that already has
+// material, so a truncated write would make a budget limit permanently a quality
+// limit for that word.
+func TestABudgetExhaustedMidItemWritesNothing(t *testing.T) {
+	d, fake, st := harvestRig(t, 8)
+	preBand(t, d)
+	scriptAll(fake, 80)
+
+	// Enough for one author + one entail + one veto, then nothing: the second
+	// veto call of the first item is where it runs out.
+	var out, errOut bytes.Buffer
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: 3}, &out, &errOut); code != 0 {
+		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+	}
+
+	for _, w := range allDeckWords() {
+		items, err := st.Items(w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) == 0 {
+			continue
+		}
+		if len(items[0].Distractors) >= optionsPerItem {
+			continue // a complete item is fine
+		}
+		t.Errorf("%q was written with only %d of %d options after the budget ran out; a later "+
+			"run will skip it, so the shortfall is permanent",
+			w, len(items[0].Distractors), optionsPerItem)
+	}
+	if !strings.Contains(out.String(), "mid-item") {
+		t.Errorf("the abandoned item was not reported: %q", out.String())
+	}
+}

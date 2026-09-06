@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm/llmtest"
@@ -479,5 +480,66 @@ func TestLearnerReads(t *testing.T) {
 	}
 	if (learnerFacts{}).reads(law) {
 		t.Error("a learner with no model reads every domain")
+	}
+}
+
+// THE PANIC, and the class it belongs to: an index computed on a case-folded
+// string is not valid for the original, because folding does not preserve byte
+// length. `Ⱥ` is three bytes and folds to two; `İ` is two and folds to three.
+//
+// Found by the M2 boundary review, which measured it rather than read it.
+func TestWordIndexInReturnsOriginalStringOffsets(t *testing.T) {
+	for _, tc := range []struct {
+		name, stem, word string
+		wantFound        bool
+	}{
+		{"a rune that SHRINKS when folded", "The Ⱥ institute laid the keel", "keel", true},
+		{"a rune that GROWS when folded", "İstanbul shipwrights laid the keel yesterday.", "keel", true},
+		{"several of them", "Ⱥ Ⱥ İ İ the keel", "keel", true},
+		{"the word itself is non-ASCII", "En la mañana vimos la mesa grande.", "mañana", true},
+		{"absent, with folding runes present", "Ⱥ İ nothing here", "keel", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at, n := wordIndexIn(tc.stem, tc.word)
+			if !tc.wantFound {
+				if at >= 0 {
+					t.Errorf("found %q at %d in %q, want absent", tc.word, at, tc.stem)
+				}
+				return
+			}
+			if at < 0 {
+				t.Fatalf("did not find %q in %q", tc.word, tc.stem)
+			}
+			// THE PROPERTY: the offsets must slice the ORIGINAL safely and land
+			// exactly on the word. Doing the slice here is the assertion — the
+			// first version panicked on it.
+			if at+n > len(tc.stem) {
+				t.Fatalf("offset %d+%d exceeds the stem's %d bytes", at, n, len(tc.stem))
+			}
+			if got := tc.stem[at : at+n]; !strings.EqualFold(got, tc.word) {
+				t.Errorf("offsets select %q, want %q", got, tc.word)
+			}
+		})
+	}
+}
+
+// blankOut over the same inputs: no panic, valid UTF-8 out, and the answer
+// actually hidden — which is the whole reason the function exists.
+func TestBlankOutSurvivesFoldingRunes(t *testing.T) {
+	for _, stem := range []string{
+		"The Ⱥ institute laid the keel",
+		"İstanbul shipwrights laid the keel yesterday.",
+		"Ⱥ İ Ⱥ İ the keel of the ship",
+	} {
+		got := blankOut(stem, "keel")
+		if !utf8.ValidString(got) {
+			t.Errorf("blankOut(%q) produced invalid UTF-8: %q", stem, got)
+		}
+		if strings.Contains(strings.ToLower(got), "keel") {
+			t.Errorf("blankOut(%q) = %q — the answer is still visible to the veto", stem, got)
+		}
+		if !strings.Contains(got, "___") {
+			t.Errorf("blankOut(%q) = %q — nothing was blanked", stem, got)
+		}
 	}
 }

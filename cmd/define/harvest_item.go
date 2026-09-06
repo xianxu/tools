@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
@@ -435,8 +437,7 @@ func sortedBanded(in []bandedWord) []bandedWord {
 // whether a string contains a substring would be the same mistake as asking one
 // to derive a domain the dictionary printed.
 func stemUsesTheWord(stem, word string) bool {
-	lower, target := strings.ToLower(stem), strings.ToLower(strings.TrimSpace(word))
-	if target == "" {
+	if strings.TrimSpace(word) == "" {
 		return false
 	}
 	// ALREADY BLANKED. The shipped case was subtler than "the word is missing":
@@ -447,37 +448,77 @@ func stemUsesTheWord(stem, word string) bool {
 	if strings.Contains(stem, "___") {
 		return false
 	}
-	return wordIndexIn(lower, target) >= 0
+	i, _ := wordIndexIn(stem, word)
+	return i >= 0
 }
 
-// wordIndexIn is the ONE definition of "where does this word occur in this stem",
-// shared by stemUsesTheWord and blankOut. Returns -1 for absent.
+// wordIndexIn is the ONE definition of "where does this word occur in this
+// stem": a byte offset and length IN THE ORIGINAL string, or (-1, 0).
 //
-// Two spellings of one predicate is how "The settlement was reached" passed the
-// containment check for `set` and was then rendered to the veto as
-// "The ___tlement was reached": one function found a match the other blanked
-// wrongly. Scanning EVERY occurrence rather than the first also fixes the
-// converse — a stem where the word appears as a substring before appearing
-// properly was falsely rejected.
+// ORIGINAL-STRING OFFSETS, and that is the whole point of the signature. The
+// first version searched `strings.ToLower(stem)` and handed the offset back for
+// callers to slice the original with — and ToLower does not preserve byte
+// length: `Ⱥ` is three bytes and folds to two, `İ` is two and folds to three.
+// `blankOut("The Ⱥ institute laid the keel", "keel")` PANICKED with `slice
+// bounds out of range [31:30]`, and on the `İ` case it returned "...laid
+// the___l yesterday." — eating the space, leaving part of the answer visible,
+// and in the worst case leaving the answer UNBLANKED in the prompt this function
+// exists to hide it from.
+//
+// Returning offsets into the original makes that mistake unavailable rather than
+// merely fixed: there is no folded string for a caller to index into.
+//
+// Case-insensitive by comparing FOLDED RUNES pairwise, so the comparison stays
+// forgiving without either side being rewritten.
 //
 // A WHOLE WORD at the start: `set` is not satisfied by `sunset`, nor `run` by
 // `brunch`. Inflections may FOLLOW (`runs`, `keels`), because a stem using a
-// word naturally often inflects it and refusing that pushes the model back
+// word naturally often inflects it, and refusing that pushes the model back
 // toward the stilted constructions the gloss rule already fought.
-func wordIndexIn(lowerStem, lowerWord string) int {
-	if lowerWord == "" {
-		return -1
+//
+// EVERY occurrence is scanned, not just the first, so a stem where the word
+// appears as a substring before appearing properly is not falsely rejected.
+func wordIndexIn(stem, word string) (int, int) {
+	word = strings.TrimSpace(word)
+	if word == "" {
+		return -1, 0
 	}
-	for from := 0; from < len(lowerStem); {
-		i := strings.Index(lowerStem[from:], lowerWord)
-		if i < 0 {
-			return -1
+	prevIsWord := false
+	for i := 0; i < len(stem); {
+		r, size := utf8.DecodeRuneInString(stem[i:])
+		if !prevIsWord {
+			if n, ok := foldedPrefixLen(stem[i:], word); ok {
+				return i, n
+			}
 		}
-		at := from + i
-		if at == 0 || !isWordByte(lowerStem[at-1]) {
-			return at
-		}
-		from = at + 1
+		// highlight.go's isWordRune, not a second one: it already answers "is this
+		// rune inside a word" for this package, and it is STRICTER in the way that
+		// matters here — apostrophes and hyphens count as inside, so `dog` does
+		// not match inside `hot-dog` (ARCH-DRY).
+		prevIsWord = isWordRune(r)
+		i += size
 	}
-	return -1
+	return -1, 0
+}
+
+// foldedPrefixLen reports how many bytes OF s a case-insensitive match of word
+// occupies at the start of s.
+//
+// Measured in s rather than taken from word, because a match is rune-for-rune
+// and the two can differ in bytes — which is the whole defect above.
+func foldedPrefixLen(s, word string) (int, bool) {
+	si, wi := 0, 0
+	for wi < len(word) {
+		if si >= len(s) {
+			return 0, false
+		}
+		sr, ss := utf8.DecodeRuneInString(s[si:])
+		wr, ws := utf8.DecodeRuneInString(word[wi:])
+		if unicode.ToLower(sr) != unicode.ToLower(wr) {
+			return 0, false
+		}
+		si += ss
+		wi += ws
+	}
+	return si, true
 }

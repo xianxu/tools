@@ -182,13 +182,12 @@ func renderVetoPrompt(lang store.Lang, answer, stem, candidate string) llm.Reque
 // #12 owns the real blanking — stem, plural, hyphenation — where it is the
 // learner who must not see it.
 func blankOut(stem, answer string) string {
-	lower, target := strings.ToLower(stem), strings.ToLower(strings.TrimSpace(answer))
-	// Through wordIndexIn, the same predicate stemUsesTheWord uses. Two spellings of
-	// "where is the word" rendered "The settlement was reached" as
-	// "The ___tlement was reached".
-	i := wordIndexIn(lower, target)
+	// Through wordIndexIn, the same predicate stemUsesTheWord uses, and it
+	// answers in ORIGINAL-string offsets — see its comment for the panic that
+	// folded offsets caused here.
+	i, n := wordIndexIn(stem, answer)
 	if i < 0 {
 		return stem
 	}
-	return stem[:i] + "___" + stem[i+len(target):]
+	return stem[:i] + "___" + stem[i+n:]
 }
