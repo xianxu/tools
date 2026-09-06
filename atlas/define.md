@@ -1479,6 +1479,23 @@ the fallback for words NOAD leaves unlabelled. Where the dictionary spoke, its
 label wins outright: a model asked to repeat it must not be able to overwrite an
 editorial fact with a paraphrase.
 
+### Forgetting takes the material with it
+
+`Forget` removes everything a word OWNS — the deck entry, the news cache, the
+harvested band and domain, and the authored items — and nothing else. Events
+stay: the deck is a working set, the log is history.
+
+**It removed only the deck entry until `#10`'s close review**, so a forgotten
+word kept its cached facts and items. Looking it up again re-added it to the deck
+while `--harvest`, seeing facts already harvested and items already present,
+skipped it — which made *"forget this word, its material is bad"* the one thing
+forgetting could not do.
+
+The list is `perWordDirs`, and `TestPerWordDirsCoverEveryRuntimeDir` fails when a
+new runtime directory is added without being classified as per-word or as
+history. Hand-listing is what let `#10` add two directories that `Forget` never
+reached.
+
 ### Per-language, because the facts are derived
 
 `facts/<lang>/` and `items/<lang>/` scope like `words/` and unlike `events/` —

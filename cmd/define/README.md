@@ -528,7 +528,7 @@ recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
 scripting a dictionary should not mutate a deck — and neither does it ask.
 
 ```sh
-define --forget sycophantic   # drop a word from the deck (history is kept)
+define --forget sycophantic   # drop a word and its material (history is kept)
 DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
 ```
 

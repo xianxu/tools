@@ -7,3 +7,6 @@ package store
 // permanent symbol to get there. A test file alias reaches the same place
 // without widening what consumers can call.
 var PruneForTest = prune
+
+// PerWordDirsForTest exposes the classification the Forget guard checks.
+func PerWordDirsForTest(y *YAML) []string { return y.perWordDirs() }

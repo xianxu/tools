@@ -773,6 +773,111 @@ rounds:
           round: 8
       boundary: M2
       blocked: false
+    - "n": 9
+      timestamp: "2026-09-06T14:09:11-07:00"
+      agent: claude
+      dispose:
+        - id: BR-11
+          disposition: addressed
+          note: harvest_conformance_test.go:65-74 derives gloss+known via testDict + senseFacts; all 8 bandingWords verified present in testdata/entries/en.
+          round: 9
+        - id: BR-12
+          disposition: addressed
+          note: atlas/define.md:1680-1686 states the set check and names it a breaking CLI change; README.md:433-436 carries it. The exit-code table gap is raised separately.
+          round: 9
+        - id: BR-13
+          disposition: addressed
+          note: All seven members pinned through run() at harvest_test.go:696-720, plus TestRunHarvestThroughTheWiringHop for the withStore hop and the bare -agreement default.
+          round: 9
+        - id: BR-14
+          disposition: not-addressed
+          note: 'Unswept, and M2 landing INVERTED it: README.md:459-461 now reads "Nothing writes this yet - authoring is the next milestone" about a surface --harvest shipped. The atlas is correct at 1419.'
+          round: 9
+        - id: BR-15
+          disposition: addressed
+          note: renderBandPrompt enumerates store.Bands() at harvest_band.go:68. No symmetric pin though - reverting to a hardcoded scale leaves the golden green, unlike the domain half.
+          round: 9
+        - id: BR-24
+          disposition: not-addressed
+          note: Measured at HEAD on real deck words - light/"The ___house at Portland Head", set/"The ___tlement", run/"The ___way", bank/"___ruptcy" all pass stemUsesTheWord. That is 4 of the checkpoint deck's A1 words shipping an unusable item; more than cosmetic.
+          round: 9
+        - id: BR-34
+          disposition: addressed
+          note: Third member verified by revert - moving widened[tier]++ above the veto loop reddens TestTheTierReportCountsOnlyWrittenItems. All three authoring outage branches covered by TestEveryAuthoringOutagePathReportsSurvivors.
+          round: 9
+        - id: BR-36
+          disposition: not-addressed
+          note: 'Both unchanged. store/item.go:200 still reads "// : the same input prunes to the"; harvest_test.go:19-27 still stacks two harvestRig doc comments.'
+          round: 9
+        - id: BR-37
+          disposition: not-addressed
+          note: plan:456 still says 22 over a list I counted at 24; no mutation or test name per row; plan:492 still unticked while the issue's row is ticked.
+          round: 9
+        - id: BR-38
+          disposition: addressed
+          note: harvest.go:408 now walks tierSameDomain first; verified by revert - dropping it reddens TestTheTierReportCoversEveryWrittenItem at 4 authored / 0 reported.
+          round: 9
+        - id: BR-39
+          disposition: not-addressed
+          note: optionsPerItem = 3 unchanged at harvest.go:54; play.maxOptions still unexported although this window exported ShuffleInts across the same seam.
+          round: 9
+        - id: BR-40
+          disposition: not-addressed
+          note: Measured at HEAD - one exhausted budget prints both "stopped at the --limit of 5" and "stopped authoring at the --limit of 5". prune's parameter is now named max, shadowing the Go builtin.
+          round: 9
+        - id: BR-41
+          disposition: not-addressed
+          note: The three named lines are correct at HEAD, but the mechanism the finding named as the deliverable did not land - repo_guard_test.go has ZERO diff across the whole window, and retiredPhrases (:1131) is the registry it asked for. Fourth hand sweep of the same class.
+          round: 9
+        - id: BR-42
+          disposition: addressed
+          note: Verified by revert on a scratch copy - removing tierSameDomain from the report loop reddens TestTheTierReportCoversEveryWrittenItem, so the doc sentence is now written from the code.
+          round: 9
+        - id: BR-43
+          disposition: addressed
+          note: Verified by revert - the mutation the finding prescribed reddens the pin, and TestTheTierReportCoversEveryWrittenItem reddens on the report-loop mutation. Both checks re-run here rather than read.
+          round: 9
+        - id: BR-44
+          disposition: not-addressed
+          note: harvest.go:82 still says runWithin is the ONLY path to a model while runHarvestAgreement calls llm.Run at :475; the errBudget arms at :166 and :281 are still unreachable, since each loop's bud.spent() exit runs with nothing decrementing in between.
+          round: 9
+      findings:
+        - id: BR-45
+          severity: Important
+          title: Forget leaves facts/ and items/ behind, so a forgotten word's bad material is unregenerable
+          detail: |-
+            This is the 4th finding in family store-contract-unheld-by-suite. Do NOT fix the
+            cell. The rule: when a window adds a persisted per-key surface to Store, every
+            per-key lifecycle verb is decided against it in the interface contract and the
+            decision is held by storetest. Forget's contract (store.go) enumerates exactly one
+            exemption - "does NOT remove events" - and storetest/suite.go:239 asserts deck and
+            events only, so the two surfaces this window added were never walked. Reachable:
+            forget a word whose item read badly, look it up again, re-harvest, and
+            harvest.go:269 reads the stale item and skips authoring; nothing but hand-deleting
+            items/<lang>/<key>.yaml clears it. Measured prevalence at HEAD - 3 surfaces survive
+            Forget (usage/, facts/, items/), 2 of them new in this window. The deliverable is
+            the cross-product written down and pinned, not a line in Forget.
+          family: store-contract-unheld-by-suite
+          round: 9
+        - id: BR-46
+          severity: Minor
+          title: README's exit-code table declares itself an enumeration and omits every code this window added
+          detail: |-
+            This is the 3rd finding in family doc-understates-surface. Do NOT fix the two rows.
+            The rule: a doc enumeration that states its own completeness is RE-DERIVED from the
+            code whenever the window adds a member, and the re-derivation is what a guard can
+            check - the same shape TestPlanTablesNameEntitiesThatExist already has one axis
+            over. README.md:590 says "What produces each is enumerated rather than sampled,
+            because a list of examples goes stale the moment a new one is added and nothing
+            says so", and then: the `2` row omits two modes on one line (main.go:589-593,
+            pinned by TestRunRefusesTwoModes) and every -limit/-agreement usage error
+            (main.go:612-632, pinned by TestRunHarvestUsageErrors); the `1` row omits all of
+            --harvest's exit-1 paths - no deck, empty deck, no model seam, unreadable facts,
+            mid-run outage, and "nothing is banded yet" in agreement mode. Measured prevalence
+            in this one table: 2 of 2 rows are missing members added by this window.
+          family: doc-understates-surface
+          round: 9
+      blocked: true
 ---
 
 # Gate ledger — tools#10 (boundary-review)
@@ -1209,21 +1314,64 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   reaches is wired or deleted - so the deliverable is the enumeration: a per-block coverage
   assertion over harvest*.go, which would also have caught BR-38's counter.
 
+## Round 9 — 2026-09-06T14:09:11-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-11 — addressed — harvest_conformance_test.go:65-74 derives gloss+known via testDict + senseFacts; all 8 bandingWords verified present in testdata/entries/en.
+- BR-12 — addressed — atlas/define.md:1680-1686 states the set check and names it a breaking CLI change; README.md:433-436 carries it. The exit-code table gap is raised separately.
+- BR-13 — addressed — All seven members pinned through run() at harvest_test.go:696-720, plus TestRunHarvestThroughTheWiringHop for the withStore hop and the bare -agreement default.
+- BR-14 — not-addressed — Unswept, and M2 landing INVERTED it: README.md:459-461 now reads "Nothing writes this yet - authoring is the next milestone" about a surface --harvest shipped. The atlas is correct at 1419.
+- BR-15 — addressed — renderBandPrompt enumerates store.Bands() at harvest_band.go:68. No symmetric pin though - reverting to a hardcoded scale leaves the golden green, unlike the domain half.
+- BR-24 — not-addressed — Measured at HEAD on real deck words - light/"The ___house at Portland Head", set/"The ___tlement", run/"The ___way", bank/"___ruptcy" all pass stemUsesTheWord. That is 4 of the checkpoint deck's A1 words shipping an unusable item; more than cosmetic.
+- BR-34 — addressed — Third member verified by revert - moving widened[tier]++ above the veto loop reddens TestTheTierReportCountsOnlyWrittenItems. All three authoring outage branches covered by TestEveryAuthoringOutagePathReportsSurvivors.
+- BR-36 — not-addressed — Both unchanged. store/item.go:200 still reads "// : the same input prunes to the"; harvest_test.go:19-27 still stacks two harvestRig doc comments.
+- BR-37 — not-addressed — plan:456 still says 22 over a list I counted at 24; no mutation or test name per row; plan:492 still unticked while the issue's row is ticked.
+- BR-38 — addressed — harvest.go:408 now walks tierSameDomain first; verified by revert - dropping it reddens TestTheTierReportCoversEveryWrittenItem at 4 authored / 0 reported.
+- BR-39 — not-addressed — optionsPerItem = 3 unchanged at harvest.go:54; play.maxOptions still unexported although this window exported ShuffleInts across the same seam.
+- BR-40 — not-addressed — Measured at HEAD - one exhausted budget prints both "stopped at the --limit of 5" and "stopped authoring at the --limit of 5". prune's parameter is now named max, shadowing the Go builtin.
+- BR-41 — not-addressed — The three named lines are correct at HEAD, but the mechanism the finding named as the deliverable did not land - repo_guard_test.go has ZERO diff across the whole window, and retiredPhrases (:1131) is the registry it asked for. Fourth hand sweep of the same class.
+- BR-42 — addressed — Verified by revert on a scratch copy - removing tierSameDomain from the report loop reddens TestTheTierReportCoversEveryWrittenItem, so the doc sentence is now written from the code.
+- BR-43 — addressed — Verified by revert - the mutation the finding prescribed reddens the pin, and TestTheTierReportCoversEveryWrittenItem reddens on the report-loop mutation. Both checks re-run here rather than read.
+- BR-44 — not-addressed — harvest.go:82 still says runWithin is the ONLY path to a model while runHarvestAgreement calls llm.Run at :475; the errBudget arms at :166 and :281 are still unreachable, since each loop's bud.spent() exit runs with nothing decrementing in between.
+
+### Raised
+
+- **BR-45** [Important] `store-contract-unheld-by-suite` Forget leaves facts/ and items/ behind, so a forgotten word's bad material is unregenerable
+  This is the 4th finding in family store-contract-unheld-by-suite. Do NOT fix the
+  cell. The rule: when a window adds a persisted per-key surface to Store, every
+  per-key lifecycle verb is decided against it in the interface contract and the
+  decision is held by storetest. Forget's contract (store.go) enumerates exactly one
+  exemption - "does NOT remove events" - and storetest/suite.go:239 asserts deck and
+  events only, so the two surfaces this window added were never walked. Reachable:
+  forget a word whose item read badly, look it up again, re-harvest, and
+  harvest.go:269 reads the stale item and skips authoring; nothing but hand-deleting
+  items/<lang>/<key>.yaml clears it. Measured prevalence at HEAD - 3 surfaces survive
+  Forget (usage/, facts/, items/), 2 of them new in this window. The deliverable is
+  the cross-product written down and pinned, not a line in Forget.
+- **BR-46** [Minor] `doc-understates-surface` README's exit-code table declares itself an enumeration and omits every code this window added
+  This is the 3rd finding in family doc-understates-surface. Do NOT fix the two rows.
+  The rule: a doc enumeration that states its own completeness is RE-DERIVED from the
+  code whenever the window adds a member, and the re-derivation is what a guard can
+  check - the same shape TestPlanTablesNameEntitiesThatExist already has one axis
+  over. README.md:590 says "What produces each is enumerated rather than sampled,
+  because a list of examples goes stale the moment a new one is added and nothing
+  says so", and then: the `2` row omits two modes on one line (main.go:589-593,
+  pinned by TestRunRefusesTwoModes) and every -limit/-agreement usage error
+  (main.go:612-632, pinned by TestRunHarvestUsageErrors); the `1` row omits all of
+  --harvest's exit-1 paths - no deck, empty deck, no model seam, unreadable facts,
+  mid-run outage, and "nothing is banded yet" in agreement mode. Measured prevalence
+  in this one table: 2 of 2 rows are missing members added by this window.
+
 ## Open findings
 
-- **BR-11** [Important] `measurement-off-the-production-path` the conformance floor and the reported 1.00 measure a prompt shape --harvest never sends
-- **BR-12** [Important] `behaviour-change-undocumented` mode exclusivity changes previously-accepted invocations and appears in no user-facing doc
-- **BR-13** [Important] `property-without-a-pin` six of the seven run()-path members round 3 enumerated are still unpinned
 - **BR-14** [Minor] `doc-predeclares-outcome` README's directory listing promises items/<lang>/*.yaml, which M1 never writes
-- **BR-15** [Minor] `inert-mechanism` store.Bands() has no production caller while the band prompt hand-restates the six levels
 - **BR-24** [Minor] `two-spellings-of-one-predicate` stemUsesTheWord and blankOut locate the word by different rules
-- **BR-34** [Important] `property-without-a-pin` Three fixes from the last two rounds have no test that fails without them
 - **BR-36** [Minor] `doc-comment-mangled-by-edit` prune's doc comment carries an orphaned fragment, and harvestRig stacks two doc comments
 - **BR-37** [Minor] `measurement-off-the-production-path` The M2 sweep block says 22 properties over a 24-row list and records neither the mutation nor the named test
-- **BR-38** [Minor] `inert-mechanism` widened[tierSameDomain] is incremented and never read
 - **BR-39** [Minor] `helper-copied-not-shared` optionsPerItem restates play.maxOptions - 1 across a seam that already exports two helpers
 - **BR-40** [Minor] `inconsistent-failure-reporting` One exhausted budget prints two stopped lines, and prune shadows the builtin cap
 - **BR-41** [Important] `behaviour-change-undocumented` harvestLimit's own doc comment and two plan lines still state -limit's superseded meaning
-- **BR-42** [Important] `doc-predeclares-outcome` This round's doc sweep promises the tier is printed for every item; the code never prints tierSameDomain
-- **BR-43** [Important] `property-without-a-pin` TestTheTierReportCountsOnlyWrittenItems passes with its fix reverted, so BR-34's third member is undisposed
 - **BR-44** [Minor] `inert-mechanism` runWithin's stated invariant is false and two of its four errBudget branches are unreachable
+- **BR-45** [Important] `store-contract-unheld-by-suite` Forget leaves facts/ and items/ behind, so a forgotten word's bad material is unregenerable
+- **BR-46** [Minor] `doc-understates-surface` README's exit-code table declares itself an enumeration and omits every code this window added

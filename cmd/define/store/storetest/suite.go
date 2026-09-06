@@ -261,6 +261,71 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("forget removes everything the word OWNS, and no events", func(t *testing.T) {
+		// The bug this pins: Forget removed the deck entry only, so a forgotten
+		// word kept its cached band, domain and authored items. Looking it up
+		// again re-added it to the deck while --harvest, seeing facts already
+		// harvested and items already present, SKIPPED it — so "forget this word,
+		// its material is bad" was the one thing forgetting could not do.
+		s := newStore(t)
+		if err := s.Upsert(store.Word{Text: "sycophantic", FirstSeen: day(1), LastSeen: day(1), Lookups: 1}); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+		if err := s.SetWordFacts("sycophantic", store.WordFacts{
+			Band: store.C2, Domain: store.DomainGeneral, At: day(1),
+		}); err != nil {
+			t.Fatalf("SetWordFacts: %v", err)
+		}
+		if err := s.SetItems("sycophantic", []store.Item{
+			{Word: "sycophantic", Form: store.FormCloze, Stem: "a bad stem", Answer: "sycophantic", At: day(1)},
+		}); err != nil {
+			t.Fatalf("SetItems: %v", err)
+		}
+		if err := s.SetNewsItems("sycophantic", []store.NewsItem{{Title: "x"}}, day(1)); err != nil {
+			t.Fatalf("SetNewsItems: %v", err)
+		}
+		if err := s.AppendEvent(store.ReviewEvent{
+			Word: "sycophantic", Kind: store.EventLookedUp, Found: true, At: day(1),
+		}); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+
+		removed, err := s.Forget("sycophantic")
+		if err != nil {
+			t.Fatalf("Forget: %v", err)
+		}
+		if !removed {
+			t.Error("Forget reported nothing removed for a word in the deck")
+		}
+
+		if f, err := s.WordFacts("sycophantic"); err != nil {
+			t.Fatalf("WordFacts: %v", err)
+		} else if f.Harvested() {
+			t.Error("a forgotten word kept its band and domain; --harvest will skip it as done")
+		}
+		if items, err := s.Items("sycophantic"); err != nil {
+			t.Fatalf("Items: %v", err)
+		} else if len(items) != 0 {
+			t.Errorf("a forgotten word kept %d authored item(s); its bad material is unregenerable", len(items))
+		}
+		if _, at, err := s.NewsItems("sycophantic"); err != nil {
+			t.Fatalf("NewsItems: %v", err)
+		} else if !at.IsZero() {
+			t.Error("a forgotten word kept its news cache")
+		}
+
+		// EVENTS STAY. The deck is a working set, the log is history, and
+		// rewriting the past would corrupt every statistic derived from it.
+		ev, err := s.Events(time.Time{})
+		if err != nil {
+			t.Fatalf("Events: %v", err)
+		}
+		if len(ev) != 1 {
+			t.Errorf("got %d events after Forget, want the 1 that was there — history is not "+
+				"the deck's to rewrite", len(ev))
+		}
+	})
+
 	t.Run("forget cannot escape the words directory", func(t *testing.T) {
 		s := newStore(t)
 		_ = s.Upsert(store.Word{Text: "sycophantic", LastSeen: day(1)})

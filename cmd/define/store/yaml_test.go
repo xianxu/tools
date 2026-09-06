@@ -692,3 +692,38 @@ func TestHandEditedItemsAreNeutralisedOnRead(t *testing.T) {
 		}
 	}
 }
+
+// The classification guard: every runtime directory is either PER-WORD (goes
+// when the word goes) or not, and a new one must be classified deliberately.
+//
+// #10 added two — facts/ and items/ — and Forget reached neither, so a forgotten
+// word kept the material that made it worth forgetting. Listing the per-word
+// directories by hand is what let that happen; this fails when the two lists
+// drift.
+func TestPerWordDirsCoverEveryRuntimeDir(t *testing.T) {
+	// events/ is the ONE runtime directory that is not per-word: it is history,
+	// keyed by day rather than by word, and Forget must never touch it.
+	const historyDir = "events"
+
+	dir := t.TempDir()
+	y := store.NewYAML(dir, store.DefaultLang, nil)
+	perWord := map[string]bool{}
+	for _, p := range store.PerWordDirsForTest(y) {
+		// The directory NAME, whether or not it is language-scoped.
+		rel := strings.TrimPrefix(p, dir+"/")
+		perWord[strings.SplitN(rel, "/", 2)[0]] = true
+	}
+
+	for _, d := range store.RuntimeDirs {
+		switch {
+		case d == historyDir:
+			if perWord[d] {
+				t.Errorf("%q is listed as per-word; the event log is history and Forget must not touch it", d)
+			}
+		case !perWord[d]:
+			t.Errorf("%q is a runtime directory that Forget does not clear. Either add it to "+
+				"perWordDirs, so forgetting a word removes what it owns, or classify it as "+
+				"history beside events/ and say why.", d)
+		}
+	}
+}

@@ -195,9 +195,12 @@ func (m *Mem) Forget(key string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k := Key(key)
-	if _, ok := m.words[k]; !ok {
-		return false, nil
-	}
+	_, inDeck := m.words[k]
+	// Everything the word owns, matching YAML's perWordDirs — the news cache,
+	// the harvested facts and the authored items all go with it. Events stay.
 	delete(m.words, k)
-	return true, nil
+	delete(m.news, k)
+	delete(m.facts, k)
+	delete(m.items, k)
+	return inDeck, nil
 }

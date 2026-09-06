@@ -80,9 +80,15 @@ type Store interface {
 	// SetNewsItems replaces rather than appends: a re-harvest must not silently
 	// double a word's material every run.
 	SetItems(key string, items []Item) error
-	// Forget removes a word from the deck. It does NOT remove events: the deck is
-	// a working set, the log is history, and rewriting the past would corrupt
-	// every statistic derived from it. Reports whether anything was removed;
-	// absence is not an error.
+	// Forget removes a word and everything it OWNS: the deck entry, the news
+	// cache, the harvested band and domain, and the authored items. All of those
+	// are derived from the word and regenerable by looking it up again.
+	//
+	// It does NOT remove events: the deck is a working set, the log is history,
+	// and rewriting the past would corrupt every statistic derived from it.
+	//
+	// Reports whether the word was in the DECK; absence is not an error, and
+	// clearing stale derived files for a word with no deck entry is not
+	// "found something".
 	Forget(key string) (removed bool, err error)
 }

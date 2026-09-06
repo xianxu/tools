@@ -681,8 +681,29 @@ func (y *YAML) SetItems(key string, items []Item) error {
 	return writeBytesAtomic(filepath.Join(y.itemsDir(), name), b)
 }
 
-// Forget removes one word file. Events are untouched: the deck is a working set,
-// the log is history.
+// perWordDirs is every directory holding one file per deck word: everything a
+// word OWNS, derived from it and regenerable by looking it up again.
+//
+// events/ is deliberately absent, which is the rule Forget's comment has always
+// stated — the deck is a working set, the log is history, and rewriting the past
+// would corrupt every statistic derived from it.
+//
+// Derived from RuntimeDirs rather than hand-listed, and
+// TestPerWordDirsCoverEveryRuntimeDir fails when a new runtime directory is
+// added without being classified. #10 added TWO (facts/, items/) and Forget
+// reached neither.
+func (y *YAML) perWordDirs() []string {
+	return []string{y.wordsDir(), y.usageDir(), y.factsDir(), y.itemsDir()}
+}
+
+// Forget removes everything a word owns. Events are untouched: the deck is a
+// working set, the log is history.
+//
+// EVERYTHING IT OWNS, not just the deck entry. Removing only words/ left the
+// word's cached band, domain and authored items on disk — so looking it up again
+// re-added it to the deck while --harvest, seeing facts already harvested and
+// items already present, SKIPPED it. "Forget this word, its material is bad" was
+// the one thing forgetting could not do.
 //
 // Filename derivation goes through wordFileName, the same function Upsert uses —
 // see its doc comment for what that guard is and is not worth.
@@ -695,13 +716,22 @@ func (y *YAML) Forget(key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	err = os.Remove(filepath.Join(y.wordsDir(), name))
-	switch {
-	case err == nil:
-		return true, nil
-	case os.IsNotExist(err):
-		return false, nil
-	default:
-		return false, err
+	// REPORTS on the deck entry, removes from all of them. Whether the word was
+	// in the deck is the question the caller asked; a stale facts file for a word
+	// with no deck entry is debris, and removing it is not "found something".
+	var removed bool
+	for i, dir := range y.perWordDirs() {
+		err := os.Remove(filepath.Join(dir, name))
+		switch {
+		case err == nil:
+			if i == 0 {
+				removed = true
+			}
+		case os.IsNotExist(err):
+			// Normal: most words have no news cache and no authored items.
+		default:
+			return false, err
+		}
 	}
+	return removed, nil
 }
