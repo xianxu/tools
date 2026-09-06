@@ -183,10 +183,10 @@ func renderVetoPrompt(lang store.Lang, answer, stem, candidate string) llm.Reque
 // learner who must not see it.
 func blankOut(stem, answer string) string {
 	lower, target := strings.ToLower(stem), strings.ToLower(strings.TrimSpace(answer))
-	// Through wordAt, the same predicate stemUsesTheWord uses. Two spellings of
+	// Through wordIndexIn, the same predicate stemUsesTheWord uses. Two spellings of
 	// "where is the word" rendered "The settlement was reached" as
 	// "The ___tlement was reached".
-	i := wordAt(lower, target)
+	i := wordIndexIn(lower, target)
 	if i < 0 {
 		return stem
 	}

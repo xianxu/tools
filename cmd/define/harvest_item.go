@@ -447,10 +447,10 @@ func stemUsesTheWord(stem, word string) bool {
 	if strings.Contains(stem, "___") {
 		return false
 	}
-	return wordAt(lower, target) >= 0
+	return wordIndexIn(lower, target) >= 0
 }
 
-// wordAt is the ONE definition of "where does this word occur in this stem",
+// wordIndexIn is the ONE definition of "where does this word occur in this stem",
 // shared by stemUsesTheWord and blankOut. Returns -1 for absent.
 //
 // Two spellings of one predicate is how "The settlement was reached" passed the
@@ -464,7 +464,7 @@ func stemUsesTheWord(stem, word string) bool {
 // `brunch`. Inflections may FOLLOW (`runs`, `keels`), because a stem using a
 // word naturally often inflects it and refusing that pushes the model back
 // toward the stilted constructions the gloss rule already fought.
-func wordAt(lowerStem, lowerWord string) int {
+func wordIndexIn(lowerStem, lowerWord string) int {
 	if lowerWord == "" {
 		return -1
 	}

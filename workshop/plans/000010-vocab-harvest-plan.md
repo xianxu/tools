@@ -461,7 +461,7 @@ can the material get* — and no green suite answers it.
       · the budget charges the veto · batch diversity pressure · the answer is
       never its own distractor · the band ceiling holds · the learner-domain tier
       · learner-band fallback to the word · `topicSpread` parses before counting
-      · `blankOut` hides the answer · `wordAt` requires a word boundary · the
+      · `blankOut` hides the answer · `wordIndexIn` requires a word boundary · the
       pre-blanked stem is refused · the judges take the language · `prune` caps
       at the write · `prune`'s tie-break · `Form` is refused at the write · the
       learner-domain fold skips `## Corrections`.
