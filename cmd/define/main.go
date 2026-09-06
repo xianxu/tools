@@ -429,7 +429,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	reflect := fs.Bool("reflect", false, "read the deck and write the learner model")
 	playFlag := fs.Bool("play", false, "review the words due today")
 	harvest := fs.Bool("harvest", false, "band the deck ahead of time: a CEFR level and a domain per word")
-	harvestLimitFlag := fs.Int("limit", 0, "words --harvest may ask the model about in one run (0 = the default cap)")
+	harvestLimitFlag := fs.Int("limit", 0, "model calls one --harvest run may make, across banding and authoring (0 = the default cap)")
 	agreementFlag := fs.Int("agreement", 0, "measure banding STABILITY over N assignments and write nothing (0 with the flag set = the default rounds)")
 	count := fs.Int("count", 20, "how many words a review session offers")
 	fs.Usage = func() {

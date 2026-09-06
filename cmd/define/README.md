@@ -371,9 +371,11 @@ against a deck that has never been harvested; it simply has less to draw on.
 
 **It asks about each word once, ever.** Run it again and it re-reads what it
 already knows and makes no calls at all, so the cost does not grow with time —
-only with new words. `-limit N` caps how many words one run will ask about
-(default 200); a capped run is a partial run and says so, and running again picks
-up where it stopped.
+only with new words. `-limit N` caps the **model calls** one run may make
+(default 200) — counted across both halves, since banding a word and writing its
+item are both calls. A capped run is a partial run and says so, and running again
+picks up where it stopped, so a large deck is harvested over several runs rather
+than in one long one.
 
 **The domain usually costs nothing.** When your dictionary already prints a
 subject field on a word — `Law`, `Medicine`, `Nautical` — that label is used

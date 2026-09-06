@@ -1428,8 +1428,22 @@ network dependency creeps into a path that promises to be offline.
 touches the network, so a second run over an unchanged deck makes ZERO calls. The
 pin asserts the request COUNT rather than the file's existence — a loop that
 re-asks and rewrites the same answer leaves an identical directory behind.
-`-limit` (default 200) bounds one run's calls; a capped run is partial, says so,
-and resumes on the next invocation because the cache is its own progress marker.
+`-limit` (default 200) bounds one run's MODEL CALLS — one budget threaded
+through banding, authoring and both judges, charged next to every `llm.Run`
+including the veto's inner loop.
+
+**Calls, not words, and the distinction was a Critical.** The first version
+counted successes per pass, so a word rejected by any judge charged nothing and a
+run whose judge rejected everything cost one author call plus one entail call per
+DECK word against a documented ceiling of 200 — and the same value was spent
+twice, once per pass. The counter a flag increments has to be the resource the
+flag names.
+
+A capped run is partial, says so, and resumes on the next invocation because the
+cache is its own progress marker. A budget that runs out MID-ITEM abandons that
+item rather than writing it with one or two vetted options: an item is cached
+forever and a later run skips a word that has material, so a short write would
+make a budget limit permanently a quality limit for that word.
 
 ### Two closed vocabularies, in the store
 
