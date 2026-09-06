@@ -66,7 +66,7 @@
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `Store` | `cmd/define/store/store.go` | modified | the working directory |
-| `bandTask` / `authorTask` / `vetoTask` | `cmd/define/harvest_*.go` | new | the model, via `llm.Task[T]` |
+| `bandTask` / `authorTask` / `entailTask` / `vetoTask` | `cmd/define/harvest_*.go` | new | the model, via `llm.Task[T]` |
 | `runHarvest` | `cmd/define/harvest.go` | new | the batch mode |
 
 - **`Store`** — gains four methods (`WordFacts`/`SetWordFacts`, `Items`/`SetItems`), following `NewsItems`/`SetNewsItems` exactly.
@@ -77,7 +77,7 @@
   - **Model text is neutralised in ONE pass over the struct, at the write (PQ-6).** `sanitiseFacts` and `sanitiseItem` sit where the artifact's structure is created, which is exactly the placement `sanitiseModel` (`cmd/define/usermodel.go:213`) argues for and the reason it exists: two earlier rounds sanitised the fields a finding happened to list and missed the ones it didn't. This issue persists four new free-text model fields — `Item.Stem`, `Answer`, `Distractors`, and a `Domain` that fell back to the model — and later renders them onto the board, so per-site calls would be the same list-that-drifts failure a third time. **`Band` and `Domain` are additionally parse-refusing**, which is a narrower guarantee than neutralisation and not a substitute for it.
   - **A truncated or hand-edited `facts/*.yaml` degrades to UNBANDED (ARCH-SECURE).** The refusing parse rejects the file's band, the word is treated as never harvested, and the next `--harvest` re-asks. No crash, and no half-trusted record: a facts file that will not parse is worth exactly as much as an absent one.
 
-- **`bandTask` / `authorTask` / `vetoTask`** — three typed `llm.Task[T]`s.
+- **`bandTask` / `authorTask` / `entailTask` / `vetoTask`** — four typed `llm.Task[T]`s. (Three, until the entailment judge was split from the author call; the count is re-derived here rather than left at its first value.)
   - **Injected into:** `llm.Run`, through `deps.newLLM` — the seam `#11` built and `#16` already uses.
   - **ARCH-MOCK:** each gets a `llmtest` golden (the prompt is pinned) and runs against `llmtest.Fake` in unit tests; the live conformance check follows `#11`'s existing `-tags conformance` pattern, so drift between the fake and the real service is detected rather than assumed.
 
@@ -91,7 +91,7 @@
 - *Overload:* a model outage leaves the store untouched and harvesting stops (Done-when 6). `#19` is open on `ErrRequest` mis-classification and is a real risk here, since this is the first path that makes many calls in a row.
 - *Disk:* bounded by `prune`, deterministic, tested (Done-when 7).
 
-**Test surface.** `Band`, `agreement`, `pickDistractors`, `topicSpread` and `prune` are pure and unit-tested with no model and no disk. The store surface is covered by `storetest`, so `Mem` and `YAML` cannot diverge. The three tasks have goldens plus fake-driven tests, and a live conformance row each.
+**Test surface.** `Band`, `agreement`, `pickDistractors`, `topicSpread` and `prune` are pure and unit-tested with no model and no disk. The store surface is covered by `storetest`, so `Mem` and `YAML` cannot diverge. All FOUR tasks have goldens plus fake-driven tests, and a live conformance row each.
 
 ---
 
@@ -655,3 +655,39 @@ records `protocol_error: no valid findings block` for rounds 2 and 3, so its
 machine-readable half never saw round 3's three Importants or their remediation.
 The narrative here and in the issue `## Log` is the accurate record; a reader
 trusting the ledger alone would conclude nothing was fixed.
+
+### 2026-09-06 — M2 boundary rounds 5-7
+
+Three rounds, FIX-THEN-SHIP at the last. Rounds 5 and 6 are narrated in the
+issue `## Log`; round 7's six findings were all "the rule was stated and the
+sweep used it as a list of noticed sites".
+
+**N1 — `-limit N` still made N+1 calls.** Three of the budget's four call sites
+charged it and DISCARDED the refusal, so the flag was a counter rather than a
+bound. Fixed structurally: `runWithin` is now the only way this file reaches a
+model, it charges before it calls, and its refusal comes back as an error the
+caller already has to handle. **A budget you can charge without gating on is a
+budget somebody will charge without gating on.** And the flag×pass table BR-16
+asked for is now written: four cells, each with a test that asserts it ENTERED
+the pass before asserting the bound — the previous two tests spent their whole
+budget on banding, so `author=0 entail=0 veto=0` and the property in each name
+was untested.
+
+**N2, N3 — the enumeration used as a list again.** `-limit`'s meaning had a
+fifth statement (a mode-guard comment) the "swept all three places" commit
+missed; the atlas listed four selection tiers where the code has five, and still
+recorded as an open question for `#12` the exact thing `tierLearnerDomain`
+answers. The plan itself said "three tasks" where M2 ships four.
+
+**N4, N5 — pins.** `Store.Items`' newest-first promise, added in this window,
+had no `storetest` row. And three fixes from rounds 5-6 had no test that failed
+without them: the survivor counts on the entail and veto outage paths, the tier
+report counting only written items, and `sortedBanded`. All three now redden on
+revert, and `sortedBanded` is pinned on the PROPERTY — two pools holding the
+same words in a different order must select the same options — rather than on
+the sort call.
+
+**N6 — a deferral is swept by the issue that wrote it.** `#12`'s three moved
+Done-when rows were still unwritten, and `#12`'s own Revision named this
+milestone as the trigger. Rewritten as satisfied-by-construction rather than
+deleted, so a reader sees where they went instead of building them again.

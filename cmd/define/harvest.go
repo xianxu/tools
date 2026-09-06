@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -68,16 +69,30 @@ type harvestOptions struct {
 // the counter it increments has to be the resource it names.
 type budget struct{ left int }
 
-// spend charges one call and reports whether it was affordable.
-func (b *budget) spend() bool {
-	if b.left <= 0 {
-		return false
-	}
-	b.left--
-	return true
-}
-
 func (b *budget) spent() bool { return b.left <= 0 }
+
+// errBudget is returned INSTEAD of making a call, when the budget is out.
+var errBudget = errors.New("--limit reached")
+
+// runWithin is the ONLY way this file reaches a model, and it charges the budget
+// before it does.
+//
+// Structural rather than disciplined. The first version exposed a `spend()`
+// returning a bool, and three of its four call sites charged the budget and
+// DISCARDED the refusal — so `-limit N` made N+1 calls and the flag was a
+// counter rather than a bound. A budget you can charge without gating on is a
+// budget somebody will charge without gating on.
+//
+// Here there is no way to make a call that does not charge, and no way to charge
+// whose refusal does not reach the caller as an error it must already handle.
+func runWithin[T any](ctx context.Context, bud *budget, c llm.Client, t llm.Task[T]) (T, error) {
+	var zero T
+	if bud.left <= 0 {
+		return zero, errBudget
+	}
+	bud.left--
+	return llm.Run(ctx, c, t)
+}
 
 // runHarvest assigns a band and a domain to every unbanded word in the deck.
 //
@@ -122,6 +137,9 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 
 	var asked, skipped, refused int
 	for _, w := range deck {
+		// A cheap early exit. runWithin refuses on its own, so this is an
+		// optimisation — it saves a dictionary lookup per remaining word — and
+		// NOT the bound. The bound is at the call.
 		if bud.spent() {
 			fmt.Fprintf(out, "define: stopped at the --limit of %d model call(s); run again to continue\n", limit)
 			break
@@ -139,8 +157,11 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 		}
 
 		gloss, known := wordSense(d, w.Text)
-		bud.spend()
-		claim, err := llm.Run(ctx, client, bandTask(d.lang, w.Text, gloss, known))
+		claim, err := runWithin(ctx, bud, client, bandTask(d.lang, w.Text, gloss, known))
+		if errors.Is(err, errBudget) {
+			fmt.Fprintf(out, "define: stopped at the --limit of %d model call(s); run again to continue\n", limit)
+			break
+		}
 		if err != nil {
 			// STOP, and leave the store as it is. Everything banded before this
 			// point is already durable — each word is written atomically as it is
@@ -235,6 +256,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 	served := map[string]int{}
 
 	for _, c := range pool {
+		// Cheap early exit, not the bound — see the banding loop.
 		if bud.spent() {
 			fmt.Fprintf(out, "define: stopped authoring at the --limit of %d model call(s); run again to continue\n", limit)
 			break
@@ -250,8 +272,11 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		}
 
 		gloss, _ := wordSense(d, c.Word)
-		bud.spend()
-		stem, err := llm.Run(ctx, client, authorTask(d.lang, c.Word, gloss, c.Facts, learner))
+		stem, err := runWithin(ctx, bud, client, authorTask(d.lang, c.Word, gloss, c.Facts, learner))
+		if errors.Is(err, errBudget) {
+			fmt.Fprintf(out, "define: stopped authoring at the --limit of %d model call(s); run again to continue\n", limit)
+			break
+		}
 		if err != nil {
 			fmt.Fprintf(errOut, "define: authoring stopped: %v\n", err)
 			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
@@ -270,8 +295,11 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		// THE ENTAILMENT JUDGE, before any distractor is selected. A stem that
 		// does not entail its answer cannot be rescued by better wrong answers,
 		// so judging first is what stops the veto being spent on a doomed item.
-		bud.spend()
-		verdict, err := llm.Run(ctx, client, entailTask(d.lang, c.Word, stem.Stem))
+		verdict, err := runWithin(ctx, bud, client, entailTask(d.lang, c.Word, stem.Stem))
+		if errors.Is(err, errBudget) {
+			fmt.Fprintf(out, "define: stopped judging at the --limit of %d model call(s); run again to continue\n", limit)
+			break
+		}
 		if err != nil {
 			fmt.Fprintf(errOut, "define: judging stopped: %v\n", err)
 			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
@@ -298,16 +326,16 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		var kept []string
 		truncated := false
 		for _, cand := range candidates {
-			if !bud.spend() {
+			v, err := runWithin(ctx, bud, client, vetoTask(d.lang, c.Word, stem.Stem, cand))
+			if errors.Is(err, errBudget) {
 				// Out of budget MID-ITEM. The item is ABANDONED, not written
 				// short: an item is cached forever and a later unbounded run
-				// SKIPS a word that already has material, so writing two
-				// vetted options here would permanently cost this word the third
-				// — a budget limit silently becoming a quality limit.
+				// SKIPS a word that already has material, so writing two vetted
+				// options here would permanently cost this word the third — a
+				// budget limit silently becoming a quality limit.
 				truncated = true
 				break
 			}
-			v, err := llm.Run(ctx, client, vetoTask(d.lang, c.Word, stem.Stem, cand))
 			if err != nil {
 				fmt.Fprintf(errOut, "define: the veto stopped: %v\n", err)
 				fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)

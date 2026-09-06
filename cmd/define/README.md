@@ -409,6 +409,13 @@ beside `sycophantic` would also fit the blank, so it is vetoed and dropped.
 If nothing survives, the word stays unauthored and the next run tries again. A
 word keeps at most four items; the oldest are dropped.
 
+**Where the wrong answers come from is reported**, because on a small deck it
+matters. It looks for words in the same subject field first, then in a field
+*you* read in, then ordinary vocabulary, then anything at or below your level —
+and only reaches above your level as a last resort. Whatever it settled for, it
+says so: `3 item(s) drew options from any domain, at or below band` means your
+deck could not supply better ones yet, not that the material is wrong.
+
 **`define --harvest -agreement N` measures how stable the banding is.** It
 re-asks a sample of already-banded words N times each and reports how often the
 answers agree. It writes nothing, so measuring cannot disturb what it measures.

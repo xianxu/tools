@@ -460,3 +460,96 @@ func TestABudgetExhaustedMidItemWritesNothing(t *testing.T) {
 		t.Errorf("the abandoned item was not reported: %q", out.String())
 	}
 }
+
+// N5: every failure path reports what SURVIVED, not only the author path.
+//
+// An outage during judging or vetoing used to return 1 with no count, so the
+// operator could not tell whether anything had been saved. Done-when 6 was
+// ticked and pinned for the BANDING pass only; these are the authoring pass's
+// three outage branches.
+func TestEveryAuthoringOutagePathReportsSurvivors(t *testing.T) {
+	for _, tc := range []struct{ name, mark, want string }{
+		{"the author call fails", markAuthor, "authoring stopped"},
+		{"the entail judge fails", markEntail, "judging stopped"},
+		{"the veto fails", markVeto, "the veto stopped"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, fake, st := harvestRig(t, 8)
+			preBand(t, d)
+			// Two good rounds so something IS saved, then the outage — otherwise
+			// "0 items saved" would pass a test about reporting survivors.
+			fake.Script(tc.mark,
+				llmtest.Reply{Text: replyFor(tc.mark)}, llmtest.Reply{Text: replyFor(tc.mark)},
+				llmtest.Reply{Text: replyFor(tc.mark)}, llmtest.Reply{Text: replyFor(tc.mark)},
+				llmtest.Reply{Text: replyFor(tc.mark)}, llmtest.Reply{Text: replyFor(tc.mark)},
+				// 400, not 500: the SDK retries every 5xx, so a 500 here is
+				// followed by scriptAll's next good reply and the outage never
+				// happens. A 400 is the model refusing, which is terminal.
+				llmtest.Reply{Status: 400, Text: `{"error":{"message":"bad request"}}`})
+			scriptAll(fake, 80)
+
+			var out, errOut bytes.Buffer
+			if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code == 0 {
+				t.Fatalf("an outage reported success; stdout %q", out.String())
+			}
+			if !strings.Contains(errOut.String(), tc.want) {
+				t.Errorf("stderr = %q, want it to name the stage that stopped (%q)", errOut.String(), tc.want)
+			}
+			// THE POINT: the count of what survived, on every path.
+			if !strings.Contains(out.String(), "before stopping; they are saved") {
+				t.Errorf("stdout = %q, want the count of what was saved — an operator cannot "+
+					"otherwise tell an outage from a run that produced nothing", out.String())
+			}
+			// And what survived is READABLE, not half-written.
+			for _, w := range allDeckWords() {
+				items, err := st.Items(w)
+				if err != nil {
+					t.Fatalf("a word's items became unreadable after the outage: %v", err)
+				}
+				for _, it := range items {
+					if it.Stem == "" || it.Answer == "" {
+						t.Errorf("%q survived the outage half-written: %+v", w, it)
+					}
+				}
+			}
+		})
+	}
+}
+
+// replyFor is the well-formed answer for one task, so an outage test can serve
+// several good rounds before the failure.
+func replyFor(mark string) string {
+	switch mark {
+	case markAuthor:
+		return `{"stem":"Senator Murkowski raised the question of certiorari at the hearing in Anchorage."}`
+	case markEntail:
+		return `{"entails":true,"glosses":false,"named":true,"reason":"names the committee"}`
+	default:
+		return `{"fits":false,"reason":"unrelated meaning"}`
+	}
+}
+
+// N5: the tier report counts what the batch SHIPPED, not what it attempted.
+//
+// widened[tier]++ ran before the veto, so an item whose every candidate was
+// vetoed still contributed to "N item(s) drew options from X" — a statistic
+// describing material that does not exist.
+func TestTheTierReportCountsOnlyWrittenItems(t *testing.T) {
+	d, fake, _ := harvestRig(t, 4)
+	preBand(t, d)
+	for range 60 {
+		fake.Script(markVeto, llmtest.Reply{Text: `{"fits":true,"reason":"all of these also fit"}`})
+	}
+	scriptAll(fake, 60)
+
+	var out, errOut bytes.Buffer
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{}, &out, &errOut); code != 0 {
+		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+	}
+	if countTask(fake, markVeto) == 0 {
+		t.Fatal("nothing reached the veto, so this pin cannot fail")
+	}
+	if strings.Contains(out.String(), "drew options from") {
+		t.Errorf("the tier report counted items that were never written: %q", out.String())
+	}
+}

@@ -448,6 +448,210 @@ rounds:
       boundary: M2
       blocked: true
       protocol_error: no valid findings block
+    - "n": 7
+      timestamp: "2026-09-06T13:28:28-07:00"
+      agent: claude
+      dispose:
+        - id: BR-16
+          disposition: addressed
+          note: 'Measured: 8-word pre-banded deck, -limit 2, judge rejecting all = 2 calls total (was 16); a per-pass budget reddens both limit tests. Residual one-call overrun raised as a new finding.'
+          round: 7
+        - id: BR-17
+          disposition: addressed
+          note: All three named pins fixed and mutation-confirmed; harvestRig now refuses size 1. Five of the six named greens redden on revert; sortedBanded is the exception, folded into the new pin finding.
+          round: 7
+        - id: BR-18
+          disposition: addressed
+          note: Three live rows exist for authorTask, entailTask and vetoTask, and the author row records a real live observation, so they ran.
+          round: 7
+        - id: BR-19
+          disposition: addressed
+          note: learnerFacts.Domains is now read by learnerFacts.reads through tierLearnerDomain; every learnerFacts field and both pickDistractors return values have a non-test reader.
+          round: 7
+        - id: BR-20
+          disposition: addressed
+          note: 'Verified by revert: hardcoding store.DefaultLang in entailTask and vetoTask reddens TestHarvestSendsTheDecksLanguage, which now iterates every request.'
+          round: 7
+        - id: BR-21
+          disposition: addressed
+          note: 'The project row reads "actual: pending — written by the close gate, after the verdict".'
+          round: 7
+        - id: BR-22
+          disposition: addressed
+          note: The cap row landed in storetest/suite.go. The newest-first member of its own enumeration is still missing and is raised separately.
+          round: 7
+        - id: BR-23
+          disposition: addressed
+          note: Store.Items' doc comment now states the newest-first order; the suite row that would hold it is raised separately.
+          round: 7
+        - id: BR-24
+          disposition: not-addressed
+          note: The two spellings were unified into wordIndexIn, but the looser rule was chosen for both, so the defect the finding measured survives.
+          round: 7
+        - id: BR-25
+          disposition: addressed
+          note: harvestPRNG is gone; play.ShuffleInts is exported and used, with one seeding step.
+          round: 7
+        - id: BR-26
+          disposition: not-addressed
+          note: 'The move is in the code but has no pin: restoring widened[tier]++ to its pre-veto position leaves the whole suite green.'
+          round: 7
+        - id: BR-27
+          disposition: not-addressed
+          note: 'The lines were added but no test asserts them: grep finds no assertion on "before stopping", and deleting both lines leaves the suite green.'
+          round: 7
+        - id: BR-28
+          disposition: addressed
+          note: The README now describes four checks and drops the unique-recoverability framing.
+          round: 7
+        - id: BR-29
+          disposition: addressed
+          note: 'PruneForTest moved to store/export_test.go, and prune''s comment states the truncation branch is a guard for #13.'
+          round: 7
+      findings:
+        - id: BR-30
+          severity: Important
+          title: -limit N still makes N+1 calls, and the two tests named for it never reach the authoring pass
+          detail: |-
+            4th in family; round 6's I2 is unfixed at HEAD, which only changed docs. Do not
+            patch harvest.go:271 alone. The rule: every spend is a gate as well as a charge —
+            a budget whose refusal is discarded is a counter, not a bound; and a flag-by-pass
+            cell is pinned only by a test that provably enters that pass. Measured on a
+            pre-banded 8-word rig: -limit 1 gives 2 calls, -limit 6 gives 7. Line 271 charges
+            the entail call and discards spend()'s false. TestHarvestStopsAtTheLimit (rig 8,
+            limit 5) and TestTheLimitHoldsWhenEveryStemIsRejected (rig 8, limit 6) both spend
+            the entire budget on banding — instrumented, both make author=0 entail=0 veto=0,
+            so the second test's scripted rejection reply is never served. Write the
+            flag-by-pass table and give each cell a test that enters it.
+          family: flag-silently-ignored
+          round: 7
+        - id: BR-31
+          severity: Important
+          title: main.go:628 still states the old -limit meaning; the sweep missed the enumeration's fifth member
+          detail: |-
+            3rd in family. The rule is already written: when a fix changes what a user-facing
+            contract MEANS, every statement of that meaning is part of the change — flag help,
+            in-code guard comments, README, atlas, the constant's doc comment. Commit 94083a2
+            says it "swept all three places" and updated the flag help, README and atlas; the
+            mode-guard comment at main.go:628 still reads "-limit bounds how many words are
+            ASKED ABOUT". The enumeration existed in the finding and was used as a list of
+            noticed sites again.
+          family: behaviour-change-undocumented
+          round: 7
+        - id: BR-32
+          severity: Important
+          title: The atlas lists four selection tiers where the code has five, and the plan says three tasks where M2 ships four
+          detail: |-
+            3rd in family; round 6's I5 is unfixed at HEAD. The rule: a doc that ENUMERATES a
+            code-side set is a consumer of that set — when the set changes the enumeration is
+            re-derived, not left at its previous count. tierLearnerDomain is second-priority
+            and changes which words are selected; grep finds it in no atlas or README text.
+            atlas/define.md:1578 still records as an open question for #12 the exact thing
+            harvest_item.go:262-276 says the tier answers. The plan's Integration-points table
+            omits entailTask and its Test-surface sentence says "the three tasks" where there
+            are four. Sweep: the atlas tier list, the atlas open-question paragraph, the plan
+            table, the plan's "three tasks" sentence, and the README's tier-report lines.
+          family: doc-understates-surface
+          round: 7
+        - id: BR-33
+          severity: Important
+          title: Store.Items' newest-first promise, added this window, has no storetest row
+          detail: |-
+            3rd in family. The rule stands from BR-22: any promise stated on the Store
+            interface is asserted in storetest/suite.go, never in a per-implementation test.
+            BR-22's cap row landed and is mutation-confirmed, but its enumeration named three
+            members; the newest-first read order is asserted only through the pure
+            PruneForTest tests. The suite's "a word may hold several items" row writes day(1)
+            and day(2) and checks only that the Form discriminator survived. Read-side
+            canonicalisation, the third member, is correctly out of scope at yaml.go:660.
+          family: store-contract-unheld-by-suite
+          round: 7
+        - id: BR-34
+          severity: Important
+          title: Three fixes from the last two rounds have no test that fails without them
+          detail: |-
+            5th in family. Do not add three assertions. The rule: a finding is disposed by a
+            test that reddens on revert, so remediation for a behavioural finding lands the
+            revert-check with the fix, in the same commit. Reverted on a scratch copy at HEAD,
+            all green: BR-27's "before stopping; they are saved" lines on the entail and veto
+            paths (grep finds no test asserting any of "authoring stopped", "judging stopped",
+            "the veto stopped", "before stopping"); BR-26's move of widened[tier]++ to after
+            the write; and sortedBanded, replaceable by a reversal, which is the one member of
+            BR-17's own six-item green list never swept. Related: Done-when 6 is ticked and
+            pinned for the banding pass only — the three authoring-pass outage branches
+            (harvest.go:241, :249, :270) are unreachable by the suite.
+          family: property-without-a-pin
+          round: 7
+        - id: BR-35
+          severity: Important
+          title: '#12''s three moved Done-when rows are still unwritten, and its Revision names this milestone as the trigger'
+          detail: |-
+            2nd in family. The rule: a deferral whose trigger is "when Mx lands" is swept at
+            Mx's boundary by the issue that wrote it, not left for the consuming issue to
+            discover. Task 5 Step 0 is ticked and its Revision on #12 is real, but it closes
+            with "Not yet applied to the rows above. They are rewritten when #10 M2 lands."
+            M2 is landing, and #12's Done-when still owns "Options are drawn from the pool +
+            deck, never model-generated", the sycophantic/obsequious row, and "The form works
+            with the LLM seam unavailable".
+          family: plan-element-ticked-unbuilt
+          round: 7
+        - id: BR-36
+          severity: Minor
+          title: prune's doc comment carries an orphaned fragment, and harvestRig stacks two doc comments
+          detail: |-
+            store/item.go:200 reads "// : the same input prunes to the / // same output, every
+            time." — the DETERMINISTIC subject was lost in an edit. harvest_test.go:19-27
+            stacks two doc comments for harvestRig, the second beginning mid-block. Round 6
+            filed the first; both are unfixed at HEAD.
+          family: doc-comment-mangled-by-edit
+          round: 7
+        - id: BR-37
+          severity: Minor
+          title: The M2 sweep block says 22 properties over a 24-row list and records neither the mutation nor the named test
+          detail: |-
+            3rd in family. The rule the block itself states two paragraphs below is "a sweep
+            row is only as good as the mutation behind it — recording the verdict without
+            recording the mutation is how a green row reads as red". M1's table at least
+            carried a verdict column; M2's is a prose list of property names. I re-derived
+            seven rows by reverting and they hold, which is the problem: a hand-written
+            table's one false row is indistinguishable from its true ones. Also unticked in
+            the same section: "The generated batch, read by the operator", while the Plan's
+            checkpoint row is ticked and the Log records three batches read.
+          family: measurement-off-the-production-path
+          round: 7
+        - id: BR-38
+          severity: Minor
+          title: widened[tierSameDomain] is incremented and never read
+          detail: |-
+            4th in family. harvest.go:262 counts every tier; the report loop at :365 walks
+            only tierLearnerDomain, tierGeneral, tierAnyDomain and tierAboveBand. The rule
+            already written for this family: a value no production path reads is wired or
+            deleted. Also in this class: TestTheLimitHoldsWhenEveryStemIsRejected's distinct
+            fixture is dead under the current rig (see the -limit finding).
+          family: inert-mechanism
+          round: 7
+        - id: BR-39
+          severity: Minor
+          title: optionsPerItem restates play.maxOptions - 1 across a seam that already exports two helpers
+          detail: |-
+            2nd in family. harvest.go:46 hardcodes 3 with a comment naming play.maxOptions as
+            the reason; play already exports SampleStrings and ShuffleInts to main for exactly
+            this, and an option count needs none of the store's vocabulary.
+          family: helper-copied-not-shared
+          round: 7
+        - id: BR-40
+          severity: Minor
+          title: One exhausted budget prints two stopped lines, and prune shadows the builtin cap
+          detail: |-
+            2nd in family. Measured: -limit 5 on a fresh 8-word deck prints "stopped at the
+            --limit of 5 model call(s)" then "stopped authoring at the --limit of 5 model
+            call(s)" for one budget. Also cosmetic: store/item.go:207 declares
+            func prune(items []Item, cap int), shadowing the builtin, and
+            internal/llm/golden_schema_test.go:15 leaves one comment line past the file's wrap.
+          family: inconsistent-failure-reporting
+          round: 7
+      boundary: M2
+      blocked: true
 ---
 
 # Gate ledger — tools#10 (boundary-review)
@@ -718,6 +922,114 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 
 **Protocol error:** no valid findings block — this round contributed no findings.
 
+## Round 7 — 2026-09-06T13:28:28-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-16 — addressed — Measured: 8-word pre-banded deck, -limit 2, judge rejecting all = 2 calls total (was 16); a per-pass budget reddens both limit tests. Residual one-call overrun raised as a new finding.
+- BR-17 — addressed — All three named pins fixed and mutation-confirmed; harvestRig now refuses size 1. Five of the six named greens redden on revert; sortedBanded is the exception, folded into the new pin finding.
+- BR-18 — addressed — Three live rows exist for authorTask, entailTask and vetoTask, and the author row records a real live observation, so they ran.
+- BR-19 — addressed — learnerFacts.Domains is now read by learnerFacts.reads through tierLearnerDomain; every learnerFacts field and both pickDistractors return values have a non-test reader.
+- BR-20 — addressed — Verified by revert: hardcoding store.DefaultLang in entailTask and vetoTask reddens TestHarvestSendsTheDecksLanguage, which now iterates every request.
+- BR-21 — addressed — The project row reads "actual: pending — written by the close gate, after the verdict".
+- BR-22 — addressed — The cap row landed in storetest/suite.go. The newest-first member of its own enumeration is still missing and is raised separately.
+- BR-23 — addressed — Store.Items' doc comment now states the newest-first order; the suite row that would hold it is raised separately.
+- BR-24 — not-addressed — The two spellings were unified into wordIndexIn, but the looser rule was chosen for both, so the defect the finding measured survives.
+- BR-25 — addressed — harvestPRNG is gone; play.ShuffleInts is exported and used, with one seeding step.
+- BR-26 — not-addressed — The move is in the code but has no pin: restoring widened[tier]++ to its pre-veto position leaves the whole suite green.
+- BR-27 — not-addressed — The lines were added but no test asserts them: grep finds no assertion on "before stopping", and deleting both lines leaves the suite green.
+- BR-28 — addressed — The README now describes four checks and drops the unique-recoverability framing.
+- BR-29 — addressed — PruneForTest moved to store/export_test.go, and prune's comment states the truncation branch is a guard for #13.
+
+### Raised
+
+- **BR-30** [Important] `flag-silently-ignored` -limit N still makes N+1 calls, and the two tests named for it never reach the authoring pass
+  4th in family; round 6's I2 is unfixed at HEAD, which only changed docs. Do not
+  patch harvest.go:271 alone. The rule: every spend is a gate as well as a charge —
+  a budget whose refusal is discarded is a counter, not a bound; and a flag-by-pass
+  cell is pinned only by a test that provably enters that pass. Measured on a
+  pre-banded 8-word rig: -limit 1 gives 2 calls, -limit 6 gives 7. Line 271 charges
+  the entail call and discards spend()'s false. TestHarvestStopsAtTheLimit (rig 8,
+  limit 5) and TestTheLimitHoldsWhenEveryStemIsRejected (rig 8, limit 6) both spend
+  the entire budget on banding — instrumented, both make author=0 entail=0 veto=0,
+  so the second test's scripted rejection reply is never served. Write the
+  flag-by-pass table and give each cell a test that enters it.
+- **BR-31** [Important] `behaviour-change-undocumented` main.go:628 still states the old -limit meaning; the sweep missed the enumeration's fifth member
+  3rd in family. The rule is already written: when a fix changes what a user-facing
+  contract MEANS, every statement of that meaning is part of the change — flag help,
+  in-code guard comments, README, atlas, the constant's doc comment. Commit 94083a2
+  says it "swept all three places" and updated the flag help, README and atlas; the
+  mode-guard comment at main.go:628 still reads "-limit bounds how many words are
+  ASKED ABOUT". The enumeration existed in the finding and was used as a list of
+  noticed sites again.
+- **BR-32** [Important] `doc-understates-surface` The atlas lists four selection tiers where the code has five, and the plan says three tasks where M2 ships four
+  3rd in family; round 6's I5 is unfixed at HEAD. The rule: a doc that ENUMERATES a
+  code-side set is a consumer of that set — when the set changes the enumeration is
+  re-derived, not left at its previous count. tierLearnerDomain is second-priority
+  and changes which words are selected; grep finds it in no atlas or README text.
+  atlas/define.md:1578 still records as an open question for #12 the exact thing
+  harvest_item.go:262-276 says the tier answers. The plan's Integration-points table
+  omits entailTask and its Test-surface sentence says "the three tasks" where there
+  are four. Sweep: the atlas tier list, the atlas open-question paragraph, the plan
+  table, the plan's "three tasks" sentence, and the README's tier-report lines.
+- **BR-33** [Important] `store-contract-unheld-by-suite` Store.Items' newest-first promise, added this window, has no storetest row
+  3rd in family. The rule stands from BR-22: any promise stated on the Store
+  interface is asserted in storetest/suite.go, never in a per-implementation test.
+  BR-22's cap row landed and is mutation-confirmed, but its enumeration named three
+  members; the newest-first read order is asserted only through the pure
+  PruneForTest tests. The suite's "a word may hold several items" row writes day(1)
+  and day(2) and checks only that the Form discriminator survived. Read-side
+  canonicalisation, the third member, is correctly out of scope at yaml.go:660.
+- **BR-34** [Important] `property-without-a-pin` Three fixes from the last two rounds have no test that fails without them
+  5th in family. Do not add three assertions. The rule: a finding is disposed by a
+  test that reddens on revert, so remediation for a behavioural finding lands the
+  revert-check with the fix, in the same commit. Reverted on a scratch copy at HEAD,
+  all green: BR-27's "before stopping; they are saved" lines on the entail and veto
+  paths (grep finds no test asserting any of "authoring stopped", "judging stopped",
+  "the veto stopped", "before stopping"); BR-26's move of widened[tier]++ to after
+  the write; and sortedBanded, replaceable by a reversal, which is the one member of
+  BR-17's own six-item green list never swept. Related: Done-when 6 is ticked and
+  pinned for the banding pass only — the three authoring-pass outage branches
+  (harvest.go:241, :249, :270) are unreachable by the suite.
+- **BR-35** [Important] `plan-element-ticked-unbuilt` #12's three moved Done-when rows are still unwritten, and its Revision names this milestone as the trigger
+  2nd in family. The rule: a deferral whose trigger is "when Mx lands" is swept at
+  Mx's boundary by the issue that wrote it, not left for the consuming issue to
+  discover. Task 5 Step 0 is ticked and its Revision on #12 is real, but it closes
+  with "Not yet applied to the rows above. They are rewritten when #10 M2 lands."
+  M2 is landing, and #12's Done-when still owns "Options are drawn from the pool +
+  deck, never model-generated", the sycophantic/obsequious row, and "The form works
+  with the LLM seam unavailable".
+- **BR-36** [Minor] `doc-comment-mangled-by-edit` prune's doc comment carries an orphaned fragment, and harvestRig stacks two doc comments
+  store/item.go:200 reads "// : the same input prunes to the / // same output, every
+  time." — the DETERMINISTIC subject was lost in an edit. harvest_test.go:19-27
+  stacks two doc comments for harvestRig, the second beginning mid-block. Round 6
+  filed the first; both are unfixed at HEAD.
+- **BR-37** [Minor] `measurement-off-the-production-path` The M2 sweep block says 22 properties over a 24-row list and records neither the mutation nor the named test
+  3rd in family. The rule the block itself states two paragraphs below is "a sweep
+  row is only as good as the mutation behind it — recording the verdict without
+  recording the mutation is how a green row reads as red". M1's table at least
+  carried a verdict column; M2's is a prose list of property names. I re-derived
+  seven rows by reverting and they hold, which is the problem: a hand-written
+  table's one false row is indistinguishable from its true ones. Also unticked in
+  the same section: "The generated batch, read by the operator", while the Plan's
+  checkpoint row is ticked and the Log records three batches read.
+- **BR-38** [Minor] `inert-mechanism` widened[tierSameDomain] is incremented and never read
+  4th in family. harvest.go:262 counts every tier; the report loop at :365 walks
+  only tierLearnerDomain, tierGeneral, tierAnyDomain and tierAboveBand. The rule
+  already written for this family: a value no production path reads is wired or
+  deleted. Also in this class: TestTheLimitHoldsWhenEveryStemIsRejected's distinct
+  fixture is dead under the current rig (see the -limit finding).
+- **BR-39** [Minor] `helper-copied-not-shared` optionsPerItem restates play.maxOptions - 1 across a seam that already exports two helpers
+  2nd in family. harvest.go:46 hardcodes 3 with a comment naming play.maxOptions as
+  the reason; play already exports SampleStrings and ShuffleInts to main for exactly
+  this, and an option count needs none of the store's vocabulary.
+- **BR-40** [Minor] `inconsistent-failure-reporting` One exhausted budget prints two stopped lines, and prune shadows the builtin cap
+  2nd in family. Measured: -limit 5 on a fresh 8-word deck prints "stopped at the
+  --limit of 5 model call(s)" then "stopped authoring at the --limit of 5 model
+  call(s)" for one budget. Also cosmetic: store/item.go:207 declares
+  func prune(items []Item, cap int), shadowing the builtin, and
+  internal/llm/golden_schema_test.go:15 leaves one comment line past the file's wrap.
+
 ## Open findings
 
 - **BR-11** [Important] `measurement-off-the-production-path` the conformance floor and the reported 1.00 measure a prompt shape --harvest never sends
@@ -725,17 +1037,17 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-13** [Important] `property-without-a-pin` six of the seven run()-path members round 3 enumerated are still unpinned
 - **BR-14** [Minor] `doc-predeclares-outcome` README's directory listing promises items/<lang>/*.yaml, which M1 never writes
 - **BR-15** [Minor] `inert-mechanism` store.Bands() has no production caller while the band prompt hand-restates the six levels
-- **BR-16** [Critical] `flag-silently-ignored` --limit does not bound the authoring pass's model calls
-- **BR-17** [Critical] `property-without-a-pin` Three headline M2 properties have pins that cannot fail; the sweep row is ticked for M1 only
-- **BR-18** [Important] `task-without-live-conformance` authorTask, entailTask and vetoTask ship with no live conformance row
-- **BR-19** [Important] `inert-mechanism` learnerFacts.Domains is computed at zero production call sites
-- **BR-20** [Important] `language-scope-not-threaded` The entailment and veto prompts carry no store.Lang
-- **BR-21** [Important] `doc-predeclares-outcome` The project row records actual and closed before this gate ran
-- **BR-22** [Important] `store-contract-unheld-by-suite` The item cap is asserted against Mem only, not in storetest/suite.go
-- **BR-23** [Minor] `behaviour-change-undocumented` Items() now returns newest-first and the interface contract does not say so
 - **BR-24** [Minor] `two-spellings-of-one-predicate` stemUsesTheWord and blankOut locate the word by different rules
-- **BR-25** [Minor] `helper-copied-not-shared` harvestPRNG duplicates play.prng step-for-step
 - **BR-26** [Minor] `measurement-off-the-production-path` The tier report counts items that were never written
 - **BR-27** [Minor] `inconsistent-failure-reporting` Only the author-call failure reports what was saved before stopping
-- **BR-28** [Minor] `doc-understates-surface` README describes two checks where four conditions reject
-- **BR-29** [Minor] `test-only-symbol-in-production-api` PruneForTest is exported production API, and prune's truncation is unreachable
+- **BR-30** [Important] `flag-silently-ignored` -limit N still makes N+1 calls, and the two tests named for it never reach the authoring pass
+- **BR-31** [Important] `behaviour-change-undocumented` main.go:628 still states the old -limit meaning; the sweep missed the enumeration's fifth member
+- **BR-32** [Important] `doc-understates-surface` The atlas lists four selection tiers where the code has five, and the plan says three tasks where M2 ships four
+- **BR-33** [Important] `store-contract-unheld-by-suite` Store.Items' newest-first promise, added this window, has no storetest row
+- **BR-34** [Important] `property-without-a-pin` Three fixes from the last two rounds have no test that fails without them
+- **BR-35** [Important] `plan-element-ticked-unbuilt` #12's three moved Done-when rows are still unwritten, and its Revision names this milestone as the trigger
+- **BR-36** [Minor] `doc-comment-mangled-by-edit` prune's doc comment carries an orphaned fragment, and harvestRig stacks two doc comments
+- **BR-37** [Minor] `measurement-off-the-production-path` The M2 sweep block says 22 properties over a 24-row list and records neither the mutation nor the named test
+- **BR-38** [Minor] `inert-mechanism` widened[tierSameDomain] is incremented and never read
+- **BR-39** [Minor] `helper-copied-not-shared` optionsPerItem restates play.maxOptions - 1 across a seam that already exports two helpers
+- **BR-40** [Minor] `inconsistent-failure-reporting` One exhausted budget prints two stopped lines, and prune shadows the builtin cap

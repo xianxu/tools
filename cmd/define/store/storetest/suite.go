@@ -594,6 +594,36 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("items come back NEWEST FIRST, from every implementation", func(t *testing.T) {
+		// Promised on the Store interface, so it is asserted here — it was
+		// pinned only through the pure prune tests, which cannot see whether a
+		// real store's read path preserves the order its write path produced.
+		//
+		// #12 picks among a word's items and will take the first; insertion
+		// order would hand it the oldest.
+		s := newStore(t)
+		if err := s.SetItems("w", []store.Item{
+			{Word: "w", Form: store.FormCloze, Stem: "oldest", At: day(1)},
+			{Word: "w", Form: store.FormCloze, Stem: "newest", At: day(3)},
+			{Word: "w", Form: store.FormCloze, Stem: "middle", At: day(2)},
+		}); err != nil {
+			t.Fatalf("SetItems: %v", err)
+		}
+		got, err := s.Items("w")
+		if err != nil {
+			t.Fatalf("Items: %v", err)
+		}
+		if len(got) != 3 {
+			t.Fatalf("got %d items, want 3", len(got))
+		}
+		for i, want := range []string{"newest", "middle", "oldest"} {
+			if got[i].Stem != want {
+				t.Errorf("item %d = %q, want %q — items must read back newest first",
+					i, got[i].Stem, want)
+			}
+		}
+	})
+
 	t.Run("a word's items are CAPPED, by every implementation", func(t *testing.T) {
 		// "Growth is bounded" is stated on the Store interface, so it belongs
 		// here. It landed in a Mem-only test, and held for YAML by the

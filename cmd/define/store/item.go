@@ -209,15 +209,15 @@ const ItemCap = 4
 //
 // Newest rather than best: nothing here can rank quality, and pretending to
 // would be the self-oracle problem again. Recency is at least a fact.
-func prune(items []Item, cap int) []Item {
-	if cap <= 0 || len(items) <= cap {
+func prune(items []Item, max int) []Item {
+	if max <= 0 || len(items) <= max {
 		out := append([]Item(nil), items...)
 		sortItems(out)
 		return out
 	}
 	out := append([]Item(nil), items...)
 	sortItems(out)
-	return out[:cap]
+	return out[:max]
 }
 
 func sortItems(items []Item) {

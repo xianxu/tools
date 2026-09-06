@@ -50,12 +50,37 @@ must be rejected by the distance filter. That case belongs in the tests.
 
 ## Done when
 
-- [ ] Options are drawn from the pool + deck, never model-generated.
-- [ ] A near-synonym of the answer is rejected as a distractor — asserted with
-      `sycophantic`/`obsequious`.
-- [ ] The form works with the LLM seam unavailable (veto step skipped).
+**Rewritten 2026-09-06, when `#10 M2` landed** — the trigger the 2026-09-04
+Revision below named. Three rows moved to `#10` with the selection they belong
+to; they are recorded here as SATISFIED rather than deleted, so a reader can see
+where they went instead of building them again.
+
+- [x] Options are drawn from the pool + deck, never model-generated. — **Satisfied
+      by `#10 M2`, and more strongly than review-time filtering managed.** Options
+      are SELECTED offline from the banded deck and stored finished; `authoredStem`
+      has no distractors field at all, so "never model-generated" is structural
+      rather than a rule this form has to follow.
+- [x] A near-synonym of the answer is rejected as a distractor — asserted with
+      `sycophantic`/`obsequious`. — **Satisfied by `#10 M2`'s veto**, which carries
+      exactly this pair as its committed known-bad case and fired on it in all
+      three live checkpoint batches, in both directions. Under the new selection
+      rule the pair is MORE likely to be chosen, not less, which is why the veto
+      is what earns the plausibility.
+- [x] The form works with the LLM seam unavailable (veto step skipped). —
+      **Satisfied by construction, and the cost the 2026-08-30 Revision recorded
+      is gone with it.** An item read from disk carries finished, already-vetoed
+      options, so there is no degraded offline path to design: the veto ran once,
+      when the item was written. There is no "veto step" left to skip.
+
+**What is still this issue's to build**, and it is the whole of the remaining
+work:
+
 - [ ] The blanked sentence never leaks the answer (stem, plural, hyphenation).
+      `#10`'s `blankOut` is a PROMPT-SHAPING helper for the veto and explicitly
+      not this — it is deliberately simple, and here it is the LEARNER who must
+      not see the answer.
 - [ ] Deterministic under a fixed seed.
+- [ ] The bad-question keypress records the flag with the full option set.
 
 ## Plan
 
@@ -155,6 +180,8 @@ a cloze question — blanking the stem without leaking the answer through stem,
 plural or hyphenation — and determinism under a fixed seed. Plus the bad-question
 keypress recording the full option set.
 
-**Not yet applied to the rows above.** They are rewritten when `#10 M2` lands and
-the shape of a finished `Item` is real rather than planned; this entry is the
-record that they are no longer this issue's to satisfy.
+**Applied 2026-09-06**, at `#10 M2`'s boundary — see the rewritten Done-when
+above. A deferral whose trigger is "when Mx lands" is swept by the issue that
+WROTE it, at Mx's boundary, rather than left for the consuming issue to
+discover: until this was done, a reader of `#12` would have built all three
+again.

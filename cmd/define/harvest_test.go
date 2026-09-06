@@ -250,34 +250,67 @@ func TestHarvestOutageKeepsWhatWasAlreadyBought(t *testing.T) {
 // --limit is a real cap, not documentation (the Minor the estimate-quality round
 // priced). Asserted on a deck larger than the limit, which is the only shape
 // where an unbounded loop and a bounded one differ.
-func TestHarvestStopsAtTheLimit(t *testing.T) {
-	// The deck must EXCEED the limit for the cap to be observable at all. The
-	// first version banded 2 of 6 and then asserted authoring made at most 2
-	// calls — but banding had capped the pool AT 2, so the assertion held with
-	// the check deleted entirely.
+// THE FLAG x PASS TABLE, which is what BR-16 asked for and BR-30 found missing.
+//
+// `-limit` bounds model calls, and this run makes four kinds of them: banding,
+// authoring, entailment and the veto. A cell is pinned only by a test that
+// PROVABLY ENTERS the pass — the first version of these tests used un-banded
+// rigs, so the whole budget went on banding and `author=0 entail=0 veto=0`. The
+// property in each name was untested and the scripted replies were never served.
+//
+// Each subtest therefore asserts the pass was reached before asserting the bound.
+func TestTheLimitBoundsEveryPass(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		preBand  bool
+		limit    int
+		mustSend []string // markers that must appear, or the cell is untested
+	}{
+		{"banding", false, 4, []string{markBand}},
+		{"authoring and the judges", true, 6, []string{markAuthor, markEntail, markVeto}},
+		{"both passes in one run", false, 12, []string{markBand, markAuthor}},
+		{"a limit of one", false, 1, []string{markBand}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, fake, _ := harvestRig(t, 8)
+			if tc.preBand {
+				preBand(t, d)
+			}
+			scriptAll(fake, 120)
+
+			var out, errOut bytes.Buffer
+			if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: tc.limit}, &out, &errOut); code != 0 {
+				t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+			}
+
+			for _, mark := range tc.mustSend {
+				if countTask(fake, mark) == 0 {
+					t.Fatalf("no request of that kind was sent, so this cell is untested "+
+						"(band %d, author %d, entail %d, veto %d)",
+						countTask(fake, markBand), countTask(fake, markAuthor),
+						countTask(fake, markEntail), countTask(fake, markVeto))
+				}
+			}
+			// EXACTLY the budget, not the budget plus one: a spend whose refusal
+			// is discarded charges the call and then makes it anyway.
+			if got := len(fake.Requests()); got > tc.limit {
+				t.Errorf("made %d model calls with -limit %d (band %d, author %d, entail %d, veto %d)",
+					got, tc.limit, countTask(fake, markBand), countTask(fake, markAuthor),
+					countTask(fake, markEntail), countTask(fake, markVeto))
+			}
+		})
+	}
+}
+
+// A capped run is a PARTIAL run and has to say so, or it cannot be told from a
+// finished one.
+func TestACappedRunSaysItIsPartial(t *testing.T) {
 	d, fake, _ := harvestRig(t, 8)
 	scriptAll(fake, 60)
-
-	const limit = 5
 	var out, errOut bytes.Buffer
-	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: limit}, &out, &errOut); code != 0 {
+	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: 3}, &out, &errOut); code != 0 {
 		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
 	}
-
-	// -limit names MODEL CALLS, so that is what it must bound — across every
-	// pass, not per pass. Counting successes let a run whose judge rejected
-	// everything make one author call and one entail call per deck word.
-	total := len(fake.Requests())
-	if total > limit {
-		t.Errorf("made %d model calls with -limit %d (band %d, author %d, entail %d, veto %d); "+
-			"the flag names calls and must bound every pass",
-			total, limit, countTask(fake, markBand), countTask(fake, markAuthor),
-			countTask(fake, markEntail), countTask(fake, markVeto))
-	}
-	if total == 0 {
-		t.Fatal("no calls at all, so this assertion cannot fail")
-	}
-	// A capped run is a PARTIAL run and has to say so.
 	if !strings.Contains(out.String(), "run again") {
 		t.Errorf("a capped run did not say it was partial: %q", out.String())
 	}
@@ -287,6 +320,7 @@ func TestHarvestStopsAtTheLimit(t *testing.T) {
 // original counter wrong, since a rejected word charged nothing.
 func TestTheLimitHoldsWhenEveryStemIsRejected(t *testing.T) {
 	d, fake, _ := harvestRig(t, 8)
+	preBand(t, d) // or the budget is spent on banding and the rejections never happen
 	for range 60 {
 		fake.Script(markEntail, llmtest.Reply{
 			Text: `{"entails":false,"glosses":false,"named":false,"reason":"rejected"}`,
@@ -298,6 +332,9 @@ func TestTheLimitHoldsWhenEveryStemIsRejected(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if code := runHarvest(context.Background(), d, options{}, harvestOptions{limit: limit}, &out, &errOut); code != 0 {
 		t.Fatalf("run = %d, stderr: %s", code, errOut.String())
+	}
+	if countTask(fake, markEntail) == 0 {
+		t.Fatal("no stem was ever judged, so the rejection path is untested")
 	}
 	if got := len(fake.Requests()); got > limit {
 		t.Errorf("made %d model calls with -limit %d although every stem was rejected; "+

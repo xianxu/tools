@@ -1552,11 +1552,20 @@ The rule: same domain (or general vocabulary), at the learner's band or one
 below, never the answer. **One band below rather than above** — a word above the
 learner is unrejectable by knowledge.
 
-**Widening is tiered and reported**: same-domain-at-band, then general-at-band,
-then any-domain-at-or-below, and only as a last resort above the learner. It
-relaxes the DOMAIN before it relaxes the ceiling, and the tier reached is
-printed — a selector that silently falls back to "any word at all" is
-indistinguishable from one that is working.
+**Widening is tiered and reported**, over FIVE tiers in priority order:
+
+1. the answer's own domain, at band — a legal word's best wrong answers are
+   other legal words;
+2. **a domain the LEARNER reads, at band** — `#17`'s parsed domain claims, which
+   is what makes them a delivered consumer rather than a value nothing reads;
+3. general vocabulary, at band;
+4. any domain, at or below band;
+5. above the learner's band, as a last resort that says so.
+
+It relaxes the DOMAIN before it relaxes the ceiling, and the tier reached is
+printed for every item — `define: N item(s) drew options from <tier>` — because
+a selector that silently falls back to "any word at all" is indistinguishable
+from one that is working.
 
 **Batch-level diversity pressure**, measured into existence by the first real
 batch: `ephemeral` served as a wrong answer in 8 of 20 items and the four A1
@@ -1575,12 +1584,14 @@ defect.** Measured on a homogeneous pool the pressure cuts worst-case reuse from
 of twenty are specialists in domains of one. Pressure cannot spread what does not
 exist; the tiering reports it, and a deck of hundreds dilutes it.
 
-**An open question for `#12`, found by reading and not by measuring:** a
-specialist word beside three general ones is identifiable by REGISTER alone —
-`keel` against `ephemeral`, `pulp`, `mesa` is answerable without knowing what a
-keel is. The Spec offers general vocabulary as the fallback and that is what it
-does; whether other SPECIALIST domains at band would beat it is a real question
-the checkpoint deck was too small to answer.
+**A question the checkpoint raised, since ANSWERED in part.** Reading the batch
+showed that a specialist word beside three general ones is identifiable by
+REGISTER alone — `keel` against `ephemeral`, `pulp`, `mesa` is answerable without
+knowing what a keel is. Tier 2 above is the answer for the domains we know the
+learner reads: those now outrank general vocabulary. What remains open is the
+wider version — whether an ARBITRARY specialist domain at band beats general
+vocabulary for a learner who has never read in it — and the checkpoint deck was
+too small to say.
 
 `pickDistractors` and `play.PickOptions` are **two rules, not one with two
 callers**, and the finding is recorded in full at `harvest_item.go`. In short:

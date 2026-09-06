@@ -625,10 +625,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// no ceiling is the unbounded batch --limit exists to prevent.
 		fmt.Fprintf(stderr, "define: -agreement is capped at %d rounds\n", agreementMaxRounds)
 		return 2
-	// SAID, not silently ignored. -limit bounds how many words are ASKED ABOUT,
-	// and the measurement mode has its own fixed sample — so the two do not
-	// compose, and honouring one of two flags is the shape this file's -raw
-	// comment warns about.
+	// SAID, not silently ignored. -limit bounds the MODEL CALLS a harvest run
+	// makes, and the measurement mode has its own fixed sample and its own round
+	// count — so the two do not compose, and honouring one of two flags is the
+	// shape this file's -raw comment warns about.
 	case isSet(fs, "agreement") && isSet(fs, "limit"):
 		fmt.Fprintln(stderr, "define: -limit does not apply to -agreement; it measures a fixed sample")
 		return 2

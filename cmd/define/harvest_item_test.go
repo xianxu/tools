@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -541,5 +542,42 @@ func TestBlankOutSurvivesFoldingRunes(t *testing.T) {
 		if !strings.Contains(got, "___") {
 			t.Errorf("blankOut(%q) = %q — nothing was blanked", stem, got)
 		}
+	}
+}
+
+// sortedBanded is what makes a run REPRODUCIBLE: selection walks a seeded
+// permutation of the pool, so the pool's own order has to be stable or the same
+// deck authors a different batch each run and a bad batch cannot be debugged.
+//
+// Pinned on the property rather than on the sort: two pools holding the same
+// words in different orders must select the same options.
+func TestSortedBandedMakesSelectionOrderIndependent(t *testing.T) {
+	law := mustDomain(t, "Law")
+	words := []string{"delta", "alpha", "echo", "charlie", "bravo", "foxtrot"}
+	build := func(order []string) []bandedWord {
+		var out []bandedWord
+		for _, w := range order {
+			out = append(out, banded(w, store.C1, law))
+		}
+		return sortedBanded(out)
+	}
+	target := store.WordFacts{Band: store.C1, Domain: law, At: harvestClock}
+
+	forward := build(words)
+	reversed := build([]string{"foxtrot", "bravo", "charlie", "echo", "alpha", "delta"})
+
+	a, _ := pickDistractors("x", target, learnerFacts{Band: store.C1}, forward, 3, 11, nil)
+	b, _ := pickDistractors("x", target, learnerFacts{Band: store.C1}, reversed, 3, 11, nil)
+	if strings.Join(a, ",") != strings.Join(b, ",") {
+		t.Errorf("the same words in a different order selected %v then %v — a run is not "+
+			"reproducible, so a bad batch cannot be debugged", a, b)
+	}
+	// And the sort is ASCENDING, which is what "stable" means concretely here.
+	got := make([]string, 0, len(forward))
+	for _, c := range forward {
+		got = append(got, c.Word)
+	}
+	if !sort.StringsAreSorted(got) {
+		t.Errorf("sortedBanded produced %v, which is not sorted", got)
 	}
 }
