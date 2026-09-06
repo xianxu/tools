@@ -3640,3 +3640,26 @@ gating (N+1). What finally fixed it was making the charge structural — one
 function is the only path to the model, it charges before calling, and its
 refusal returns as an error the caller already handles. **A budget you can
 charge without gating on is a budget somebody will charge without gating on.**
+
+## #10's close — Forget, and a guard that classified on one axis
+
+**A new persisted surface is a new thing every per-word verb must reach.** `#10`
+added `facts/` and `items/`, and `Forget` removed only the deck entry — so a
+forgotten word kept the cached band and authored items that made it worth
+forgetting, and `--harvest` then skipped it as already done. *"Forget this word,
+its material is bad"* was the one thing forgetting could not do. `usage/` had the
+same bug and had it first, from `#9`. **When you add a directory keyed by an
+existing noun, enumerate the verbs that act on that noun** — the create path is
+the one everybody remembers.
+
+**And the guard I wrote for it classified on ONE axis while the surfaces vary on
+two.** "Per-word or history" decided whether `Forget` touches a directory;
+"scoped or flat" decides *whose copy* it touches, and `usage/` is per-word and
+flat, so forgetting in Spanish reached the English cache. A guard that enumerates
+a set is only as good as the number of questions it asks about each member.
+
+**A stale ledger entry is worth proving, not arguing.** `BR-41` blocked three
+rounds after it was fixed. What settled it was a grep over every statement of the
+flag's meaning — 20 hits, all saying "calls", none saying "words" — recorded in
+`--verified` alongside the one precise `--no-ledger`. Bypass one gate for one
+finding with the evidence attached; never `--force`.

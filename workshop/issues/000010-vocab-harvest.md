@@ -1,12 +1,13 @@
 ---
 id: 000010
-status: working
+status: codecomplete
 deps: ["tools#3", "tools#11", "tools#17"]
 github_issue:
 created: 2026-08-20
-updated: 2026-09-04
+updated: 2026-09-06
 estimate_hours: 7.94
 started: 2026-09-04T09:38:50-07:00
+actual_hours: 12.77
 ---
 
 # authored practice items: level-tagged words, and stems the model writes offline
@@ -338,6 +339,8 @@ above). Each `Mx` row closes with its own `sdlc milestone-close`.
 ## Log
 
 
+
+- 2026-09-06: closed — ALL SEVEN Done-when rows ticked with the mutation that proved them. go test ./... green; go vet clean under BOTH tag sets; gofmt clean. (1) --harvest produces finished items with no sitting running — the seam is made to PANIC, not nil, and the sitting is asserted not to have banded anything on the way past. (2) Every word carries a band and domain assigned once, pinned on the request COUNT so a second run is asserted to make zero calls. (3) The banding is MEASURED: --harvest -agreement=N, its own mode writing nothing; floor 0.8 asserted LIVE at mean agreement 1.00 over 8 words x 5 assignments, on the prompt production actually sends. (4) A distractor is never the answer: obsequious/sycophantic committed as the known-bad case, fired on real material in all three checkpoint batches in both directions, and asserted live in both directions. (5) Authored stems entail and name real subjects — three separate verdict fields, three committed known-bad stems, topicSpread measured with NO model. (6) A model outage leaves the store usable, pinned on all four outage paths with survivors asserted WHOLE. (7) Growth bounded by ItemCap at the write, held by storetest against both implementations; prune proved deterministic by pruning twice with the input SHUFFLED between calls. THE CHECKPOINT RAN — three live batches on a real deck, read, changing the design twice (appositive glosses 10/20 to 0, authored 20 to 19/20). M1 and M2 each have their own mutation sweep (13 and 22 properties) plus per-finding revert-checks. BYPASSING THE LEDGER GATE FOR EXACTLY ONE FINDING, BR-41, which is verifiably fixed at HEAD and has been since round 8s remediation: it names harvestLimits doc comment (harvest.go:15, now "the default bound on MODEL CALLS one --harvest run may make") and two plan lines (plan:90 and plan:285, both now "caps the MODEL CALLS"). A grep across cmd/, atlas/ and the plan for every statement of -limits meaning returns 20 hits and every one says calls; zero say words. The ledger carried the entry forward without disposing it across rounds 8, 9 and 10 while the tree was already correct. No other finding is bypassed — the other blocker from close round 1 (BR-45, Forget leaving facts/ and items/ behind) was a real shipped bug, fixed as a class in da5c395 with a guard that fails when a new runtime directory is unclassified, and its second axis fixed in dc1130e.; review verdict: FIX-THEN-SHIP
 - 2026-09-06: closed M2 — go test ./... green; go vet clean under BOTH tag sets; gofmt clean. Done-when 4: the veto is exercised by a COMMITTED known-bad case (obsequious/sycophantic), fired on REAL material in all three live checkpoint batches in both directions, and a LIVE conformance row asserts both halves — it rejects the near-synonym AND does not reject an unrelated word. Done-when 5: three separate verdict fields, three committed known-bad stems, topicSpread measured with NO model, and a live row confirming an appositive scores entails=true glosses=true and is rejected on the gloss alone. Done-when 7: ItemCap enforced at the write and held by storetest against BOTH implementations, alongside newest-first ordering and the Form refusal; prune tested by pruning twice with the input SHUFFLED between calls. THE CHECKPOINT RAN — three live batches on a real deck — and changed the design: glosses 10/20 to 0, authored 20 to 19/20. THREE boundary rounds addressed. Round 5 (REWORK, 2C/5I/8M) and round 6 (REWORK, which verified round 5 by REVERTING it and found a Unicode panic in blankOut) are narrated in the issue Log. Round 7 (FIX-THEN-SHIP, 14 disposed, 6 new) fixed in c5b3cda: -limit N still made N+1 calls because three of four call sites discarded the budget refusal, now structural via runWithin which is the only path to a model and returns its refusal as an error; the flag x pass table is written with four cells each asserting it ENTERED the pass before asserting the bound (the two previous -limit tests spent their whole budget on banding, so author=0 entail=0 veto=0); four documentation enumerations re-derived rather than spot-fixed; Store.Items newest-first now held by storetest; three fixes from rounds 5-6 gained revert-checks; and #12s three moved Done-when rows were rewritten, which its own Revision named this milestone as the trigger for. M2 has a 22-property mutation sweep plus per-finding revert-checks, all confirmed red on revert.; review verdict: FIX-THEN-SHIP
 ### 2026-09-04 — the checkpoint, iterated: three batches
 

@@ -318,3 +318,137 @@ findings:
       populated. Consequence is a refetch, which is why this is Minor; the deliverable is the second axis
       in the guard, so the next surface added is classified on both.
 ```
+
+---
+
+## Re-review — 2026-09-06T14:35:03-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 10 — authored practice items: level-tagged words, and stems the model writes offline |
+| repo | tools |
+| issue file | workshop/issues/000010-vocab-harvest.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 0b8d9930762168cf52f77c5d0864599f678d3b5d..dc1130e58d2e11a9f514160c8817fae8ab9f4702 |
+| command | sdlc close --issue 10 |
+| reviewer | claude |
+| timestamp | 2026-09-06T14:35:03-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Eleven rounds in, the code side of this window is in good shape: `go test ./...` green, `go vet` clean under both tag sets, `gofmt` clean, and the two new commits since round 10 do what they claim — `da5c395`'s Forget-takes-the-material fix is held by a storetest row that runs against both implementations, and `dc1130e`'s second-axis guard reddens under mutation (I flipped `usage/` to `scoped: true` in a scratch worktree and `TestPerWordDirsCoverEveryRuntimeDir` failed with the intended message). Of the eleven findings carried in, one is addressed (BR-48) and ten are unchanged at HEAD — nothing in `dc1130e` touched them. Nothing blocking correctness remains, so this is FIX-THEN-SHIP rather than REWORK; but **BR-14 should be fixed in the close commit itself**: `cmd/define/README.md:459-461` still tells a reader "Nothing writes this yet — authoring is the next milestone" about the `items/` surface that M2 shipped and that this close is recording as delivered. That is a false statement in user-facing docs at the exact moment the issue closes, and it is a two-line edit.
+
+## 1. Strengths
+
+- **`dc1130e` is the right shape of fix for a guard finding.** `perWordDir` (`cmd/define/store/yaml.go:707-717`) makes scoping a *declared* field and `yaml_test.go:718-723` asserts the declaration matches the path actually built. Mutation-confirmed here, not read: flipping `usage/`'s declaration reddens the guard. The flat-`usage/` behaviour is recorded in the struct comment rather than silently migrated, which is the honest handling of a #9-owned surface.
+- **The storetest row for Forget asserts both halves** (`storetest/suite.go:264-327`): the derived material is gone *and* the event survives. Round 10 already revert-verified it against both `Mem` and `YAML`; the row's failure messages name the consequence ("`--harvest` will skip it as done"), not just the mismatch.
+- **`Store.Forget`'s interface contract was rewritten with the behaviour** (`store/store.go:83-93`), including the deliberately narrow return semantics — reports on the *deck* entry, clears derived files regardless. That is the kind of contract text a future `Mem`/`YAML` divergence gets caught by.
+- **The `#17` loop closes properly (ARCH-PURPOSE).** `reflect.go:260-283` drops an off-scale band as a third switch arm rather than coercing it, and `:277-281` canonicalises through `ParseBand` on the way to disk, so `parseLearnerBand` (`usermodel.go:276`) reads back the same spelling that was written. Every core-concepts row I checked exists at its stated path with the stated kind.
+- **`glosslabel.go`'s longest-first ordering became computed** (`sortedByLengthDesc`, deriving from `store.Domains()`), turning a hand-maintained invariant into one that holds for any label added in either package (ARCH-DRY).
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+- **BR-41 remains open and is the one Important carried into the close.** `repo_guard_test.go` still has zero diff across the entire window. The three sites the finding named are correct at HEAD, so the tree is not currently wrong — what is missing is the mechanism (`retiredPhrases`, `repo_guard_test.go:1131`, over `currentTruthFiles`) that the finding named as the deliverable after the same class was swept by hand four times. Re-disposed `not-addressed` below rather than re-raised.
+- **BR-14, at issue close, is no longer a Minor in substance.** `README.md:459-461` states a shipped surface is unbuilt. Filed as Minor by round 4 when it was a forward-looking line; at the close boundary it is a wrong user-facing doc. Disposed `not-addressed`; fix it in the close commit.
+
+## 4. Minor findings
+
+- One new finding raised: the atlas paragraph `da5c395` added (`atlas/define.md:1494-1497`) describes a one-axis guard that `dc1130e` made two-axis one commit later, and the cross-language `--forget` consequence lives only in a code comment. See the block below.
+- Nine prior Minors re-disposed `not-addressed`, all verified unchanged at HEAD rather than assumed: BR-24 (`wordIndexIn` still checks only the leading boundary, so `set` matches "settlement"), BR-36 (`store/item.go:200` still reads `// : the same input prunes to the`; `harvest_test.go:19-27` still stacks two doc comments; `harvest_item.go:318` still names the never-existent `tierAnyBand`), BR-37, BR-39 (`harvest.go:53`), BR-40 (both stopped-lines and `func prune(items []Item, max int)` shadowing the builtin), BR-44 (`harvest.go:82` still claims `runWithin` is the only path to a model while `harvest.go:475` calls `llm.Run`; both `errBudget` arms still unreachable), BR-46, BR-47.
+- Not filed separately, but worth folding into whoever touches BR-36: `prune` (`store/item.go:212-221`) duplicates `append`+`sortItems` across both branches — sort once, truncate conditionally.
+
+## 5. Test coverage notes
+
+The guard added this round is a real pin, verified by mutation rather than by reading. Coverage gaps that persist are the ones the open findings already name: no test enters either unreachable `errBudget` arm (BR-44 asks for a per-block coverage assertion over `harvest*.go`), and no test injects a failure at each step of `Forget`'s four removals (BR-47 — `os.Remove` over a non-empty directory is a sufficient seam). `Mem.Forget` still hand-lists its four maps with no guard on the `Mem` side; it is complete today and the storetest row covers all four current surfaces, so I did not file it — but a fifth per-word map added to `Mem` is caught only by review.
+
+## 6. Architectural notes
+
+- **ARCH-DRY** — pass with the open BR-39. `play.ShuffleInts`/`SampleStrings`/`seedFor` are reused rather than copied, and the `PickOptions`-vs-`pickDistractors` question is answered in writing at `harvest_item.go:131-159` with structural reasons, not stylistic ones.
+- **ARCH-PURE** — pass. `agreement`, `topicSpread`, `pickDistractors`, `prune`, `parseLearnerBand` are all pure over values and table-tested without IO; `runWithin` is the thin charged seam.
+- **ARCH-PURPOSE** — the issue's purpose is delivered (bands cached forever, items authored offline, veto exercised on real material, the checkpoint actually run and read). The open findings are the *class-vs-instance* pattern: BR-41 and BR-46 both asked for a mechanism and got, or would get, a hand sweep.
+- **ARCH-MOCK** — pass. Wire-level `llmtest.Fake` behind the same seam production uses, with live conformance rows for `bandTask`/`authorTask`/`entailTask`/`vetoTask` (`harvest_conformance_test.go`), including the veto asserted in both directions.
+- **ARCH-CONSTRAINTS** — pass. `harvestLimit`, `poolCap`, `agreementMaxRounds`, `ItemCap` each bound a named resource, and `-limit` now charges structurally at the only call site.
+- **ARCH-SECURE** — pass. Model text is neutralised once at the store boundary (`sanitiseItems`/`sanitiseItem`), closed vocabularies refuse at parse, a damaged facts record reads as unharvested, and `Forget` cannot escape the words directory (suite row).
+- **ARCH-ORDER** — flagged by the open BR-47: `Forget` performs four removals and returns `false, err` on a mid-sequence failure even though the deck entry is already gone, so the error path unwinds the sequencing and drops the in-flight effect.
+
+## 7. Plan revision recommendations
+
+- `workshop/plans/000010-vocab-harvest-plan.md` §Verification, M2 sweep block (~line 456): the prose says "22 properties" over a list of 24, records no mutation and no test name per row, and `- [ ] The generated batch, read by the operator` (~line 492) is unticked while the issue's Plan row for the same checkpoint is ticked. A `## Revisions` entry should correct the count and either tick the row or say why it stays open. (This is BR-37 and stays open; no new revision beyond it.)
+
+```findings
+dispose:
+  - id: BR-48
+    disposition: addressed
+    note: |
+      Mutation-verified in a scratch worktree — flipping usage/ to scoped:true reddens TestPerWordDirsCoverEveryRuntimeDir with the intended message; the second axis is declared at yaml.go:707 and asserted at yaml_test.go:718.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      README.md:459-461 still reads "Nothing writes this yet - authoring is the next milestone" about the items/ surface M2 shipped; at the CLOSE boundary that is a false statement in user docs, not a forward-looking one.
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      Unchanged at HEAD - wordIndexIn (harvest_item.go:481) checks only the leading boundary and allows any suffix, so `set` is satisfied by "The settlement" and blankOut renders "The ___tlement".
+  - id: BR-36
+    disposition: not-addressed
+    note: |
+      All three sites unchanged - store/item.go:200 "// : the same input prunes to the", harvest_test.go:19-27 two stacked doc comments, harvest_item.go:318 naming tierAnyBand.
+  - id: BR-37
+    disposition: not-addressed
+    note: |
+      plan:456 still says 22 over a list I re-counted at 24; no mutation or test name per row; plan:492 still unticked while the issue's row is ticked.
+  - id: BR-39
+    disposition: not-addressed
+    note: |
+      harvest.go:53 still hardcodes optionsPerItem = 3 with a comment naming play.maxOptions as the reason.
+  - id: BR-40
+    disposition: not-addressed
+    note: |
+      Both halves stand - harvest.go:149/167 and :266/282 each print for one exhausted budget, and store/item.go:212 is func prune(items []Item, max int), shadowing the Go builtin.
+  - id: BR-41
+    disposition: not-addressed
+    note: |
+      repo_guard_test.go has ZERO diff across the whole window; retiredPhrases (:1131) is the registry the finding named and no row was added. The three named lines are correct at HEAD; the class is still unmechanised.
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      harvest.go:82 still says runWithin is the ONLY way this file reaches a model while runHarvestAgreement calls llm.Run at :475; both errBudget arms remain unreachable because each loop's bud.spent() exit runs with nothing decrementing before the call.
+  - id: BR-46
+    disposition: not-addressed
+    note: |
+      README.md:585-593 unchanged - the table still declares itself an enumeration and omits mode collision, every -limit/-agreement usage error, and all of --harvest's exit-1 paths.
+  - id: BR-47
+    disposition: not-addressed
+    note: |
+      yaml.go:743-757 unchanged - the loop removes words/ first and every non-ENOENT error returns (false, err), so a partial failure reports "nothing removed" for a word it removed.
+findings:
+  - id: new
+    severity: Minor
+    family: doc-understates-surface
+    title: |
+      The atlas describes Forget's guard as one-axis, one commit after dc1130e made it two, and the cross-language forget it recorded reaches no user-facing doc
+    detail: |
+      This is the 4th finding in family doc-understates-surface. Do NOT fix the sentence alone.
+      The rule is the one BR-42 already stated and BR-46 restated: a doc sentence describing a
+      code behaviour is a CONSUMER of that behaviour and is re-derived from the code at HEAD,
+      in the same commit that changes the code. da5c395 added atlas/define.md:1494-1497 saying
+      TestPerWordDirsCoverEveryRuntimeDir "fails when a new runtime directory is added without
+      being classified as per-word or as history"; dc1130e changed the guard to classify on TWO
+      axes fourteen minutes later and updated neither the atlas nor the README. Separately, the
+      behaviour dc1130e recorded - `define --forget red` in an es directory removes the usage/
+      cache the en deck filled - is user-visible and lives only in a struct comment at
+      yaml.go:701-706, while README.md:528 now advertises "drop a word and its material".
+      Measured prevalence in this window's last two commits: 1 of 1 doc paragraph describing the
+      guard is stale, and 1 of 1 newly-recorded user-visible caveat is undocumented.
+```
