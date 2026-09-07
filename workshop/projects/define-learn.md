@@ -72,7 +72,7 @@ and the goal is the best material achievable, not the cheapest.
 |---|---|---|
 | author a practice item | `#10`, offline batch | raw headlines are not questions — see below |
 | classify a word's level, register, domain | `#10`/`#17`, cached per word forever | frequency lists cannot see register |
-| veto a distractor | `#12` | a yes/no on a concrete pair is checkable; open generation is not |
+| veto a distractor | `#10`, offline batch | a yes/no on a concrete pair is checkable; open generation is not. Moved from `#12` with distractor selection — see the scope note |
 | grade a written sentence | `#13` | the only judgment a local rule genuinely cannot make |
 | batch-analyse errors into a learner model | `#17` | pattern-finding across many events |
 | answer a free-form question | `#16` | this is the verb |
@@ -248,12 +248,13 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       Small, and it finishes the language thread rather than leaving Spanish
       half-delivered.
 - [x] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
-- [ ] authored practice items — a CEFR band and a domain per word (cached forever), and stems the model writes offline; distractors SELECTED at the learner's band or one below [tools#10]
+- [x] authored practice items — a CEFR band and a domain per word, cached forever and assigned once; two closed vocabularies in the store, the dictionary answering the domain where it can [tools#10 M1]
+- [x] authored practice items — stems the model writes offline; distractors SELECTED at the learner's band or one below and vetoed. **STOP HERE and read a real batch** [tools#10 M2]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [x] spaced repetition rework — one unbounded ladder, `floor(1.6**box)`, no ceiling [tools#39]
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]
 - [x] form 2.5 — the board, grid triage for mature words [tools#40]
-- [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
+- [x] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
 - [ ] learner model — weakness taxonomy, steers authoring — **descoped from
       `#17 M2` into [tools#7]'s Done-when**, where the chosen distractor IS the
@@ -403,6 +404,127 @@ answers **200 with an error body** on overload, which the taxonomy reads as our
 bug rather than an unavailable service.
 
 <a id="tools-10"></a>
+<a id="tools-10-m1"></a>
+### tools#10 M1 — a band and a domain per word, cached forever
+
+**est:** 3.94 (M1's share of the issue's 7.94)
+**actual:** 4.03h
+**closed:** 2026-09-04
+
+`define --harvest` bands the deck ahead of time: `facts/<lang>/` holds one record
+per word — a CEFR band and a subject domain — assigned once and re-read forever,
+with `items/<lang>/` waiting for M2. `--limit` bounds a run, an outage leaves
+what was already bought intact, and a sitting never touches any of it.
+
+**The plan-quality gate paid for itself here, and the Critical is the thing worth
+preserving.** The plan justified a new `store.Band` by saying `#17` "already
+assigns the learner one". It does not — `#17`'s band was a bare `string` reaching
+disk as prose, readable only as raw markdown that gets pasted into a prompt. That
+was harmless for `#17`'s whole life because a model reads "B2+" as well as "B2",
+and it stops being harmless the moment the band is arithmetic. A new type beside
+it would have been the second spelling the rationale claimed to avoid, and
+`pickDistractors`' other input had no source at all. So `--reflect` now validates
+through `ParseBand` and the learner model carries a `level:` frontmatter key —
+the single source is enforced rather than asserted (ARCH-PURPOSE). **The general
+lesson: a false belief about existing code does its worst damage when it is cited
+as a design rationale**, because it then shapes what gets built rather than just
+what gets said.
+
+**A better design fell out of a second finding.** `readGloss` already extracts
+NOAD's printed subject field, so most words get a domain from the DICTIONARY with
+no model call — the model went from the source to the fallback. The closed set
+moved into `store`, `glosslabel.go` derives from it, and its longest-first
+ordering became computed rather than a hand-maintained invariant.
+
+**What the measure said, and what it did not.** `--harvest -agreement=N` is its
+own mode writing nothing, because measuring N assignments cannot coexist with
+"one call per unbanded word, zero on a second run". Against the live service, on
+the prompt production actually sends: **mean agreement 1.00 over 8 words x 5
+assignments**.
+
+That is the caveat made concrete rather than a triumph. A consistently wrong
+scale scores 1.00 too, and the live bands say so: `quokka` at C2 reports rarity
+rather than any level a learner is at, and the dictionary-first domain returned
+`Cricket` for `run` and `Printing` for `set` — correct readings of NOAD's
+document order and close to arbitrary as descriptions of those words. Both land
+in `pickDistractors`, so if M2's material reads mispitched these are the first
+two things to suspect.
+
+**Calibration: est 3.94 / actual 4.03 = 0.98 — very nearly exact, and the route
+there is the useful part.** The first draft of this paragraph read "actual 2.16h,
+1.82, an over-estimate, the milestone had no remediation round at all" — written
+BEFORE the boundary gate ran. The gate then took THREE rounds: FIX-THEN-SHIP with
+4 Important + 6 Minor, a round that produced no verdict at all, and a third
+raising three more Importants, each 2nd-in-family. Remediation is the whole 1.87h
+between that first figure and this one.
+
+Recorded rather than quietly corrected, because predeclaring an outcome and then
+measuring it is how a calibration ledger stops being evidence — and the
+correction points at the real lesson. The two `milestone-review` rows booked
+0.62 of the 3.94 for review-and-remediate; the actual boundary cost was closer to
+1.9h. **The estimate block's own named deviation #1 — booking two rows because
+`#7` took eight rounds and `#44` took five — was right in kind and still low by
+3x.** M2 books 0.75 for its boundary and should be read as optimistic.
+
+<a id="tools-10-m2"></a>
+### tools#10 M2 — authored stems, selected distractors, and the checkpoint
+
+**est:** 4.00 (M2's share of the issue's 7.94)
+**actual:** 7.91h
+**closed:** 2026-09-06
+
+The model writes the stem; the deck supplies the wrong answers. `authoredStem`
+has no distractors field at all — a model asked for four options writes four it
+can justify and one is usually also correct, so removing the field is what makes
+"selected, never invented" structural rather than a rule to follow.
+
+**The checkpoint is the whole value of this milestone, and it changed the
+design three times.** The project's instruction was to stop and read real
+generated items before `#12` and `#13` consume them. Three live batches:
+
+- **Batch 1** — every stem named a real referent (Holyoke Dam, Alvin Bragg, HMS
+  Victory, Usain Bolt), which is the Spec's prediction confirmed: a model asked
+  for a natural sentence drifts to the unnamed, and making it a REQUIREMENT
+  fixed it. But half the items were appositive glosses — *"the alewife, the
+  small silver herring"* — and `ephemeral` was a wrong answer in 8 of 20.
+- **Batch 2** — glosses gone, and 9 of 20 rejected with reasons like *"any
+  migratory fish name would fit, AND NO DEFINITION IS SUPPLIED"*: the judge
+  citing the absence of the thing the gloss rule forbids.
+- **Batch 3** — 19 of 20, zero glosses, one principled rejection.
+
+**Three lessons worth preserving, none of which a green suite could produce.**
+
+*Stating a rule in a prompt is not enforcing it.* The system prompt already said
+*never write a definition*; showing three wrong shapes and two right ones is what
+worked.
+
+*Two requirements can be individually right and jointly impossible.* Entailment
+and no-gloss are unsatisfiable together for any concrete noun, because the
+cheapest way to make a sentence entail a word is to define it. The tell was the
+judge's own rejection reason.
+
+*The resolution was to re-read what the artifact is.* "Recoverable from the
+sentence alone" is a fill-in-the-blank bar; this is MULTIPLE CHOICE, so "does
+another word also fit" is a question about the OPTIONS — which the veto already
+asked, per pair. One judge was doing the other's job badly.
+
+**And ask the free question before the paid one.** Batch 2 shipped an item with
+`___` already in its stem, against an explicit instruction, passed by BOTH model
+judges because neither was asked. `strings.Contains` catches it.
+
+**One limit reported rather than engineered around:** batch-level diversity
+pressure demonstrably works (worst-case reuse 6→4 on a homogeneous pool) and did
+little on this deck, because for `keel` the entire general-at-band tier is two
+words — eight of twenty are specialists in domains of one. Pressure cannot
+spread what does not exist.
+
+**Calibration: pending the gate**, and deliberately left blank rather than
+hedged. The first version of this paragraph carried a pre-review number with a
+note saying it would move — which is the `doc-predeclares-outcome` family's third
+member, and `workshop/lessons.md` already carries the rule it broke: *do not
+write the calibration prose before the gate runs*. A hedged number in a ledger is
+still a number in a ledger.
+
 ### tools#10 — item authoring + harvest
 
 **status:** open — the material-quality checkpoint
@@ -736,6 +858,8 @@ guards could fail.
 [tools#27]: #tools-27
 [tools#18 M1]: #tools-27
 [tools#18 M2]: #tools-18-m2
+[tools#10 M1]: #tools-10-m1
+[tools#10 M2]: #tools-10-m2
 [tools#19]: ../issues/000019-llm-overloaded.md
 [tools#23]: ../issues/000023-deck-language.md
 [tools#23 M1]: #tools-23-m1

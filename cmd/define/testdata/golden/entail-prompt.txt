@@ -1,0 +1,60 @@
+task:   stem-entails
+model:  
+effort: 
+--- system ---
+You judge whether a sentence teaches a word by using it. You are strict: most sentences do not.
+--- prompt ---
+## The item
+
+Language: `en`
+
+Word: sycophantic
+
+Sentence: The aide was sycophantic, praising a policy he had privately called unworkable.
+
+## What to judge
+
+**entails** — does the sentence make the word's MEANING do work?
+
+The learner will see this sentence with the word blanked out, beside three other options, so the word does NOT have to be the only one in the language that fits — it has to be the one this sentence is ABOUT.
+
+NO: "His ___ behaviour was noted by all" — the word is decorative; the sentence would read the same with almost any adjective, and nothing in it is about flattery.
+NO: "___ decreases prosocial intentions" — a title the word merely appears in.
+YES: "The Times dismissed Oliver Stone's Putin interviews as ___" — dismissal, a fawning interview, a reprinting Kremlin: the sentence is about the quality the word names, even though `obsequious` would also fit.
+YES: "Shipwrights at Chatham laid the ___ of their replica frigate, and the first oak frames will be bolted to it by spring" — frames bolted to it, laid first: the sentence is about the thing the word names.
+
+A near-synonym also fitting is NOT a reason to answer no. That is the veto's job, and it runs against the actual options.
+
+**glosses** — does the sentence DEFINE the word instead of just using it? An appositive ("the alewife, the small silver herring"), a relative clause ("a mesa, which is a flat-topped hill") or a contrast that explains it ("a mesa, too broad to be a butte") are all YES. A sentence that uses the word the way a newspaper would, in front of readers assumed to know it, is NO.
+
+Yes means the item is REJECTED: a sentence carrying its own definition tests reading, not vocabulary.
+
+**named** — does the sentence name a real person, place or institution the reader can picture? "A manager" and "the company" are NO. "The Senate Judiciary Committee" is YES.
+
+**reason** — one clause, for a human reading a rejected item.
+
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "entails": {
+      "type": "boolean"
+    },
+    "glosses": {
+      "type": "boolean"
+    },
+    "named": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "entails",
+    "glosses",
+    "named",
+    "reason"
+  ],
+  "type": "object"
+}

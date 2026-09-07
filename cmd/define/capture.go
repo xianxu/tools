@@ -72,6 +72,16 @@ type Capturer interface {
 	// one. The Outcome already carries every field, so the swap becomes
 	// unexpressible.
 	CaptureReview(out play.Outcome, opt options)
+	// CaptureFlag records a question the learner called BROKEN (#12). The fourth
+	// verb, here for the reason the second and third are: capture is the ONLY
+	// thing that records.
+	//
+	// A VERB OF ITS OWN rather than a flag on CaptureReview, and the reason is
+	// mechanical rather than tidiness: CaptureReview writes a verdict, Fold reads
+	// verdicts to move boxes, and GradeOf(correct=false) is GradeWrong — so a
+	// flag routed through that path would DEMOTE the word on an append-only log.
+	// Two verbs is what makes that unexpressible.
+	CaptureFlag(out play.Outcome, opt options)
 }
 
 // storeCapturer is the only thing that RECORDS a lookup. It is not the only
@@ -118,6 +128,27 @@ func (c *storeCapturer) Capture(word string, found bool, opt options) {
 	// your deck", so it must not claim a word the deck rejected.
 	if c.vocab != nil {
 		c.vocab.Add(word)
+	}
+}
+
+// CaptureFlag appends one EventFlagged, immediately.
+//
+// The options travel with it: a flag exists to diagnose THAT question, so the
+// option set is the evidence — the deliberate opposite of the axis-only rule
+// CaptureReview follows, and for the opposite reason.
+func (c *storeCapturer) CaptureFlag(out play.Outcome, opt options) {
+	if decideCapture(true, opt) == captureNothing {
+		return
+	}
+	key := store.Key(out.Word)
+	if key == "" {
+		return
+	}
+	if err := c.st.AppendEvent(store.ReviewEvent{
+		Word: key, Kind: store.EventFlagged, Found: true,
+		Options: out.Options, At: c.clock.Now(),
+	}); err != nil {
+		c.warnf("could not record the flag for %q: %v", key, err)
 	}
 }
 
@@ -192,3 +223,4 @@ type noopCapturer struct{}
 func (noopCapturer) Capture(string, bool, options)       {}
 func (noopCapturer) CaptureAsk(string, string, options)  {}
 func (noopCapturer) CaptureReview(play.Outcome, options) {}
+func (noopCapturer) CaptureFlag(play.Outcome, options)   {}

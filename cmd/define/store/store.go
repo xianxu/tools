@@ -42,9 +42,53 @@ type Store interface {
 	// Only successful fetches are written here — see cachingFeed for why a
 	// FAILED fetch must not be cached.
 	SetNewsItems(key string, items []NewsItem, at time.Time) error
-	// Forget removes a word from the deck. It does NOT remove events: the deck is
-	// a working set, the log is history, and rewriting the past would corrupt
-	// every statistic derived from it. Reports whether anything was removed;
-	// absence is not an error.
+	// WordFacts returns what --harvest cached about a word: its CEFR band and its
+	// domain. An unharvested word reads as the zero value, which is NOT an error
+	// — it is the state of every word until the first harvest. WordFacts.At is
+	// what tells the two apart, so this needs no second return value the way
+	// NewsItems does.
+	//
+	// A stored record too damaged to parse also reads as unharvested, on purpose:
+	// both are worth one re-ask, and a half-trusted band would reach the
+	// comparison every distractor rule depends on.
+	WordFacts(key string) (WordFacts, error)
+	// SetWordFacts replaces a word's facts. REPLACES, not merges: a band and a
+	// domain are one judgement made in one call, and a merge would leave a word
+	// holding half of one run and half of another.
+	SetWordFacts(key string, f WordFacts) error
+	// Items returns the practice items authored for a word, or none. A word may
+	// hold several — of different Forms — and #12 picks among the ones it renders.
+	//
+	// ORDERED NEWEST FIRST, ties broken by stem. Not insertion order: the same
+	// pass that bounds and neutralises a word's items sorts them, so the cap
+	// keeps the newest. Stated here rather than only in the atlas because this
+	// comment is where #12 reads the contract.
+	//
+	// READ-SIDE RULE, which this surface and WordFacts both obey: a record read
+	// back out of a RuntimeDirs directory is UNTRUSTED INPUT and goes through the
+	// same canonicalisation its write applies. Not because the writer is
+	// suspect — because these files are documented as inspectable, so a
+	// hand-edited one is an invited workflow and an older build's output is a
+	// certainty.
+	//
+	// NewsItems is deliberately OUT of the class, recorded here rather than left
+	// ambiguous: its fields are a feed's text, not a model's, and nothing renders
+	// them into a structure a newline could forge. If that changes — if a
+	// headline ever reaches the board — it joins the rule.
+	Items(key string) ([]Item, error)
+	// SetItems replaces a word's authored items, for the same reason
+	// SetNewsItems replaces rather than appends: a re-harvest must not silently
+	// double a word's material every run.
+	SetItems(key string, items []Item) error
+	// Forget removes a word and everything it OWNS: the deck entry, the news
+	// cache, the harvested band and domain, and the authored items. All of those
+	// are derived from the word and regenerable by looking it up again.
+	//
+	// It does NOT remove events: the deck is a working set, the log is history,
+	// and rewriting the past would corrupt every statistic derived from it.
+	//
+	// Reports whether the word was in the DECK; absence is not an error, and
+	// clearing stale derived files for a word with no deck entry is not
+	// "found something".
 	Forget(key string) (removed bool, err error)
 }

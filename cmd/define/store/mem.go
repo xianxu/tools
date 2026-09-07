@@ -19,9 +19,18 @@ type Mem struct {
 	// cannot back makes the conformance row asserting it unfalsifiable.
 	userModel string
 	news      map[string]newsCache
+	facts     map[string]WordFacts
+	items     map[string][]Item
 }
 
-func NewMem() *Mem { return &Mem{words: map[string]Word{}, news: map[string]newsCache{}} }
+func NewMem() *Mem {
+	return &Mem{
+		words: map[string]Word{},
+		news:  map[string]newsCache{},
+		facts: map[string]WordFacts{},
+		items: map[string][]Item{},
+	}
+}
 
 // newsCache is items plus WHEN, because the timestamp is what distinguishes
 // "fetched and found nothing" from "never fetched".
@@ -135,13 +144,63 @@ func (m *Mem) SetNewsItems(key string, items []NewsItem, at time.Time) error {
 	return nil
 }
 
+func (m *Mem) WordFacts(key string) (WordFacts, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.facts[Key(key)], nil
+}
+
+func (m *Mem) SetWordFacts(key string, f WordFacts) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.facts == nil {
+		m.facts = map[string]WordFacts{}
+	}
+	m.facts[k] = sanitiseFacts(f)
+	return nil
+}
+
+func (m *Mem) Items(key string) ([]Item, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	its := m.items[Key(key)]
+	if len(its) == 0 {
+		return nil, nil
+	}
+	return copyItems(its), nil
+}
+
+func (m *Mem) SetItems(key string, items []Item) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.items == nil {
+		m.items = map[string][]Item{}
+	}
+	// Copied, not aliased, as SetNewsItems is: the caller keeps its slice and a
+	// later append on their side must not mutate what this store believes it
+	// holds.
+	m.items[k] = sanitiseItems(items)
+	return nil
+}
+
 func (m *Mem) Forget(key string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k := Key(key)
-	if _, ok := m.words[k]; !ok {
-		return false, nil
-	}
+	_, inDeck := m.words[k]
+	// Everything the word owns, matching YAML's perWordDirs — the news cache,
+	// the harvested facts and the authored items all go with it. Events stay.
 	delete(m.words, k)
-	return true, nil
+	delete(m.news, k)
+	delete(m.facts, k)
+	delete(m.items, k)
+	return inDeck, nil
 }

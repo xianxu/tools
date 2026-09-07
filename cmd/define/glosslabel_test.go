@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/play"
@@ -142,4 +143,44 @@ func TestNearSynonymExclusion(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The longest-first ordering is now COMPUTED rather than hand-maintained, and
+// the atlas advertises that as the improvement. Verified unpinned at M1's
+// boundary review: inverting the comparator left the whole package green.
+//
+// It is load-bearing. leadingLabel prefix-matches, so "American football" must be
+// tried before any shorter label that prefixes it — reverse the order and the
+// longest labels become unreachable, silently costing those senses their axis.
+func TestDomainLabelsAreLongestFirst(t *testing.T) {
+	if len(noadDomainLabels) < 2 {
+		t.Fatal("too few labels for the ordering to mean anything")
+	}
+	for i := 1; i < len(noadDomainLabels); i++ {
+		if len(noadDomainLabels[i]) > len(noadDomainLabels[i-1]) {
+			t.Fatalf("%q precedes the longer %q; a prefix match would stop short",
+				noadDomainLabels[i-1], noadDomainLabels[i])
+		}
+	}
+	// And the property that motivates it, asserted directly rather than inferred
+	// from the sort: a label that is a prefix of another must come after it.
+	for _, long := range noadDomainLabels {
+		for _, short := range noadDomainLabels {
+			if long == short || !strings.HasPrefix(long, short) {
+				continue
+			}
+			if indexOfLabel(long) > indexOfLabel(short) {
+				t.Errorf("%q is a prefix of %q but is tried first", short, long)
+			}
+		}
+	}
+}
+
+func indexOfLabel(l string) int {
+	for i, x := range noadDomainLabels {
+		if x == l {
+			return i
+		}
+	}
+	return -1
 }

@@ -608,7 +608,11 @@ the boundary if a config arrives later.
 ```
 words/<lang>/<slug>.yaml one file per word, under its language
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
-                         kinds: looked-up, asked
+                         kinds: looked-up, asked, reviewed, flagged
+usage/<slug>.yaml        the news cache — per word and FLAT, so it is shared
+                         across languages (see Forget's two axes)
+facts/<lang>/<slug>.yaml a word's CEFR band and domain (#10)
+items/<lang>/<slug>.yaml authored practice items (#10), what a cloze is built from
 lang.txt                 the directory's language (#23)
 user-model.<lang>.md     the learner model — markdown, because a person edits it
 ```
@@ -1412,9 +1416,297 @@ trimming acts on the clew"*). Depth and ordering, not a different topic. The
 `directive` fields are aimed at `#10`'s authoring, which is where the payoff is
 designed to land.
 
+## Harvested facts: a band and a domain per word (`#10 M1`)
+
+`define --harvest` writes the material a review sitting will draw on, ahead of
+time. The fourth and fifth artifacts in the working directory: `facts/<lang>/`
+holds one record per word — a CEFR band and a subject domain — and `items/<lang>/`
+holds the practice items authored from them (`#10 M2`).
+
+**Batch, and the only path here that may block.** Nothing a sitting does reaches
+it, asserted with the model seam made to PANIC rather than left nil — nil passes
+on a loop that reaches for a model behind a `!= nil` guard, which is how a
+network dependency creeps into a path that promises to be offline.
+
+**Assigned once, re-read forever.** The cache check precedes anything that
+touches the network, so a second run over an unchanged deck makes ZERO calls. The
+pin asserts the request COUNT rather than the file's existence — a loop that
+re-asks and rewrites the same answer leaves an identical directory behind.
+`-limit` (default 200) bounds one run's MODEL CALLS — one budget threaded
+through banding, authoring and both judges, charged next to every `llm.Run`
+including the veto's inner loop.
+
+**Calls, not words, and the distinction was a Critical.** The first version
+counted successes per pass, so a word rejected by any judge charged nothing and a
+run whose judge rejected everything cost one author call plus one entail call per
+DECK word against a documented ceiling of 200 — and the same value was spent
+twice, once per pass. The counter a flag increments has to be the resource the
+flag names.
+
+A capped run is partial, says so, and resumes on the next invocation because the
+cache is its own progress marker. A budget that runs out MID-ITEM abandons that
+item rather than writing it with one or two vetted options: an item is cached
+forever and a later run skips a word that has material, so a short write would
+make a budget limit permanently a quality limit for that word.
+
+### Two closed vocabularies, in the store
+
+`store.Band` and `store.Domain` are parse-refusing types, and they live in
+`store` because the store is what decides which values may be persisted.
+
+**The band is arithmetic, which is why the parse refuses.** `Rank()` answers -1
+off the scale, and -1 sorts below A1 — so a band like `B2+` reaching disk would
+pitch every selected distractor at the floor with nothing downstream able to
+tell. Refused answers leave the word unbanded and re-askable, which costs one
+call; the alternative corrupts a cache that is never re-examined.
+
+**`#17` derives from the same type**, and that is what makes the single source
+real rather than documentary (ARCH-PURPOSE). `levelClaim.Band` was free-form
+prose for `#17`'s whole life — harmless while a model was its only reader.
+`--reflect` now validates through `ParseBand` in `checkEvidence`, beside every
+other unusable-claim check, and stores the canonical spelling;
+`renderUserModel` emits a `level:` frontmatter key and `parseLearnerBand` reads
+it back. Absent or unparseable means generic authoring, never an error — which
+covers every learner-model file written before `#10`.
+
+**One domain vocabulary, not three.** `noadDomainLabels` in `glosslabel.go` was
+this repo's closed table, `#17`'s `domainClaim.Name` is free model text, and a
+third open string would have made `topicSpread` — the one measure taken with no
+model — inflatable by casing alone. The set moved into `store`; `glosslabel.go`
+derives its labels from `store.Domains()` and keeps only what it is for, reading
+NOAD's prose. Its longest-first ordering is now COMPUTED rather than a
+hand-maintained invariant, so the property holds for any label anyone adds.
+
+**A domain usually costs no model call at all.** `readGloss` already extracts
+NOAD's printed subject field, so the dictionary answers first and the model is
+the fallback for words NOAD leaves unlabelled. Where the dictionary spoke, its
+label wins outright: a model asked to repeat it must not be able to overwrite an
+editorial fact with a paraphrase.
+
+### Forgetting takes the material with it
+
+`Forget` removes everything a word OWNS — the deck entry, the news cache, the
+harvested band and domain, and the authored items — and nothing else. Events
+stay: the deck is a working set, the log is history.
+
+**It removed only the deck entry until `#10`'s close review**, so a forgotten
+word kept its cached facts and items. Looking it up again re-added it to the deck
+while `--harvest`, seeing facts already harvested and items already present,
+skipped it — which made *"forget this word, its material is bad"* the one thing
+forgetting could not do.
+
+The list is `perWordDirs`, and `TestPerWordDirsCoverEveryRuntimeDir` fails when a
+new runtime directory is added without being classified as per-word or as
+history. Hand-listing is what let `#10` add two directories that `Forget` never
+reached.
+
+### Per-language, because the facts are derived
+
+`facts/<lang>/` and `items/<lang>/` scope like `words/` and unlike `events/` —
+`yaml.go`'s rule is DERIVATION, not storage. `red`, `once`, `actual` and
+`sensible` are real words in English and Spanish with different bands and
+unrelated meanings, and because these are cached forever and replaced rather than
+merged, a flat collision would be permanent: whichever language harvested last
+would own the band, with no re-ask to fix it. `#23` paid for this once with the
+learner model.
+
+`"facts"` and `"items"` are appended at the TAIL of `RuntimeDirs`, which
+`wordsDir`/`eventsDir`/`usageDir` index positionally — inserting elsewhere
+silently repoints three directories at each other.
+
+### Authored items: the model writes the sentence, the deck supplies the options (`#10 M2`)
+
+A second pass inside `--harvest`, after banding, and the ordering is a
+dependency rather than a preference: selection draws from BANDED words, so a
+word cannot supply a distractor until it has a level.
+
+**The model writes the stem and nothing else.** `authoredStem` has no
+distractors field — a model asked for four options writes four it can justify,
+and one of them is usually also correct. That is the failure "selected, never
+invented" exists to prevent, and removing the field is what makes it structural
+rather than a rule someone has to follow.
+
+THREE requirements, each with its counter-example, and **the second and third
+exist because the first batch was read** (see the issue Log — this is what the
+checkpoint bought):
+
+1. the stem must make the word's meaning DO WORK (*"His ___ behaviour was noted
+   by all"* fails — the word is decorative);
+2. it must NEVER GLOSS the word;
+3. it must NAME a real person, place or institution.
+
+**Requirement 2 exists because requirement 1 causes what it forbids.** The
+cheapest way to make a sentence point at a word is to define the word in it, and
+half of the first twenty items came back as appositives — *"the alewife, the
+small silver herring"* — a reading test rather than a vocabulary test. Stating
+the rule was not enough: the system prompt already said *never write a
+definition*. What worked was SHOWING three wrong shapes and two right ones.
+
+**Entailment is scored for a MULTIPLE-CHOICE form, and the first wording was
+conceptually wrong.** It asked whether the word was recoverable *"from the rest
+of the sentence alone"* — a bar for a blank with no options, and unreachable
+without a gloss. The second batch rejected nine of twenty with reasons like
+*"any migratory fish name would fit, AND NO DEFINITION IS SUPPLIED"*: the judge
+citing the absence of the thing the other rule forbids. The learner sees FOUR
+OPTIONS, so whether a specific alternative also fits is the VETO's question,
+asked per pair against the options actually offered. This judge asks the only
+thing the veto cannot — does the sentence make the meaning do work, or is it
+merely a place the word can sit. Rejection went 9 → 1.
+
+**Judged before selected, and CHECKED before judged.** `stemUsesTheWord` is pure
+and runs first: it rejects a stem that does not contain its answer or that
+arrives pre-blanked. The second batch shipped *"...atop the narrow `___` of
+First Mesa"* for `mesa` — the model blanked the word itself against an explicit
+instruction and both judges passed it, because neither was asked. Subtler than
+it looks: that stem DOES contain `mesa`, in the place name, so containment alone
+passes it. A model call to find out whether a string contains a substring would
+be the same mistake as asking one for a domain the dictionary printed.
+
+Then the entailment judge, and only then selection — a stem that fails cannot be
+rescued by better wrong answers, so a rejected one never spends a veto call
+(asserted on the wire). `entails`, `glosses` and `named` are separate verdict
+fields so a batch can be read for WHICH is failing.
+
+### Selection, and why it is not `play.PickOptions`
+
+The rule: same domain (or general vocabulary), at the learner's band or one
+below, never the answer. **One band below rather than above** — a word above the
+learner is unrejectable by knowledge.
+
+**Widening is tiered and reported**, over FIVE tiers in priority order:
+
+1. the answer's own domain, at band — a legal word's best wrong answers are
+   other legal words;
+2. **a domain the LEARNER reads, at band** — `#17`'s parsed domain claims, which
+   is what makes them a delivered consumer rather than a value nothing reads;
+3. general vocabulary, at band;
+4. any domain, at or below band;
+5. above the learner's band, as a last resort that says so.
+
+It relaxes the DOMAIN before it relaxes the ceiling, and the tier reached is
+printed for every WRITTEN item — `define: N item(s) drew options from <tier>`,
+summed over the batch — because a selector that silently falls back to "any word
+at all" is indistinguishable from one that is working.
+
+**Every tier is printed, including the best one**, and both halves of that
+sentence were once false. Listing only the widened tiers made the doc's own
+"for every item" untrue, and it made the pin against miscounting unfalsifiable:
+a healthy batch that never widened printed nothing either way, which is exactly
+the shape a test naturally builds. The counts are taken AFTER the write, so an
+item whose every candidate was vetoed contributes to nothing — a batch statistic
+describes what the batch shipped.
+
+**Batch-level diversity pressure**, measured into existence by the first real
+batch: `ephemeral` served as a wrong answer in 8 of 20 items and the four A1
+words selected each other every time. Every other constraint is per-ITEM, so
+nothing stopped one eligible word from serving the whole batch — and a learner
+who meets a word as a wrong answer eight times learns it is never the answer. A
+SORT, not a cap: least-used eligible candidates come first, so repetition is what
+happens when the deck has nothing else rather than the default. A cap would
+refuse to fill an option set, and fewer options is a worse question than a
+repeated one.
+
+**Its limit is deck composition, and that is a fact about decks rather than a
+defect.** Measured on a homogeneous pool the pressure cuts worst-case reuse from
+6 to 4 and uses every word. On the 20-word checkpoint deck it does much less: for
+`keel` (C1 Nautical) the ENTIRE general-at-band tier is two words, because eight
+of twenty are specialists in domains of one. Pressure cannot spread what does not
+exist; the tiering reports it, and a deck of hundreds dilutes it.
+
+**A question the checkpoint raised, since ANSWERED in part.** Reading the batch
+showed that a specialist word beside three general ones is identifiable by
+REGISTER alone — `keel` against `ephemeral`, `pulp`, `mesa` is answerable without
+knowing what a keel is. Tier 2 above is the answer for the domains we know the
+learner reads: those now outrank general vocabulary. What remains open is the
+wider version — whether an ARBITRARY specialist domain at band beats general
+vocabulary for a learner who has never read in it — and the checkpoint deck was
+too small to say.
+
+`pickDistractors` and `play.PickOptions` are **two rules, not one with two
+callers**, and the finding is recorded in full at `harvest_item.go`. In short:
+different unit (words vs glosses — PickOptions' entry-identity dedup has no
+analogue when the option IS the word), different constraint (level vs variety of
+axis), different failure cost (one question vs a forever cache), and `play`
+imports nothing by design so it cannot see `store.Band`.
+
+### The veto, and the two committed known-bad cases
+
+Done-when 4 and 5 each demand a case that must be REJECTED, because a judge that
+has never rejected anything is worth what no judge is worth.
+
+- **`obsequious` beside `sycophantic`** — a near-synonym, and under the selection
+  rule it is MORE likely to be chosen than a random word, not less: same domain,
+  same band. The plausibility that makes a good distractor is exactly what makes
+  this the failure mode, and the veto is what earns it. Moved here from `#12`
+  with the selection it belongs to.
+- **`"His sycophantic behaviour was noted by all."`** — the Spec's own opening
+  example of a stem its context does not entail.
+
+The veto asks about ONE pair per call against the BLANKED sentence. One pair
+because a batched "which of these also fit" invites ranking rather than
+judgement, and the failure is a single candidate that happens to fit — which a
+ranking hides by putting it second. Blanked because a sentence with its answer
+still in it makes every candidate look wrong.
+
+### Bounded growth
+
+`store.ItemCap` is four per word, enforced at the WRITE rather than by callers,
+and `prune` is deterministic — newest first, ties broken by stem, so two items
+authored in one run (sharing a timestamp exactly) still prune the same way
+twice. Newest rather than best because nothing here can rank quality, and
+pretending to would be the self-oracle problem again.
+
+### The measure, and what it does not say
+
+`--harvest -agreement N` re-asks a sample of already-banded words N times and
+reports the fraction agreeing with the modal band. **Its own mode, writing
+nothing**, because measuring N assignments cannot coexist with "one call per
+unbanded word, zero on a second run" — splitting them keeps both properties true
+of the path that runs daily.
+
+The unit test owns the ARITHMETIC on synthetic bands; a fake seeded to vary would
+report how the fake was seeded. The FLOOR (0.8 over five assignments) is asserted
+against the live service, which is the only place the fraction says anything
+about a model.
+
+**The floor is measured on the prompt PRODUCTION SENDS**, and that is not a
+detail. The first version of the row passed a bare word — no gloss, no known
+domain — so it floored a shape `--harvest` essentially never sends, since every
+English deck word in NOAD has a gloss. It now derives `gloss, known` through
+`senseFacts` exactly as `runHarvest` does. Measured 2026-09-04 on that shape:
+**1.00 across eight words**, five assignments each, with the known-domain branch
+exercised by three of them.
+
+**One thing the re-measure exposed, worth carrying into M2:** the
+dictionary-first domain is only as good as the FIRST labelled sense. `run` came
+back `Cricket` and `set` came back `Printing` — correct readings of NOAD's
+document order, and close to arbitrary as a description of what those words
+mostly mean. For a highly polysemous word the label is a coin toss among its
+specialist senses, and `pickDistractors` will select on it.
+
+**It is STABILITY, not correctness, and the distinction is load-bearing.** A
+model that is confidently and consistently wrong scores 1.00 here, and every
+downstream use of a band rests on the scale being right. Off-scale answers count
+against the score rather than being dropped from the denominator, so a refusal
+reads as the instability it is. If distractors ever read as mispitched, this is
+the first thing to suspect and the hand-labelled sample the issue defers is the
+thing to build. The live run's own bands are worth reading in that light —
+`run` and `set` at A1 and `ephemeral` at C1 are right, while `quokka` at C2 says
+more about rarity than about any level a learner is at.
+
 ## Entry modes
 
-`run` dispatches modes first (`-forget`), then on argument count. The function
+`run` validates the MODE SET first, then dispatches, then judges argument count.
+
+**Modes are mutually exclusive, checked in ONE enumeration** (`modeCollision`
+over a `modes` slice `run` and its table test share). Not pairwise: `#10` added
+`-harvest` and the pairwise fix refused it beside `--play` and `--reflect` while
+`-forget` and `--llm-check` — which dispatch above that switch — still swallowed
+it in silence. A sixth mode is now covered by construction. This is a **breaking
+change to the CLI**: `define --llm-check --play` and `define -forget w --play`
+used to run the first mode reached and now exit `2`.
+
+Beyond the set check, `run` dispatches modes first (`-forget`), then on argument count. The function
 every path converges on is **`lookupAndRender`**, not `defineOnce` — the raw
 editor bypasses `defineOnce` entirely, which is why capture lives one level down.
 
@@ -2289,9 +2581,13 @@ with no row there draws an underline that does nothing, which
 `TestEveryRegionKindIsActionable` catches by deriving its loop from
 `numRegionKinds`.
 
-- **The prompt word is line 1, column 0 of the write the loop already makes.**
-  Both forms put the headword on their first line, so there is nothing to search
-  for and no offset to survive a wrap.
+- **A prompt region is issued only when its claim is TRUE (`promptRegions`).**
+  This was once "the prompt word is line 1, column 0", justified by "both forms
+  put the headword on their first line" — a premise `#12`'s cloze broke, which
+  put the region over the blanked sentence so a click spoke the answer. There are
+  three forms now and the count is not the point: the region is issued when line
+  0 actually begins with the headword, and `TestAPromptRegionCoversTheTextItClaims`
+  reads every form's coordinates back out of the text written.
 - **The reveal's regions come from `Render` and are SHIFTED into the coordinates
   of what is written.** A form's reveal is larger than the render inside it —
   `Choice.Reveal` names the right option and the learner's pick first — so the
@@ -2374,6 +2670,77 @@ too, so the bar cannot charge for a word the learner just curated away. `finish`
 takes the figures rather than re-reading: `#39` T7's reasoning (the learner
 should see the AFTER-today figure) survives, because the in-memory copy already
 is that figure.
+
+### Form 2.2: the cloze (`#12`)
+
+The word's own sentence, blanked, with words to choose from. It consumes `#10`'s
+authored items and builds nothing: the stem was written offline, the distractors
+were selected from the banded deck and vetoed one at a time, so a cloze sitting
+makes NO model call and no network call — asserted with the seam made to panic.
+
+**The selection rule gains one clause: an authored item beats a definition
+match.** `#10` exists because a definition match is the weaker test — 2.3 asks
+which gloss belongs to a word, this asks which word belongs to a sentence — so
+preferring 2.3 when both are available would make `#10` decoration. The board
+still triages mature words: `#42`'s rule, unchanged.
+
+**`optionSet` is what `Choice` and `Cloze` share**, and it is the mechanical
+contract rather than the content: numbered from 1, a digit past the end treated
+as a stray key rather than a wrong answer, `Grade` asked before the reveal, the
+session's reserved keys never in the answer set, and the pick remembered for the
+reveal. Those rules are documented across four paragraphs of `Question`'s doc
+comment, and a second implementation is where a documented subtlety goes to be
+forgotten. What each form keeps is its prompt, its reveal, and what the keys
+MEAN.
+
+`Cloze` deliberately does not implement `Missed`: its options come from `#10`'s
+band-and-domain selection rather than NOAD's axes, so "which axis did you
+confuse" has no answer, and a form answering it would put a fabricated axis in
+the log.
+
+### Blanking without leaking
+
+`blankStem` is the whole risk, because the failure is SILENT — a question that
+gives away its answer renders perfectly and grades perfectly. It blanks EVERY
+occurrence (a stem using the word twice hands it over), takes the whole word RUN
+rather than the answer's own length (`keels` must not leave `___s`), refuses a
+substring (`set` inside `sunset`), and takes a compound whole because `___-dog`
+narrows the answer to one word.
+
+`#10`'s `blankOut` now delegates to it. That plan had justified two
+implementations by saying a miss in the veto's helper cost "some context"; it
+blanked the first occurrence only, so a twice-using stem showed the veto judge
+the answer verbatim — on a veto `#10` made load-bearing.
+
+**The fuzz found two things in two minutes** and both are recorded because
+neither was reasoned to. A HANG: invalid UTF-8 decodes to `RuneError`, which
+matches itself and is not a word rune, so the match had no word run and the loop
+never advanced. And `blankStem("_", "_") = "___"`, which was a wrong INVARIANT —
+`_` is not a word rune, so "does the answer occur as a word" is ill-defined for
+it. The real defect was upstream: an answer with no letter and no digit is not a
+word, and `usableItem` now refuses one. The first fix for THAT had a hole one
+predicate over, because `isWordRune` counts hyphens as inside a word — right for
+tokenising `hot-dog`, wrong for "is this a word".
+
+### The flag (`?`), and why it is not a verdict
+
+A learner presses `?` to say the QUESTION is broken. It records the option set —
+deliberately unlike `Missed`, which records only the axis because "picked
+larceny is a fact about one question whose option set no longer exists"; a flag
+exists to diagnose that question, so the options are the evidence.
+
+**It scores nothing**, and the machinery that guarantees it is the point.
+`CaptureFlag` is a fourth verb on `Capturer` rather than a parameter on
+`CaptureReview`, because `CaptureReview` writes a verdict and `Fold` reads
+verdicts to move boxes — a flag routed through it would DEMOTE the word, on an
+append-only log. `EventFlagged` is its own kind, and `Fold` ignores it BY
+CONSTRUCTION: it already skips every kind that is not `EventReviewed`.
+
+`Flagging` is the fifth optional capability beside `Missed`, `Dropping`, `Batch`
+and `Grid`, asked through a helper — a type switch on a concrete form is what
+`#6`'s Done-when forbids. It is heard in all three session states, and the one
+that needed work was AFTER answering: `session.go` makes every rune advance once
+graded, which is exactly when a learner discovers a question is broken.
 
 ### Form 2.3: choosing a definition
 

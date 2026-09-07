@@ -34,9 +34,47 @@ define -no-color bank       # never emit ANSI (also automatic when piped)
 
 ## Reviewing what is due
 
-**`define --play` reviews what is due today.** There are three kinds of question,
-and you never choose which you get: two of them depend on how big your deck is,
-and the third on how well you already know the word.
+**`define --play` reviews what is due today.** There are four kinds of question,
+and you never choose which you get: which one you meet depends on how well you
+already know the word, and on what material the tool has for it.
+
+### The sentence, once a word has one
+
+The word's own sentence with the word blanked out, and four words to choose
+from. `define --harvest` writes these ahead of time, so they cost nothing to
+show:
+
+```
+Judge Mehta noted that securities fraud claims lay outside his ___ and
+transferred that portion of the case to the Southern District of New York.
+
+1  defenestrate
+2  bailiwick
+3  ephemeral
+4  obsequious
+```
+
+**This is the form the tool prefers when it can**, because picking the word that
+fits a sentence is a harder and more useful test than picking a definition that
+matches a word. Reveal it and you see the sentence whole, which is the point:
+the word doing its work in the context it was written for.
+
+The line under the question tells you what works:
+
+```
+1-4 = pick the word, ? = bad question, d = remove from deck, Ctrl-C to stop
+```
+
+**If a question is bad, press `?`.** That records it — with the four options you
+were shown, which is what makes it diagnosable later — and moves on WITHOUT
+marking you wrong. A broken question is not evidence about you, so it does not
+move the word's schedule in either direction.
+
+It stays offered after you have answered, which is usually when you notice:
+
+```
+any key = next word, ? = bad question, d = remove from deck, Ctrl-C to stop
+```
 
 ### Multiple choice, once your deck can supply distractors
 
@@ -160,7 +198,8 @@ test can. As a board closes it leaves one line naming the words you marked no.
 
 | key | does |
 |---|---|
-| `1`–`4` | multiple choice: pick the definition |
+| `1`–`4` | multiple choice: pick the definition, or on a cloze pick the word |
+| `?` | on a cloze: bad question — records it with the options you were shown, and moves on without marking you wrong |
 | `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
 | click | board: mark that word. Anywhere else in a sitting, a click plays the word rather than answering |
 | Tab | board: cycle what a mark means — yes, no, then drop |
@@ -357,6 +396,84 @@ says so and exits `1` rather than looking up a sentence.
 miss stays a miss, and an explicit `?` alongside it is a usage error (exit `2`)
 rather than a guess at which of the two contradicting flags you meant.
 
+## Practice material, written ahead of time
+
+**`define --harvest` prepares the material a review sitting will use.** It reads
+your deck and, for every word it has not seen before, records two facts that
+never change: a CEFR band (`A1`–`C2`) and a subject domain. Those are what make
+a good wrong answer possible — a distractor is *selected* from real words at your
+level, never invented.
+
+It is batch, on demand, and the only thing in `define` that may take a while.
+Nothing a sitting does ever waits on it, and a review works perfectly well
+against a deck that has never been harvested; it simply has less to draw on.
+
+**It asks about each word once, ever.** Run it again and it re-reads what it
+already knows and makes no calls at all, so the cost does not grow with time —
+only with new words. `-limit N` caps the **model calls** one run may make
+(default 200) — counted across both halves, since banding a word and writing its
+item are both calls. A capped run is a partial run and says so, and running again
+picks up where it stopped, so a large deck is harvested over several runs rather
+than in one long one.
+
+**The domain usually costs nothing.** When your dictionary already prints a
+subject field on a word — `Law`, `Medicine`, `Nautical` — that label is used
+directly and the model is never asked. Most words carry no field at all and are
+simply `general`, which is the common and correct answer.
+
+**It then writes the practice items.** For every banded word without material,
+the model writes one sentence that USES the word — not a definition — and the
+wrong answers are **selected from your own deck**, never invented: same subject
+field where it can, at your level or one step below, and never above it. A word
+you do not know is not a wrong answer you can reject; it is one you eliminate by
+ignorance, which teaches nothing.
+
+Four things are checked before an item is kept, and each says so when it fires:
+
+- **the sentence must actually contain the word**, unblanked. Checked without
+  asking a model, because it costs nothing to check.
+- **the word's meaning must do the work.** *"His ___ behaviour was noted by
+  all"* is thrown out: the word is decorative there, and the sentence would read
+  the same with almost any adjective. You will see four options, so the word does
+  not have to be the only one in the language that fits — the sentence has to be
+  *about* what it means.
+- **the sentence must not define the word.** *"the alewife, the small silver
+  herring"* is a reading test, not a vocabulary test.
+- **it must name someone or somewhere real** — not "a manager", not "the
+  company".
+
+Then each wrong answer is checked on its own: a near-synonym like `obsequious`
+beside `sycophantic` would also fit the blank, so it is vetoed and dropped.
+
+If nothing survives, the word stays unauthored and the next run tries again. A
+word keeps at most four items; the oldest are dropped.
+
+**Where the wrong answers come from is reported**, because on a small deck it
+matters. It looks for words in the same subject field first, then in a field
+*you* read in, then ordinary vocabulary, then anything at or below your level —
+and only reaches above your level as a last resort. Whatever it settled for, it
+says so: `3 item(s) drew options from any domain, at or below band` means your
+deck could not supply better ones yet, not that the material is wrong.
+
+**`define --harvest -agreement N` measures how stable the banding is.** It
+re-asks a sample of already-banded words N times each and reports how often the
+answers agree. It writes nothing, so measuring cannot disturb what it measures.
+
+Read the number for exactly what it says: **agreement is stability, not
+correctness.** A model that gives the same wrong band every time scores a perfect
+1.00. It measures the one property the cache actually depends on — that a band
+assigned once is the band this model usually gives — and it cannot tell you the
+scale is right.
+
+`--harvest` needs a model configured (see `--llm-check`). Without one it says so
+and exits `1`. If the model becomes unavailable mid-run, everything already
+banded is saved and only the harvesting stops.
+
+**One mode at a time.** `-harvest`, `--play`, `--reflect`, `-forget` and
+`--llm-check` are modes, and asking for two on one line is a usage error (exit
+`2`) rather than a guess at which you meant. Previously whichever dispatched
+first silently won.
+
 ## What it writes, where you run it
 
 **`define` reads and writes the current directory.** *Every* successful lookup —
@@ -371,10 +488,21 @@ A model that is configured but does not answer says so, and the question is kept
 words/en/sycophantic.yaml  one file per word, under its language
 words/es/madrugar.yaml     a different language, a different deck
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
-                           kinds: looked-up, asked, reviewed. A reviewed record
-                           carries correct:, and a MISS from the multiple-choice
-                           form also carries missed: — which kind of wrong answer
-                           it was (domain, register, general)
+                           kinds: looked-up, asked, reviewed, flagged. A
+                           reviewed record carries correct:, and a MISS from a
+                           multiple-choice form also carries missed: — which
+                           kind of wrong answer it was (domain, register,
+                           general). A flagged record is a question you called
+                           broken: it carries options: — every word you were
+                           shown — and no correct:, because it is not evidence
+                           about you and moves nothing
+facts/en/sycophantic.yaml  a word's CEFR band and domain, written by
+                           --harvest and never re-asked; per language, because
+                           `red` is a different word in English and Spanish
+items/en/sycophantic.yaml  practice items authored ahead of time by
+                           --harvest, per language: a sentence with its answer
+                           and the words vetoed to sit beside it. This is what
+                           a cloze question is built from
 lang.txt                   which language this directory is in
 user-model.en.md           written by --reflect, read to pitch answers; one per
                            language, because it is read off that language's
@@ -443,7 +571,7 @@ recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
 scripting a dictionary should not mutate a deck — and neither does it ask.
 
 ```sh
-define --forget sycophantic   # drop a word from the deck (history is kept)
+define --forget sycophantic   # drop a word and its material (history is kept)
 DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
 ```
 

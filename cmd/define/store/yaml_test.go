@@ -520,3 +520,219 @@ func TestYAMLRoundTripsTheFormThatAsked(t *testing.T) {
 		t.Errorf("%d form: keys on disk, want 3 — omitempty must drop the one that was never set:\n%s", n, b)
 	}
 }
+
+// The homograph, at the store level: `red` is A1 general vocabulary in English
+// and a C1-ish noun ("network") in Spanish, and both decks hold it.
+//
+// This is #23's rule one member further out. A band and a domain are DERIVED
+// from a word in a language, so they scope like words/ and unlike events/. Flat
+// storage would collide them — and because facts are cached FOREVER and a second
+// write REPLACES rather than merges, the collision would be permanent: whichever
+// language harvested last would own the band, silently, with no re-ask to fix it
+// because the word would read as already harvested.
+func TestWordFactsArePerLanguage(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+
+	en := store.WordFacts{Band: store.A1, Domain: store.DomainGeneral, At: at}
+	esDomain, ok := store.ParseDomain("Computing")
+	if !ok {
+		t.Fatal(`ParseDomain("Computing") refused`)
+	}
+	es := store.WordFacts{Band: store.C1, Domain: esDomain, At: at}
+
+	if err := store.NewYAML(dir, store.DefaultLang, nil).SetWordFacts("red", en); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.NewYAML(dir, "es", nil).SetWordFacts("red", es); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		lang store.Lang
+		want store.WordFacts
+	}{{store.DefaultLang, en}, {"es", es}} {
+		got, err := store.NewYAML(dir, tc.lang, nil).WordFacts("red")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Band != tc.want.Band || got.Domain != tc.want.Domain {
+			t.Errorf("%s facts for red = %+v, want %+v — one language's harvest overwrote the other's",
+				tc.lang, got, tc.want)
+		}
+	}
+
+	// And on disk, where the scoping is actually enforced.
+	for _, lang := range []string{"en", "es"} {
+		if _, err := os.Stat(filepath.Join(dir, "facts", lang, "red.yaml")); err != nil {
+			t.Errorf("facts/%s/red.yaml: %v", lang, err)
+		}
+	}
+}
+
+// Items are per-language for the same reason and one step more obviously: an
+// authored stem is a SENTENCE in one language, and serving a Spanish learner an
+// English stem is not a degraded question, it is a broken one.
+func TestItemsArePerLanguage(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+
+	if err := store.NewYAML(dir, store.DefaultLang, nil).SetItems("red", []store.Item{
+		{Word: "red", Form: store.FormCloze, Stem: "The ___ light", Answer: "red", At: at},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.NewYAML(dir, "es", nil).SetItems("red", []store.Item{
+		{Word: "red", Form: store.FormCloze, Stem: "La ___ social", Answer: "red", At: at},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct{ lang, want string }{
+		{"en", "The ___ light"},
+		{"es", "La ___ social"},
+	} {
+		got, err := store.NewYAML(dir, store.Lang(tc.lang), nil).Items("red")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0].Stem != tc.want {
+			t.Errorf("%s items for red = %+v, want the stem %q", tc.lang, got, tc.want)
+		}
+	}
+}
+
+// A hand-edited, truncated or older-build facts file reads as ABSENT rather than
+// as a half-trusted record.
+//
+// The band is the reason. Rank answers -1 for anything off the scale, which
+// sorts BELOW A1, so a surviving nonsense band would silently pitch every
+// distractor at the floor. One re-ask is the cheaper failure by a wide margin.
+func TestUnparseableWordFactsReadAsUnharvested(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"truncated mid-write", "band: C\n  domain:"},
+		{"a band off the scale", "band: B2+\ndomain: Law\nat: 2026-09-04T12:00:00Z\n"},
+		{"a band in prose", "band: intermediate\ndomain: Law\nat: 2026-09-04T12:00:00Z\n"},
+		{"no band at all", "domain: Law\nat: 2026-09-04T12:00:00Z\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "facts", "en"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(dir, "facts", "en", "word.yaml"), tc.body)
+
+			got, err := store.NewYAML(dir, store.DefaultLang, nil).WordFacts("word")
+			if err != nil {
+				t.Fatalf("WordFacts returned an error rather than degrading: %v", err)
+			}
+			if got.Harvested() {
+				t.Errorf("WordFacts = %+v, want unharvested so the word is re-asked", got)
+			}
+		})
+	}
+}
+
+// A domain that no longer parses degrades WITHOUT voiding the record, which is
+// the asymmetry with the band: general is a usable answer and the label table is
+// explicitly allowed to be incomplete, so losing a domain costs a worse question
+// while losing a band would corrupt selection.
+func TestAnUnknownDomainDegradesButKeepsTheBand(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "facts", "en"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "facts", "en", "word.yaml"),
+		"band: C1\ndomain: Astrology\nat: 2026-09-04T12:00:00Z\n")
+
+	got, err := store.NewYAML(dir, store.DefaultLang, nil).WordFacts("word")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Harvested() {
+		t.Fatal("an unknown domain voided the whole record; only a bad band should")
+	}
+	if got.Band != store.C1 {
+		t.Errorf("band = %q, want C1 preserved", got.Band)
+	}
+	if got.Domain != store.DomainGeneral {
+		t.Errorf("domain = %q, want the general fallback", got.Domain)
+	}
+}
+
+// The read-side rule, at the one place storetest structurally cannot reach:
+// Mem has no disk, so it cannot hold a hand-edited file.
+//
+// The README documents items/ as inspectable, which makes hand-editing an
+// invited workflow rather than an abuse. A distractor carrying a newline would
+// forge a row on #40's grid — the failure oneLine exists to prevent, arriving by
+// the one path the write-side pass cannot cover.
+func TestHandEditedItemsAreNeutralisedOnRead(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "items", "en"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "items", "en", "word.yaml"),
+		"items:\n  - word: word\n    stem: \"a stem\\nwith a forged line\"\n"+
+			"    answer: word\n    distractors:\n      - \"one\\ntwo\"\n")
+
+	got, err := store.NewYAML(dir, store.DefaultLang, nil).Items("word")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d items, want 1", len(got))
+	}
+	if strings.ContainsAny(got[0].Stem, "\r\n") {
+		t.Errorf("stem %q kept a line break read off disk", got[0].Stem)
+	}
+	for _, d := range got[0].Distractors {
+		if strings.ContainsAny(d, "\r\n") {
+			t.Errorf("distractor %q kept a line break read off disk", d)
+		}
+	}
+}
+
+// The classification guard: every runtime directory is either PER-WORD (goes
+// when the word goes) or not, and a new one must be classified deliberately.
+//
+// #10 added two — facts/ and items/ — and Forget reached neither, so a forgotten
+// word kept the material that made it worth forgetting. Listing the per-word
+// directories by hand is what let that happen; this fails when the two lists
+// drift.
+func TestPerWordDirsCoverEveryRuntimeDir(t *testing.T) {
+	// events/ is the ONE runtime directory that is not per-word: it is history,
+	// keyed by day rather than by word, and Forget must never touch it.
+	const historyDir = "events"
+
+	dir := t.TempDir()
+	y := store.NewYAML(dir, store.DefaultLang, nil)
+	perWord := map[string]bool{}
+	for _, d := range store.PerWordDirsForTest(y) {
+		rel := strings.TrimPrefix(d.Path, dir+"/")
+		name, _, hasSeg := strings.Cut(rel, "/")
+		perWord[name] = true
+		// THE SECOND AXIS. The first version of this guard classified only
+		// per-word vs history, so usage/ — per-word but FLAT — passed while
+		// `--forget red` in a Spanish directory removed the English deck's news
+		// cache. A directory's declared scoping must match the path it builds,
+		// or the declaration is decoration.
+		if d.Scoped != hasSeg {
+			t.Errorf("%q declares scoped=%v but builds the path %q; a per-word verb is scoped "+
+				"the same way the surface it touches is", name, d.Scoped, rel)
+		}
+	}
+
+	for _, d := range store.RuntimeDirs {
+		switch {
+		case d == historyDir:
+			if perWord[d] {
+				t.Errorf("%q is listed as per-word; the event log is history and Forget must not touch it", d)
+			}
+		case !perWord[d]:
+			t.Errorf("%q is a runtime directory that Forget does not clear. Either add it to "+
+				"perWordDirs, so forgetting a word removes what it owns, or classify it as "+
+				"history beside events/ and say why.", d)
+		}
+	}
+}

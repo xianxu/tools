@@ -1,0 +1,52 @@
+task:   authored-item
+model:  
+effort: 
+--- system ---
+You write one sentence that teaches a word by using it. You never explain the word, and you never write a definition.
+--- prompt ---
+## The word
+
+ephemeral (CEFR C1)
+
+Language: `en`.
+
+Its dictionary sense:
+
+lasting for a very short time
+
+## What to write
+
+ONE sentence using the word, which will be shown with the word blanked out.
+
+Three requirements:
+
+1. **The sentence must POINT AT the word without defining it.** A reader who knows the word must find it the obvious fit; a reader who does not must be left guessing. "His ___ behaviour was noted by all" is too loose — almost any adjective fits.
+2. **Never gloss the word.** The sentence must not contain a definition of it — not as an appositive, not as a relative clause, not as a contrast. These are all WRONG:
+
+   - "...the run of ___, the small silver herring that spawns upstream."
+   - "...classified the landform as a ___, since it is too broad to be a butte."
+   - "...the ship's ___, the massive timber spine running the length of her hull."
+
+   Write instead a sentence in which the word simply DOES ITS WORK, the way a newspaper would use it in front of readers assumed to know it:
+
+   - "Biologists at the Holyoke Dam counted 400,000 ___ climbing the fish lift this spring."
+   - "The road climbs 300 metres from the valley floor to the ___ above Monument Valley."
+
+3. **Name real people, places or institutions.** Not "a manager" or "the company" — a named subject the reader can picture. This is what the word attaches to in memory.
+
+Write the sentence with the word itself present, spelled exactly as given. Do not blank it out; do not quote it; do not explain it afterwards.
+
+
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "stem": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "stem"
+  ],
+  "type": "object"
+}

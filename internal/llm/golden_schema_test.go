@@ -7,11 +7,15 @@ import (
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
-// vetoVerdict is a representative result type. It is not used in production —
-// #12 will define its own — it exists so the derived schema has a committed
-// snapshot, which is the property schema.go cites to justify reflecting the
-// schema instead of hand-writing one: "a struct field added without thought shows
-// up in a diff."
+// vetoVerdict is a representative result type, not used in production.
+//
+// #10 defines the real one, at AUTHORING time rather than at review time; this
+// shape predates that decision. See #12's Revisions: selection and the veto
+// moved to #10, so an item reaches a sitting already finished.
+//
+// It exists here so the derived schema has a committed snapshot — the property
+// schema.go cites to justify reflecting the schema instead of hand-writing one:
+// "a struct field added without thought shows up in a diff."
 //
 // Without a committed artifact that claim was aspirational: AssertGolden shipped
 // with zero golden files anywhere in the tree.

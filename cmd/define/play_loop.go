@@ -222,19 +222,8 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
 			//
-			// THE PROMPT WORD IS CLICKABLE (T4). A single-word form puts the
-			// headword on its first line at column 0 — `Choice.Prompt()` is the
-			// word, a blank, then the options — and the leading "\n" of this
-			// write puts it on line 1. That is the whole
-			// region-finding problem for a prompt: nothing to search for, no
-			// offsets to survive a wrap, because a headword is never wide enough
-			// to wrap.
-			// Line 1, not 0: the write leads with a blank line, and addRegions
-			// anchors at the line the write STARTS on.
-			writeRendered(stdout, "\n"+q.Prompt()+"\n", []Region{{
-				Kind: RegionHeadword, Text: q.Word(), Word: q.Word(),
-				Line: 1, Col: 0, Width: visibleCells(q.Word()),
-			}})
+			// THE PROMPT WORD IS CLICKABLE (T4), when the prompt has one.
+			writeRendered(stdout, "\n"+q.Prompt()+"\n", promptRegions(q))
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -448,6 +437,14 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// shows the cost AFTER this answer without reading anything.
 				held.answered(out, d.clock.Now())
 				refresh()
+			case play.OutcomeFlag:
+				// Its own arm, calling its own verb — exactly as OutcomeDrop
+				// calls Forget rather than routing through CaptureReview. A flag
+				// records no verdict, so nothing reaches Fold and the word
+				// neither promotes nor demotes.
+				d.capture.CaptureFlag(out, opt)
+				refresh()
+				fmt.Fprintf(stdout, "\nflagged %q as a bad question\n", out.Word)
 			case play.OutcomeDrop:
 				// Through the store's own Forget, which is --forget's path: the deck
 				// loses the word and the events keep it. Reported, because removing
@@ -988,6 +985,21 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			continue
 		}
 		entry := ParseEntry(text)
+		// AN AUTHORED ITEM BEATS A DEFINITION MATCH, which is the whole of #12's
+		// clause on the selection rule.
+		//
+		// #10 exists because a definition match is the WEAKER test — it asks
+		// which gloss belongs to a word, where a cloze asks which word belongs to
+		// a sentence. The item was authored to be the better question, so
+		// preferring 2.3 when both are available would make #10 decoration.
+		//
+		// The board still triages mature words above (#42's rule, unchanged):
+		// that rule was hard-won and changing it is a different issue with its
+		// own evidence.
+		if q := clozeAsk(d, opt, key, entry, marks, day, stderr); q != nil {
+			qs = append(qs, q)
+			continue
+		}
 		if q := ask(key, entry); q != nil {
 			qs = append(qs, q)
 			continue
@@ -1167,6 +1179,50 @@ func (sd *sittingDeck) marksIn(word, written string) []Region {
 	return out
 }
 
+// promptRegions is what a form's PROMPT offers to a click.
+//
+// LOCATED, NOT ASSUMED — the rule marksIn states thirty lines up ("the form owns
+// its own layout, and a formula here would be a second copy of it that a new
+// form silently invalidates"), applied to the one place that was still using the
+// formula.
+//
+// The formula was `Choice.Prompt()`'s shape read as every form's: line 0 is the
+// headword, at column 0, as wide as the word. Cloze's prompt is a blanked
+// sentence, so the region landed on the sentence's first eleven cells — and a
+// click there SPOKE THE ANSWER, while the underline advertised its length. That
+// is precisely what Blank exists to prevent, arriving by a path Blank cannot see.
+// Cloze's own doc comment said the premise did not hold here; saying it is not
+// the same as acting on it.
+//
+// So the region is issued only when the claim it makes is TRUE. The predicate is
+// the region's own coordinates read back as a sentence — "line 0 begins with the
+// headword, and the first visibleCells(word) cells of it are that word" — which
+// is why TestAPromptRegionCoversTheTextItClaims can assert exactly the same
+// thing over every form without knowing which forms have one.
+//
+// Searching the whole prompt instead would be WORSE than the formula: a cloze
+// prompt does contain its answer, among the options, so "find the word" would
+// underline the correct option. The claim is about a POSITION, so a position is
+// what gets checked.
+//
+// Nothing to worry about with wrapping: a headword is never wide enough to wrap.
+func promptRegions(q play.Question) []Region {
+	word := q.Word()
+	if word == "" {
+		return nil
+	}
+	line0, _, _ := strings.Cut(q.Prompt(), "\n")
+	if !strings.HasPrefix(line0, word) {
+		return nil
+	}
+	// Line 1, not 0: the write leads with a blank line, and addRegions anchors at
+	// the line the write STARTS on.
+	return []Region{{
+		Kind: RegionHeadword, Text: word, Word: word,
+		Line: 1, Col: 0, Width: visibleCells(word),
+	}}
+}
+
 // figures is what the bar and the summary are built from: a walk over the deck
 // slice, no IO. A few thousand iterations of at most twenty integer
 // multiplications, which is why it is charged per ANSWER rather than per frame —
@@ -1209,9 +1265,28 @@ func livePrompt(s play.Session) string {
 		// Answered, and the answer is on screen. The only thing left is to read
 		// it and move on — offering y/n here would invite a second verdict on a
 		// question that already has one.
-		return gradedPrompt
+		//
+		// EXCEPT the flag, which is not a second verdict and is most useful
+		// exactly here: a learner discovers a question was broken by reading the
+		// reveal. Derived from the FORM rather than a constant, because "any key
+		// = next word" is a lie on a form where `?` does something else — the
+		// same class gradePrompt below was created to fix.
+		return gradedPromptFor(q)
 	}
 	return gradePrompt(q)
+}
+
+// gradedPromptFor is the post-answer line, naming the flag when the form has one.
+//
+// A function rather than the const it used to be, for the reason gradePrompt is:
+// a keys line promising a key that does nothing — or omitting one that does
+// something — is a bug no test could see, because every test types the keys the
+// line names.
+func gradedPromptFor(q play.Question) string {
+	if play.CanFlag(q) {
+		return "any key = next word, " + flagKeys + sessionKeys
+	}
+	return gradedPrompt
 }
 
 // The two prompt lines livePrompt returns, named because README.md quotes them
@@ -1234,6 +1309,11 @@ const (
 	// gradedPrompt is shown once the answer is in and the definition is up.
 	// DERIVED from the pair above, so the wording cannot drift between them.
 	gradedPrompt = "any key = next word, " + sessionKeys
+	// flagKeys names the bad-question gesture for a form that has one (#12).
+	// After a verdict is when a learner discovers a question was broken, so this
+	// is the state where naming it matters most — and "any key = next word" is
+	// actively wrong there, because `?` does something else.
+	flagKeys = string(play.FlagKey) + " = bad question, "
 )
 
 // reservedKeys is the session's own half of the prompt, for THIS form.

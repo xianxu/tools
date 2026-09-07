@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // correctionsMarker is the boundary between what --reflect generates and what
@@ -48,6 +50,21 @@ func renderUserModel(m learnerModel, meta modelMeta) string {
 
 	b.WriteString("---\n")
 	b.WriteString("type: user-model\n")
+	// level: is the MACHINE-READABLE half of the ## Level section below, and it
+	// exists because #10 needs the learner's band as a VALUE.
+	//
+	// The prose under ## Level is for a person, and parsing "**C1** — Reaches
+	// for precise low-frequency words" back into a type means re-deriving the
+	// renderer's formatting in a reader — the second source this file's other
+	// comments keep warning about. A frontmatter key is the same fact stated
+	// once, where the file's structure is already made.
+	//
+	// Not a second artifact beside this one, for the same reason: two files
+	// holding one learner's level is exactly how #23's Spanish --reflect came to
+	// overwrite the English model.
+	if m.Level.Band != "" {
+		fmt.Fprintf(&b, "level: %s\n", m.Level.Band)
+	}
 	fmt.Fprintf(&b, "updated: %s\n", meta.Updated.Format("2006-01-02"))
 	// The count beside a window must be the count WITHIN it (BR-25).
 	fmt.Fprintf(&b, "window: %s..%s          # %d lookups, %d questions\n",
@@ -239,4 +256,41 @@ func oneLineAll(words []string) []string {
 		out = append(out, oneLine(w))
 	}
 	return out
+}
+
+// parseLearnerBand reads the learner's CEFR band out of a learner model.
+//
+// Pure over the markdown Store.UserModel() already returns, so authoring needs
+// no new seam and no second read of the directory.
+//
+// ABSENT IS NOT AN ERROR, and this is the case that matters most: it covers a
+// first run before --reflect has ever been called, a model whose level claim was
+// dropped for want of evidence, AND every learner-model file written before #10
+// existed — none of which carry the key. All three mean the same thing to the
+// caller, which is generic authoring rather than a failure.
+//
+// Only the FRONTMATTER is scanned. A "level:" line in the human-owned
+// ## Corrections section is a person writing prose, not a machine field, and
+// reading it would let the file's one un-generated region change what the
+// generated region means.
+func parseLearnerBand(md string) (store.Band, bool) {
+	const fence = "---"
+	lines := strings.Split(md, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != fence {
+		return "", false
+	}
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) == fence {
+			return "", false // end of frontmatter, no level key
+		}
+		key, val, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(key) != "level" {
+			continue
+		}
+		// Through the same parse that wrote it. A hand-edited "level: fluent"
+		// reads as no band rather than as a band nothing can compare.
+		return store.ParseBand(val)
+	}
+	// An unterminated frontmatter is a truncated file, not a model.
+	return "", false
 }

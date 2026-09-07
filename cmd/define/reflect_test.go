@@ -150,6 +150,57 @@ func TestCheckEvidenceDropsALevelClaimWithNoSupport(t *testing.T) {
 	}
 }
 
+// #10 PQ-1: the band is arithmetic now, so a claim off the CEFR scale is as
+// unusable as one the deck cannot support — and is dropped by the same rule.
+//
+// This field was free-form for #17's whole life and that was harmless while a
+// model was its only reader. Once "the learner's band, or one below" is a
+// comparison, an unparsed band ranks -1, sorts below A1, and pitches every
+// selected distractor at the floor with nothing downstream able to tell.
+func TestCheckEvidenceDropsABandOffTheCEFRScale(t *testing.T) {
+	deck := map[string]bool{"certiorari": true}
+	for _, band := range []string{"B2+", "intermediate", "C1-C2", "advanced", "D1"} {
+		t.Run(band, func(t *testing.T) {
+			in := learnerModel{Level: levelClaim{
+				Band:          band,
+				Rationale:     "reaches for precise words",
+				EvidenceWords: []string{"certiorari"},
+			}}
+			got, dropped := checkEvidence(in, deck)
+			if got.Level.Band != "" {
+				t.Errorf("band = %q, want it dropped — it is not on the scale", got.Level.Band)
+			}
+			if len(dropped) == 0 {
+				t.Fatal("a band dropped for being off-scale must be reported, like every other dropped claim")
+			}
+			// The message is the only place a person can see why their level went
+			// missing, so it must name the scale rather than say "invalid".
+			if !strings.Contains(dropped[0].String(), "A1-C2") {
+				t.Errorf("drop message = %q, want it to name the CEFR scale", dropped[0].String())
+			}
+		})
+	}
+}
+
+// Transcription noise is forgiven and CANONICALISED on the way in, so "c1 " and
+// "C1" cannot become two spellings on disk.
+func TestCheckEvidenceCanonicalisesTheBand(t *testing.T) {
+	deck := map[string]bool{"certiorari": true}
+	for _, in := range []string{"c1", " C1 ", "c1\n"} {
+		m, dropped := checkEvidence(learnerModel{Level: levelClaim{
+			Band:          in,
+			Rationale:     "reaches for precise words",
+			EvidenceWords: []string{"certiorari"},
+		}}, deck)
+		if len(dropped) != 0 {
+			t.Errorf("%q was dropped; case and space are transcription noise, not a different answer", in)
+		}
+		if m.Level.Band != "C1" {
+			t.Errorf("band from %q = %q, want the canonical C1", in, m.Level.Band)
+		}
+	}
+}
+
 // The deck's identity is case- and space-normalised (store.Key), so evidence
 // must match the same way or every capitalised citation is dropped as invented.
 func TestCheckEvidenceMatchesOnTheDeckKey(t *testing.T) {

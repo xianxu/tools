@@ -8,6 +8,14 @@ import (
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/play"
+	"github.com/xianxu/tools/cmd/define/store"
+
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"sort"
+	"strconv"
 )
 
 // The README's account of the play loop DERIVES from the loop, or it drifts.
@@ -44,25 +52,15 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 	// 2.1's y/n was printed under form 2.3's numbered options and told the
 	// learner to press a key that did nothing.
 	//
-	// The residual, stated rather than hidden: a form added to play and not added
-	// to this slice is not checked here. That half is human. What is mechanical is
-	// that Question.Keys() is on the interface, so a new form cannot compile
-	// without writing one, and the rows below fail the build the moment an
-	// existing form's wording moves.
-	//
-	// TWO FORMS, not three: `#42` deleted form 2.1, so the set is "2.3 tests you,
-	// the board triages you" and the README says so in one sentence.
-	forms := []play.Question{
-		play.NewChoice("ephemeral", "", []play.Option{
-			{Gloss: "a", Correct: true}, {Gloss: "b"}, {Gloss: "c"}, {Gloss: "d"},
-		}),
-		// The board's line differs in its RESERVED half too, not only in its own
-		// keys: `d` is refused on a form holding many words, so the prompt must
-		// not offer it (#40 D12). That is the second thing this row checks, and
-		// the reason it is worth adding rather than being the "third form" the
-		// comment above calls human.
-		play.NewBoard([]play.Cell{{Word: "ephemeral"}, {Word: "quokka"}}, 80, play.Palette{}),
-	}
+	// THE RESIDUAL IS NO LONGER HUMAN (#12). This comment used to say "a form
+	// added to play and not added to this slice is not checked here — that half
+	// is human", and #12 then added a form and did not add it here, so neither of
+	// its prompt lines was a README consumer. TestEveryFormIsEnrolled below
+	// derives the extent from the package's Form() declarations, the same move
+	// numRegionKinds makes for region kinds: the set has one source, and a form
+	// that is not enrolled fails the build.
+	forms := docSyncForms(t)
+
 	seen := map[string]bool{}
 	for _, f := range forms {
 		line := gradePrompt(f)
@@ -78,11 +76,162 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 			}
 		})
 	}
-	t.Run("the graded prompt, shown once the answer is up", func(t *testing.T) {
-		if !strings.Contains(readme, gradedPrompt) {
-			t.Errorf("README.md does not contain:\n\t%q", gradedPrompt)
+	// THE GRADED LINE IS PER-FORM TOO, since #12: a form with the flag gesture
+	// says so after the answer as well, because that is when a learner discovers
+	// a question was broken. Checking only the const would have missed exactly
+	// the line the close review found wrong.
+	gradedSeen := map[string]bool{}
+	for _, f := range forms {
+		line := gradedPromptFor(f)
+		if gradedSeen[line] {
+			continue // two forms may legitimately share the post-answer line
 		}
-	})
+		gradedSeen[line] = true
+		t.Run("graded: "+line, func(t *testing.T) {
+			if !strings.Contains(readme, line) {
+				t.Errorf("README.md does not contain the line livePrompt returns for %T once graded:"+
+					"\n\t%q", f, line)
+			}
+		})
+	}
+}
+
+// docSyncForms is the ONE list of forms the documentation guards walk.
+//
+// A helper rather than a local, so the keys-line guard and the enrolment guard
+// cannot disagree about what the set is — which would put the extent back in two
+// places, the thing TestEveryFormIsEnrolled exists to stop.
+func docSyncForms(t *testing.T) []play.Question {
+	t.Helper()
+	return []play.Question{
+		play.NewChoice("ephemeral", "", []play.Option{
+			{Gloss: "a", Correct: true}, {Gloss: "b"}, {Gloss: "c"}, {Gloss: "d"},
+		}),
+		// The board's line differs in its RESERVED half too, not only in its own
+		// keys: `d` is refused on a form holding many words, so the prompt must
+		// not offer it (#40 D12). That is the second thing this row checks, and
+		// the reason it is worth adding rather than being the "third form" the
+		// comment above calls human.
+		play.NewBoard([]play.Cell{{Word: "ephemeral"}, {Word: "quokka"}}, 80, play.Palette{}),
+		// The cloze's line differs in its OWN half twice over: it grades digits
+		// like 2.3 but says "pick the word", and it is the first form with a
+		// gesture that is neither an answer nor reserved, so `?` has to be named
+		// or a learner has no source for it (#12).
+		play.NewCloze("ephemeral", "a ___ b", "a ephemeral b", "", []play.Option{
+			{Word: "ephemeral", Correct: true}, {Word: "quokka"}, {Word: "keel"}, {Word: "mesa"},
+		}),
+	}
+}
+
+// TestEveryFormIsEnrolled makes the doc guard's extent MECHANICAL.
+//
+// Its sibling above used to record "a form added to play and not added to this
+// slice is not checked here — that half is human", and #12 then added a form and
+// did not add it. So the set is derived: every type in `play` that declares
+// Form() is a form, and every form must appear in the slice the doc guard walks.
+//
+// Same move numRegionKinds makes for region kinds — the extent has one source,
+// and a member added without being enrolled fails the build rather than being
+// silently unchecked.
+//
+// PARSED, NOT SCRAPED (#12 BR-17). The first version matched a regex requiring a
+// single-letter pointer receiver, a one-line body and a lowercase literal, all
+// at once — and because the assertion is "declared ⊆ enrolled", a form the regex
+// MISSED was silence rather than failure. Measured: renaming Cloze's receiver to
+// `cz` (still gofmt-clean) and un-enrolling it left this guard, both README
+// guards and BR-14's region guard all green. A derivation that can under-derive
+// silently is not a derivation; it is the hand-maintained list with extra steps.
+//
+// go/parser answers the question the regex was approximating — "is there a
+// method named Form on some receiver returning a string literal" — with no
+// opinion about formatting. And the count assertion below makes it FAIL CLOSED:
+// if the parse ever finds fewer forms than are enrolled, the extent is wrong in
+// the direction that hides things, and that is now the loud case rather than the
+// quiet one.
+func TestEveryFormIsEnrolled(t *testing.T) {
+	declared := declaredForms(t)
+	enrolled := map[string]bool{}
+	for _, f := range docSyncForms(t) {
+		enrolled[f.Form()] = true
+	}
+	for name := range declared {
+		if !enrolled[name] {
+			t.Errorf("form %q is declared in play/ but not enrolled in the doc guard's slice, "+
+				"so neither of its prompt lines is checked against README.md", name)
+		}
+	}
+	// FAIL CLOSED. Subset-only is satisfied by finding nothing, which is exactly
+	// how a mis-derivation would present.
+	if len(declared) != len(enrolled) {
+		t.Errorf("the parse found %d form(s) %v but %d are enrolled %v.\n"+
+			"Equal counts are the point: a derivation that finds FEWER than are "+
+			"enrolled is under-deriving, and every guard built on it is then "+
+			"checking a set nobody chose.",
+			len(declared), keysOf(declared), len(enrolled), keysOf(enrolled))
+	}
+}
+
+// declaredForms is every form name `play` declares, read from the AST.
+//
+// A form is a method named Form with a receiver, no parameters, one string
+// result, whose body is a single `return "<literal>"`. That last clause is the
+// only shape assumption left, and it is a real one: a Form() computing its name
+// would make "the set of forms" unknowable statically, which is worth failing on
+// rather than guessing at.
+func declaredForms(t *testing.T) map[string]bool {
+	t.Helper()
+	declared := map[string]bool{}
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, "play", func(fi fs.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatalf("parsing play/: %v", err)
+	}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			for _, d := range file.Decls {
+				fn, ok := d.(*ast.FuncDecl)
+				if !ok || fn.Recv == nil || fn.Name.Name != "Form" || fn.Body == nil {
+					continue
+				}
+				if len(fn.Body.List) != 1 {
+					t.Errorf("%s: Form() has a %d-statement body; this guard can only "+
+						"derive a name from a single return of a literal",
+						fset.Position(fn.Pos()), len(fn.Body.List))
+					continue
+				}
+				ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
+				if !ok || len(ret.Results) != 1 {
+					continue
+				}
+				lit, ok := ret.Results[0].(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					t.Errorf("%s: Form() does not return a string literal, so the set of "+
+						"forms cannot be known statically", fset.Position(fn.Pos()))
+					continue
+				}
+				name, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					t.Fatalf("%s: %v", fset.Position(fn.Pos()), err)
+				}
+				declared[name] = true
+			}
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("no Form() declarations found; this guard would pass vacuously")
+	}
+	return declared
+}
+
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // The atlas's raw-notation count DERIVES from the ratchet rather than restating
@@ -392,4 +541,123 @@ func TestREADMEDrawsTheBoardTheFormActuallyDraws(t *testing.T) {
 			t.Errorf("README.md draws %q in a cell — a mark is COLOUR now, and the key stays put", gone)
 		}
 	}
+}
+
+// THE KEY TABLE DERIVES FROM THE FORMS THAT OWN THE KEYS (#12 BR-16).
+//
+// README.md's table is what a reader consults for what they can press, and its
+// header promises completeness. It was the THIRD hand-maintained home of the
+// same fact: BR-1 fixed the prompt lines, BR-10 fixed the enrolment that checks
+// them, and this table still listed no `?` and still described the digits as
+// "pick the definition" after a second form began grading them.
+//
+// The rule the three findings share: **every enumeration of live keys must
+// derive from the code that owns them, and a new key is not shipped until every
+// such enumeration derives.** So this reads each form's own Keys() line, which
+// is already the single source the prompt lines come from, splits it into the
+// `key = what` pairs the form commits to, and requires the table to name each
+// one. A form that grows a gesture reddens this until the table says so.
+//
+// The WHAT is matched rather than the key glyph: `1`–`4` in the table is a range
+// where a form writes "1-4", and a guard matching glyphs would be pinned to the
+// table's typography instead of to its content.
+func TestREADMEKeyTableNamesEveryLiveKey(t *testing.T) {
+	b, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("README.md unreadable: %v", err)
+	}
+	table := keyTableIn(t, string(b))
+	for _, q := range docSyncForms(t) {
+		for _, pair := range strings.Split(q.Keys(), ", ") {
+			_, what, ok := strings.Cut(pair, " = ")
+			if !ok {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(table), strings.ToLower(what)) {
+				t.Errorf("README.md's key table does not name %q, which %T offers.\n"+
+					"Full keys line: %q\n"+
+					"The table is where a reader looks for what they can press; a key that "+
+					"works and is listed nowhere is a key nobody presses.", what, q, q.Keys())
+			}
+		}
+	}
+}
+
+// keyTableIn is the key table alone, so the guard above cannot be satisfied by
+// the same words appearing in prose elsewhere in the README — the mistake
+// TestAtlasDescribesEveryRegionKind's comment records ("that word occurs in the
+// atlas nineteen times for unrelated reasons, so a docs guard built on it passed
+// with the whole section deleted").
+func keyTableIn(t *testing.T, readme string) string {
+	t.Helper()
+	const header = "| key | does |"
+	i := strings.Index(readme, header)
+	if i < 0 {
+		t.Fatalf("README.md has no %q table; this guard would certify nothing", header)
+	}
+	rest := readme[i:]
+	// The table ends at the first blank line — markdown's own rule.
+	if j := strings.Index(rest, "\n\n"); j >= 0 {
+		rest = rest[:j]
+	}
+	if strings.Count(rest, "\n") < 3 {
+		t.Fatalf("the key table has %d rows; this guard would certify nothing", strings.Count(rest, "\n"))
+	}
+	return rest
+}
+
+// THE STORE LAYOUT DERIVES FROM THE EVENT KINDS (#12 BR-18).
+//
+// Both blocks — README.md's and the atlas's — read "kinds: looked-up, asked"
+// long after `reviewed` and `flagged` existed. The README's is the only
+// documentation a human reading their own event log has, so a kind missing from
+// it is a row in a file nobody can interpret.
+//
+// This is the fourth finding in the same family: a document restating a fact the
+// code owns. The rule the family produced — **a restatement must derive from the
+// code or be swept at the boundary that changed it** — has a derivable half and a
+// human half, and this closes the derivable half for event kinds the way
+// TestREADMEKeyTableNamesEveryLiveKey closed it for keys. What is left is
+// workshop/targets/derived-restatement.md, which enumerates the rest.
+func TestStoreLayoutDocsNameEveryEventKind(t *testing.T) {
+	kinds := store.EventKinds()
+	if len(kinds) == 0 {
+		t.Fatal("no event kinds; this guard would certify nothing")
+	}
+	for _, doc := range []struct{ path, marker string }{
+		{"README.md", "events/2026-08-21.yaml"},
+		{"../../atlas/define.md", "events/YYYY-MM-DD.yaml"},
+	} {
+		b, err := os.ReadFile(doc.path)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc.path, err)
+		}
+		block := layoutBlockIn(t, doc.path, string(b), doc.marker)
+		for _, k := range kinds {
+			if !strings.Contains(block, string(k)) {
+				t.Errorf("%s's store layout does not name the event kind %q.\n"+
+					"It is the block a reader consults to interpret their own log; "+
+					"a kind written there by the code and missing here is a row "+
+					"nobody can read.", doc.path, k)
+			}
+		}
+	}
+}
+
+// layoutBlockIn is the fenced store-layout block alone, so prose elsewhere
+// naming a kind in passing cannot satisfy the guard above — the scoping mistake
+// TestAtlasDescribesEveryRegionKind's comment records.
+func layoutBlockIn(t *testing.T, path, doc, marker string) string {
+	t.Helper()
+	i := strings.Index(doc, marker)
+	if i < 0 {
+		t.Fatalf("%s has no %q line; the store layout moved and this guard "+
+			"would certify nothing", path, marker)
+	}
+	start := strings.LastIndex(doc[:i], "```")
+	end := strings.Index(doc[i:], "```")
+	if start < 0 || end < 0 {
+		t.Fatalf("%s: the store layout at %q is not in a fenced block", path, marker)
+	}
+	return doc[start : i+end]
 }

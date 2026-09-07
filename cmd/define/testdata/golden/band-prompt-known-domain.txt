@@ -1,0 +1,40 @@
+task:   word-band
+model:  
+effort: 
+--- system ---
+You place vocabulary on the CEFR scale. Answer about the WORD as a learner would meet it, not about the rarest sense a dictionary records.
+--- prompt ---
+## The word
+
+certiorari
+
+It is a word of the language with IETF code `en`, and the band must be that language's CEFR scale.
+
+Its dictionary sense:
+
+Law a writ by which a higher court reviews a lower court's decision
+
+## What to answer
+
+**band** — the CEFR level at which a learner would be expected to KNOW this word: one of A1, A2, B1, B2, C1, C2, and nothing else. Not a range, not a `+`, not a word like "intermediate". Judge the word's ordinary current usage.
+
+**domain** — already known from the dictionary: `Law`. Repeat it exactly.
+
+
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "band": {
+      "type": "string"
+    },
+    "domain": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "band",
+    "domain"
+  ],
+  "type": "object"
+}

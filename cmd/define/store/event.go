@@ -13,7 +13,32 @@ const (
 	// about — a strong signal of what they are working on — and every consumer of
 	// this log is a fold, which answers would bloat for nothing.
 	EventAsked EventKind = "asked"
+	// EventFlagged is a question the learner called BROKEN (#12).
+	//
+	// A kind of its own rather than a reviewed event with a verdict, and the
+	// reason is mechanical: Fold folds every EventReviewed and GradeOf(false) is
+	// GradeWrong, so a flag recorded as a review would DEMOTE the word — on a log
+	// that is append-only. Fold skips every kind it does not know, so this is
+	// ignored by the ladder BY CONSTRUCTION rather than by a filter someone has
+	// to maintain.
+	EventFlagged EventKind = "flagged"
 )
+
+// eventKinds is every kind, in the order the docs list them.
+//
+// A SECOND HOME for the enum would defeat the point, so this is the only place a
+// kind is written after its constant: EventKinds() derives the docs guards from
+// it, and #12's BR-18 found the docs had drifted twice over — the README's store
+// layout and the atlas's both still read "kinds: looked-up, asked" long after
+// `reviewed` and `flagged` existed, and a log a human reads has no other
+// documentation.
+var eventKinds = []EventKind{EventLookedUp, EventAsked, EventReviewed, EventFlagged}
+
+// EventKinds is the extent of EventKind, copied so a caller cannot reorder it.
+//
+// Same move Bands() and Domains() make: the enum is knowable, so no guard,
+// migration or document has to restate it.
+func EventKinds() []EventKind { return append([]EventKind(nil), eventKinds...) }
 
 // ReviewEvent is one thing that happened, at a time.
 //
@@ -81,6 +106,18 @@ type ReviewEvent struct {
 	// Absent on every event written before this existed, which reads as "some
 	// earlier form" and is the truth.
 	Form string `yaml:"form,omitempty"`
+	// Options is the option set of a FLAGGED question (#12), and is set on no
+	// other kind.
+	//
+	// IT CARRIES THE WORDS, which is the deliberate opposite of Missed above.
+	// Missed records the AXIS because "picked larceny is a fact about one
+	// question whose option set no longer exists" — but a flag exists to
+	// diagnose THAT question, so the options are the evidence and a flag naming
+	// none is "something was wrong once".
+	//
+	// Model-authored text reaching a structured log. It is neutralised at the
+	// store's write (sanitiseItem), which is why it can be recorded at all.
+	Options []string `yaml:"options,omitempty"`
 	// At stays LAST, and a field added after it would break the torn-record rule
 	// silently. See complete(): the rule is termination PLUS completeness, and
 	// completeness leans on a cut record losing its timestamp. A field written

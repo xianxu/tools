@@ -234,3 +234,14 @@ func SampleStrings(ss []string, n int, seed uint64) {
 		ss[i], ss[j] = ss[j], ss[i]
 	}
 }
+
+// ShuffleInts is the sitting's shuffle, exported for the authoring side.
+//
+// #10 selects distractors offline and wants the same seeded permutation this
+// package uses at review time. It first hand-rolled a copy with a DIFFERENT
+// seeding step — "the same algorithm" producing different sequences, which is
+// the worst kind of duplicate because the comment claiming kinship is what a
+// reader trusts. An int-slice shuffle needs none of the store's vocabulary, so
+// the D5a rule ("play imports nothing") is untouched by exporting it, exactly as
+// SampleStrings already is.
+func ShuffleInts(seed uint64, xs []int) { shuffle(newPRNG(seed), xs) }

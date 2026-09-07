@@ -3476,3 +3476,306 @@ which never terminates for a mark `Toggle` cannot reach — exactly the mark the
 test exists to catch. A red says what is wrong; a hang says nothing and takes the
 suite with it. Bound every search whose termination depends on the property under
 test.
+
+## #10 M1 — four boundary rounds, and one class that kept coming back
+
+**A finding is disposed by CODE, not by the paragraph promising it.** `#10`'s
+plan-quality gate raised a neutralisation finding; the plan answered it with a
+paragraph specifying `sanitiseFacts`/`sanitiseItem`, the gate recorded it
+`addressed`, the step was ticked, and neither function was ever written. The
+boundary review found it two rounds later. **A ticked checkbox is the weakest
+evidence in the loop, because ticking it is the cheapest thing in the loop** — so
+when disposing a finding, name the symbol and grep for it.
+
+**"Fix the class, not the site" fails in a specific, predictable way: you fix the
+instances the finding NAMED.** Three rounds in a row on this issue:
+
+- a mode-collision guard covered `--play` and `--reflect` — the two the finding
+  listed — while `-forget` and `--llm-check`, which dispatch *above* that switch,
+  still swallowed the new mode in silence;
+- a "properties without pins" finding listed three, they were pinned, and the
+  round-4 review found the enumeration the round-3 finding had itself written
+  down had seven members and one was swept;
+- a read-side canonicalisation rule was stated on one accessor while its sibling
+  forty lines up returned the raw record.
+
+**The tell is that the finding hands you the enumeration and you use it as a
+list of sites instead of as a specification.** When a finding says "2nd in
+family", write the enumeration down as an object the code shares — a `modes`
+slice both the check and its table test walk — so the next member is covered by
+construction rather than by the next reviewer.
+
+**A seam only constrains callers that go through it.** `bandTask` existed
+precisely so `--harvest` and its measurement mode could not ask different
+questions, and the conformance row broke that from OUTSIDE by handing the seam
+different arguments: it floored a bare word while production sends a dictionary
+gloss. Every number the milestone reported as *measured* was a number about a
+prompt nobody runs. **When a test asserts a property of production, derive its
+inputs the way production derives them** — the row now calls the same
+`senseFacts` the harvest loop does.
+
+**Do not write the calibration prose before the gate runs.** The project's M1
+paragraph said "est 3.94 / actual 2.16 = 1.82, and the milestone had no
+remediation round at all" — committed before the boundary review, which then took
+three more rounds and 1.9h. Predeclaring an outcome and then measuring it is how
+a calibration ledger stops being evidence.
+
+**And a `go test` that takes ~110s is a review-agent hazard.** One boundary round
+produced no verdict at all: the reviewer spent its budget waiting on repeated
+full-suite runs and was cut off mid-sentence. Not a code defect, but it cost a
+round — worth knowing before blaming the diff.
+
+## #10 M2 — what reading real output found that a green suite could not
+
+**Stating a rule in a prompt is not enforcing it.** The author system prompt said
+*"You never explain the word, and you never write a definition"* and half of the
+first twenty items came back as appositive glosses — *"the alewife, the small
+silver herring"*. The model honoured the letter and wrote a definition in a form
+the sentence didn't call a definition. **Showing three wrong shapes and two right
+ones is what worked**, plus a judge field that asks about the shape directly.
+
+**Two requirements can be individually right and jointly impossible.** "The stem
+must entail its answer" and "the stem must never define the word" are each
+defensible, and together they are unsatisfiable for any concrete noun: the
+cheapest way to make a sentence entail a word IS to define it. The second batch
+said so out loud — items rejected because *"no definition is supplied"*, the
+judge citing the absence of the thing the other rule forbids. **When a judge's
+rejection reason cites a rule you deliberately broke, the requirements are
+fighting, not the output.**
+
+**And the resolution was to re-read what the form actually is.** The bar
+"recoverable from the sentence alone" is a fill-in-the-blank criterion, and this
+is MULTIPLE CHOICE — the learner sees four options, so "does any other word fit"
+is a question about the OPTIONS, which the veto already asked per pair. One judge
+was doing the other's job badly. Check what the artifact is before specifying
+what makes it good.
+
+**Ask the free question before the paid one.** An item shipped with `___` already
+in its stem, against an explicit instruction, and BOTH model judges passed it
+because neither was asked. `strings.Contains` would have caught it. Every
+model-judged property should be preceded by the deterministic checks that are
+cheaper and stronger — the same rule as not asking a model for a domain the
+dictionary printed.
+
+**A per-item constraint says nothing about a batch.** Every selection rule was
+about one question, so one eligible word served as the wrong answer in 8 of 20
+items. Nothing was violated; the property nobody had stated was the one that
+mattered. When output is generated in batches, at least one measure has to be
+taken over the batch.
+
+**And a mechanism can be correct while the data starves it.** The diversity fix
+demonstrably works (worst-case reuse 6→4 on a homogeneous pool) and did almost
+nothing on the real deck, because for a C1 Nautical word the whole eligible tier
+was two words. **Measure the fix on the shape that motivated it, not only on a
+constructed one** — and when the limit is the input rather than the code, say so
+instead of adding machinery.
+
+## #10 M2's review — the sweep row, and pins that had tests
+
+**A milestone's Verification sweep is not satisfied by the previous milestone's
+table.** I ran the mutation sweep for M1, wrote its 13-row table into the plan,
+and then ticked the same row at M2's boundary. Three headline M2 properties had
+pins that could not fail. The row is per-milestone; enumerate THIS milestone's
+properties from the diff's branches, not from the atlas's claims.
+
+**Two of the four unpinned properties HAD tests, which is the failure worth
+recognising.** `prune`'s determinism was asserted by pruning the same slice
+twice — so a prune that returned its input unchanged agreed with itself
+perfectly. The `## Corrections` guard used a fixture domain the parse refuses
+anyway, so it could not distinguish the guard from the parse. **A pin whose
+fixture cannot reach the branch is the same failure as no pin**, and reading the
+test does not reveal it — only reverting the code does.
+
+**A rig too small to run the pass makes every assertion about that pass
+vacuous.** `harvestRig(t, 1)` gave a pool of one, so authoring bailed before
+running and "nothing was authored" passed for an unrelated reason. Fixed at the
+class level: the rig now REFUSES a size that cannot exercise the path, and the
+skipped pass says so on stdout where a test can read it. Prefer making the
+degenerate case loud over remembering not to construct it.
+
+**Assert a comparison, not a threshold, when the claim is "X improves Y."** The
+diversity pin checked `worst > 3`, which both branches satisfied. Run the code
+with the feature off and on over the same inputs and assert the difference —
+otherwise the test measures the fixture.
+
+**A flag's counter must be the resource the flag names.** `-limit` documented a
+ceiling on model calls and counted successes per pass, so rejected words charged
+nothing and a run cost one call per deck word regardless. It also spent the same
+value twice, once per pass. One budget, threaded, charged next to every call
+site including inner loops.
+
+**A value parsed and read by nothing is not a delivered consumer.** The learner's
+domains were parsed into a struct field whose doc comment said selection did
+arithmetic on it; grep found zero production readers. Either wire it or delete
+it — and when the Spec names it, wiring it is the deliverable, not a follow-up.
+
+## #10 M2 rounds 7-8 — a pin written to dispose a finding, itself unfalsifiable
+
+**The sharpest one in this issue.** Round 7 found three fixes with no
+revert-check; I wrote pins for all three; round 8 reverted them and found one
+still green. `TestTheTierReportCountsOnlyWrittenItems` asserted that a
+fully-vetoed batch prints no tier line — and the report only ever printed the
+WIDENED tiers, so a batch that never widened printed nothing either way. The
+assertion was true before the fix and after it.
+
+Two lessons, and the second is the general one:
+
+- **A pin written to dispose a finding gets the same revert-check as the fix.**
+  Otherwise the finding is disposed by an assertion, which is what it was
+  complaining about.
+- **When a report is filtered, a test over the unfiltered case sees nothing.**
+  The report listed four of five tiers; the test's fixture produced the fifth.
+  Any assertion of the form "X does not appear" needs a sibling asserting that X
+  appears when it should, or it passes for the wrong reason forever.
+
+**And a doc claim can be the tell.** The atlas said "the tier reached is printed
+for every item" while the code printed four tiers of five. Writing the sentence
+is what should have surfaced the gap; instead the sentence was written from the
+intent and the code kept its filter. **When you document a claim, check the code
+makes it true — a doc sweep is a chance to find bugs, not just to describe.**
+
+**A flag×resource table is worth writing once.** `-limit` took three rounds and
+two Criticals: it counted successes rather than calls, then charged without
+gating (N+1). What finally fixed it was making the charge structural — one
+function is the only path to the model, it charges before calling, and its
+refusal returns as an error the caller already handles. **A budget you can
+charge without gating on is a budget somebody will charge without gating on.**
+
+## #10's close — Forget, and a guard that classified on one axis
+
+**A new persisted surface is a new thing every per-word verb must reach.** `#10`
+added `facts/` and `items/`, and `Forget` removed only the deck entry — so a
+forgotten word kept the cached band and authored items that made it worth
+forgetting, and `--harvest` then skipped it as already done. *"Forget this word,
+its material is bad"* was the one thing forgetting could not do. `usage/` had the
+same bug and had it first, from `#9`. **When you add a directory keyed by an
+existing noun, enumerate the verbs that act on that noun** — the create path is
+the one everybody remembers.
+
+**And the guard I wrote for it classified on ONE axis while the surfaces vary on
+two.** "Per-word or history" decided whether `Forget` touches a directory;
+"scoped or flat" decides *whose copy* it touches, and `usage/` is per-word and
+flat, so forgetting in Spanish reached the English cache. A guard that enumerates
+a set is only as good as the number of questions it asks about each member.
+
+**A stale ledger entry is worth proving, not arguing.** `BR-41` blocked three
+rounds after it was fixed. What settled it was a grep over every statement of the
+flag's meaning — 20 hits, all saying "calls", none saying "words" — recorded in
+`--verified` alongside the one precise `--no-ledger`. Bypass one gate for one
+finding with the evidence attached; never `--force`.
+
+## #12 — a fuzz that paid twice, and a pin the gate had already asked for
+
+**A gate finding is not disposed by a test that cannot reach the line it named.**
+Plan-quality's PQ-2 said a flag recorded as a review would demote the word. I
+built the whole path as specified, wrote an end-to-end test AND a `storetest`
+row — and the mutation sweep found that changing the real capturer to write
+`EventReviewed` left everything green. The end-to-end test drove a FAKE
+capturer, so it proved the outcome reaches *a* capturer and nothing about what
+that capturer writes; the suite row asserted a hand-written event round-trips,
+which is a third claim again. **When a finding names a line, the disposing test
+must fail when that line changes** — check it by changing the line.
+
+The fix was also the better test: assert the property through its CONSUMER.
+`schedule.Fold` must read nothing from a flag-only log. That is what PQ-2 was
+about; the event's `Kind` field was only how it would have gone wrong.
+
+**Fuzz the function whose failure is silent.** `blankStem` renders and grades
+perfectly whether or not it leaks its answer, which is exactly the shape a table
+of examples cannot cover. Two minutes of fuzzing found a HANG (invalid UTF-8
+decodes to `RuneError`, which matches itself and is not a word rune, so the
+match had no word run and the loop never advanced) and then a wrong INVARIANT
+(`blankStem("_","_") = "___"` — `_` is not a word rune, so "does the answer
+occur as a word" is ill-defined for it).
+
+**And the second one is the more useful pattern: a fuzz failure is not always a
+code bug.** Sometimes the invariant is wrong, and narrowing it is right — but
+only when the narrowing names a real defect it exposed. Here it did: an answer
+with no letter and no digit is not a word, so `usableItem` refuses one now.
+Narrowing an invariant without finding the defect underneath is how a fuzz gets
+trained to pass.
+
+**Then check the fix one predicate over.** `hasWordRune` looked right and let
+`---` through, because `isWordRune` counts hyphens as INSIDE a word — correct for
+tokenising `hot-dog`, wrong for "is this a word". Joiners are not what a word is
+made of.
+
+**A test rig too small can make a row pass for the wrong reason.** Form 2.3 draws
+distractors from the sitting's pool, so a one-word rig cannot build one and every
+word falls to the board. The two "still takes 2.3" rows of the selection rule
+passed on a one-word deck — for `#42`'s reason, not the rule's. Size the fixture
+to the path under test.
+
+**A guard that names its own residual has told you where the next bug is.**
+`doc_sync_test.go` checked that every enrolled form's prompt lines appear in the
+README, and its comment said the quiet part: *"a form added to play and not added
+to this slice is not checked here. That half is human."* `Cloze` was then added
+to `play/` and not to the slice — so both of its prompt lines went unchecked, and
+neither was in the README. The close review found it, not the guard.
+
+**A guard whose extent is hand-maintained is half a guard.** The fix is the move
+`numRegionKinds` already makes for region kinds: DERIVE the extent from the code
+rather than restating it. `TestEveryFormIsEnrolled` regexes `func (x *T) Form()
+string { return "…" }` out of `play/*.go` and fails when a declared form is not
+enrolled. When you catch yourself writing "that half is human" in a test comment,
+that sentence is the finding — write the test that closes it instead.
+
+**A boundary's durable record has more than one home**, and it is not written
+until all of them are: the issue `## Log`, `workshop/lessons.md` when a review
+found something (AGENTS.md §4), the plan's `## Revisions`, and the project file.
+
+**Documenting a hazard is not fixing it, and the comment is evidence you saw it.**
+`Cloze`'s doc comment said "#38's clickable-prompt premise (line 0, column 0,
+width len(word)) is Choice's and does not hold here" — and nothing acted on it,
+so the loop underlined the first eleven cells of the blanked sentence and spoke
+the answer on a click. The close review found it as a Critical. **When you write
+"this does not hold here", the next thing you write is the code that makes it not
+matter** — or a failing test if you cannot.
+
+**A region, a coordinate, an offset: check the claim, do not compute it.**
+The formula was `Choice.Prompt()`'s layout read as every form's. The fix is not a
+special case for the form that broke it but a predicate that IS the region's own
+claim — "line 0 begins with the headword" — plus a guard that reads every form's
+region coordinates back out of the text actually written. That guard found a
+second instance (`Board`) the moment it existed, which is how you know it was
+sized to the class and not to the bug.
+
+**And do not "just search for it".** The obvious alternative — find the word in
+the prompt — would have been worse than the formula it replaced: a cloze prompt
+contains its answer among the options, so the search would have underlined the
+correct one. When the claim is about a POSITION, check the position.
+
+**Three homes of one fact is a pattern, not three findings.** `?` was missing
+from the prompt line (round 1), from the enrolment that checks the prompt line
+(round 2), and from the README key table (round 3) — one gesture, three
+hand-maintained enumerations, three rounds. The rule: **every enumeration of live
+keys derives from the code that owns them, and a new key is not shipped until
+every such enumeration derives.** When a gate finds the same fact missing twice,
+stop fixing homes and go count them.
+
+**A derivation that can under-derive silently is the hand-maintained list with
+extra steps.** `TestEveryFormIsEnrolled` scraped `Form()` with a regex requiring
+a single-letter pointer receiver, a one-line body and a lowercase literal all at
+once — and asserted only `declared ⊆ enrolled`, so a form the regex missed was
+SILENCE. Renaming a receiver would have re-opened the finding the guard was
+written to close, plus the Critical guard built on the same extent. Parse the
+code (`go/parser`) rather than matching its formatting, and **make it fail
+closed**: assert the counts match, because "everything I found is enrolled" is
+satisfied by finding nothing.
+
+That is the second time in two rounds. Both times the guard was mine, and both
+times the flaw was the same shape: **I checked that the guard fires, and not that
+it fires on everything it claims to cover.**
+
+**When a gate finds the same family four times, the finding is the missing
+ENUMERATION.** Stale-restatement was raised in rounds 1, 2, 3 and 4 of one issue;
+each round fixed instances and the open count went from five to eleven, three
+added by the fixing commits themselves. Instances are not the bug. Split the
+family: derive every half that is machine-readable (a guard per fact — see the
+table in `workshop/targets/derived-restatement.md`), and put the prose half on a
+checklist run at every boundary. Then keep moving rows from the checklist into
+the table.
+
+**And check the doc comment on the CALLER.** The commonest stale restatement is a
+comment on code the diff did not touch, which is exactly the set `git diff` will
+never show you.
