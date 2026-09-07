@@ -86,21 +86,66 @@ Open questions for the plan, not decided here:
   carries a Locale as well as a Lang — so "one file per word" may not hold, which
   is the assumption `perWordDir`'s filename derivation currently makes.
 
-### A cloze's option words are clickable
+### Every deck word is clickable, and coloured where colour means something
 
-Needs three things, and the first two are the real work:
+**Widened 2026-09-07 by the operator, and the wider version is the simpler one**
+— see the revision below. The ask is not "cloze options are clickable" but
+*click to pronounce and colour for the words I am learning, in all places*, with
+colour off in the cloze.
+
+**The unification.** A deck word in rendered text is ONE span that offers TWO
+things: a colour and a click. Today two independent producers find that span and
+they cover different surfaces, which is the whole bug:
+
+| | finds spans by | reaches |
+|---|---|---|
+| colour | `highlightSpans` / `highlightWriter`, escape-aware, longest-phrase-wins | the lookup entry, the REPL input line, `--ask` answers, and the entry embedded in a sitting's reveal |
+| clicks | `regionsIn`, escape-aware via `findVisible` | the headword and the ORIGIN languages of a rendered entry, plus `promptRegions`' headword |
+
+Neither reaches a form's own text — the option lines, the restored sentence, the
+`you chose` line — so the words a learner is actively choosing between are the
+words they can neither hear nor see marked.
+
+So: **one span producer, two consumers.** `highlightSpans` already computes
+exactly the right set (deck words, longest phrase wins) and `findVisible`
+already locates a span in text that is already coloured. What is missing is the
+`Region` half of the same walk, and one write door that applies both.
 
 - a third `RegionKind` — the registry is built for this ("a third consumer is a
   row rather than a new feature"), and `String`/`identifier`/the atlas guard and
   `TestEveryRegionKindIsActionable` all pick it up the moment it is declared.
+  Distinct from `RegionHeadword`, which carries the entry's LOOKUP KEY and may
+  differ from the text under it (`define jalapeno` renders `jalapeño`); a deck
+  word in prose is matched by its own text.
 - **regions produced for a PROMPT**, which nothing does today. `marksIn` locates
   `Render(entry)`'s text inside what is written and shifts the lines; a cloze
-  prompt contains no rendered entry, so it gets nil. The form knows where its
-  option lines are (`optionLine`, `Options()`), and `play` is mechanically
-  guarded pure so it cannot hold a `Region` — the coordinates have to be built
-  in main from the same string the form rendered. `clozeAsk` is where that
-  happens, for the reason it already gives: one place renders.
+  prompt contains no rendered entry, so it gets nil. `play` is mechanically
+  guarded pure and cannot hold a `Region`, so the coordinates are built in main
+  from the same string the form rendered — one place renders.
 - the screen wiring, which is the existing path once the regions exist.
+
+### Colour is a DISCOVERY signal, so it is off where everything is a deck word
+
+The operator's rule, and it generalises past the case that prompted it: *no
+colour in the cloze, because everything there is a new word and colour would
+clog things up.*
+
+Stated as a property rather than an exception: **colour marks a deck word inside
+PROSE, where finding one is a discovery. Where the text IS the deck, colour
+marks everything and therefore distinguishes nothing.** That covers two surfaces
+with one rule instead of two special cases:
+
+- a **cloze's option words** — four words drawn from the banded deck;
+- a **board's cells** — every cell is a deck word by construction.
+
+And it leaves colour ON where it earns its place: a `Choice`'s option glosses
+are definitions, i.e. prose in which a known word is worth spotting; so are the
+reveal's restored sentence and every rendered entry.
+
+**Clicks are NOT subject to this rule.** A click is per-word and costs the
+learner nothing when it is everywhere; colour is a field the eye reads at once
+and degrades when it is everywhere. Cloze options are the case the operator
+asked for FIRST: clickable, uncoloured.
 
 **Not in scope:** `#45` (async playback). This is about what is fetched and what
 is clickable, not about when the audio plays.
@@ -121,13 +166,23 @@ is clickable, not about when the audio plays.
       `TestPerWordDirsCoverEveryRuntimeDir` is what says so — the new directory
       is classified on both axes, not just declared.
 - [ ] A cloze's option words are clickable and each plays its own word.
+- [ ] Every deck word is clickable wherever it is written — a guard walks the
+      surfaces rather than a person listing them, so a new write site is covered
+      by construction.
+- [ ] Colour and clicks come from ONE span walk, not two producers that can
+      disagree about where a word is.
+- [ ] Colour is off exactly where the text IS the deck (cloze options, board
+      cells) and on everywhere else, and the guard states that as the rule
+      rather than naming the two surfaces.
 - [ ] The new region kind is a ROW, not a special case: `numRegionKinds` picks
       it up, `TestEveryRegionKindIsActionable`, `TestAtlasDescribesEveryRegionKind`
       and `TestAPromptRegionCoversTheTextItClaims` all exercise it without being
       edited to know about it.
 - [ ] No region claims text it does not cover — the `#12` BR-14 invariant holds
       for the new kind, which is the one that puts regions on a PROMPT for the
-      first time.
+      first time, and holds on text that is ALREADY coloured.
+- [ ] A span walk over text carrying ANSI never lands a region inside an escape
+      sequence, and never nests colour.
 
 ## Plan
 
@@ -137,8 +192,10 @@ and closing them separately would buy a redundant review (AGENTS.md §3).
 
 - [ ] M1 — the cache reaches every loop that plays audio, and survives the
       process. `fetch.go`, a new `RuntimeDirs` entry, `perWordDirs`, `Forget`.
-- [ ] M2 — a cloze's option words are clickable. A third `RegionKind`, and the
-      first regions ever produced for a PROMPT.
+- [ ] M2 — one span walk feeds both colour and clicks, and every surface goes
+      through it. A third `RegionKind`, the first regions ever produced for a
+      PROMPT, and the discovery rule that turns colour off where the text is
+      the deck.
 
 ## Log
 
@@ -154,6 +211,27 @@ it: `promptRegions` is now the one place a prompt declares what it offers, and
 invariant that Critical was about — a region must not claim text it does not
 cover. Producing regions for the option lines is exactly the case that made the
 old formula dangerous, so it is the case the guard was built for.
+
+### 2026-09-07 — widened: click and colour everywhere, not just cloze options
+
+**Reason.** The operator, on picking the issue up: *"generally speaking I'd like
+the click to pronounce and coloring of words I'm learning in all places. note no
+need for coloring in cloze because everything there is 'new words', thus having
+color would clog things up."*
+
+**Delta.** M2 was "a cloze's option words are clickable" — one surface, one
+form. It is now the general property, and the general version is SIMPLER to
+build than the special case would have been: the special case needed a bespoke
+span producer for cloze option lines, and the general one needs the span
+producer that already exists to grow a second consumer. `#12`'s BR-14 fix is
+what makes this affordable — `promptRegions` established that a prompt declares
+what it offers and that a region must cover the text it claims.
+
+**What the operator's colour exception bought.** Read narrowly it is "skip the
+cloze". Read as a property it is *colour is a discovery signal*, which also
+explains the board — every cell there is a deck word too — and predicts the
+answer for any surface added later. That reading is in the Spec above; the
+narrow one would have been a flag.
 
 `#45` (async playback) is adjacent and separate: this issue is about WHAT is
 fetched and what is clickable, not about when the audio plays.
