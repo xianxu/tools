@@ -80,9 +80,21 @@ type Store interface {
 	// SetNewsItems replaces rather than appends: a re-harvest must not silently
 	// double a word's material every run.
 	SetItems(key string, items []Item) error
+	// Audio returns a cached recording and the record beside it. A zero record
+	// means nothing is cached, which is NOT an error — it is the state of every
+	// word before its first play.
+	//
+	// Keyed by AudioKey rather than by word, because a word has one recording PER
+	// VOICE: see AudioKey for why the identity is the candidate list.
+	Audio(k AudioKey) ([]byte, AudioRecord, error)
+	// SetAudio stores a recording, or a verdict that there is none. Passing nil
+	// data with rec.Missing records the verdict; the two are one call because
+	// they are one outcome of one fetch.
+	SetAudio(k AudioKey, data []byte, rec AudioRecord) error
 	// Forget removes a word and everything it OWNS: the deck entry, the news
-	// cache, the harvested band and domain, and the authored items. All of those
-	// are derived from the word and regenerable by looking it up again.
+	// cache, the harvested band and domain, the authored items, and every cached
+	// recording. All of those are derived from the word and regenerable by
+	// looking it up again.
 	//
 	// It does NOT remove events: the deck is a working set, the log is history,
 	// and rewriting the past would corrupt every statistic derived from it.

@@ -637,6 +637,143 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("a recording round-trips with the URL that answered", func(t *testing.T) {
+		// `from` is not decoration: spokeSource decides by MEMBERSHIP in the
+		// source candidate list and reportVoice prints a RECORD from it. A cache
+		// hit that cannot say which URL answered makes that record silent or
+		// false, so the artifact is bytes AND provenance.
+		s := newStore(t)
+		k := store.NewAudioKey("sycophantic", []string{"https://cdn/a.mp3", "https://cdn/b.mp3"})
+		want := store.AudioRecord{From: "https://cdn/b.mp3", At: day(1)}
+		if err := s.SetAudio(k, []byte("ID3audio"), want); err != nil {
+			t.Fatalf("SetAudio: %v", err)
+		}
+		data, got, err := s.Audio(k)
+		if err != nil {
+			t.Fatalf("Audio: %v", err)
+		}
+		if string(data) != "ID3audio" {
+			t.Errorf("bytes = %q, want %q", data, "ID3audio")
+		}
+		if got.From != want.From {
+			t.Errorf("From = %q, want %q — the record cannot say which URL answered", got.From, want.From)
+		}
+		if got.Missing {
+			t.Error("a stored recording read back as missing")
+		}
+	})
+
+	t.Run("two voices of one word do not collide", func(t *testing.T) {
+		// THE CRITICAL THE KEY EXISTS FOR (#46 PQ-1). A key over the word alone
+		// would make `-locale gb` and `-locale us` one entry, and the cache would
+		// serve the wrong recording — worse than no cache.
+		s := newStore(t)
+		gb := store.NewAudioKey("red", []string{"https://cdn/red_en_gb_1.mp3"})
+		us := store.NewAudioKey("red", []string{"https://cdn/red_en_us_1.mp3"})
+		if gb == us {
+			t.Fatal("two voices of one word produced the same key")
+		}
+		if err := s.SetAudio(gb, []byte("GB"), store.AudioRecord{From: "gb", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetAudio(us, []byte("US"), store.AudioRecord{From: "us", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			k    store.AudioKey
+			want string
+		}{{gb, "GB"}, {us, "US"}} {
+			data, _, err := s.Audio(tc.k)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != tc.want {
+				t.Errorf("got %q, want %q — one voice served another's recording", data, tc.want)
+			}
+		}
+	})
+
+	t.Run("a verdict round-trips and expires", func(t *testing.T) {
+		// A miss is PERMANENT in memory and DATED on disk, because the CDN gains
+		// recordings over time and the rare words a learner most wants are the
+		// likeliest to gain one. A verdict believed forever is a word that can
+		// never start working.
+		s := newStore(t)
+		k := store.NewAudioKey("quokka", []string{"https://cdn/quokka.mp3"})
+		at := day(1)
+		if err := s.SetAudio(k, nil, store.AudioRecord{At: at, Missing: true}); err != nil {
+			t.Fatalf("SetAudio: %v", err)
+		}
+		data, rec, err := s.Audio(k)
+		if err != nil {
+			t.Fatalf("Audio: %v", err)
+		}
+		if !rec.Missing || len(data) != 0 {
+			t.Errorf("verdict read back as data: missing=%v bytes=%d", rec.Missing, len(data))
+		}
+		if !rec.Fresh(at.Add(time.Hour)) {
+			t.Error("a verdict reached an hour later was already stale")
+		}
+		if rec.Fresh(at.Add(store.AudioVerdictTTL + time.Hour)) {
+			t.Error("a verdict past its TTL is still believed; the word can never start working")
+		}
+		// A HIT never expires: the key is the candidate list, so a changed URL is
+		// a different key rather than a stale one.
+		hit := store.AudioRecord{From: "u", At: at}
+		if !hit.Fresh(at.Add(10 * store.AudioVerdictTTL)) {
+			t.Error("a stored recording expired; bytes that answered once are still the right bytes")
+		}
+	})
+
+	t.Run("forget takes every recording a word owns", func(t *testing.T) {
+		// #10's BR-45, one directory over: a forgotten word that keeps its
+		// material is the one thing forgetting could not do. Two voices AND a
+		// verdict, because a word is not reachable here by a single delete.
+		s := newStore(t)
+		if err := s.Upsert(store.Word{Text: "red"}); err != nil {
+			t.Fatal(err)
+		}
+		keys := []store.AudioKey{
+			store.NewAudioKey("red", []string{"https://cdn/red_en_gb_1.mp3"}),
+			store.NewAudioKey("red", []string{"https://cdn/red_en_us_1.mp3"}),
+		}
+		for _, k := range keys {
+			if err := s.SetAudio(k, []byte("x"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stale := store.NewAudioKey("red", []string{"https://cdn/red_fr_fr_1.mp3"})
+		if err := s.SetAudio(stale, nil, store.AudioRecord{At: day(1), Missing: true}); err != nil {
+			t.Fatal(err)
+		}
+		// A NEIGHBOUR THE PREFIX MUST NOT REACH. `red` and `redact` share three
+		// letters, and a glob on the slug alone would take both.
+		keep := store.NewAudioKey("redact", []string{"https://cdn/redact_en_us_1.mp3"})
+		if err := s.SetAudio(keep, []byte("keep"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := s.Forget("red"); err != nil {
+			t.Fatalf("Forget: %v", err)
+		}
+		for _, k := range append(keys, stale) {
+			data, rec, err := s.Audio(k)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data) != 0 || rec.At != (time.Time{}) {
+				t.Errorf("%v survived Forget — the word kept the material that made it worth forgetting", k)
+			}
+		}
+		data, _, err := s.Audio(keep)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "keep" {
+			t.Errorf("forgetting %q took %q's recording too", "red", "redact")
+		}
+	})
+
 	t.Run("word fact keys are normalised the way word keys are", func(t *testing.T) {
 		s := newStore(t)
 		if err := s.SetWordFacts("Hot  Dog", store.WordFacts{Band: store.A2, Domain: store.DomainGeneral, At: day(1)}); err != nil {

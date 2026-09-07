@@ -3779,3 +3779,16 @@ the table.
 **And check the doc comment on the CALLER.** The commonest stale restatement is a
 comment on code the diff did not touch, which is exactly the set `git diff` will
 never show you.
+
+**A mutation that does not COMPILE is not a passing mutation.** Sweeping `#46`'s
+audio key, I replaced the digest input and grepped the output for the assertion
+text. Nothing matched, so it read as "the test did not catch this" — but the
+package had failed to BUILD (the mutation orphaned an import), so no test ran at
+all. The two outcomes look identical through a narrow grep and mean opposite
+things.
+
+Two rules from it: **grep the sweep's output for `build failed` and `FAIL`, not
+just for the assertion's own words**; and **write the mutation so it still
+compiles** — key on `word + strings.Join(urls[:0], "")` rather than deleting the
+argument — so the run is a real one. Also `go test` serves CACHED results: a
+sweep needs `-count=1` or it may report the pre-mutation verdict.

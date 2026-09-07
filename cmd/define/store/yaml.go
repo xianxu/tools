@@ -54,7 +54,7 @@ func NewYAML(dir string, lang Lang, warn io.Writer) *YAML {
 // itemsDir index this slice POSITIONALLY, so inserting a name anywhere but the
 // end silently repoints existing directories at each other — a data migration
 // disguised as a one-line edit.
-var RuntimeDirs = []string{"words", "events", "usage", "facts", "items"}
+var RuntimeDirs = []string{"words", "events", "usage", "facts", "items", "audio"}
 
 // The names define writes into the working directory, each with exactly ONE
 // producing function. Guards, migrations and tests DERIVE from these; nothing
@@ -176,6 +176,14 @@ func (y *YAML) usageDir() string { return filepath.Join(y.dir, RuntimeDirs[2]) }
 // is a fact about a moment, while these are derived from one deck.
 func (y *YAML) factsDir() string { return filepath.Join(y.dir, RuntimeDirs[3], string(y.lang)) }
 func (y *YAML) itemsDir() string { return filepath.Join(y.dir, RuntimeDirs[4], string(y.lang)) }
+
+// audioDir holds cached recordings, per language like its siblings.
+//
+// The language here is a SHELF, not the identity — a recording is identified by
+// the candidate list it was fetched for (see audioKey), which carries the voice
+// and the locale. Scoping the directory the way factsDir and itemsDir do keeps
+// Forget's two axes honest without pretending the path is the key.
+func (y *YAML) audioDir() string { return filepath.Join(y.dir, RuntimeDirs[5], string(y.lang)) }
 
 // SetUserModel writes the learner model.
 //
@@ -703,6 +711,10 @@ func (y *YAML) perWordDirs() []perWordDir {
 		{path: y.usageDir(), scoped: false},
 		{path: y.factsDir(), scoped: true},
 		{path: y.itemsDir(), scoped: true},
+		// audio/ is the first directory where a word owns MORE THAN ONE file:
+		// one per voice, plus a blob beside each record. So it is globbed by
+		// prefix rather than removed by name — see `many`.
+		{path: y.audioDir(), scoped: true, many: true},
 	}
 }
 
@@ -716,6 +728,16 @@ func (y *YAML) perWordDirs() []perWordDir {
 type perWordDir struct {
 	path   string
 	scoped bool
+	// many says a word owns SEVERAL files here, so Forget globs its prefix
+	// instead of removing one name.
+	//
+	// A third question, added by #46 for the same reason the second was added by
+	// #10: the classification is what the guard checks, and a directory answering
+	// only "per-word?" and "language-scoped?" would have had audio removed by the
+	// exact name `<slug>.yaml`, which no audio file is ever called. Forget would
+	// have reported success and left every recording on disk — the #10 BR-45
+	// failure exactly, one directory over.
+	many bool
 }
 
 // Forget removes everything a word owns. Events are untouched: the deck is a
@@ -743,6 +765,12 @@ func (y *YAML) Forget(key string) (bool, error) {
 	// with no deck entry is debris, and removing it is not "found something".
 	var removed bool
 	for i, dir := range y.perWordDirs() {
+		if dir.many {
+			if err := removeByPrefix(dir.path, Slug(k)); err != nil {
+				return false, err
+			}
+			continue
+		}
 		err := os.Remove(filepath.Join(dir.path, name))
 		switch {
 		case err == nil:
@@ -756,4 +784,107 @@ func (y *YAML) Forget(key string) (bool, error) {
 		}
 	}
 	return removed, nil
+}
+
+// removeByPrefix deletes every file a word owns in a `many` directory.
+//
+// The separator is what makes this safe: files are named `<slug>--<digest>.<ext>`
+// and the prefix matched is `<slug>--`, so forgetting `red` cannot reach
+// `redact--…`. Matching `<slug>` alone would, which is the bug this line exists
+// to not have.
+//
+// A missing directory is not an error, exactly as a missing file is not: most
+// words have no cached recording.
+func removeByPrefix(dir, slug string) error {
+	if slug == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	prefix := slug + audioNameSep
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+// audioRecordFile is the YAML beside the bytes.
+type audioRecordFile struct {
+	Record AudioRecord `yaml:"record"`
+}
+
+// Audio reads a cached recording and its record.
+//
+// DEGRADES, NEVER FAILS. Every way this can go wrong — a missing file, a corrupt
+// record, an unreadable blob — reads as "nothing cached", because the only cost
+// of that answer is one refetch and the cost of the alternative is a learner who
+// cannot hear a word. A cache that can break playback is worse than no cache,
+// which is the property this method exists to guarantee rather than to document.
+func (y *YAML) Audio(k AudioKey) ([]byte, AudioRecord, error) {
+	if !k.ok() {
+		return nil, AudioRecord{}, nil
+	}
+	b, err := os.ReadFile(filepath.Join(y.audioDir(), k.name()+".yaml"))
+	if err != nil {
+		return nil, AudioRecord{}, nil
+	}
+	var f audioRecordFile
+	if err := yaml.Unmarshal(b, &f); err != nil {
+		y.warnf("skipping unreadable audio record %s: %v", k.name(), err)
+		return nil, AudioRecord{}, nil
+	}
+	if f.Record.Missing {
+		return nil, f.Record, nil
+	}
+	data, err := os.ReadFile(filepath.Join(y.audioDir(), k.name()+audioBlobExt))
+	if err != nil {
+		// A record naming a blob that is gone is not a hit. Reporting the record
+		// alone would serve an EMPTY recording, which plays as silence and reads
+		// as "this word has no audio" — a lie the caller cannot detect.
+		return nil, AudioRecord{}, nil
+	}
+	return data, f.Record, nil
+}
+
+// audioBlobExt is what the bytes are called. The CDN serves mp3 and the
+// extension is for a human browsing the directory, which the README documents as
+// an invited workflow — nothing reads it back by extension.
+const audioBlobExt = ".mp3"
+
+// SetAudio stores a recording, or the verdict that there is none.
+//
+// THE BLOB IS WRITTEN FIRST, and the order is the durability argument. A record
+// naming a blob that does not exist would serve an empty recording; a blob with
+// no record is invisible and simply re-fetched. Writing the bytes first makes
+// the crash window cost a wasted fetch rather than silence.
+//
+// Both go through writeBytesAtomic, so neither can be observed half-written —
+// the `.tmp-*` shadow RuntimeFiles already covers.
+func (y *YAML) SetAudio(k AudioKey, data []byte, rec AudioRecord) error {
+	if !k.ok() {
+		return nil
+	}
+	if err := os.MkdirAll(y.audioDir(), 0o755); err != nil {
+		return err
+	}
+	if !rec.Missing {
+		if err := writeBytesAtomic(filepath.Join(y.audioDir(), k.name()+audioBlobExt), data); err != nil {
+			return err
+		}
+	}
+	b, err := yaml.Marshal(audioRecordFile{Record: rec})
+	if err != nil {
+		return err
+	}
+	return writeBytesAtomic(filepath.Join(y.audioDir(), k.name()+".yaml"), b)
 }

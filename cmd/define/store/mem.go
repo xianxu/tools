@@ -21,6 +21,7 @@ type Mem struct {
 	news      map[string]newsCache
 	facts     map[string]WordFacts
 	items     map[string][]Item
+	audio     map[AudioKey]memAudio
 }
 
 func NewMem() *Mem {
@@ -191,6 +192,38 @@ func (m *Mem) SetItems(key string, items []Item) error {
 	return nil
 }
 
+// memAudio is one cached recording in memory: the bytes and their record.
+type memAudio struct {
+	data []byte
+	rec  AudioRecord
+}
+
+func (m *Mem) Audio(k AudioKey) ([]byte, AudioRecord, error) {
+	if !k.ok() {
+		return nil, AudioRecord{}, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.audio[k]
+	if !ok {
+		return nil, AudioRecord{}, nil
+	}
+	return append([]byte(nil), a.data...), a.rec, nil
+}
+
+func (m *Mem) SetAudio(k AudioKey, data []byte, rec AudioRecord) error {
+	if !k.ok() {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.audio == nil {
+		m.audio = map[AudioKey]memAudio{}
+	}
+	m.audio[k] = memAudio{data: append([]byte(nil), data...), rec: rec}
+	return nil
+}
+
 func (m *Mem) Forget(key string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -202,5 +235,13 @@ func (m *Mem) Forget(key string) (bool, error) {
 	delete(m.news, k)
 	delete(m.facts, k)
 	delete(m.items, k)
+	// Every recording the word owns, on EVERY voice — the twin of YAML's prefix
+	// glob. A word keyed by AudioKey is not reachable by a single delete, which
+	// is the same shape difference `many` records over there.
+	for ak := range m.audio {
+		if ak.Word == k {
+			delete(m.audio, ak)
+		}
+	}
 	return inDeck, nil
 }
