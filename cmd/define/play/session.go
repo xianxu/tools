@@ -102,6 +102,15 @@ const (
 	// --forget's contract: history is what happened and cannot be untrue, while
 	// the deck is the working set and is the learner's to curate.
 	OutcomeDrop
+	// OutcomeFlag: the learner called this QUESTION broken. Record it, with the
+	// options that made it broken, and move on.
+	//
+	// A KIND OF ITS OWN rather than a Record with a verdict, and the reason is
+	// mechanical: CaptureReview writes EventReviewed, Fold folds every reviewed
+	// event, and GradeOf(correct=false) is GradeWrong — so a flag routed through
+	// Record would DEMOTE the word on an append-only log. The loop's arm for this
+	// calls a different store verb, exactly as OutcomeDrop's calls Forget.
+	OutcomeFlag
 )
 
 // Outcome is what the loop must do, and about which word.
@@ -149,7 +158,12 @@ type Outcome struct {
 	// Form is which form asked, on every Record outcome (#40 D4a). Set in ONE
 	// place — see Apply — because three call sites building Records is three
 	// chances to ship a promotion the log cannot attribute.
-	Form        string
+	Form string
+	// Options is the option set of a FLAGGED question, and is set on no other
+	// kind. See Flagging for why a flag carries what Missed deliberately does
+	// not: the flag exists to diagnose this question, so the options are the
+	// evidence.
+	Options     []string
 	SessionDone bool
 }
 
@@ -239,7 +253,29 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 	// InputDrop and InputQuit stay OUTSIDE deliberately: "this word is not mine"
 	// and "stop" are still true after a verdict, and routing them here would
 	// silently turn a drop into a plain advance.
+	// A FLAG IS ASKED BEFORE the graded branch below, for the reason InputDrop
+	// and InputQuit sit outside it: "this question is broken" is still true after
+	// a verdict, and falling through would silently turn a flag into a plain
+	// advance. That is the state it matters MOST in — a learner discovers a
+	// question is broken by reading the reveal.
+	//
+	// The keystroke reaches the form through Grade, which returns false for it
+	// (the flag is not an ANSWER), and the flag itself comes back out of advance
+	// beside the drop.
 	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal || in.Kind == InputFinish) {
+		// OFFERED TO THE FORM FIRST, when the form can flag.
+		//
+		// "Any key advances" would otherwise swallow a gesture the form
+		// recognises — and after a verdict is the state a flag matters MOST in,
+		// because a learner discovers a question is broken by reading the reveal.
+		// InputDrop and InputQuit sit outside this branch for the same reason.
+		//
+		// Only when the form can flag: a form that cannot has nothing to claim
+		// here, and re-grading it would move a pick on a question already
+		// answered. advance asks for the flag itself, beside the drop.
+		if in.Kind == InputRune && canFlag(q) {
+			q.Grade(in.Rune)
+		}
 		next, out := advance(s, q, Skipped, false)
 		return next, []Outcome{out}
 	}
@@ -368,7 +404,18 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 		// The graded case is handled above.
 		verdict, ok := q.Grade(in.Rune)
 		if !ok {
-			return s, []Outcome{{Kind: OutcomeNone}} // a key this form does not use
+			// A key this form does not use AS AN ANSWER — which is not the same
+			// as a key it does not use. A flag lands here: Grade answers false
+			// because a broken question is not a verdict, and the gesture travels
+			// out through Flagging instead.
+			if opts, flagged := flaggedBy(q); flagged {
+				next, _ := advance(s, q, Skipped, false)
+				return next, []Outcome{{
+					Kind: OutcomeFlag, Word: q.Word(), Options: opts,
+					Form: q.Form(), SessionDone: next.Done,
+				}}
+			}
+			return s, []Outcome{{Kind: OutcomeNone}}
 		}
 		if s.Revealed || verdict != Wrong {
 			// Nothing left to show: the answer is already on screen, or the
@@ -456,6 +503,16 @@ func advance(s Session, q Question, v Verdict, unaided bool) (Session, Outcome) 
 	if word, ok := droppedBy(q); ok {
 		return s, Outcome{Kind: OutcomeDrop, Word: word, SessionDone: s.Done}
 	}
+	// A FLAG, asked HERE for the reason the drop is: this is the one place both
+	// mark paths meet, so the question is put once rather than at two call sites
+	// that could drift.
+	//
+	// BEFORE the Skipped branch below, because a flag arrives with no verdict and
+	// would otherwise be swallowed as an ordinary skip — which is exactly the
+	// silent-advance failure this whole gesture exists to avoid.
+	if opts, ok := flaggedBy(q); ok {
+		return s, Outcome{Kind: OutcomeFlag, Word: q.Word(), Options: opts, Form: q.Form(), SessionDone: s.Done}
+	}
 	if v == Skipped {
 		// Not an assessment. schedule.Fold would read a recorded skip as a miss
 		// and demote the word.
@@ -484,6 +541,46 @@ func missedAxis(q Question) Axis {
 		return m.MissedAxis()
 	}
 	return AxisNone
+}
+
+// Flagging is implemented by a form whose last keystroke said the QUESTION is
+// broken, rather than that the answer was wrong.
+//
+// Optional, exactly as Missed and Dropping are, and for the same reason: most
+// forms have no such gesture and widening Question would make every one of them
+// answer a question it cannot.
+//
+// NOT A VERDICT. Verdict is what an ANSWER meant, and schedule.Fold reads
+// verdicts to move boxes — a fourth one meaning "this question is broken" would
+// put material curation in front of the ladder. A flagged question scores
+// NOTHING: the word neither promotes nor demotes, because a broken question is
+// not evidence about the learner.
+//
+// It returns the OPTION SET, which is the deliberate opposite of what Missed
+// does. Missed records the axis rather than the distractor's word because
+// "picked larceny is a fact about one question whose option set no longer
+// exists" — but a flag's whole purpose is diagnosing THAT question, so the
+// options are the evidence and a flag naming none is "something was wrong once".
+//
+// ONE-SHOT BY CONTRACT, as Dropping is: advance asks after every mark.
+type Flagging interface {
+	Flagged() ([]string, bool)
+}
+
+// canFlag reports whether a form has the gesture at all, so the session can
+// offer it a keystroke it would otherwise swallow — without asking any form that
+// cannot answer.
+func canFlag(q Question) bool {
+	_, ok := q.(Flagging)
+	return ok
+}
+
+// flaggedBy asks a question whether its last keystroke called it broken.
+func flaggedBy(q Question) ([]string, bool) {
+	if f, ok := q.(Flagging); ok {
+		return f.Flagged()
+	}
+	return nil, false
 }
 
 // Dropping is implemented by a form whose last mark asked for a word to be
