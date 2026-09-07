@@ -512,14 +512,15 @@ events/2026-08-21.yaml     append-only, one file per day (named in UTC)
 facts/en/sycophantic.yaml  a word's CEFR band and domain, written by
                            --harvest and never re-asked; per language, because
                            `red` is a different word in English and Spanish
-audio/sycophantic--51f6…mp3 the recorded pronunciation, kept so a replay
+audio/sycophantic/51f6….mp3 the recorded pronunciation, kept so a replay
                            costs no network — and a `.yaml` beside it naming
-                           the URL that answered. FLAT, not per language: one
-                           word has one recording per VOICE and the filename's
-                           digest is what tells them apart, so a language shelf
-                           would be a second answer to the same question. A
-                           word the CDN has no recording for gets a record
-                           saying so, believed for thirty days
+                           the URL that answered. A DIRECTORY per word, one
+                           file per voice inside it. Flat, not per language:
+                           the filename's digest already says which voice a
+                           recording is for, so a language shelf would be a
+                           second answer to the same question. A word the CDN
+                           has no recording for gets a record saying so,
+                           believed for thirty days
 items/en/sycophantic.yaml  practice items authored ahead of time by
                            --harvest, per language: a sentence with its answer
                            and the words vetoed to sit beside it. This is what

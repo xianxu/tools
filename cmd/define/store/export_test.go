@@ -30,3 +30,7 @@ type PerWordDirView struct {
 	Scoped bool
 	Many   bool
 }
+
+// DigestForTest exposes the key's digest so a test can name the files a word
+// owns — the only way to damage one, which is what the degrade rows do.
+func (k AudioKey) DigestForTest() string { return k.Digest }

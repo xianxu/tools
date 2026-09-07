@@ -611,12 +611,13 @@ events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
                          kinds: looked-up, asked, reviewed, flagged
 usage/<slug>.yaml        the news cache — per word and FLAT, so it is shared
                          across languages (see Forget's three axes)
-audio/<slug>--<digest>.mp3  a cached recording, with a .yaml record beside it
-                         naming the URL that answered. Per word, FLAT, and MANY
-                         (#46): the digest over the candidate list is what
-                         distinguishes one voice from another, so the shelf
-                         carries no language and Forget globs the word's prefix.
-                         The first BINARY artifact in a working directory
+audio/<slug>/<digest>.mp3  a cached recording, with a <digest>.yaml record
+                         beside it naming the URL that answered. Per word, FLAT,
+                         and MANY (#46): the digest over the candidate list is
+                         what distinguishes one voice from another, so the shelf
+                         carries no language, and a word owns a DIRECTORY so
+                         Forget removes a tree by exact name. The first BINARY
+                         artifact in a working directory
 facts/<lang>/<slug>.yaml a word's CEFR band and domain (#10)
 items/<lang>/<slug>.yaml authored practice items (#10), what a cloze is built from
 lang.txt                 the directory's language (#23)

@@ -184,6 +184,118 @@ rounds:
           round: 2
       boundary: M1
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-07T16:22:33-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'The third shape shipped: deps.audio is *audioSeam, both wrap lines are gone, and the retired-symbol guard now forbids the old constructor.'
+          round: 3
+        - id: BR-2
+          disposition: addressed
+          note: audio/ is flat; re-scoping it by language reddens TestForgetTakesARecordingFetchedInAnotherLanguage and the scoped guard (mutation-verified).
+          round: 3
+        - id: BR-3
+          disposition: addressed
+          note: 'Mutation-verified: deleting the withStore block reddens TestWithStorePutsTheDiskCacheUnderTheMemo with the right message.'
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: Full suite green at HEAD under default and conformance tags; gofmt -l and go vet ./... clean.
+          round: 3
+        - id: BR-5
+          disposition: addressed
+          note: 'Mutation-verified: many true to false reddens three storetest rows on both twins plus the language-switch test.'
+          round: 3
+        - id: BR-6
+          disposition: not-addressed
+          note: failingStore now has a call site, but the corrupt-file and unwritable-directory rows and YAML.Audio's two defensive branches remain unpinned.
+          round: 3
+        - id: BR-7
+          disposition: addressed
+          note: Renamed to what it asserts and the argument recorded; note that playSession IS drivable in-process, so the "a sitting cannot be driven" claim is broader than true.
+          round: 3
+        - id: BR-8
+          disposition: addressed
+          note: Both enumerations now list audio/ — but with the superseded filing scheme; raised separately below.
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: No Revisions entry was appended for this round and the body was edited in place again, introducing a fresh break at plan lines 365-366.
+          round: 3
+        - id: BR-10
+          disposition: addressed
+          note: Directory-per-word removes the separator claim entirely; the re/re- conformance row plants a fixture that reaches the branch on both twins.
+          round: 3
+        - id: BR-11
+          disposition: addressed
+          note: Blob read now capped by readCapped; the sibling record read and the doc/behaviour mismatch are raised below in the same family.
+          round: 3
+        - id: BR-12
+          disposition: not-addressed
+          note: 'Mutation-verified: reverting the os.Remove(blob) leaves the store package fully green — the test asserts only through Audio, which gates on the record.'
+          round: 3
+        - id: BR-13
+          disposition: not-addressed
+          note: audioKey/audioRecord, store/audio_test.go and the missing mergeRegions row all persist, and new drift arrived with the reversal.
+          round: 3
+        - id: BR-14
+          disposition: addressed
+          note: The test now drives writeWords and asserts two RegionWord click targets as well as the absence of colour.
+          round: 3
+        - id: BR-15
+          disposition: not-addressed
+          note: Still 0 of 45 plan checkboxes ticked while the issue's Plan ticks M1 and M2.
+          round: 3
+      findings:
+        - id: BR-16
+          severity: Important
+          title: The audio filing reversal was swept through the code paths and left ten restatements of the superseded scheme, two of them doc comments on the field it changed
+          detail: |-
+            This is the 2nd finding in family `runtime-artifact-undocumented`, and the third time this
+            issue has paid for the rule (PQ-10 recorded it; workshop/targets/derived-restatement.md
+            exists for it). Do NOT patch the sites. The shipped layout is audio/<slug>/<digest>.mp3
+            plus <digest>.yaml, removed by RemoveAll on an exact directory name (probed). Still
+            describing <slug>--<digest> filed flat and removed by prefix glob: yaml.go:725-726,
+            yaml.go:741-742 (the `many` field's own doc, 60 lines above removeWordTree's "AN EXACT
+            NAME, not a prefix"), yaml.go:731-737 (perWordDir's type doc still says "on BOTH axes …
+            TWO axes" — the same drift this commit fixed in PerWordDirsForTest), yaml_test.go:727,
+            README.md:515, atlas/define.md:614 and :618, and plan lines 153-155, 202-204, 254, 450,
+            456-460. The rule: a design reversal is landed only when the greppable enumeration of
+            restatements is swept in the same commit — write the grep, run it, and put the rule in
+            lessons.md. ARCH-PURPOSE shadow-sweep: the derived consumer (.gitignore, from RuntimeDirs)
+            is right; every hand-maintained one is wrong.
+          family: runtime-artifact-undocumented
+          round: 3
+        - id: BR-17
+          severity: Minor
+          title: applyLang's enumeration of what a language switch re-derives still does not account for d.audio, which holds a store bound to the pre-switch language
+          detail: |-
+            This is the 2nd finding in family `lang-switch-derivation`. The behaviour is correct now
+            only because audioDir is flat, so d.audio's stale store reference is harmless — but
+            applyLang (cmd/define/command.go:397-399) explicitly lists its deliberate exclusions
+            ("Deliberately NOT here: d.history") and d.audio is in neither list. The rule, not the
+            line: every deps member holding a language-derived object appears in applyLang's
+            enumeration or in its exclusion clause, with the reason — here, that audio/ carries no
+            language shelf.
+          family: lang-switch-derivation
+          round: 3
+        - id: BR-18
+          severity: Minor
+          title: Only the blob was bounded — the record YAML beside it is still read with an unbounded os.ReadFile, readCapped truncates where its doc says it refuses, and no test pins the cap
+          detail: |-
+            This is the 2nd finding in family `unbounded-input-read`, and the sibling read is in the
+            same function as the one the first finding named: yaml.go:838 reads the record with
+            os.ReadFile while yaml.go:843 caps the blob. readCapped's doc says "refusing anything past
+            max" but io.LimitReader truncates, which matches the network path's behaviour and not the
+            comment. Do not just cap the record. The rule: state once, at the store boundary, which
+            persisted reads are bounded and why the rest (words/, facts/, items/) are not — a per-site
+            fix is what left the sibling in place here.
+          family: unbounded-input-read
+          round: 3
+      boundary: M1
+      blocked: true
 ---
 
 # Gate ledger — tools#46 (boundary-review)
@@ -294,20 +406,66 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   unchecked after the work landed, so the plan's own checklist cannot be used to see what
   this boundary delivered.
 
+## Round 3 — 2026-09-07T16:22:33-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — The third shape shipped: deps.audio is *audioSeam, both wrap lines are gone, and the retired-symbol guard now forbids the old constructor.
+- BR-2 — addressed — audio/ is flat; re-scoping it by language reddens TestForgetTakesARecordingFetchedInAnotherLanguage and the scoped guard (mutation-verified).
+- BR-3 — addressed — Mutation-verified: deleting the withStore block reddens TestWithStorePutsTheDiskCacheUnderTheMemo with the right message.
+- BR-4 — addressed — Full suite green at HEAD under default and conformance tags; gofmt -l and go vet ./... clean.
+- BR-5 — addressed — Mutation-verified: many true to false reddens three storetest rows on both twins plus the language-switch test.
+- BR-6 — not-addressed — failingStore now has a call site, but the corrupt-file and unwritable-directory rows and YAML.Audio's two defensive branches remain unpinned.
+- BR-7 — addressed — Renamed to what it asserts and the argument recorded; note that playSession IS drivable in-process, so the "a sitting cannot be driven" claim is broader than true.
+- BR-8 — addressed — Both enumerations now list audio/ — but with the superseded filing scheme; raised separately below.
+- BR-9 — not-addressed — No Revisions entry was appended for this round and the body was edited in place again, introducing a fresh break at plan lines 365-366.
+- BR-10 — addressed — Directory-per-word removes the separator claim entirely; the re/re- conformance row plants a fixture that reaches the branch on both twins.
+- BR-11 — addressed — Blob read now capped by readCapped; the sibling record read and the doc/behaviour mismatch are raised below in the same family.
+- BR-12 — not-addressed — Mutation-verified: reverting the os.Remove(blob) leaves the store package fully green — the test asserts only through Audio, which gates on the record.
+- BR-13 — not-addressed — audioKey/audioRecord, store/audio_test.go and the missing mergeRegions row all persist, and new drift arrived with the reversal.
+- BR-14 — addressed — The test now drives writeWords and asserts two RegionWord click targets as well as the absence of colour.
+- BR-15 — not-addressed — Still 0 of 45 plan checkboxes ticked while the issue's Plan ticks M1 and M2.
+
+### Raised
+
+- **BR-16** [Important] `runtime-artifact-undocumented` The audio filing reversal was swept through the code paths and left ten restatements of the superseded scheme, two of them doc comments on the field it changed
+  This is the 2nd finding in family `runtime-artifact-undocumented`, and the third time this
+  issue has paid for the rule (PQ-10 recorded it; workshop/targets/derived-restatement.md
+  exists for it). Do NOT patch the sites. The shipped layout is audio/<slug>/<digest>.mp3
+  plus <digest>.yaml, removed by RemoveAll on an exact directory name (probed). Still
+  describing <slug>--<digest> filed flat and removed by prefix glob: yaml.go:725-726,
+  yaml.go:741-742 (the `many` field's own doc, 60 lines above removeWordTree's "AN EXACT
+  NAME, not a prefix"), yaml.go:731-737 (perWordDir's type doc still says "on BOTH axes …
+  TWO axes" — the same drift this commit fixed in PerWordDirsForTest), yaml_test.go:727,
+  README.md:515, atlas/define.md:614 and :618, and plan lines 153-155, 202-204, 254, 450,
+  456-460. The rule: a design reversal is landed only when the greppable enumeration of
+  restatements is swept in the same commit — write the grep, run it, and put the rule in
+  lessons.md. ARCH-PURPOSE shadow-sweep: the derived consumer (.gitignore, from RuntimeDirs)
+  is right; every hand-maintained one is wrong.
+- **BR-17** [Minor] `lang-switch-derivation` applyLang's enumeration of what a language switch re-derives still does not account for d.audio, which holds a store bound to the pre-switch language
+  This is the 2nd finding in family `lang-switch-derivation`. The behaviour is correct now
+  only because audioDir is flat, so d.audio's stale store reference is harmless — but
+  applyLang (cmd/define/command.go:397-399) explicitly lists its deliberate exclusions
+  ("Deliberately NOT here: d.history") and d.audio is in neither list. The rule, not the
+  line: every deps member holding a language-derived object appears in applyLang's
+  enumeration or in its exclusion clause, with the reason — here, that audio/ carries no
+  language shelf.
+- **BR-18** [Minor] `unbounded-input-read` Only the blob was bounded — the record YAML beside it is still read with an unbounded os.ReadFile, readCapped truncates where its doc says it refuses, and no test pins the cap
+  This is the 2nd finding in family `unbounded-input-read`, and the sibling read is in the
+  same function as the one the first finding named: yaml.go:838 reads the record with
+  os.ReadFile while yaml.go:843 caps the blob. readCapped's doc says "refusing anything past
+  max" but io.LimitReader truncates, which matches the network path's behaviour and not the
+  comment. Do not just cap the record. The rule: state once, at the store boundary, which
+  persisted reads are bounded and why the rest (words/, facts/, items/) are not — a per-site
+  fix is what left the sibling in place here.
+
 ## Open findings
 
-- **BR-1** [Important] `seam-wrap-site` "That is ~8 functions" is the 4th wrong prose statement of the wrap set — the real membership is 24, and Step 4 writes the line into functions that never touch audio
-- **BR-2** [Critical] `lang-switch-derivation` A /lang switch strands the audio cache on the previous language's shelf, and --forget reports success while the file survives
-- **BR-3** [Critical] `production-wiring-unpinned` Deleting the entire production wiring of diskAudioCache from withStore leaves the suite green
-- **BR-4** [Critical] `red-at-boundary` The suite is red at the review head — TestPlanTableStatusMatchesTheChangeWindow fails
-- **BR-5** [Important] `unguarded-classification-axis` perWordDir's new `many` axis is declared but no guard checks it, and the export helper still says "both axes"
 - **BR-6** [Important] `claimed-coverage-absent` The degrade-never-fail rows are half-delivered and failingStore.Audio claims coverage with zero call sites
-- **BR-7** [Important] `pin-not-at-the-loop` TestASittingFetchesARecordingOnce never calls runPlay, so the M1 regression is not pinned where it lived
-- **BR-8** [Important] `runtime-artifact-undocumented` README's and the atlas's working-directory listings do not mention audio/, the new (and first binary) runtime artifact
 - **BR-9** [Important] `revision-overwritten` The plan's historical Revisions prose was overwritten by a blind symbol substitution and no longer reads as English
-- **BR-10** [Minor] `prefix-separator-invariant` audioNameSep's claim that a slug cannot contain "--" is false, so --forget re deletes re-'s recordings
-- **BR-11** [Minor] `unbounded-input-read` The cached blob is read with an unbounded os.ReadFile where the network path caps at maxAudioBytes
 - **BR-12** [Minor] `stale-blob-on-verdict` SetAudio with Missing set skips the blob write but does not remove an existing .mp3
 - **BR-13** [Minor] `plan-table-drift` The plan's entity tables drift from the code: audioKey/audioRecord vs AudioKey/AudioRecord, no store/audio_test.go, mergeRegions has no row
-- **BR-14** [Minor] `test-name-overclaims` TestClozeOptionsAreClickableButNotColoured asserts only colour and never a click target
 - **BR-15** [Minor] `tracking-in-two-places` The plan file has zero ticked steps while the issue's Plan ticks M1
+- **BR-16** [Important] `runtime-artifact-undocumented` The audio filing reversal was swept through the code paths and left ten restatements of the superseded scheme, two of them doc comments on the field it changed
+- **BR-17** [Minor] `lang-switch-derivation` applyLang's enumeration of what a language switch re-derives still does not account for d.audio, which holds a store bound to the pre-switch language
+- **BR-18** [Minor] `unbounded-input-read` Only the blob was bounded — the record YAML beside it is still read with an unbounded os.ReadFile, readCapped truncates where its doc says it refuses, and no test pins the cap

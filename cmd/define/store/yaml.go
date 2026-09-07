@@ -721,32 +721,37 @@ func (y *YAML) perWordDirs() []perWordDir {
 		{path: y.itemsDir(), scoped: true},
 		// audio/ is per-word, FLAT, and MANY — the first directory to need all
 		// three answers. Flat because the recording's identity is the candidate
-		// list, not a shelf (see audioDir); many because a word owns one file per
-		// voice plus a blob beside each record, so it is globbed by prefix rather
-		// than removed by name.
+		// list, not a shelf (see audioDir); many because a word owns a whole
+		// SUBDIRECTORY here, one file per voice inside it, so Forget removes a
+		// tree rather than a file.
 		{path: y.audioDir(), scoped: false, many: true},
 	}
 }
 
-// perWordDir is a directory Forget clears, on BOTH axes.
+// perWordDir is a directory Forget clears, on THREE axes.
 //
-// TWO axes, because the first version classified on one. "Is it per-word or
-// history" decides whether Forget touches it at all; "is it language-scoped"
-// decides whose copy it touches. usage/ is per-word and flat, so forgetting in
-// one language reaches another's cache — invisible to a guard that only asked
-// the first question.
+// Each axis was added by a bug the previous set could not see, which is the
+// argument for the shape as much as the shape itself:
+//
+//  1. per-word or history — whether Forget touches it at all. events/ is
+//     history; rewriting the past corrupts every statistic derived from it.
+//  2. language-scoped or flat — whose copy it touches. usage/ is per-word and
+//     FLAT, so forgetting in one language reaches another's cache; a guard that
+//     asked only the first question could not see that.
+//  3. one file or many — HOW it is removed. audio/ gives a word a whole
+//     subdirectory, one file per voice, so an exact-name removal would report
+//     success and leave every recording on disk (#10 BR-45, one directory over).
 type perWordDir struct {
 	path   string
 	scoped bool
-	// many says a word owns SEVERAL files here, so Forget globs its prefix
-	// instead of removing one name.
+	// many says a word owns a whole SUBDIRECTORY here rather than one file, so
+	// Forget removes a tree instead of a name.
 	//
 	// A third question, added by #46 for the same reason the second was added by
 	// #10: the classification is what the guard checks, and a directory answering
 	// only "per-word?" and "language-scoped?" would have had audio removed by the
 	// exact name `<slug>.yaml`, which no audio file is ever called. Forget would
-	// have reported success and left every recording on disk — the #10 BR-45
-	// failure exactly, one directory over.
+	// have reported success and left every recording on disk.
 	many bool
 }
 
@@ -798,9 +803,13 @@ func (y *YAML) Forget(key string) (bool, error) {
 
 // removeWordTree deletes the directory a word owns in a `many` directory.
 //
-// AN EXACT NAME, not a prefix. The first version globbed `<slug>--` and claimed
-// a slug could not contain "--"; `re-` slugs to `re--ddf427`, so forgetting `re`
-// took a different word's recordings. A directory name has no such ambiguity.
+// AN EXACT NAME, not a prefix — and the history is the argument. The first
+// design filed recordings as flat `<slug>--<digest>` files and removed them by
+// globbing `<slug>--`, on the claim that a slug cannot contain "--". It can:
+// `re-` slugs to `re--ddf427`, so forgetting `re` took a different word's
+// recordings. The fix is not a rarer separator, because any separator has to be
+// reasoned about against Slug's alphabet and that reasoning is what was wrong. A
+// directory name admits no such ambiguity.
 //
 // A missing directory is not an error, exactly as a missing file is not: most
 // words have no cached recording.

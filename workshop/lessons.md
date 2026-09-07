@@ -3829,3 +3829,32 @@ plan-cites-tests guard fired on "the obvious name is `TestFoo`" in a paragraph
 explaining why that test was NOT written. Backticks are the guard's whole signal,
 so historical mentions have to drop them — cheaper than teaching the guard about
 tense.
+
+**A design reversal is not landed until the greppable enumeration is swept in
+the same commit.** `#46` reversed how audio is filed — flat `<slug>--<digest>`
+files removed by prefix, to a directory per word removed by exact name — and
+swept it through every code PATH while leaving ten restatements of the old
+scheme, two of them doc comments on the field the change was about, sixty lines
+above the function that now contradicted them.
+
+The procedure, and it is cheap: **write the grep before the fix, run it after.**
+Here it was one line —
+
+    grep -rn 'slug>--\|prefix glob\|globs its prefix\|BOTH axes\|TWO axes' \
+        --include='*.go' --include='*.md' cmd/ atlas/ workshop/plans/
+
+— and it named every site including the ones in the plan and the README. The
+derived consumer (`.gitignore`, from `RuntimeDirs`) was right without being
+touched; **every hand-maintained one was wrong.** That asymmetry is the whole
+argument of `workshop/targets/derived-restatement.md`, and this is the third
+time one issue paid for it.
+
+**Historical mentions are fine and are not the target.** A comment saying "the
+first version globbed `<slug>--` and that was false" is the reason the current
+code looks as it does. What the grep is hunting is a sentence in the PRESENT
+tense describing behaviour that no longer exists.
+
+**Edit a plan by APPENDING a Revisions entry, never in place.** Round 1's
+in-place fixes included a blind symbol substitution that left five passages
+ungrammatical and broke a sixth; nobody re-reads a document they edited with a
+regex, which is exactly why AGENTS.md §1 says append.
