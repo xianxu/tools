@@ -198,8 +198,8 @@ const ItemCap = 4
 // non-test caller writes exactly one item, for words that have none. It is a
 // guard for #13, which adds a second Form wanting its own items — stated here
 // rather than left for a reader to discover that the cap has never fired.
-// : the same input prunes to the
-// same output, every time.
+//
+// DETERMINISTIC: the same input prunes to the same output, every time.
 //
 // Newest first by At, ties broken by Stem — the tie-break is what makes it
 // deterministic rather than merely usually-stable, because two items authored in

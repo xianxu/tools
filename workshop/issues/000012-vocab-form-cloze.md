@@ -5,7 +5,7 @@ deps: ["tools#6", "tools#10", "tools#11"]
 github_issue:
 created: 2026-08-20
 updated: 2026-09-06
-estimate_hours: 3.99
+estimate_hours: 4.54
 started: 2026-09-06T17:17:21-07:00
 ---
 
@@ -70,10 +70,11 @@ item: cross-cutting-refactor   design=0.04 impl=0.20
 item: cross-cutting-refactor   design=0.05 impl=0.24
 item: atlas-docs               design=0.03 impl=0.06
 item: smaller-go-module        design=0.0  impl=0.20
-item: milestone-review         design=0.0  impl=0.45
+item: ux-rename-iteration      design=0.0  impl=0.15
 item: milestone-review         design=0.0  impl=0.60
+item: milestone-review         design=0.0  impl=0.85
 design-buffer: 0.15
-total: 3.99
+total: 4.54
 ```
 
 | item | task | why this primitive |
@@ -90,24 +91,38 @@ total: 3.99
 | `cross-cutting-refactor` 0.05/0.24 | T6 the flag's signal path | five stages across `play`, `main` and `store`, plus a `storetest` row |
 | `atlas-docs` 0.03/0.06 | T7 | README's "three kinds of question" is now four; the atlas needs the new clause |
 | `smaller-go-module` 0.0/0.20 | T7 the mutation sweep | `#10` measured this at roughly this cost twice |
-| `milestone-review` 0.0/0.45 | the boundary: run | |
-| `milestone-review` 0.0/0.60 | the boundary: remediation | |
+| `ux-rename-iteration` 0.0/0.15 | T7 **the hand-run sitting** | **added on review** — see deviation 3 |
+| `milestone-review` 0.0/0.60 | the boundary: run | |
+| `milestone-review` 0.0/0.85 | the boundary: remediation | |
 
-**TWO NAMED DEVIATIONS.**
+**THREE NAMED DEVIATIONS.**
 
 1. **Two `milestone-review` rows for a single-boundary issue**, which is `#42`'s
    deviation and the house convention. Booking two prices ROUNDS rather than
    boundaries.
-2. **They are priced at 0.45/0.60 rather than `#10`'s 0.30/0.32 — nearly double —
-   and that is the one number in this block chosen from measurement rather than
-   from the table.** `#10 M2` booked 0.75 for its boundary and spent roughly 6h
-   across four rounds; `#10 M1` booked 0.62 and its own note said the row was 3x
-   low. Pricing this boundary at `#10`'s rate would repeat a figure already
-   proven wrong twice on the immediately preceding issue.
+2. **They are priced at 0.60/0.85 rather than `#10`'s 0.30/0.32, and that is the
+   one number here chosen from measurement rather than from the table.**
+   `#10 M2` booked 0.75 for its boundary and spent roughly 6h across four rounds;
+   `#10 M1` booked 0.62 and its own note said the row was 3x low. **The first
+   draft of this block booked 1.05 and the estimate-quality judge was right that
+   it corrected in the right direction and then stopped short of the evidence it
+   was quoting.** 1.45 is still under what `#10 M2` measured — the diff here is
+   genuinely smaller — but it is the same CLASS of change that produced REWORK
+   twice on `#10`: a new form, a fifth optional capability, a new `OutcomeKind`,
+   a new store verb, and a new `EventKind` on an append-only log.
+3. **`ux-rename-iteration` at 0.0/0.15 for the hand-run sitting.** The plan's
+   Verification commits to running a real sitting against `#10`'s generated
+   batch, and the first draft of this block priced it at nothing — the exact
+   omission `#10`'s own deviation 3 recorded as a lesson, where booking 0.10
+   *"priced the checkpoint as a formality"*. Far cheaper here than there (no model
+   call, no regeneration, one batch already on disk), but it is the first
+   hand-render of a new TUI question type: prompt layout, the three-part reveal,
+   and `?` across three session states are all things a hand-run surfaces and an
+   assertion does not. Design is 0.0 because the plan already decided the shape.
 
 **The trailing record.** Six v3.1 rows: `#38` 0.67, `#39` 1.85, `#40` 0.48,
 `#41` 0.69, `#42` 0.36, `#44` 0.47 — and now `#10` at 0.62. Median 0.62, range
-0.36-1.85. At the median, 3.99 predicts about 6.4h. **Not multiplied to meet it**:
+0.36-1.85. At the median, 4.54 predicts about 7.3h. **Not multiplied to meet it**:
 the primitives are the method and `#117`'s ledger is where a systematic ratio
 belongs. The boundary rows above are the one place this estimate moves toward the
 record, and they move on `#10`'s specific measured boundary cost rather than on
