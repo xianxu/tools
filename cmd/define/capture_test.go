@@ -82,6 +82,9 @@ type countingCapturer struct {
 	axes []play.Axis
 	// unaided records the same for #39's two-rung promotion signal.
 	unaided []bool
+	// flags is the option set of each flagged question (#12), so a test can
+	// assert that the EVIDENCE travelled and not merely that a flag fired.
+	flags [][]string
 	// voices records the SESSION voice each capture happened under. #29 needs it:
 	// its first Done-when is that the session does not move, and the capture is
 	// where a lookup's language becomes observable — a word files into
@@ -106,6 +109,10 @@ func (c *countingCapturer) CaptureReview(out play.Outcome, _ options) {
 	c.reviews++
 	c.axes = append(c.axes, out.Axis)
 	c.unaided = append(c.unaided, out.Unaided)
+}
+
+func (c *countingCapturer) CaptureFlag(out play.Outcome, _ options) {
+	c.flags = append(c.flags, out.Options)
 }
 
 // ONE lookup, ONE capture — on every entry path.

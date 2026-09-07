@@ -448,6 +448,14 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// shows the cost AFTER this answer without reading anything.
 				held.answered(out, d.clock.Now())
 				refresh()
+			case play.OutcomeFlag:
+				// Its own arm, calling its own verb — exactly as OutcomeDrop
+				// calls Forget rather than routing through CaptureReview. A flag
+				// records no verdict, so nothing reaches Fold and the word
+				// neither promotes nor demotes.
+				d.capture.CaptureFlag(out, opt)
+				refresh()
+				fmt.Fprintf(stdout, "\nflagged %q as a bad question\n", out.Word)
 			case play.OutcomeDrop:
 				// Through the store's own Forget, which is --forget's path: the deck
 				// loses the word and the events keep it. Reported, because removing
@@ -988,6 +996,21 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			continue
 		}
 		entry := ParseEntry(text)
+		// AN AUTHORED ITEM BEATS A DEFINITION MATCH, which is the whole of #12's
+		// clause on the selection rule.
+		//
+		// #10 exists because a definition match is the WEAKER test — it asks
+		// which gloss belongs to a word, where a cloze asks which word belongs to
+		// a sentence. The item was authored to be the better question, so
+		// preferring 2.3 when both are available would make #10 decoration.
+		//
+		// The board still triages mature words above (#42's rule, unchanged):
+		// that rule was hard-won and changing it is a different issue with its
+		// own evidence.
+		if q := clozeAsk(d, opt, key, entry, marks, day); q != nil {
+			qs = append(qs, q)
+			continue
+		}
 		if q := ask(key, entry); q != nil {
 			qs = append(qs, q)
 			continue

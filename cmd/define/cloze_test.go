@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/xianxu/tools/internal/llm"
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
@@ -266,5 +269,153 @@ func TestUsableItemRefusesAnAnswerThatIsNotAWord(t *testing.T) {
 	}
 	if !usableItem(it) {
 		t.Error("a hyphenated word was refused")
+	}
+}
+
+// THE SELECTION RULE, as a rule rather than a branch: "an authored item beats a
+// definition match", and everything else unchanged.
+func TestTheFormSelectionRule(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		box      int
+		items    []store.Item
+		wantForm string
+	}{
+		{"a young word WITH an item takes cloze", 0, []store.Item{clozeItem()}, "cloze"},
+		// The row that catches a rule written as "always cloze": #7's behaviour
+		// must be untouched for a word #10 has not authored.
+		{"a young word WITHOUT one still takes 2.3", 0, nil, "meaning"},
+		// #42's rule, unchanged: a mature word is triaged, not tested, even
+		// holding perfectly good material.
+		{"a MATURE word still goes to the board", boardBox, []store.Item{clozeItem()}, "board"},
+		// The store neutralises on read but does not re-validate, and the README
+		// documents items/ as inspectable.
+		{"an UNUSABLE item falls back to 2.3", 0, []store.Item{brokenItem()}, "meaning"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A REAL DECK, not one word: form 2.3 draws its distractors from the
+			// sitting's pool, so a single-word rig cannot build one and every
+			// word falls to the board — which would make the 2.3 rows below pass
+			// for #42's reason rather than for the rule under test.
+			d, opt, st := playRig(t, "sycophantic", "ephemeral", "keel", "mesa", "parrot", "concrete")
+			for _, it := range tc.items {
+				if err := st.SetItems("sycophantic", []store.Item{it}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for range tc.box {
+				if err := st.AppendEvent(store.ReviewEvent{
+					Word: "sycophantic", Kind: store.EventReviewed, Found: true,
+					Correct: true, Unaided: true, At: aDay,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var out, errb bytes.Buffer
+			qs, _, code := todaysQuestions(d, opt, &out, &errb)
+			if code != 0 {
+				t.Fatalf("todaysQuestions = %d, stderr %q", code, errb.String())
+			}
+			var got string
+			for _, q := range qs {
+				if q.Word() == "sycophantic" {
+					got = q.Form()
+				}
+			}
+			if got == "" {
+				// The board holds many words, so a triaged word is not its own
+				// question — which IS the board answer for the mature row.
+				got = "board"
+			}
+			if got != tc.wantForm {
+				t.Errorf("form = %q, want %q (stdout %q)", got, tc.wantForm, out.String())
+			}
+		})
+	}
+}
+
+func brokenItem() store.Item {
+	it := clozeItem()
+	// A distractor equal to the answer: two correct options, one marked wrong.
+	it.Distractors = []string{"sycophantic"}
+	return it
+}
+
+// A cloze sitting makes NO model call. The seam is made to PANIC rather than
+// left nil, because nil passes on a loop that reaches for the model behind a
+// `!= nil` guard — #10's Done-when 1 test is the precedent and the reason.
+func TestAClozeSittingNeverReachesForTheModel(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "ephemeral", "keel")
+	if err := st.SetItems("sycophantic", []store.Item{clozeItem()}); err != nil {
+		t.Fatal(err)
+	}
+	d.getenv = func(string) string { panic("a cloze sitting resolved the model configuration") }
+	d.newLLM = func(llm.Config) llm.Client { panic("a cloze sitting constructed a model client") }
+
+	var out, errb bytes.Buffer
+	qs, held, code := todaysQuestions(d, opt, &out, &errb)
+	if code != 0 || len(qs) == 0 {
+		t.Fatalf("todaysQuestions = %d with %d questions", code, len(qs))
+	}
+	var cloze play.Question
+	for _, q := range qs {
+		if q.Form() == "cloze" {
+			cloze = q
+		}
+	}
+	if cloze == nil {
+		t.Fatal("no cloze question was built, so this pin cannot fail")
+	}
+	// And through a whole sitting, not only the build.
+	keys := "\r" + gradeKey(t, cloze, play.Correct)
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{cloze}), held, keysFor(keys), playbackConsole(&out, &errb))
+}
+
+// THE FLAG, end to end: keystroke → capability → outcome → capture verb → log.
+//
+// Driven through a real sitting rather than by calling the verb, because the
+// gate's finding was about the PATH: the obvious wiring writes an EventReviewed
+// and demotes the word.
+func TestFlaggingAQuestionRecordsItWithoutScoringIt(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "ephemeral", "keel")
+	if err := st.SetItems("sycophantic", []store.Item{clozeItem()}); err != nil {
+		t.Fatal(err)
+	}
+	cap := &countingCapturer{}
+	d.capture = cap
+
+	var out, errb bytes.Buffer
+	qs, held, code := todaysQuestions(d, opt, &out, &errb)
+	if code != 0 {
+		t.Fatalf("todaysQuestions = %d", code)
+	}
+	var cloze play.Question
+	for _, q := range qs {
+		if q.Form() == "cloze" {
+			cloze = q
+		}
+	}
+	if cloze == nil {
+		t.Fatal("no cloze question, so this pin cannot fail")
+	}
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{cloze}), held,
+		keysFor(string(play.FlagKey)), playbackConsole(&out, &errb))
+
+	if len(cap.flags) != 1 {
+		t.Fatalf("recorded %d flags, want 1", len(cap.flags))
+	}
+	// THE EVIDENCE TRAVELLED: the option set is what makes a flag diagnosable.
+	if len(cap.flags[0]) != 4 {
+		t.Errorf("the flag carried %v, want the whole option set", cap.flags[0])
+	}
+	// AND IT SCORED NOTHING. This is the finding the gate caught: a flag written
+	// as a review would have marked the word wrong, on an append-only log.
+	if cap.reviews != 0 {
+		t.Errorf("a flag produced %d review(s); the ladder must not move on a broken question", cap.reviews)
+	}
+	if !strings.Contains(out.String(), "flagged") {
+		t.Errorf("the flag was silent: %q", out.String())
 	}
 }

@@ -261,6 +261,42 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("a flagged event round-trips with its options, and is NOT a review", func(t *testing.T) {
+		// In the SUITE because it is a Store-surface promise, and because the
+		// property that matters is negative: a flag must not be readable as a
+		// review. Fold folds every EventReviewed and GradeOf(false) is
+		// GradeWrong, so a flag that arrived as one would demote the word on an
+		// append-only log.
+		s := newStore(t)
+		if err := s.AppendEvent(store.ReviewEvent{
+			Word: "sycophantic", Kind: store.EventFlagged, Found: true,
+			Options: []string{"sycophantic", "ephemeral", "keel"}, At: day(1),
+		}); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+		got, err := s.Events(time.Time{})
+		if err != nil {
+			t.Fatalf("Events: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("got %d events, want 1", len(got))
+		}
+		if got[0].Kind != store.EventFlagged {
+			t.Errorf("kind = %q, want %q — a flag read back as a review would demote the word",
+				got[0].Kind, store.EventFlagged)
+		}
+		// THE OPTIONS ARE THE EVIDENCE. A flag naming none is "something was
+		// wrong once" — the deliberate opposite of Missed, which records only the
+		// axis because the option set will not exist later.
+		if len(got[0].Options) != 3 {
+			t.Errorf("options = %v, want the whole set the learner saw", got[0].Options)
+		}
+		// And it carries NO verdict: Correct is the zero value and stays there.
+		if got[0].Correct {
+			t.Error("a flagged event carries a verdict; the ladder would move on a broken question")
+		}
+	})
+
 	t.Run("forget removes everything the word OWNS, and no events", func(t *testing.T) {
 		// The bug this pins: Forget removed the deck entry only, so a forgotten
 		// word kept its cached band, domain and authored items. Looking it up

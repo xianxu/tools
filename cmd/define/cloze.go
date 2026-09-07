@@ -170,3 +170,38 @@ func hasLetterOrDigit(s string) bool {
 	}
 	return false
 }
+
+// clozeAsk builds form 2.2 for a word that has authored material, or reports
+// that it cannot.
+//
+// The ENTRY is already in hand, so the reveal's definition costs no second
+// lookup — which is why this takes it rather than fetching. #12's plan settled
+// that the reveal carries the entry as well as the restored sentence, for the
+// reason choice.go gives: a learner who just missed a word wants its other
+// senses, and a recognition form revealing less than the retired form 2.1 would
+// teach less than the easier form did.
+//
+// It mirrors `ask` deliberately, including registering the click regions in the
+// same map: one place renders, so the click map and the question cannot be built
+// from different strings.
+func clozeAsk(d deps, opt options, key string, entry Entry, marks map[string]clickable, day string) play.Question {
+	if d.deck == nil {
+		return nil
+	}
+	items, err := d.deck.Items(key)
+	if err != nil || len(items) == 0 {
+		// Unreadable items are not a session failure: the word simply falls
+		// through to form 2.3, which is what a word with no material does too.
+		return nil
+	}
+	rendered, rs := Render(entry, RenderOpts{
+		Word:  key,
+		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
+	})
+	q := clozeFor(key, items, rendered, seedFor(key, day))
+	if q == nil {
+		return nil
+	}
+	marks[key] = clickable{text: rendered, regions: rs}
+	return q
+}
