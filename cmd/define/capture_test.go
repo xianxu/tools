@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/play"
+	"github.com/xianxu/tools/cmd/define/schedule"
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
@@ -646,4 +647,67 @@ func verdictOf(correct bool) play.Verdict {
 		return play.Correct
 	}
 	return play.Wrong
+}
+
+// THE REAL CAPTURER writes the right KIND, which is the property the whole flag
+// design rests on and which nothing exercised until #12's mutation sweep.
+//
+// The end-to-end test drives a fake capturer, so it proves the outcome reaches
+// A capturer and nothing about what that capturer writes. Changing
+// storeCapturer.CaptureFlag to write EventReviewed left the entire suite green —
+// and that is precisely the defect the plan-quality gate raised as PQ-2: Fold
+// folds every EventReviewed and GradeOf(correct=false) is GradeWrong, so a flag
+// recorded as a review DEMOTES the word, on an append-only log.
+func TestCaptureFlagWritesAFlagAndNotAReview(t *testing.T) {
+	st := store.NewMem()
+	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
+
+	c.CaptureFlag(play.Outcome{
+		Word: "Sycophantic", Options: []string{"sycophantic", "ephemeral", "keel"},
+	}, options{})
+
+	events, err := st.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	if events[0].Kind != store.EventFlagged {
+		t.Errorf("kind = %q, want %q — a flag written as a review demotes the word",
+			events[0].Kind, store.EventFlagged)
+	}
+	// The word is NORMALISED, like every other capture verb.
+	if events[0].Word != "sycophantic" {
+		t.Errorf("word = %q, want the deck key", events[0].Word)
+	}
+	// The options are the evidence.
+	if len(events[0].Options) != 3 {
+		t.Errorf("options = %v, want the whole set", events[0].Options)
+	}
+	// And NO verdict rides along.
+	if events[0].Correct {
+		t.Error("a flagged event carries Correct; the ladder would move on a broken question")
+	}
+
+	// THE PROPERTY THAT MATTERS, asserted through the consumer rather than the
+	// field: schedule.Fold must see nothing here.
+	if prog := schedule.Fold(events); len(prog) != 0 {
+		t.Errorf("Fold read %d word(s) from a flag-only log: %v — the ladder must ignore it", len(prog), prog)
+	}
+}
+
+// -raw and DEFINE_NO_CAPTURE mean "write nothing into this directory", and a
+// flag is a write.
+func TestCaptureFlagRespectsNoCapture(t *testing.T) {
+	st := store.NewMem()
+	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
+	c.CaptureFlag(play.Outcome{Word: "sycophantic", Options: []string{"a"}}, options{noCapture: true})
+	events, err := st.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Errorf("a flag was written under -no-capture: %v", events)
+	}
 }

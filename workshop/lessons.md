@@ -3663,3 +3663,45 @@ rounds after it was fixed. What settled it was a grep over every statement of th
 flag's meaning — 20 hits, all saying "calls", none saying "words" — recorded in
 `--verified` alongside the one precise `--no-ledger`. Bypass one gate for one
 finding with the evidence attached; never `--force`.
+
+## #12 — a fuzz that paid twice, and a pin the gate had already asked for
+
+**A gate finding is not disposed by a test that cannot reach the line it named.**
+Plan-quality's PQ-2 said a flag recorded as a review would demote the word. I
+built the whole path as specified, wrote an end-to-end test AND a `storetest`
+row — and the mutation sweep found that changing the real capturer to write
+`EventReviewed` left everything green. The end-to-end test drove a FAKE
+capturer, so it proved the outcome reaches *a* capturer and nothing about what
+that capturer writes; the suite row asserted a hand-written event round-trips,
+which is a third claim again. **When a finding names a line, the disposing test
+must fail when that line changes** — check it by changing the line.
+
+The fix was also the better test: assert the property through its CONSUMER.
+`schedule.Fold` must read nothing from a flag-only log. That is what PQ-2 was
+about; the event's `Kind` field was only how it would have gone wrong.
+
+**Fuzz the function whose failure is silent.** `blankStem` renders and grades
+perfectly whether or not it leaks its answer, which is exactly the shape a table
+of examples cannot cover. Two minutes of fuzzing found a HANG (invalid UTF-8
+decodes to `RuneError`, which matches itself and is not a word rune, so the
+match had no word run and the loop never advanced) and then a wrong INVARIANT
+(`blankStem("_","_") = "___"` — `_` is not a word rune, so "does the answer
+occur as a word" is ill-defined for it).
+
+**And the second one is the more useful pattern: a fuzz failure is not always a
+code bug.** Sometimes the invariant is wrong, and narrowing it is right — but
+only when the narrowing names a real defect it exposed. Here it did: an answer
+with no letter and no digit is not a word, so `usableItem` refuses one now.
+Narrowing an invariant without finding the defect underneath is how a fuzz gets
+trained to pass.
+
+**Then check the fix one predicate over.** `hasWordRune` looked right and let
+`---` through, because `isWordRune` counts hyphens as INSIDE a word — correct for
+tokenising `hot-dog`, wrong for "is this a word". Joiners are not what a word is
+made of.
+
+**A test rig too small can make a row pass for the wrong reason.** Form 2.3 draws
+distractors from the sitting's pool, so a one-word rig cannot build one and every
+word falls to the board. The two "still takes 2.3" rows of the selection rule
+passed on a one-word deck — for `#42`'s reason, not the rule's. Size the fixture
+to the path under test.

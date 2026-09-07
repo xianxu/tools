@@ -34,9 +34,35 @@ define -no-color bank       # never emit ANSI (also automatic when piped)
 
 ## Reviewing what is due
 
-**`define --play` reviews what is due today.** There are three kinds of question,
-and you never choose which you get: two of them depend on how big your deck is,
-and the third on how well you already know the word.
+**`define --play` reviews what is due today.** There are four kinds of question,
+and you never choose which you get: which one you meet depends on how well you
+already know the word, and on what material the tool has for it.
+
+### The sentence, once a word has one
+
+The word's own sentence with the word blanked out, and four words to choose
+from. `define --harvest` writes these ahead of time, so they cost nothing to
+show:
+
+```
+Judge Mehta noted that securities fraud claims lay outside his ___ and
+transferred that portion of the case to the Southern District of New York.
+
+1  defenestrate
+2  bailiwick
+3  ephemeral
+4  obsequious
+```
+
+**This is the form the tool prefers when it can**, because picking the word that
+fits a sentence is a harder and more useful test than picking a definition that
+matches a word. Reveal it and you see the sentence whole, which is the point:
+the word doing its work in the context it was written for.
+
+**If a question is bad, press `?`.** That records it — with the four options you
+were shown, which is what makes it diagnosable later — and moves on WITHOUT
+marking you wrong. A broken question is not evidence about you, so it does not
+move the word's schedule in either direction.
 
 ### Multiple choice, once your deck can supply distractors
 

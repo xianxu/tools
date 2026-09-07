@@ -2663,6 +2663,77 @@ takes the figures rather than re-reading: `#39` T7's reasoning (the learner
 should see the AFTER-today figure) survives, because the in-memory copy already
 is that figure.
 
+### Form 2.2: the cloze (`#12`)
+
+The word's own sentence, blanked, with words to choose from. It consumes `#10`'s
+authored items and builds nothing: the stem was written offline, the distractors
+were selected from the banded deck and vetoed one at a time, so a cloze sitting
+makes NO model call and no network call — asserted with the seam made to panic.
+
+**The selection rule gains one clause: an authored item beats a definition
+match.** `#10` exists because a definition match is the weaker test — 2.3 asks
+which gloss belongs to a word, this asks which word belongs to a sentence — so
+preferring 2.3 when both are available would make `#10` decoration. The board
+still triages mature words: `#42`'s rule, unchanged.
+
+**`optionSet` is what `Choice` and `Cloze` share**, and it is the mechanical
+contract rather than the content: numbered from 1, a digit past the end treated
+as a stray key rather than a wrong answer, `Grade` asked before the reveal, the
+session's reserved keys never in the answer set, and the pick remembered for the
+reveal. Those rules are documented across four paragraphs of `Question`'s doc
+comment, and a second implementation is where a documented subtlety goes to be
+forgotten. What each form keeps is its prompt, its reveal, and what the keys
+MEAN.
+
+`Cloze` deliberately does not implement `Missed`: its options come from `#10`'s
+band-and-domain selection rather than NOAD's axes, so "which axis did you
+confuse" has no answer, and a form answering it would put a fabricated axis in
+the log.
+
+### Blanking without leaking
+
+`blankStem` is the whole risk, because the failure is SILENT — a question that
+gives away its answer renders perfectly and grades perfectly. It blanks EVERY
+occurrence (a stem using the word twice hands it over), takes the whole word RUN
+rather than the answer's own length (`keels` must not leave `___s`), refuses a
+substring (`set` inside `sunset`), and takes a compound whole because `___-dog`
+narrows the answer to one word.
+
+`#10`'s `blankOut` now delegates to it. That plan had justified two
+implementations by saying a miss in the veto's helper cost "some context"; it
+blanked the first occurrence only, so a twice-using stem showed the veto judge
+the answer verbatim — on a veto `#10` made load-bearing.
+
+**The fuzz found two things in two minutes** and both are recorded because
+neither was reasoned to. A HANG: invalid UTF-8 decodes to `RuneError`, which
+matches itself and is not a word rune, so the match had no word run and the loop
+never advanced. And `blankStem("_", "_") = "___"`, which was a wrong INVARIANT —
+`_` is not a word rune, so "does the answer occur as a word" is ill-defined for
+it. The real defect was upstream: an answer with no letter and no digit is not a
+word, and `usableItem` now refuses one. The first fix for THAT had a hole one
+predicate over, because `isWordRune` counts hyphens as inside a word — right for
+tokenising `hot-dog`, wrong for "is this a word".
+
+### The flag (`?`), and why it is not a verdict
+
+A learner presses `?` to say the QUESTION is broken. It records the option set —
+deliberately unlike `Missed`, which records only the axis because "picked
+larceny is a fact about one question whose option set no longer exists"; a flag
+exists to diagnose that question, so the options are the evidence.
+
+**It scores nothing**, and the machinery that guarantees it is the point.
+`CaptureFlag` is a fourth verb on `Capturer` rather than a parameter on
+`CaptureReview`, because `CaptureReview` writes a verdict and `Fold` reads
+verdicts to move boxes — a flag routed through it would DEMOTE the word, on an
+append-only log. `EventFlagged` is its own kind, and `Fold` ignores it BY
+CONSTRUCTION: it already skips every kind that is not `EventReviewed`.
+
+`Flagging` is the fifth optional capability beside `Missed`, `Dropping`, `Batch`
+and `Grid`, asked through a helper — a type switch on a concrete form is what
+`#6`'s Done-when forbids. It is heard in all three session states, and the one
+that needed work was AFTER answering: `session.go` makes every rune advance once
+graded, which is exactly when a learner discovers a question is broken.
+
 ### Form 2.3: choosing a definition
 
 **The distractors are the learner's OWN deck, which is a pedagogical choice
