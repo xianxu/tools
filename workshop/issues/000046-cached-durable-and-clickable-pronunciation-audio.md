@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-07
 updated: 2026-09-07
-estimate_hours:
+estimate_hours: 5.29
 started: 2026-09-07T12:42:34-07:00
 ---
 
@@ -149,6 +149,70 @@ asked for FIRST: clickable, uncoloured.
 
 **Not in scope:** `#45` (async playback). This is about what is fetched and what
 is clickable, not about when the audio plays.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
+`sdlc estimate-source`, so the per-primitive hours are provisional; they are
+derived against `#10` and `#12`, the two most recent closes in this repo, whose
+blocks use the same primitives on the same codebase.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.45 impl=0.08
+item: cross-cutting-refactor   design=0.06 impl=0.24
+item: smaller-go-module        design=0.02 impl=0.12
+item: greenfield-go-module     design=0.06 impl=0.28
+item: cross-cutting-refactor   design=0.04 impl=0.20
+item: smaller-go-module        design=0.02 impl=0.14
+item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.02 impl=0.12
+item: milestone-review         design=0.0  impl=0.60
+item: greenfield-go-module     design=0.06 impl=0.28
+item: smaller-go-module        design=0.03 impl=0.14
+item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.03 impl=0.14
+item: cross-cutting-refactor   design=0.05 impl=0.24
+item: atlas-docs               design=0.03 impl=0.06
+item: smaller-go-module        design=0.0  impl=0.20
+item: milestone-review         design=0.0  impl=0.85
+design-buffer: 0.15
+total: 5.29
+```
+
+**What each row is**, in plan order, so the derivation is checkable rather than
+asserted:
+
+| row | the work |
+|---|---|
+| `issue-spec` 0.45/0.08 | the design carrier: the Spec, an operator scope widening mid-plan, and FOUR plan-quality rounds. Above `#12`'s 0.35 and below `#10`'s 0.50 — the rounds were expensive (three of them were one finding, re-answered) but the Spec itself was short, and the widening made the design simpler rather than larger. |
+| `cross-cutting-refactor` 0.06/0.24 | `deps.audio` becomes `*audioSeam`. Mechanical but wide: the compiler names every construction site, including the test literals. |
+| `smaller-go-module` 0.02/0.12 | the memo logic relocated into `audioSeam` — existing code, existing tests, new home. |
+| `greenfield-go-module` 0.06/0.28 | `store/audio.go`: `audioKey`'s digest, `audioRecord`, the TTL. |
+| `cross-cutting-refactor` 0.04/0.20 | `RuntimeDirs`' four consumers — `perWordDirs` prefix glob, the `Store` interface, the `Mem` twin, `.gitignore`. |
+| `smaller-go-module` 0.02/0.14 | the `storetest` conformance rows, so `Mem` and YAML are both held. |
+| `greenfield-go-module` 0.05/0.24 | `diskAudioCache`. |
+| `smaller-go-module` 0.02/0.12 | the degrade-never-fail paths and the `--forget` end-to-end. |
+| `milestone-review` 0.0/0.60 | M1's boundary. Below M2's, because M1 changes one seam and M2 changes what every write site does. |
+| `greenfield-go-module` 0.06/0.28 | `deckSpans` — the coordinate layer, and the escape-awareness that is the design's load-bearing row. |
+| `smaller-go-module` 0.03/0.14 | `RegionWord`: the kind, `playRegion`'s row, `String`/`identifier`, the atlas. |
+| `greenfield-go-module` 0.05/0.24 | `mergeRegions` and the disjointness property — `markClickable`'s unwritten precondition, written down. |
+| `smaller-go-module` 0.03/0.14 | `surface`/`surfaceOf` and `TestEveryFormHasASurface`. |
+| `cross-cutting-refactor` 0.05/0.24 | the write door: three call sites, and colouring outside the embedded render. |
+| `atlas-docs` 0.03/0.06 | README's key table and click sentence; the atlas. |
+| `smaller-go-module` 0.0/0.20 | the mutation sweeps both milestones commit to. |
+| `milestone-review` 0.0/0.85 | the close review. `#12` booked 0.85 here and spent four rounds; this issue's plan gate already took four, which is evidence about the issue rather than about the plan. |
+
+**Reconciliation.** Σdesign = 0.97, Σimpl = 4.17.
+0.97 × 1.15 + 4.17 × 1.0 = **5.29**.
+
+**Read against the neighbours:** `#12` estimated 4.54 and measured 3.70; `#10`
+estimated 7.94 and measured 12.77. This sits between them, which matches the
+shape — two milestones like `#10`, but M1 is mostly a type change the compiler
+drives and M2 is one new pure function plus wiring, where `#10` was five
+greenfield modules and a live model loop.
 
 ## Done when
 
