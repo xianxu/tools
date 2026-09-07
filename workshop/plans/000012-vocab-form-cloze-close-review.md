@@ -344,3 +344,177 @@ findings:
       something, the plan's Revisions, the project file — and it is not written until all of
       them are.
 ```
+
+---
+
+## Re-review — 2026-09-07T12:02:57-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 12 — review form 2.2: cloze from current news with curated distractors |
+| repo | tools |
+| issue file | workshop/issues/000012-vocab-form-cloze.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 0b8d9930762168cf52f77c5d0864599f678d3b5d..188f269e67e98f7f25b34f84c1096d2587e8d038 |
+| command | sdlc close --issue 12 |
+| reviewer | claude |
+| timestamp | 2026-09-07T12:02:57-07:00 |
+| verdict | REWORK |
+
+## Review
+
+Scratch worktree removed, tree clean at the pinned head.
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The form itself is well built — `optionSet` is a real DRY win, `blankStem` is fuzzed and its leak table is a property rather than a row list, the flag's whole signal path is pinned end-to-end through a real sitting, and round 2's BR-10 was fixed as the class (`TestEveryFormIsEnrolled` derives the extent from `play/*.go`; I mutation-verified both halves — un-enrolling `Cloze` reddens it by name, and dropping the flag from `Cloze.Keys()` reddens the README guard). What blocks SHIP is a confirmed answer leak the diff's own doc comment predicted and did not act on: `play_loop.go:234` registers a `RegionHeadword` click region at line 1, col 0, width `visibleCells(q.Word())` for **every** non-board form, on a premise only `Choice.Prompt()` satisfies. On a cloze that span covers the first 11 cells of the blanked sentence — I ran it: the region comes back `{Kind:headword Word:sycophantic Line:1 Col:0 Width:11}`, the tty is painted `\x1b[4mThe Times d\x1b[24mismissed the interviews as ___.`, and a click there plays the answer's pronunciation. Done-when says *"the blanked sentence never leaks the answer"*; the text does not leak it, the affordances around the text do. Six of round 2's nine Minors are also still open, untouched by the last commit.
+
+## 1. Strengths
+
+- **`optionSet` (`play/optionset.go`)** — the extraction is behaviour-preserving and `#7`'s suite is untouched, which was the refactor's declared oracle. The contract (digit past the end is a stray key, not a wrong answer) now lives once.
+- **`blankStem` (`cloze.go:40`)** — the loop-must-advance guard at :66 with the `RuneError` explanation is the right shape, and `FuzzBlankStem` states the leak as a property rather than rows. Both fuzz corpus entries are committed as regressions.
+- **`blankOut` now delegates (`harvest_judge.go`)** — one blanker, and the doc comment records that the original DRY argument was decided on a wrong cost estimate. That is the useful half of the lesson.
+- **The flag's negative property is asserted through its consumer** — `capture_test.go:695` runs `schedule.Fold` over a flag-only log and demands zero words, which is what PQ-2 was actually about. I mutation-checked the graded-state arm: deleting the block at `session.go:271-280` reddens `TestAFlagIsHeardInEverySessionState/after_answering` by name.
+- **BR-10's fix is the class, not the instance** — `docSyncForms(t)` is one source for both guards, and `TestEveryFormIsEnrolled` regexes the extent out of `play/*.go`. Verified red on un-enrolment.
+
+## 2. Critical findings
+
+**`cmd/define/play_loop.go:234` — the loop registers a headword click region over the cloze prompt, so clicking the blanked sentence speaks the answer.**
+
+`writeRendered(stdout, "\n"+q.Prompt()+"\n", []Region{{Kind: RegionHeadword, Text: q.Word(), Word: q.Word(), Line: 1, Col: 0, Width: visibleCells(q.Word())}})` runs for every form the board branch did not return on. `addRegions` (`screen.go:165`) stores it without checking that `Text` is at those coordinates. `Cloze.Prompt()`'s own doc comment at `play/cloze.go:57-60` states the premise does not hold here — and nothing acts on that.
+
+Confirmed by running it: region `{Kind:headword Word:sycophantic Line:1 Col:0 Width:11}`; tty paints `\x1b[4mThe Times d\x1b[24mismissed the interviews as ___.`; the click produced `♫ playing 1×` and one `fakePlayer` call. So three consequences, before the learner has answered: the answer is spoken aloud, an underline marks a span exactly as wide as the answer (the length leak `Blank`'s comment at `cloze.go:13-17` says `___` exists to prevent), and the underline sits on arbitrary text — which `playbar.go:228` already calls *"worse than no underline"*.
+
+**This is the 2nd finding in family `capability-guard-too-wide`.** BR-2 was the graded branch guarding on `CanFlag(q)` rather than on the gesture; this is the same rule one layer out — a guard whose condition (`not a board`) is wider than the property it needs (`this prompt begins with its headword`). Do not fix the instance by special-casing `*Cloze`. The rule is already written down in this repo, at `play_loop.go:1170`: *"Located rather than counted from a formula: the form owns its own layout, and a formula here would be a second copy of it that a new form silently invalidates."* `marksIn` obeys it for the reveal; the prompt path is the copy that never got it, and `Cloze` is the new form that invalidated it. Fix: locate the span (`strings.Index` into the prompt, as `marksIn` does) or let the form declare its own prompt regions, and add the derived guard the rule implies — over `docSyncForms(t)`, assert every registered `Region.Text` actually occupies its claimed `Line`/`Col`/`Width` in the written text. That guard is what makes the enumeration mechanical instead of one more form-by-form sweep.
+
+## 3. Important findings
+
+**`cmd/define/store/item.go:181` — item free text reaches the raw terminal with only whitespace collapsed.**
+
+`oneLine` is `strings.Join(strings.Fields(s), " ")`, which removes newlines but not ESC, BEL, or any other C0/C1 control. `Cloze.Prompt()` is the first path that renders `Item.Stem`/`Answer`/`Distractors` to a terminal (before #12 they only reached YAML files and LLM prompts). Probed through the real store: `SetItems` then `Items` returns `"The aide was sycophantic\x1b[2J\x1b[H to a fault."` and `"ephemeral\a"` unchanged, and `clozeFor` renders `"The aide was ___\x1b[2J\x1b[H to a fault.\n\n1  keel\n2  ephemeral\a\n..."` — `\x1b[2J\x1b[H` clears the alt screen mid-sitting. The provenance is model output plus a directory the README documents as inspectable and hand-editable, so this is ARCH-SECURE's "input from outside the process treated as well-formed". `event.go:103` states the options "are neutralised at the store's write (sanitiseItem)", which is true of newlines and of nothing else. Fix in `oneLine` (drop `unicode.IsControl` runes before joining), which is the one place `sanitiseItem`'s own comment says every consumer shares, and pin it with a store-level test so `Mem` and `YAML` are both held.
+
+**`cmd/define/README.md:199-209` — the key table still never lists `?`.**
+
+**This is the 3rd finding in family `prompt-line-matches-live-keys`.** BR-1 fixed the two prompt lines; BR-10 fixed the enrolment that checks them; the table a reader consults for "what can I press" is the third home of the same fact and is still hand-maintained — its `1`–`4` row also says only "pick the definition" now that a second form grades digits. Do not hand-paste a `?` row. The rule: **every place that enumerates live keys must derive from the code that owns them, and a new key is not shipped until every such enumeration derives.** The prompt lines already derive via `gradePrompt`/`gradedPromptFor`; the table does not, and it is the enumeration the README's own "| key | does |" header promises is complete. Make the row derive from `play.FlagKey` + `CanFlag`, the same move `TestREADMENamesEveryFallbackReason` makes for `fallbackReasons`.
+
+## 4. Minor findings
+
+Six of round 2's Minors are re-raised unchanged below in the `dispose` block (BR-5, BR-6, BR-7, BR-8, BR-9, BR-11, BR-12) — nothing new to add beyond BR-11's fourth site: `README.md:487` still lists the event kinds as "looked-up, asked, reviewed", and `flagged` is now a fourth.
+
+## 5. Test coverage notes
+
+- `go test ./cmd/define/...` green; `go vet ./...` and `go vet -tags conformance ./...` clean; `gofmt -l` clean.
+- Two mutations confirmed the round-2 claim and the round-1 pin (recorded in Strengths). A third — deleting the graded-state flag block — reddens by name.
+- **The hole the Critical fell through:** no test observes the *prompt's* registered regions for any form. `play_loop_test.go:1027` asserts `live.RegionAtRow(1, 0)` is offered, but only for a `Choice`, and only that *something* is there. The derived guard proposed above closes it for every enrolled form at once.
+- No test asserts that item text reaching the TUI is control-character free; the store's sanitisation tests cover whitespace only.
+
+## 6. Architectural notes
+
+- **ARCH-DRY** — flag, twice, both already open: `clozeAsk` duplicates `ask`'s render+marks block (BR-6) and the `OutcomeFlag` literal is constructed at `session.go:273` and `:409` (BR-12), against the rule the surviving drop comment at `:498` states. Wins on the other side: `optionSet`, and `blankOut` delegating.
+- **ARCH-PURE** — pass. `play` stays mechanically pure; `blankStem`/`usableItem`/`clozeFor` are pure and unit-tested with no store, dictionary or model; `clozeAsk` is the thin seam.
+- **ARCH-PURPOSE** — flag. The shadow-sweep for "never leaks the answer" enumerates the channels the answer can reach the learner through: the stem text (swept, fuzzed), the reveal (correct), the click affordance (**leaks — audio**), and the underline width (**leaks — length**). Only the first was swept.
+- **ARCH-MOCK** — pass. No new external dependency; `TestAClozeSittingNeverReachesForTheModel` makes the seam panic rather than nil, and the flag's store promise landed in `storetest/suite.go` so `Mem` and `YAML` are both held.
+- **ARCH-CONSTRAINTS** — pass with a note. No model or network call, asserted. The plan calls the per-word `Items()` read "the same order as the existing `Deck()` and `Events()` reads"; it is O(due words) file opens against O(1), bounded by `-count`, so the conclusion holds even though the stated reason does not.
+- **ARCH-SECURE** — flag; see the `oneLine` finding.
+- **ARCH-ORDER** — pass. The three states `?` can arrive in are enumerated in the plan, implemented outside the any-key-advances branch for the reason `InputDrop` sits outside it, and each state has a named test row. The flag advances via `advance(Skipped)` so no in-flight effect is dropped.
+
+## 7. Plan revision recommendations
+
+- BR-9's entry (still owed): the Integration points table names `ReviewEvent.Flagged`; the code ships `ReviewEvent.Options` with the flagged fact carried by `Kind`. Same entry should record that `optionset_test.go` was deliberately not created and that Tasks 5/6's tests landed in `cmd/define/cloze_test.go`, not `play_loop_test.go`.
+- BR-11's entry (still owed): the `Flagging` snippet at plan line 211 still declares `Flagged()`; the shipped interface is `Flag(k rune)`.
+- New: Task 2's `Cloze` entry should record that a form whose prompt does not begin with its headword invalidates the loop's prompt-region formula — the plan named the reveal's region handling and never the prompt's, which is how the Critical shipped with a doc comment describing it.
+
+```findings
+dispose:
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      capture.go:145-149 still omits Form; Outcome.Form is set at session.go:277 and :412 and read at zero sites.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      cloze.go:208 still renders before clozeFor's nil check at :213, so an items-holding word with no usable cloze item renders twice.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      cloze.go:101 still unreachable behind hasLetterOrDigit at :98.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      workshop/projects/define-learn.md:75 unchanged; the project file received no edit at all in this window.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      plan lines 92 and 101 still name ReviewEvent.Flagged; store/event.go:93 ships Options.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      Mutation-verified both halves; the key table's residual `?` row is raised separately as a rule-level finding.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      All three sites stand (session.go:262-264, plan:211, README:498), plus a fourth: README:487 lists three event kinds and flagged is now a fourth.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      The six-line OutcomeFlag literal is still built at session.go:273-279 and :409-415.
+  - id: BR-13
+    disposition: addressed
+    note: |
+      lessons.md now carries round 2 and the multi-home rule; that rule's own project-file home is still unwritten, which BR-8 tracks.
+findings:
+  - id: new
+    severity: Critical
+    family: capability-guard-too-wide
+    title: |
+      the loop registers a headword click region over the cloze prompt, so clicking the blanked sentence speaks the answer and underlines a span as wide as it
+    detail: |
+      play_loop.go:234 registers RegionHeadword at Line 1, Col 0, Width visibleCells(q.Word()) for
+      every form the board branch did not return on, on a premise only Choice.Prompt() satisfies;
+      addRegions (screen.go:165) does not check Text is at those coordinates. Ran it: region
+      {Kind:headword Word:sycophantic Line:1 Col:0 Width:11}, tty paints
+      "\x1b[4mThe Times d\x1b[24mismissed the interviews as ___.", the click yields "♫ playing 1×"
+      and one fakePlayer call. Three leaks before answering: the answer spoken, its length shown as
+      an underline (what Blank's comment at cloze.go:13-17 exists to prevent), and the underline on
+      arbitrary text (playbar.go:228 calls that worse than none). play/cloze.go:57-60 states the
+      premise fails here and nothing acts on it. 2nd in this family after BR-2 — same rule, a guard
+      wider than the property it needs. Do not special-case *Cloze: the rule is already at
+      play_loop.go:1170 ("the form owns its own layout, and a formula here would be a second copy
+      that a new form silently invalidates"). Locate the span as marksIn does, or let the form
+      declare its prompt regions, and add the derived guard over docSyncForms(t) asserting every
+      registered Region.Text occupies its claimed Line/Col/Width.
+  - id: new
+    severity: Important
+    family: untrusted-text-reaches-output
+    title: |
+      item free text reaches the raw terminal with only whitespace collapsed, and the event log's comment claims otherwise
+    detail: |
+      store/item.go:181 oneLine is strings.Join(strings.Fields(s), " ") — newlines go, ESC and BEL
+      do not. Cloze.Prompt() is the first path putting Item.Stem/Answer/Distractors on a terminal.
+      Probed through the real store: Items() returns
+      "The aide was sycophantic\x1b[2J\x1b[H to a fault." and "ephemeral\a" unchanged, and clozeFor
+      renders both into the prompt; \x1b[2J\x1b[H clears the alt screen mid-sitting. Provenance is
+      model output plus a directory the README documents as inspectable and editable, so ARCH-SECURE
+      applies. store/event.go:103 asserts the options are "neutralised at the store's write
+      (sanitiseItem)", true of newlines only. Fix in oneLine (drop unicode.IsControl runes) — the one
+      place sanitiseItem's own comment says every consumer shares — and pin it in storetest so Mem
+      and YAML are both held.
+  - id: new
+    severity: Important
+    family: prompt-line-matches-live-keys
+    title: |
+      the README key table still lists no `?`, and its digit row still says only "pick the definition"
+    detail: |
+      README.md:199-209 is the table a reader consults for what they can press, and its header
+      promises completeness. 3rd in this family: BR-1 fixed the prompt lines, BR-10 fixed the
+      enrolment that checks them, and this third home of the same fact is still hand-maintained.
+      Do not hand-paste a row. The rule: every enumeration of live keys must derive from the code
+      that owns them, and a new key is not shipped until every such enumeration derives — the prompt
+      lines already do via gradePrompt/gradedPromptFor, this does not. Derive the `?` row from
+      play.FlagKey + CanFlag and widen the digit row now that a second form grades digits, the same
+      move TestREADMENamesEveryFallbackReason makes for fallbackReasons.
+```

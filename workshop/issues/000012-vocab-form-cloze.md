@@ -270,6 +270,43 @@ kinds. Mutation-checked: un-enrolling `Cloze` reddens it by name. The two missin
 prompt lines are now in the README. Also took the Minor: `workshop/lessons.md`
 carries this round, per AGENTS.md §4.
 
+**Close review round 3: one Critical, and it was a hazard I had DOCUMENTED.**
+BR-14 — the loop fabricated the headword click region from a formula (line 1,
+column 0, as wide as the word) that only `Choice.Prompt()` satisfies. On a cloze
+that region landed on the blanked sentence: clicking it spoke the answer, and
+the underline advertised the answer's length — the exact leak `Blank`'s comment
+exists to prevent, arriving by a path `Blank` cannot see. `play/cloze.go`'s own
+doc comment said the premise did not hold here. **Saying it is not acting on
+it** — that is the finding, more than the region is.
+
+Fixed as the class, not for `*Cloze`: `promptRegions` now issues the region only
+when the claim it makes is TRUE (line 0 begins with the headword), and
+`TestAPromptRegionCoversTheTextItClaims` reads every form's region coordinates
+back out of the text actually written, over `docSyncForms` — so the extent is
+the mechanical one `TestEveryFormIsEnrolled` maintains. Searching the prompt for
+the word instead would have been WORSE than the formula: a cloze prompt does
+contain its answer, among the options, so "find the word" would have underlined
+the correct option.
+
+**The guard found a second instance immediately.** Under mutation it reddens for
+`*play.Board` as well — the formula was wrong there too, and only the board
+branch's early `return` kept it off screen. A guard that only ever confirms the
+bug you already knew about is a guard sized to the bug.
+
+**BR-15** — `oneLine` collapsed whitespace and passed `\x1b`/`\a` through, and a
+cloze prompt is the first path putting item text on a raw terminal;
+`store/event.go`'s comment claimed the options were neutralised, true of
+newlines only. Fixed in `oneLine` (the one place `sanitiseItem` says every
+consumer shares) by dropping control runes that are not whitespace — the
+whitespace ones stay for `Fields` to collapse, or `a\nb` would become `ab`. The
+storetest row now asserts over `unicode.IsControl` rather than over `"\r\n"`.
+
+**BR-16** — the README key table was the third hand-maintained home of the same
+fact (after the prompt lines and the enrolment that checks them). It now derives:
+`TestREADMEKeyTableNamesEveryLiveKey` reads each form's `Keys()` line and
+requires the table to name what each key does, scoped to the table itself so
+prose elsewhere cannot satisfy it. Mutation-checked three ways.
+
 ### 2026-08-20
 
 Created as part of the `define-learn` project.

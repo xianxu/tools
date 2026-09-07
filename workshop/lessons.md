@@ -3723,3 +3723,32 @@ that sentence is the finding — write the test that closes it instead.
 **A boundary's durable record has more than one home**, and it is not written
 until all of them are: the issue `## Log`, `workshop/lessons.md` when a review
 found something (AGENTS.md §4), the plan's `## Revisions`, and the project file.
+
+**Documenting a hazard is not fixing it, and the comment is evidence you saw it.**
+`Cloze`'s doc comment said "#38's clickable-prompt premise (line 0, column 0,
+width len(word)) is Choice's and does not hold here" — and nothing acted on it,
+so the loop underlined the first eleven cells of the blanked sentence and spoke
+the answer on a click. The close review found it as a Critical. **When you write
+"this does not hold here", the next thing you write is the code that makes it not
+matter** — or a failing test if you cannot.
+
+**A region, a coordinate, an offset: check the claim, do not compute it.**
+The formula was `Choice.Prompt()`'s layout read as every form's. The fix is not a
+special case for the form that broke it but a predicate that IS the region's own
+claim — "line 0 begins with the headword" — plus a guard that reads every form's
+region coordinates back out of the text actually written. That guard found a
+second instance (`Board`) the moment it existed, which is how you know it was
+sized to the class and not to the bug.
+
+**And do not "just search for it".** The obvious alternative — find the word in
+the prompt — would have been worse than the formula it replaced: a cloze prompt
+contains its answer among the options, so the search would have underlined the
+correct one. When the claim is about a POSITION, check the position.
+
+**Three homes of one fact is a pattern, not three findings.** `?` was missing
+from the prompt line (round 1), from the enrolment that checks the prompt line
+(round 2), and from the README key table (round 3) — one gesture, three
+hand-maintained enumerations, three rounds. The rule: **every enumeration of live
+keys derives from the code that owns them, and a new key is not shipped until
+every such enumeration derives.** When a gate finds the same fact missing twice,
+stop fixing homes and go count them.

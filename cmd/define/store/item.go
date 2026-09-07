@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // WordFacts is what is cached about a word FOREVER: its band and its domain.
@@ -173,7 +174,8 @@ func sanitiseItem(i Item) Item {
 	return i
 }
 
-// oneLine collapses model text to a single line.
+// oneLine collapses model text to a single line and strips what a terminal would
+// OBEY rather than print.
 //
 // Item.Stem, Answer and Distractors are the first free-text model fields this
 // store persists, and #40's board renders them one per line into a grid. A
@@ -181,7 +183,29 @@ func sanitiseItem(i Item) Item {
 // one forged a "define: ..." diagnostic in #17 — the class is untrusted text
 // reaching ANY structured output, and the store is the one place every consumer
 // of these fields shares.
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+//
+// #12 made that class bigger by putting these fields on a RAW terminal for the
+// first time: a cloze prompt is the stem and the option words, painted inside an
+// alternate screen. Collapsing whitespace was never enough for that — `\x1b` and
+// `\a` are not whitespace, so `sycophantic\x1b[2J\x1b[H` survived every check
+// and clears the screen mid-sitting. The provenance is model output living in a
+// directory the README documents as inspectable AND editable, so the text is
+// untrusted twice over (ARCH-SECURE).
+//
+// Control runes are DROPPED, except the whitespace ones, which are left for
+// Fields to collapse into single spaces — dropping those instead would join
+// "a\nb" into "ab" and silently change the sentence. What survives an escape
+// sequence is its inert tail (`[2J[H`), which is ugly and harmless; the property
+// is that no consumer receives a byte a terminal acts on.
+func oneLine(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && !unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
+}
 
 // ItemCap bounds how many items one word may hold.
 //

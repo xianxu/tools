@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -595,12 +596,20 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		// carrying a newline forges a row there — the same class as the band that
 		// forged a "define: ..." diagnostic in #17. Neutralised at the WRITE so
 		// every render site is safe without remembering to be.
+		//
+		// THE CLASS IS "A RUNE THE OUTPUT OBEYS", not "a line break" (#12 BR-15).
+		// A cloze prompt paints these fields into a raw alternate screen, where
+		// ESC and BEL are the dangerous ones and neither is whitespace:
+		// "\x1b[2J\x1b[H" clears the screen mid-sitting. This row asserts over
+		// unicode.IsControl rather than over "\r\n" so the next control
+		// character nobody thought of is covered by the assertion that is already
+		// here.
 		s := newStore(t)
 		if err := s.SetItems("word", []store.Item{{
 			Word:        "word",
-			Stem:        "a stem\nwith a forged second line",
-			Answer:      "word\r\nand another",
-			Distractors: []string{"one\ntwo"},
+			Stem:        "a stem\nwith a forged second line\x1b[2J\x1b[H",
+			Answer:      "word\r\nand another\a",
+			Distractors: []string{"one\ntwo", "three\x1b[31m"},
 		}}); err != nil {
 			t.Fatalf("SetItems: %v", err)
 		}
@@ -611,15 +620,20 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		if len(got) != 1 {
 			t.Fatalf("got %d items, want 1", len(got))
 		}
-		for _, field := range []string{got[0].Stem, got[0].Answer} {
-			if strings.ContainsAny(field, "\r\n") {
-				t.Errorf("%q kept a line break", field)
+		fields := append([]string{got[0].Stem, got[0].Answer}, got[0].Distractors...)
+		for _, field := range fields {
+			for _, r := range field {
+				if unicode.IsControl(r) {
+					t.Errorf("%q kept the control rune %q — a terminal obeys it", field, r)
+					break
+				}
 			}
 		}
-		for _, d := range got[0].Distractors {
-			if strings.ContainsAny(d, "\r\n") {
-				t.Errorf("distractor %q kept a line break", d)
-			}
+		// AND THE WORDS SURVIVE. Dropping every control rune including the
+		// whitespace ones would join "a\nb" into "ab", which is a different
+		// sentence rather than a safe one.
+		if !strings.Contains(got[0].Stem, "stem with a forged") {
+			t.Errorf("the newline was dropped rather than collapsed to a space: %q", got[0].Stem)
 		}
 	})
 

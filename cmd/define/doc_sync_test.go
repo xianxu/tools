@@ -470,3 +470,66 @@ func TestREADMEDrawsTheBoardTheFormActuallyDraws(t *testing.T) {
 		}
 	}
 }
+
+// THE KEY TABLE DERIVES FROM THE FORMS THAT OWN THE KEYS (#12 BR-16).
+//
+// README.md's table is what a reader consults for what they can press, and its
+// header promises completeness. It was the THIRD hand-maintained home of the
+// same fact: BR-1 fixed the prompt lines, BR-10 fixed the enrolment that checks
+// them, and this table still listed no `?` and still described the digits as
+// "pick the definition" after a second form began grading them.
+//
+// The rule the three findings share: **every enumeration of live keys must
+// derive from the code that owns them, and a new key is not shipped until every
+// such enumeration derives.** So this reads each form's own Keys() line, which
+// is already the single source the prompt lines come from, splits it into the
+// `key = what` pairs the form commits to, and requires the table to name each
+// one. A form that grows a gesture reddens this until the table says so.
+//
+// The WHAT is matched rather than the key glyph: `1`–`4` in the table is a range
+// where a form writes "1-4", and a guard matching glyphs would be pinned to the
+// table's typography instead of to its content.
+func TestREADMEKeyTableNamesEveryLiveKey(t *testing.T) {
+	b, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("README.md unreadable: %v", err)
+	}
+	table := keyTableIn(t, string(b))
+	for _, q := range docSyncForms(t) {
+		for _, pair := range strings.Split(q.Keys(), ", ") {
+			_, what, ok := strings.Cut(pair, " = ")
+			if !ok {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(table), strings.ToLower(what)) {
+				t.Errorf("README.md's key table does not name %q, which %T offers.\n"+
+					"Full keys line: %q\n"+
+					"The table is where a reader looks for what they can press; a key that "+
+					"works and is listed nowhere is a key nobody presses.", what, q, q.Keys())
+			}
+		}
+	}
+}
+
+// keyTableIn is the key table alone, so the guard above cannot be satisfied by
+// the same words appearing in prose elsewhere in the README — the mistake
+// TestAtlasDescribesEveryRegionKind's comment records ("that word occurs in the
+// atlas nineteen times for unrelated reasons, so a docs guard built on it passed
+// with the whole section deleted").
+func keyTableIn(t *testing.T, readme string) string {
+	t.Helper()
+	const header = "| key | does |"
+	i := strings.Index(readme, header)
+	if i < 0 {
+		t.Fatalf("README.md has no %q table; this guard would certify nothing", header)
+	}
+	rest := readme[i:]
+	// The table ends at the first blank line — markdown's own rule.
+	if j := strings.Index(rest, "\n\n"); j >= 0 {
+		rest = rest[:j]
+	}
+	if strings.Count(rest, "\n") < 3 {
+		t.Fatalf("the key table has %d rows; this guard would certify nothing", strings.Count(rest, "\n"))
+	}
+	return rest
+}

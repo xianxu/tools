@@ -4252,3 +4252,64 @@ func TestEveryBoardMarkHasAPaintedSequence(t *testing.T) {
 		}
 	}
 }
+
+// A PROMPT REGION MUST COVER THE TEXT IT CLAIMS (#12 BR-14).
+//
+// The loop used to fabricate the headword region from Choice's layout read as
+// every form's — line 1, column 0, as wide as the word — and nothing checked
+// that any of that was true of the text it was writing beside. On a cloze it was
+// true of none of it: the region landed on the blanked sentence, so a click
+// SPOKE THE ANSWER and the underline advertised its length.
+//
+// The guard is the region's claim read back: whatever coordinates a form's
+// prompt regions carry, the text actually written there must be the region's own
+// Text. That holds for every form without this test knowing which forms have a
+// region at all — a form with none passes vacuously, and a form that grows one
+// is checked the moment it is enrolled, because the extent comes from
+// docSyncForms and TestEveryFormIsEnrolled makes THAT extent mechanical.
+func TestAPromptRegionCoversTheTextItClaims(t *testing.T) {
+	for _, q := range docSyncForms(t) {
+		// The write the loop actually performs, leading blank line and all —
+		// region coordinates are relative to it, not to Prompt() alone.
+		written := "\n" + q.Prompt() + "\n"
+		lines := strings.Split(written, "\n")
+		for _, r := range promptRegions(q) {
+			if r.Line < 0 || r.Line >= len(lines) {
+				t.Errorf("%T: region %v claims line %d; the prompt has %d lines",
+					q, r.Kind, r.Line, len(lines))
+				continue
+			}
+			got := cellSlice(lines[r.Line], r.Col, r.Width)
+			if got != r.Text {
+				t.Errorf("%T: region %v claims line %d col %d width %d holds %q, "+
+					"but %q is written there.\n"+
+					"A click resolves to the region's Word and the screen underlines the "+
+					"claimed span, so a region over text that is not its own speaks one "+
+					"word and marks another.",
+					q, r.Kind, r.Line, r.Col, r.Width, r.Text, got)
+			}
+		}
+	}
+}
+
+// A CLOZE PROMPT OFFERS NO HEADWORD, which is the specific leak BR-14 found and
+// the reason the general guard above was worth building. Stated separately
+// because "covers what it claims" is also satisfied by claiming nothing, and
+// that is exactly the right answer here rather than an accident.
+func TestAClozePromptOffersNoHeadwordToClick(t *testing.T) {
+	c := play.NewCloze("sycophantic", "The Times dismissed the interviews as ___.",
+		"The Times dismissed the interviews as sycophantic.", "", []play.Option{
+			{Word: "sycophantic", Correct: true}, {Word: "quokka"},
+		})
+	if rs := promptRegions(c); len(rs) != 0 {
+		t.Errorf("a cloze prompt registered %v; clicking it would speak the answer "+
+			"and underline a span as wide as it", rs)
+	}
+	// And the form that DOES lead with its headword still offers it — the fix
+	// must not have closed the affordance for everyone.
+	ch := play.NewChoice("ephemeral", "", []play.Option{{Gloss: "a", Correct: true}, {Gloss: "b"}})
+	rs := promptRegions(ch)
+	if len(rs) != 1 || rs[0].Kind != RegionHeadword || rs[0].Word != "ephemeral" {
+		t.Errorf("the headword click was lost for the form that does lead with one: %v", rs)
+	}
+}

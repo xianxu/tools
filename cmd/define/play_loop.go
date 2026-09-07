@@ -222,19 +222,8 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
 			//
-			// THE PROMPT WORD IS CLICKABLE (T4). A single-word form puts the
-			// headword on its first line at column 0 — `Choice.Prompt()` is the
-			// word, a blank, then the options — and the leading "\n" of this
-			// write puts it on line 1. That is the whole
-			// region-finding problem for a prompt: nothing to search for, no
-			// offsets to survive a wrap, because a headword is never wide enough
-			// to wrap.
-			// Line 1, not 0: the write leads with a blank line, and addRegions
-			// anchors at the line the write STARTS on.
-			writeRendered(stdout, "\n"+q.Prompt()+"\n", []Region{{
-				Kind: RegionHeadword, Text: q.Word(), Word: q.Word(),
-				Line: 1, Col: 0, Width: visibleCells(q.Word()),
-			}})
+			// THE PROMPT WORD IS CLICKABLE (T4), when the prompt has one.
+			writeRendered(stdout, "\n"+q.Prompt()+"\n", promptRegions(q))
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -1188,6 +1177,50 @@ func (sd *sittingDeck) marksIn(word, written string) []Region {
 		out[i] = r
 	}
 	return out
+}
+
+// promptRegions is what a form's PROMPT offers to a click.
+//
+// LOCATED, NOT ASSUMED — the rule marksIn states thirty lines up ("the form owns
+// its own layout, and a formula here would be a second copy of it that a new
+// form silently invalidates"), applied to the one place that was still using the
+// formula.
+//
+// The formula was `Choice.Prompt()`'s shape read as every form's: line 0 is the
+// headword, at column 0, as wide as the word. Cloze's prompt is a blanked
+// sentence, so the region landed on the sentence's first eleven cells — and a
+// click there SPOKE THE ANSWER, while the underline advertised its length. That
+// is precisely what Blank exists to prevent, arriving by a path Blank cannot see.
+// Cloze's own doc comment said the premise did not hold here; saying it is not
+// the same as acting on it.
+//
+// So the region is issued only when the claim it makes is TRUE. The predicate is
+// the region's own coordinates read back as a sentence — "line 0 begins with the
+// headword, and the first visibleCells(word) cells of it are that word" — which
+// is why TestAPromptRegionCoversTheTextItClaims can assert exactly the same
+// thing over every form without knowing which forms have one.
+//
+// Searching the whole prompt instead would be WORSE than the formula: a cloze
+// prompt does contain its answer, among the options, so "find the word" would
+// underline the correct option. The claim is about a POSITION, so a position is
+// what gets checked.
+//
+// Nothing to worry about with wrapping: a headword is never wide enough to wrap.
+func promptRegions(q play.Question) []Region {
+	word := q.Word()
+	if word == "" {
+		return nil
+	}
+	line0, _, _ := strings.Cut(q.Prompt(), "\n")
+	if !strings.HasPrefix(line0, word) {
+		return nil
+	}
+	// Line 1, not 0: the write leads with a blank line, and addRegions anchors at
+	// the line the write STARTS on.
+	return []Region{{
+		Kind: RegionHeadword, Text: word, Word: word,
+		Line: 1, Col: 0, Width: visibleCells(word),
+	}}
 }
 
 // figures is what the bar and the summary are built from: a walk over the deck

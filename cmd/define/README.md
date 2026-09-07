@@ -198,7 +198,8 @@ test can. As a board closes it leaves one line naming the words you marked no.
 
 | key | does |
 |---|---|
-| `1`–`4` | multiple choice: pick the definition |
+| `1`–`4` | multiple choice: pick the definition, or on a cloze pick the word |
+| `?` | on a cloze: bad question — records it with the options you were shown, and moves on without marking you wrong |
 | `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
 | click | board: mark that word. Anywhere else in a sitting, a click plays the word rather than answering |
 | Tab | board: cycle what a mark means — yes, no, then drop |

@@ -638,3 +638,25 @@ func wrapText(s string, width, indent int) string {
 	}
 	return b.String()
 }
+
+// cellSlice is width cells of s starting at column col, in DISPLAY CELLS —
+// the unit Region speaks in, which is why a byte slice cannot answer this.
+//
+// Written for TestAPromptRegionCoversTheTextItClaims, whose whole job is to read
+// a region's coordinates back out of the text: doing that in bytes would let a
+// region over a wide or combining rune pass a check it should fail.
+func cellSlice(s string, col, width int) string {
+	var b strings.Builder
+	at := 0
+	for _, r := range s {
+		w := visibleCells(string(r))
+		if at >= col+width {
+			break
+		}
+		if at >= col {
+			b.WriteRune(r)
+		}
+		at += w
+	}
+	return b.String()
+}
