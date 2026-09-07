@@ -1,11 +1,12 @@
 ---
 id: 000012
-status: open
+status: working
 deps: ["tools#6", "tools#10", "tools#11"]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-09-06
 estimate_hours:
+started: 2026-09-06T17:17:21-07:00
 ---
 
 # review form 2.2: cloze from current news with curated distractors
@@ -84,7 +85,23 @@ work:
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Durable design: `workshop/plans/000012-vocab-form-cloze-plan.md`.
+
+**Single-pass, no `Mx` tags.** Three chunks that close in one boundary: the form,
+the blanking, the wiring. Tagging them M1/M2/M3 would force three
+milestone-closes on work with one natural review point — and `#10` measured what
+a boundary costs.
+
+- [ ] The form: extract the option-set contract `Choice` and `Cloze` share, then
+      `Cloze` over it, then `Flagging` as the fifth optional capability beside
+      `Missed` and `Dropping`.
+- [ ] The blanking: `blankStem` against a leak table — capitalised, inflected,
+      possessive, EVERY occurrence, and a substring that is not the word.
+- [ ] The wiring: one clause on the form-selection rule ("an authored item beats
+      a definition match"), the flag reaching the log with its option set, and a
+      sitting still asserted to make no model call.
+- [ ] Docs, this issue's OWN mutation sweep, and a real sitting run by hand
+      against `#10`'s generated batch.
 
 ## Log
 
