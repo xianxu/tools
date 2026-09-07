@@ -3752,3 +3752,30 @@ hand-maintained enumerations, three rounds. The rule: **every enumeration of liv
 keys derives from the code that owns them, and a new key is not shipped until
 every such enumeration derives.** When a gate finds the same fact missing twice,
 stop fixing homes and go count them.
+
+**A derivation that can under-derive silently is the hand-maintained list with
+extra steps.** `TestEveryFormIsEnrolled` scraped `Form()` with a regex requiring
+a single-letter pointer receiver, a one-line body and a lowercase literal all at
+once — and asserted only `declared ⊆ enrolled`, so a form the regex missed was
+SILENCE. Renaming a receiver would have re-opened the finding the guard was
+written to close, plus the Critical guard built on the same extent. Parse the
+code (`go/parser`) rather than matching its formatting, and **make it fail
+closed**: assert the counts match, because "everything I found is enrolled" is
+satisfied by finding nothing.
+
+That is the second time in two rounds. Both times the guard was mine, and both
+times the flaw was the same shape: **I checked that the guard fires, and not that
+it fires on everything it claims to cover.**
+
+**When a gate finds the same family four times, the finding is the missing
+ENUMERATION.** Stale-restatement was raised in rounds 1, 2, 3 and 4 of one issue;
+each round fixed instances and the open count went from five to eleven, three
+added by the fixing commits themselves. Instances are not the bug. Split the
+family: derive every half that is machine-readable (a guard per fact — see the
+table in `workshop/targets/derived-restatement.md`), and put the prose half on a
+checklist run at every boundary. Then keep moving rows from the checklist into
+the table.
+
+**And check the doc comment on the CALLER.** The commonest stale restatement is a
+comment on code the diff did not touch, which is exactly the set `git diff` will
+never show you.

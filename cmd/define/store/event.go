@@ -24,6 +24,22 @@ const (
 	EventFlagged EventKind = "flagged"
 )
 
+// eventKinds is every kind, in the order the docs list them.
+//
+// A SECOND HOME for the enum would defeat the point, so this is the only place a
+// kind is written after its constant: EventKinds() derives the docs guards from
+// it, and #12's BR-18 found the docs had drifted twice over — the README's store
+// layout and the atlas's both still read "kinds: looked-up, asked" long after
+// `reviewed` and `flagged` existed, and a log a human reads has no other
+// documentation.
+var eventKinds = []EventKind{EventLookedUp, EventAsked, EventReviewed, EventFlagged}
+
+// EventKinds is the extent of EventKind, copied so a caller cannot reorder it.
+//
+// Same move Bands() and Domains() make: the enum is knowable, so no guard,
+// migration or document has to restate it.
+func EventKinds() []EventKind { return append([]EventKind(nil), eventKinds...) }
+
 // ReviewEvent is one thing that happened, at a time.
 //
 // Append-only, and deliberately the ONLY record of activity: every statistic #8

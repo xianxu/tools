@@ -3,13 +3,19 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/play"
+	"github.com/xianxu/tools/cmd/define/store"
+
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"sort"
+	"strconv"
 )
 
 // The README's account of the play loop DERIVES from the loop, or it drifts.
@@ -127,29 +133,23 @@ func docSyncForms(t *testing.T) []play.Question {
 // Same move numRegionKinds makes for region kinds — the extent has one source,
 // and a member added without being enrolled fails the build rather than being
 // silently unchecked.
+//
+// PARSED, NOT SCRAPED (#12 BR-17). The first version matched a regex requiring a
+// single-letter pointer receiver, a one-line body and a lowercase literal, all
+// at once — and because the assertion is "declared ⊆ enrolled", a form the regex
+// MISSED was silence rather than failure. Measured: renaming Cloze's receiver to
+// `cz` (still gofmt-clean) and un-enrolling it left this guard, both README
+// guards and BR-14's region guard all green. A derivation that can under-derive
+// silently is not a derivation; it is the hand-maintained list with extra steps.
+//
+// go/parser answers the question the regex was approximating — "is there a
+// method named Form on some receiver returning a string literal" — with no
+// opinion about formatting. And the count assertion below makes it FAIL CLOSED:
+// if the parse ever finds fewer forms than are enrolled, the extent is wrong in
+// the direction that hides things, and that is now the loud case rather than the
+// quiet one.
 func TestEveryFormIsEnrolled(t *testing.T) {
-	declared := map[string]bool{}
-	entries, err := os.ReadDir("play")
-	if err != nil {
-		t.Fatal(err)
-	}
-	re := regexp.MustCompile(`func \([a-z] \*[A-Za-z]+\) Form\(\) string \{ return "([a-z]+)" \}`)
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join("play", e.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
-			declared[m[1]] = true
-		}
-	}
-	if len(declared) == 0 {
-		t.Fatal("no Form() declarations found; this guard would pass vacuously")
-	}
-
+	declared := declaredForms(t)
 	enrolled := map[string]bool{}
 	for _, f := range docSyncForms(t) {
 		enrolled[f.Form()] = true
@@ -160,6 +160,78 @@ func TestEveryFormIsEnrolled(t *testing.T) {
 				"so neither of its prompt lines is checked against README.md", name)
 		}
 	}
+	// FAIL CLOSED. Subset-only is satisfied by finding nothing, which is exactly
+	// how a mis-derivation would present.
+	if len(declared) != len(enrolled) {
+		t.Errorf("the parse found %d form(s) %v but %d are enrolled %v.\n"+
+			"Equal counts are the point: a derivation that finds FEWER than are "+
+			"enrolled is under-deriving, and every guard built on it is then "+
+			"checking a set nobody chose.",
+			len(declared), keysOf(declared), len(enrolled), keysOf(enrolled))
+	}
+}
+
+// declaredForms is every form name `play` declares, read from the AST.
+//
+// A form is a method named Form with a receiver, no parameters, one string
+// result, whose body is a single `return "<literal>"`. That last clause is the
+// only shape assumption left, and it is a real one: a Form() computing its name
+// would make "the set of forms" unknowable statically, which is worth failing on
+// rather than guessing at.
+func declaredForms(t *testing.T) map[string]bool {
+	t.Helper()
+	declared := map[string]bool{}
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, "play", func(fi fs.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatalf("parsing play/: %v", err)
+	}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			for _, d := range file.Decls {
+				fn, ok := d.(*ast.FuncDecl)
+				if !ok || fn.Recv == nil || fn.Name.Name != "Form" || fn.Body == nil {
+					continue
+				}
+				if len(fn.Body.List) != 1 {
+					t.Errorf("%s: Form() has a %d-statement body; this guard can only "+
+						"derive a name from a single return of a literal",
+						fset.Position(fn.Pos()), len(fn.Body.List))
+					continue
+				}
+				ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
+				if !ok || len(ret.Results) != 1 {
+					continue
+				}
+				lit, ok := ret.Results[0].(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					t.Errorf("%s: Form() does not return a string literal, so the set of "+
+						"forms cannot be known statically", fset.Position(fn.Pos()))
+					continue
+				}
+				name, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					t.Fatalf("%s: %v", fset.Position(fn.Pos()), err)
+				}
+				declared[name] = true
+			}
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("no Form() declarations found; this guard would pass vacuously")
+	}
+	return declared
+}
+
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // The atlas's raw-notation count DERIVES from the ratchet rather than restating
@@ -532,4 +604,60 @@ func keyTableIn(t *testing.T, readme string) string {
 		t.Fatalf("the key table has %d rows; this guard would certify nothing", strings.Count(rest, "\n"))
 	}
 	return rest
+}
+
+// THE STORE LAYOUT DERIVES FROM THE EVENT KINDS (#12 BR-18).
+//
+// Both blocks — README.md's and the atlas's — read "kinds: looked-up, asked"
+// long after `reviewed` and `flagged` existed. The README's is the only
+// documentation a human reading their own event log has, so a kind missing from
+// it is a row in a file nobody can interpret.
+//
+// This is the fourth finding in the same family: a document restating a fact the
+// code owns. The rule the family produced — **a restatement must derive from the
+// code or be swept at the boundary that changed it** — has a derivable half and a
+// human half, and this closes the derivable half for event kinds the way
+// TestREADMEKeyTableNamesEveryLiveKey closed it for keys. What is left is
+// workshop/targets/derived-restatement.md, which enumerates the rest.
+func TestStoreLayoutDocsNameEveryEventKind(t *testing.T) {
+	kinds := store.EventKinds()
+	if len(kinds) == 0 {
+		t.Fatal("no event kinds; this guard would certify nothing")
+	}
+	for _, doc := range []struct{ path, marker string }{
+		{"README.md", "events/2026-08-21.yaml"},
+		{"../../atlas/define.md", "events/YYYY-MM-DD.yaml"},
+	} {
+		b, err := os.ReadFile(doc.path)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc.path, err)
+		}
+		block := layoutBlockIn(t, doc.path, string(b), doc.marker)
+		for _, k := range kinds {
+			if !strings.Contains(block, string(k)) {
+				t.Errorf("%s's store layout does not name the event kind %q.\n"+
+					"It is the block a reader consults to interpret their own log; "+
+					"a kind written there by the code and missing here is a row "+
+					"nobody can read.", doc.path, k)
+			}
+		}
+	}
+}
+
+// layoutBlockIn is the fenced store-layout block alone, so prose elsewhere
+// naming a kind in passing cannot satisfy the guard above — the scoping mistake
+// TestAtlasDescribesEveryRegionKind's comment records.
+func layoutBlockIn(t *testing.T, path, doc, marker string) string {
+	t.Helper()
+	i := strings.Index(doc, marker)
+	if i < 0 {
+		t.Fatalf("%s has no %q line; the store layout moved and this guard "+
+			"would certify nothing", path, marker)
+	}
+	start := strings.LastIndex(doc[:i], "```")
+	end := strings.Index(doc[i:], "```")
+	if start < 0 || end < 0 {
+		t.Fatalf("%s: the store layout at %q is not in a fenced block", path, marker)
+	}
+	return doc[start : i+end]
 }

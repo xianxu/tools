@@ -103,7 +103,7 @@ func (c *Choice) Word() string { return c.word }
 //
 // The first line is load-bearing beyond looking tidy: #38 makes a prompt word
 // clickable and computes its region as line 0, column 0, width len(word)
-// (recall.go:29 is its premise). #38 is PARKED, so a change here would break it
+// (form 2.1, since retired is its premise). #38 is PARKED, so a change here would break it
 // silently in an issue nobody is reading. D1a records the constraint on both
 // sides.
 func (c *Choice) Prompt() string {

@@ -72,7 +72,7 @@ and the goal is the best material achievable, not the cheapest.
 |---|---|---|
 | author a practice item | `#10`, offline batch | raw headlines are not questions — see below |
 | classify a word's level, register, domain | `#10`/`#17`, cached per word forever | frequency lists cannot see register |
-| veto a distractor | `#12` | a yes/no on a concrete pair is checkable; open generation is not |
+| veto a distractor | `#10`, offline batch | a yes/no on a concrete pair is checkable; open generation is not. Moved from `#12` with distractor selection — see the scope note |
 | grade a written sentence | `#13` | the only judgment a local rule genuinely cannot make |
 | batch-analyse errors into a learner model | `#17` | pattern-finding across many events |
 | answer a free-form question | `#16` | this is the verb |
@@ -254,7 +254,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
 - [x] spaced repetition rework — one unbounded ladder, `floor(1.6**box)`, no ceiling [tools#39]
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]
 - [x] form 2.5 — the board, grid triage for mature words [tools#40]
-- [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
+- [x] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
 - [ ] learner model — weakness taxonomy, steers authoring — **descoped from
       `#17 M2` into [tools#7]'s Done-when**, where the chosen distractor IS the

@@ -289,6 +289,101 @@ rounds:
           family: prompt-line-matches-live-keys
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-07T12:23:35-07:00"
+      agent: claude
+      dispose:
+        - id: BR-5
+          disposition: not-addressed
+          note: capture.go:148-150 still writes Word/Kind/Found/Options/At; Outcome.Form is set at session.go:277 and :413 and read nowhere, so every flagged event has an empty form — which ReviewEvent.Form's own doc says means "some earlier form".
+          round: 4
+        - id: BR-6
+          disposition: not-addressed
+          note: cloze.go:208 still renders and sets marks[key] before clozeFor's nil check, duplicating play_loop.go:962.
+          round: 4
+        - id: BR-7
+          disposition: not-addressed
+          note: cloze.go:101's TrimSpace(it.Answer) == "" is still unreachable behind hasLetterOrDigit at :99.
+          round: 4
+        - id: BR-8
+          disposition: not-addressed
+          note: 'projects/define-learn.md:75 still reads "veto a distractor | #12". Rolled into the family finding below.'
+          round: 4
+        - id: BR-9
+          disposition: not-addressed
+          note: plan lines 92 and 101 still name ReviewEvent.Flagged; store/event.go:103 ships Options. Rolled into the family finding below.
+          round: 4
+        - id: BR-11
+          disposition: not-addressed
+          note: All three instances stand (session.go:262-264, plan:211, README.md:499) and the close-time sweep list the finding asked for was not written; the family measured 11 instances at HEAD.
+          round: 4
+        - id: BR-12
+          disposition: not-addressed
+          note: The six-line OutcomeFlag literal is still open-coded at session.go:273-279 and :409-415.
+          round: 4
+        - id: BR-14
+          disposition: addressed
+          note: 'Verified by revert: deleting the HasPrefix check in promptRegions reddens TestAPromptRegionCoversTheTextItClaims for both *play.Cloze and *play.Board, plus TestAClozePromptOffersNoHeadwordToClick.'
+          round: 4
+        - id: BR-15
+          disposition: addressed
+          note: 'Verified by revert: removing the strings.Map from oneLine reddens TestMemConformance and TestYAMLConformance on the ESC/BEL fixtures in both implementations.'
+          round: 4
+        - id: BR-16
+          disposition: addressed
+          note: 'Verified by revert: restoring the old digit row and dropping the `?` row reddens TestREADMEKeyTableNamesEveryLiveKey by name for both of Cloze''s pairs.'
+          round: 4
+      findings:
+        - id: BR-17
+          severity: Important
+          title: the forms extent is scraped by a regex that silently under-derives, so BR-10's and BR-14's guards both lose a form to a formatting choice
+          detail: |-
+            doc_sync_test.go:136 requires a single-letter receiver, a pointer receiver, a
+            one-line body and an all-lowercase return literal, all at once; the test only
+            asserts declared is a subset of enrolled, so a member the regex misses is
+            silence. Measured at HEAD in a scratch copy: renaming the receiver to `cz`
+            (or reformatting Form() onto three lines, still gofmt-clean) AND removing
+            Cloze from docSyncForms leaves TestEveryFormIsEnrolled,
+            TestREADMEQuotesThePromptsTheLoopActuallyPrints,
+            TestREADMEKeyTableNamesEveryLiveKey and TestAPromptRegionCoversTheTextItClaims
+            all green — BR-10's damage restored, now also carrying BR-14's Critical guard.
+            Un-enrolling alone does redden, so the enrolment is fine and the derivation is
+            the weak link. Fix: derive with go/parser + ast.Inspect (any FuncDecl with a
+            receiver, Name == "Form", one string result, returning a BasicLit), or make it
+            fail closed by asserting len(declared) == len(docSyncForms(t)).
+          family: derived-extent-fails-open
+          round: 4
+        - id: BR-18
+          severity: Important
+          title: the close-time sweep list BR-11 asked for was never written, and the family grew from 5 open instances to 11 — three of them added by this round's own commits
+          detail: |-
+            This is the 4th finding in family stale-artifact-restatement. Earlier rounds
+            fixed instances; BR-8, BR-9 and BR-11 all stand verbatim at HEAD. Do NOT fix
+            these eleven sites. The rule BR-11 stated is correct — a restatement of a fact
+            the code owns must derive from it or be swept at the boundary that changed it —
+            and what is missing is the ENUMERATION: a close-time sweep list over issue,
+            plan, project, README, atlas, and the doc comment on every symbol the diff
+            reshaped. Measured at 2c67482: (1) session.go:262-264 keystroke-through-Grade;
+            (2) plan:211 Flagged(); (3) README.md:499 "Nothing writes this yet";
+            (4) projects/define-learn.md:75 veto attributed to #12; (5) plan:92,101
+            ReviewEvent.Flagged; (6) NEW atlas/define.md:2579-2581 restates the exact
+            "prompt word is line 1, column 0 / both forms put the headword on their first
+            line" premise that 2c67482 deleted from the code, and there are now three forms;
+            (7) NEW README.md:491 events block still reads "kinds: looked-up, asked,
+            reviewed" with no `flagged` and no `options:` field, and it is the only doc a
+            human reading the log has; (8) NEW atlas/define.md:611 store layout reads
+            "kinds: looked-up, asked", missing reviewed, flagged, facts/ and items/;
+            (9) NEW session.go:158-160 says Outcome.Form is set "in ONE place — see Apply"
+            while :277 and :413 set it directly on a non-Record kind; (10) NEW
+            play/optionset.go:40 — the pre-#12 text read "#38, which WILL mark the option
+            lines clickable" and the Task 1 extraction flipped it to "which marks", a
+            false statement of fact (only RegionHeadword and RegionOriginLang exist);
+            (11) pre-existing play/choice.go:106 cites recall.go:29, deleted with form 2.1.
+            Rows 6, 7 and 8 are also the docs gate: the atlas restates a removed premise and
+            the README does not document the flagged kind or options: field #12 persists.
+          family: stale-artifact-restatement
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#12 (boundary-review)
@@ -448,6 +543,63 @@ and TestAWordWithNoItemsSaysNothing pins the silent ordinary case.
   play.FlagKey + CanFlag and widen the digit row now that a second form grades digits, the same
   move TestREADMENamesEveryFallbackReason makes for fallbackReasons.
 
+## Round 4 — 2026-09-07T12:23:35-07:00 (claude) — passed
+
+### Disposed
+
+- BR-5 — not-addressed — capture.go:148-150 still writes Word/Kind/Found/Options/At; Outcome.Form is set at session.go:277 and :413 and read nowhere, so every flagged event has an empty form — which ReviewEvent.Form's own doc says means "some earlier form".
+- BR-6 — not-addressed — cloze.go:208 still renders and sets marks[key] before clozeFor's nil check, duplicating play_loop.go:962.
+- BR-7 — not-addressed — cloze.go:101's TrimSpace(it.Answer) == "" is still unreachable behind hasLetterOrDigit at :99.
+- BR-8 — not-addressed — projects/define-learn.md:75 still reads "veto a distractor | #12". Rolled into the family finding below.
+- BR-9 — not-addressed — plan lines 92 and 101 still name ReviewEvent.Flagged; store/event.go:103 ships Options. Rolled into the family finding below.
+- BR-11 — not-addressed — All three instances stand (session.go:262-264, plan:211, README.md:499) and the close-time sweep list the finding asked for was not written; the family measured 11 instances at HEAD.
+- BR-12 — not-addressed — The six-line OutcomeFlag literal is still open-coded at session.go:273-279 and :409-415.
+- BR-14 — addressed — Verified by revert: deleting the HasPrefix check in promptRegions reddens TestAPromptRegionCoversTheTextItClaims for both *play.Cloze and *play.Board, plus TestAClozePromptOffersNoHeadwordToClick.
+- BR-15 — addressed — Verified by revert: removing the strings.Map from oneLine reddens TestMemConformance and TestYAMLConformance on the ESC/BEL fixtures in both implementations.
+- BR-16 — addressed — Verified by revert: restoring the old digit row and dropping the `?` row reddens TestREADMEKeyTableNamesEveryLiveKey by name for both of Cloze's pairs.
+
+### Raised
+
+- **BR-17** [Important] `derived-extent-fails-open` the forms extent is scraped by a regex that silently under-derives, so BR-10's and BR-14's guards both lose a form to a formatting choice
+  doc_sync_test.go:136 requires a single-letter receiver, a pointer receiver, a
+  one-line body and an all-lowercase return literal, all at once; the test only
+  asserts declared is a subset of enrolled, so a member the regex misses is
+  silence. Measured at HEAD in a scratch copy: renaming the receiver to `cz`
+  (or reformatting Form() onto three lines, still gofmt-clean) AND removing
+  Cloze from docSyncForms leaves TestEveryFormIsEnrolled,
+  TestREADMEQuotesThePromptsTheLoopActuallyPrints,
+  TestREADMEKeyTableNamesEveryLiveKey and TestAPromptRegionCoversTheTextItClaims
+  all green — BR-10's damage restored, now also carrying BR-14's Critical guard.
+  Un-enrolling alone does redden, so the enrolment is fine and the derivation is
+  the weak link. Fix: derive with go/parser + ast.Inspect (any FuncDecl with a
+  receiver, Name == "Form", one string result, returning a BasicLit), or make it
+  fail closed by asserting len(declared) == len(docSyncForms(t)).
+- **BR-18** [Important] `stale-artifact-restatement` the close-time sweep list BR-11 asked for was never written, and the family grew from 5 open instances to 11 — three of them added by this round's own commits
+  This is the 4th finding in family stale-artifact-restatement. Earlier rounds
+  fixed instances; BR-8, BR-9 and BR-11 all stand verbatim at HEAD. Do NOT fix
+  these eleven sites. The rule BR-11 stated is correct — a restatement of a fact
+  the code owns must derive from it or be swept at the boundary that changed it —
+  and what is missing is the ENUMERATION: a close-time sweep list over issue,
+  plan, project, README, atlas, and the doc comment on every symbol the diff
+  reshaped. Measured at 2c67482: (1) session.go:262-264 keystroke-through-Grade;
+  (2) plan:211 Flagged(); (3) README.md:499 "Nothing writes this yet";
+  (4) projects/define-learn.md:75 veto attributed to #12; (5) plan:92,101
+  ReviewEvent.Flagged; (6) NEW atlas/define.md:2579-2581 restates the exact
+  "prompt word is line 1, column 0 / both forms put the headword on their first
+  line" premise that 2c67482 deleted from the code, and there are now three forms;
+  (7) NEW README.md:491 events block still reads "kinds: looked-up, asked,
+  reviewed" with no `flagged` and no `options:` field, and it is the only doc a
+  human reading the log has; (8) NEW atlas/define.md:611 store layout reads
+  "kinds: looked-up, asked", missing reviewed, flagged, facts/ and items/;
+  (9) NEW session.go:158-160 says Outcome.Form is set "in ONE place — see Apply"
+  while :277 and :413 set it directly on a non-Record kind; (10) NEW
+  play/optionset.go:40 — the pre-#12 text read "#38, which WILL mark the option
+  lines clickable" and the Task 1 extraction flipped it to "which marks", a
+  false statement of fact (only RegionHeadword and RegionOriginLang exist);
+  (11) pre-existing play/choice.go:106 cites recall.go:29, deleted with form 2.1.
+  Rows 6, 7 and 8 are also the docs gate: the atlas restates a removed premise and
+  the README does not document the flagged kind or options: field #12 persists.
+
 ## Open findings
 
 - **BR-5** [Minor] `outcome-field-unread` the flag outcome carries Form and CaptureFlag drops it
@@ -457,6 +609,5 @@ and TestAWordWithNoItemsSaysNothing pins the silent ordinary case.
 - **BR-9** [Minor] `stale-artifact-restatement` the plan's Integration points table names ReviewEvent.Flagged; the code ships ReviewEvent.Options
 - **BR-11** [Minor] `stale-artifact-restatement` three more restatements now contradict the code, bringing the open family to five
 - **BR-12** [Minor] `one-place-renders` the OutcomeFlag literal is now built at two call sites, against the rule the surviving drop comment states
-- **BR-14** [Critical] `capability-guard-too-wide` the loop registers a headword click region over the cloze prompt, so clicking the blanked sentence speaks the answer and underlines a span as wide as it
-- **BR-15** [Important] `untrusted-text-reaches-output` item free text reaches the raw terminal with only whitespace collapsed, and the event log's comment claims otherwise
-- **BR-16** [Important] `prompt-line-matches-live-keys` the README key table still lists no `?`, and its digit row still says only "pick the definition"
+- **BR-17** [Important] `derived-extent-fails-open` the forms extent is scraped by a regex that silently under-derives, so BR-10's and BR-14's guards both lose a form to a formatting choice
+- **BR-18** [Important] `stale-artifact-restatement` the close-time sweep list BR-11 asked for was never written, and the family grew from 5 open instances to 11 — three of them added by this round's own commits

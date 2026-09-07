@@ -488,17 +488,21 @@ A model that is configured but does not answer says so, and the question is kept
 words/en/sycophantic.yaml  one file per word, under its language
 words/es/madrugar.yaml     a different language, a different deck
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
-                           kinds: looked-up, asked, reviewed. A reviewed record
-                           carries correct:, and a MISS from the multiple-choice
-                           form also carries missed: — which kind of wrong answer
-                           it was (domain, register, general)
+                           kinds: looked-up, asked, reviewed, flagged. A
+                           reviewed record carries correct:, and a MISS from a
+                           multiple-choice form also carries missed: — which
+                           kind of wrong answer it was (domain, register,
+                           general). A flagged record is a question you called
+                           broken: it carries options: — every word you were
+                           shown — and no correct:, because it is not evidence
+                           about you and moves nothing
 facts/en/sycophantic.yaml  a word's CEFR band and domain, written by
                            --harvest and never re-asked; per language, because
                            `red` is a different word in English and Spanish
-items/en/sycophantic.yaml  practice items authored ahead of time, per
-                           language. Nothing writes this yet — authoring is the
-                           next milestone; the directory is here because the
-                           facts above are what it will be authored from
+items/en/sycophantic.yaml  practice items authored ahead of time by
+                           --harvest, per language: a sentence with its answer
+                           and the words vetoed to sit beside it. This is what
+                           a cloze question is built from
 lang.txt                   which language this directory is in
 user-model.en.md           written by --reflect, read to pitch answers; one per
                            language, because it is read off that language's

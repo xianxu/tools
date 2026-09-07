@@ -439,3 +439,29 @@ enrolment is derived rather than written. `TestEveryFormIsEnrolled`
 `docSyncForms(t)` is the one slice both README guards consume. A future form
 added to `play/` fails the suite until it is enrolled — which is the property the
 plan should have asked for and did not.
+
+### 2026-09-07 — what the plan named and what shipped
+
+**Reason.** `#12`'s close review, BR-18: the plan is one of the artifacts that
+restates a fact the code owns, and two of its names were superseded during
+implementation by findings the gates raised. Recorded here rather than
+overwritten, so the reasoning above stays readable as what was designed.
+
+**Delta — two names.**
+
+- **`Flagging.Flagged() ([]string, bool)`** shipped as **`Flag(k rune) ([]string,
+  bool)`**. The close review's I-2 found that a gesture answering "was I
+  flagged?" needs the session to hand it the keystroke somehow, and the shape
+  that took handed EVERY rune to `Grade` to discover a flag — so a stray digit
+  after answering re-picked the answer and changed what the reveal said. Asking
+  the form ABOUT A RUNE removes the interception, the one-shot field and the
+  state. The capability-interface design the plan argued for is unchanged; only
+  the question it asks is.
+- **`ReviewEvent.Flagged`** shipped as **`EventFlagged` plus
+  `ReviewEvent.Options`**. A kind rather than a field, for the mechanical reason
+  `store/event.go` now records: `Fold` folds every `EventReviewed` and
+  `GradeOf(false)` is `GradeWrong`, so a flag carried as a field on a reviewed
+  event would DEMOTE the word on an append-only log. A kind `Fold` does not know
+  is ignored by construction rather than by a filter someone maintains. Every
+  argument the plan makes for carrying the options is unchanged and is why
+  `Options` exists.

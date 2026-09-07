@@ -37,7 +37,8 @@ func newOptionSet(options []Option) optionSet {
 //
 // Exported for two consumers that both need to know WHERE an option is on
 // screen: tests, which cannot know which digit is correct once the set is
-// shuffled, and #38, which marks the option lines clickable.
+// shuffled, and #38, which will mark the option lines clickable — no region kind
+// does yet, so this is a commitment rather than a description.
 func (o *optionSet) Options() []Option { return o.options }
 
 // Grade reads 1-N and nothing else.

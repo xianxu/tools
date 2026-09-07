@@ -608,7 +608,11 @@ the boundary if a config arrives later.
 ```
 words/<lang>/<slug>.yaml one file per word, under its language
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
-                         kinds: looked-up, asked
+                         kinds: looked-up, asked, reviewed, flagged
+usage/<slug>.yaml        the news cache — per word and FLAT, so it is shared
+                         across languages (see Forget's two axes)
+facts/<lang>/<slug>.yaml a word's CEFR band and domain (#10)
+items/<lang>/<slug>.yaml authored practice items (#10), what a cloze is built from
 lang.txt                 the directory's language (#23)
 user-model.<lang>.md     the learner model — markdown, because a person edits it
 ```
@@ -2577,9 +2581,13 @@ with no row there draws an underline that does nothing, which
 `TestEveryRegionKindIsActionable` catches by deriving its loop from
 `numRegionKinds`.
 
-- **The prompt word is line 1, column 0 of the write the loop already makes.**
-  Both forms put the headword on their first line, so there is nothing to search
-  for and no offset to survive a wrap.
+- **A prompt region is issued only when its claim is TRUE (`promptRegions`).**
+  This was once "the prompt word is line 1, column 0", justified by "both forms
+  put the headword on their first line" — a premise `#12`'s cloze broke, which
+  put the region over the blanked sentence so a click spoke the answer. There are
+  three forms now and the count is not the point: the region is issued when line
+  0 actually begins with the headword, and `TestAPromptRegionCoversTheTextItClaims`
+  reads every form's coordinates back out of the text written.
 - **The reveal's regions come from `Render` and are SHIFTED into the coordinates
   of what is written.** A form's reveal is larger than the render inside it —
   `Choice.Reveal` names the right option and the learner's pick first — so the

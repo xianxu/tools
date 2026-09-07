@@ -518,3 +518,195 @@ findings:
       play.FlagKey + CanFlag and widen the digit row now that a second form grades digits, the same
       move TestREADMENamesEveryFallbackReason makes for fallbackReasons.
 ```
+
+---
+
+## Re-review — 2026-09-07T12:23:35-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 12 — review form 2.2: cloze from current news with curated distractors |
+| repo | tools |
+| issue file | workshop/issues/000012-vocab-form-cloze.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 0b8d9930762168cf52f77c5d0864599f678d3b5d..2c67482163c1752ddac57dfd663406c526f0ebe0 |
+| command | sdlc close --issue 12 |
+| reviewer | claude |
+| timestamp | 2026-09-07T12:23:35-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 3's three findings are genuinely fixed and genuinely pinned — I reverted each in a scratch copy at HEAD and watched the named test go red (BR-14: `TestAPromptRegionCoversTheTextItClaims` reddens for `*play.Cloze` **and** `*play.Board`; BR-15: both `TestMemConformance` and `TestYAMLConformance` redden on `\x1b`/`\a`; BR-16: `TestREADMEKeyTableNamesEveryLiveKey` reddens by name). `go build`, `go vet`, `gofmt -l` and `go test ./...` are clean. What blocks SHIP is not new code: the seven Minors carried since round 1 are still open verbatim, and two of them are the *only* remaining instances of families the prior rounds asked to be closed as a class. Beyond that I found one new Important: the mechanical extent that BR-10's and BR-14's fixes both rest on is a regex over source text that fails **open** — I defeated it two independent ways in a scratch copy (a two-letter receiver name; a three-line `Form()` body), each leaving all four doc/region guards green with `Cloze` unenrolled. That is BR-10's exact damage, restored by a formatting choice.
+
+## 1. Strengths
+
+- **`promptRegions` is the right shape for the class, not a special case for the form that broke.** `cmd/define/play_loop.go:1204-1224` issues the region only when its own claim is true (`line 0 begins with the headword`), and `TestAPromptRegionCoversTheTextItClaims` (`play_loop_test.go:4269`) reads every enrolled form's coordinates back out of the text actually written via the new cell-accurate `cellSlice` (`render.go:642`). The comment's refusal to "just search the prompt for the word" is correct and load-bearing — a cloze prompt contains its answer among the options.
+- **The guard found a second instance the moment it existed.** My revert showed it reddens for `*play.Board` too, which is the evidence that it was sized to the class rather than to the reported bug.
+- **BR-15 was fixed at the one place `sanitiseItem`'s own comment says every consumer shares** (`store/item.go:200-207`), and the storetest row now asserts over `unicode.IsControl` rather than over `"\r\n"` — with a companion assertion that `a\nb` still collapses to `a b` rather than `ab`, which is the trap the obvious fix falls into.
+- **The `optionSet` extraction is behaviour-faithful.** `git diff` on `choice.go` shows `Grade`, `Keys`, `Reveal` and `MissedAxis` re-expressed over `correctIndex`/`wrongPick`/`keysFor` with no test file edited — the plan's stated oracle for Task 1 held.
+- **The leak Done-when is pinned three ways, not one**: the six-row table (`cloze_test.go:22`), the standalone property (`:74`), and `FuzzBlankStem` with the hang and the non-word-answer regressions committed as seeds.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-A — `TestEveryFormIsEnrolled`'s derivation fails open; three guards silently lose a form.**
+`cmd/define/doc_sync_test.go:136` derives the extent with
+`regexp.MustCompile("func \\([a-z] \\*[A-Za-z]+\\) Form\\(\\) string \\{ return \"([a-z]+)\" \\}")`.
+That requires four incidental things at once: a *single-letter* receiver name, a *pointer* receiver, a *one-line* body, and an all-lowercase return literal. Any of them failing drops the form from `declared`, and the test only asserts `declared ⊆ enrolled` — so a missing member is silence, not a failure. Measured in a scratch copy at HEAD:
+
+- rename `func (c *Cloze) Form()` → `func (cz *Cloze) Form()` **and** delete `Cloze` from `docSyncForms` → `TestEveryFormIsEnrolled`, `TestREADMEQuotesThePromptsTheLoopActuallyPrints`, `TestREADMEKeyTableNamesEveryLiveKey` and `TestAPromptRegionCoversTheTextItClaims` are all **green**;
+- reformatting `Form()` onto three lines (still `gofmt`-clean) does the same.
+
+Un-enrolling alone *does* redden, so the issue Log's mutation claim is accurate — the weak link is the derivation, not the enrolment. This matters more than an ordinary doc guard because BR-14's Critical fix now hangs off the same extent. Fix sketch: replace the regex with `go/parser` + `ast.Inspect` over `play/*.go`, matching any `FuncDecl` with a receiver, `Name == "Form"`, and a single `string` result, taking the returned `BasicLit` — receiver name, pointer-ness and body layout all stop mattering. `numRegionKinds` is the model this is reaching for, and a sentinel is airtight where a source scrape is not.
+
+**I-B — the close-time sweep list BR-11 asked for was not written, and the family grew from 5 instances to 11.**
+**This is the 4th finding in family `stale-artifact-restatement`.** Earlier rounds fixed instances; BR-8, BR-9 and BR-11 are all still open verbatim at HEAD, and this round's own commits added three more. Do not fix these eleven — write the rule and the enumeration it implies. The rule BR-11 already stated is right: *a restatement of a fact the code owns must derive from it, or be swept at the boundary that changed it.* What is missing is the enumeration — the close-time sweep list over **issue, plan, project, README, atlas, and the doc comment on every symbol the diff reshaped**. Measured prevalence at `2c67482`, so the list has something to be checked against:
+
+| # | site | what it still claims | prior |
+|---|---|---|---|
+| 1 | `play/session.go:262-264` | the keystroke reaches the form "through `Grade`" and the flag "comes back out of `advance`" — both false since `0698b27` | BR-11 |
+| 2 | `plans/000012-…-plan.md:211` | `Flagging` declares `Flagged() ([]string, bool)`; the code ships `Flag(k rune)` | BR-11 |
+| 3 | `cmd/define/README.md:499` | `items/` — "Nothing writes this yet — authoring is the next milestone" | BR-11 |
+| 4 | `projects/define-learn.md:75` | "veto a distractor \| `#12`" — moved to `#10` by the 2026-09-04 revision | BR-8 |
+| 5 | `plans/000012-…-plan.md:92,101` | `ReviewEvent.Flagged`; the code ships `ReviewEvent.Options` | BR-9 |
+| 6 | `atlas/define.md:2579-2581` | "**The prompt word is line 1, column 0** … Both forms put the headword on their first line" — this is the *exact* premise `2c67482` deleted from the code, left standing in the atlas by that same commit, and "both forms" is now three | **new** |
+| 7 | `cmd/define/README.md:491` | `events/` — "kinds: looked-up, asked, reviewed"; `#12` shipped `flagged` and an `options:` field, and this block is the only doc a human reading the log has | **new** |
+| 8 | `atlas/define.md:611` | store layout — "kinds: looked-up, asked"; missing `reviewed`, `flagged`, and `#10`'s `facts/` and `items/` dirs | **new** |
+| 9 | `play/session.go:158-160` | `Outcome.Form` is set "on every Record outcome … Set in ONE place — see `Apply`"; the two flag sites set it directly on a non-Record kind | **new** |
+| 10 | `play/optionset.go:40` | "`#38`, which **marks** the option lines clickable" — the pre-`#12` text read "which **will** mark"; the Task 1 extraction flipped a plan into a false statement of fact, and only `RegionHeadword`/`RegionOriginLang` exist | **new** |
+| 11 | `play/choice.go:106` | "`recall.go:29` is its premise" — `play/recall.go` was deleted with form 2.1 | pre-existing |
+
+Rows 6, 9 and 10 were introduced or left by this round's own commits, which is the measurement that says the sweep is not happening by attention. Rows 6, 7 and 8 are also the **docs gate**: the atlas restates a premise the diff removed, and the README's file-format block does not document the new `flagged` kind or `options:` field that `#12` persists.
+
+## 4. Minor findings
+
+All seven carried Minors are re-raised unchanged; see the `dispose` block. In brief: `CaptureFlag` drops `Outcome.Form` (BR-5 — and `ReviewEvent.Form`'s own doc says an absent form means "some earlier form", so every flagged event now reads as a lie by that comment's rule); `clozeAsk` duplicates `ask`'s render+marks block and renders twice for a word whose only item is unusable (BR-6); `usableItem`'s `TrimSpace(Answer) == ""` at `cloze.go:101` is unreachable behind `hasLetterOrDigit` (BR-7); BR-8/BR-9/BR-11 fold into I-B above; the `OutcomeFlag` literal is still open-coded at `play/session.go:273-279` and `:409-415`, against the rule the surviving `advance` comment at `:498-503` still states (BR-12).
+
+## 5. Test coverage notes
+
+Coverage is the strongest part of this boundary. The flag is driven end-to-end through a real `playSession` rather than by calling the verb (`cloze_test.go:376`), the no-model-call pin makes the seam **panic** rather than nil, the three session states `?` can arrive in are each exercised (`play/cloze_test.go:135`), and `TestAStrayDigitAfterAnsweringDoesNotRePick` pins BR-2's regression directly. Two gaps worth naming, neither blocking:
+
+- **The extent behind the doc/region guards is not itself pinned** (I-A). A `TestTheFormExtentDerivationSeesEveryForm`-style check — e.g. assert `len(declared) == len(docSyncForms(t))` — would fail closed and cost one line.
+- **Reveal regions have no counterpart to `TestAPromptRegionCoversTheTextItClaims`.** `marksIn` *locates* rather than computes, so it is structurally sound and no leak follows (the reveal shows the word anyway), but the rule BR-14 established — a region must cover the text it claims — is currently enforced on only one of the two region paths.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** `promptRegions` and `oneLine` each consolidate correctly, but BR-6 and BR-12 are both still open and are the same fix twice: one constructor per outcome, one helper per render, called from N sites rather than N constructions. `play/session.go:498-503` still carries the comment arguing for exactly that, four hundred lines below the two call sites that violate it.
+- **ARCH-PURE — pass.** `Cloze`, `optionSet`, `blankStem`, `usableItem`, `clozeFor` and `hasLetterOrDigit` are pure and unit-tested with no store, dictionary or model; `play`'s empty-allowlist purity guard still holds; `clozeAsk` is the thin IO seam and reports its one read failure rather than swallowing it.
+- **ARCH-PURPOSE — flag.** The issue's purpose is delivered. The failure is on the finding axis: BR-11 named the class and asked for the enumeration; the round fixed BR-14/15/16 as classes (well) and answered BR-11 with nothing, so the family grew (I-B). Note the contrast — BR-16's fix *did* sweep its class properly; I grepped `atlas/define.md` for key-line restatements and found none, so the README table and the prompt lines really are the whole enumeration for keys.
+- **ARCH-MOCK — pass.** The flagged-event promise is in the `storetest` suite, so `Mem` and `YAML` are both held; BR-15's fix reddens both. The cloze sitting asserts no model call with a panicking seam rather than a nil one.
+- **ARCH-CONSTRAINTS — pass.** The plan's envelope (one `Items()` read per due word, no model, no network) is what the code does. `promptRegions` runs once per question, not per frame. The only repeated work is BR-6's double `Render`.
+- **ARCH-SECURE — pass, with one named coupling.** Provenance is stated correctly (model output in a directory the README documents as editable), the fix is at the store boundary, and both `Mem` (write) and `YAML` (read) sanitise. The residual: `AppendEvent` does not neutralise `ReviewEvent.Options` at its own boundary — safety comes from the items surface upstream. True today, and `store/event.go:100-102` names the dependency, so this is a documented coupling rather than a hole.
+- **ARCH-ORDER — pass.** The flag enters `apply` as an explicit `(state, event) -> (state, effects)` arm in each of the three states, asked *before* the graded any-key rule for the same stated reason `InputDrop` and `InputQuit` sit outside it, and the tests observe all three interleavings rather than one. Nothing concurrent was added.
+
+## 7. Plan revision recommendations
+
+- **`## Revisions` — round 3 of the close gate.** The plan has entries for plan-quality round 1 and close round 2 but nothing for round 3. Add one recording that a click region issued from a form-specific layout formula was a Critical the plan never anticipated, and that "the form owns its own layout" (already stated for `marksIn`) now governs prompt regions too.
+- **Core concepts → Integration points table.** `ReviewEvent.Flagged` must become `ReviewEvent.Options`, with a note that the flagged *fact* is carried by `Kind` — better than the plan, but the table currently names a field that does not exist (BR-9).
+- **Task 3's `Flagging` snippet.** `Flagged() ([]string, bool)` → `Flag(k rune) ([]string, bool)`, with the reason the shipped shape is better (asking the rune keeps `Grade` from ever seeing the gesture).
+- **Task 1's file list.** `optionset_test.go` was deliberately not created; Tasks 5/6's tests landed in `cmd/define/cloze_test.go`. Say so rather than leaving the plan promising a file.
+- **Task 7.** Record that the doc-guard extent is *derived* rather than written, and that the derivation must fail closed (I-A) — the round-2 revision states the first half and not the second.
+
+```findings
+dispose:
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      capture.go:148-150 still writes Word/Kind/Found/Options/At; Outcome.Form is set at session.go:277 and :413 and read nowhere, so every flagged event has an empty form — which ReviewEvent.Form's own doc says means "some earlier form".
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      cloze.go:208 still renders and sets marks[key] before clozeFor's nil check, duplicating play_loop.go:962.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      cloze.go:101's TrimSpace(it.Answer) == "" is still unreachable behind hasLetterOrDigit at :99.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      projects/define-learn.md:75 still reads "veto a distractor | #12". Rolled into the family finding below.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      plan lines 92 and 101 still name ReviewEvent.Flagged; store/event.go:103 ships Options. Rolled into the family finding below.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      All three instances stand (session.go:262-264, plan:211, README.md:499) and the close-time sweep list the finding asked for was not written; the family measured 11 instances at HEAD.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      The six-line OutcomeFlag literal is still open-coded at session.go:273-279 and :409-415.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Verified by revert: deleting the HasPrefix check in promptRegions reddens TestAPromptRegionCoversTheTextItClaims for both *play.Cloze and *play.Board, plus TestAClozePromptOffersNoHeadwordToClick.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      Verified by revert: removing the strings.Map from oneLine reddens TestMemConformance and TestYAMLConformance on the ESC/BEL fixtures in both implementations.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      Verified by revert: restoring the old digit row and dropping the `?` row reddens TestREADMEKeyTableNamesEveryLiveKey by name for both of Cloze's pairs.
+findings:
+  - id: new
+    severity: Important
+    family: derived-extent-fails-open
+    title: |
+      the forms extent is scraped by a regex that silently under-derives, so BR-10's and BR-14's guards both lose a form to a formatting choice
+    detail: |
+      doc_sync_test.go:136 requires a single-letter receiver, a pointer receiver, a
+      one-line body and an all-lowercase return literal, all at once; the test only
+      asserts declared is a subset of enrolled, so a member the regex misses is
+      silence. Measured at HEAD in a scratch copy: renaming the receiver to `cz`
+      (or reformatting Form() onto three lines, still gofmt-clean) AND removing
+      Cloze from docSyncForms leaves TestEveryFormIsEnrolled,
+      TestREADMEQuotesThePromptsTheLoopActuallyPrints,
+      TestREADMEKeyTableNamesEveryLiveKey and TestAPromptRegionCoversTheTextItClaims
+      all green — BR-10's damage restored, now also carrying BR-14's Critical guard.
+      Un-enrolling alone does redden, so the enrolment is fine and the derivation is
+      the weak link. Fix: derive with go/parser + ast.Inspect (any FuncDecl with a
+      receiver, Name == "Form", one string result, returning a BasicLit), or make it
+      fail closed by asserting len(declared) == len(docSyncForms(t)).
+  - id: new
+    severity: Important
+    family: stale-artifact-restatement
+    title: |
+      the close-time sweep list BR-11 asked for was never written, and the family grew from 5 open instances to 11 — three of them added by this round's own commits
+    detail: |
+      This is the 4th finding in family stale-artifact-restatement. Earlier rounds
+      fixed instances; BR-8, BR-9 and BR-11 all stand verbatim at HEAD. Do NOT fix
+      these eleven sites. The rule BR-11 stated is correct — a restatement of a fact
+      the code owns must derive from it or be swept at the boundary that changed it —
+      and what is missing is the ENUMERATION: a close-time sweep list over issue,
+      plan, project, README, atlas, and the doc comment on every symbol the diff
+      reshaped. Measured at 2c67482: (1) session.go:262-264 keystroke-through-Grade;
+      (2) plan:211 Flagged(); (3) README.md:499 "Nothing writes this yet";
+      (4) projects/define-learn.md:75 veto attributed to #12; (5) plan:92,101
+      ReviewEvent.Flagged; (6) NEW atlas/define.md:2579-2581 restates the exact
+      "prompt word is line 1, column 0 / both forms put the headword on their first
+      line" premise that 2c67482 deleted from the code, and there are now three forms;
+      (7) NEW README.md:491 events block still reads "kinds: looked-up, asked,
+      reviewed" with no `flagged` and no `options:` field, and it is the only doc a
+      human reading the log has; (8) NEW atlas/define.md:611 store layout reads
+      "kinds: looked-up, asked", missing reviewed, flagged, facts/ and items/;
+      (9) NEW session.go:158-160 says Outcome.Form is set "in ONE place — see Apply"
+      while :277 and :413 set it directly on a non-Record kind; (10) NEW
+      play/optionset.go:40 — the pre-#12 text read "#38, which WILL mark the option
+      lines clickable" and the Task 1 extraction flipped it to "which marks", a
+      false statement of fact (only RegionHeadword and RegionOriginLang exist);
+      (11) pre-existing play/choice.go:106 cites recall.go:29, deleted with form 2.1.
+      Rows 6, 7 and 8 are also the docs gate: the atlas restates a removed premise and
+      the README does not document the flagged kind or options: field #12 persists.
+```

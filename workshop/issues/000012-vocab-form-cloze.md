@@ -1,12 +1,13 @@
 ---
 id: 000012
-status: working
+status: codecomplete
 deps: ["tools#6", "tools#10", "tools#11"]
 github_issue:
 created: 2026-08-20
-updated: 2026-09-06
+updated: 2026-09-07
 estimate_hours: 4.54
 started: 2026-09-06T17:17:21-07:00
+actual_hours: 3.70
 ---
 
 # review form 2.2: cloze from current news with curated distractors
@@ -191,6 +192,7 @@ a boundary costs.
 ## Log
 
 ### 2026-09-07 — built, swept, and one thing the sweep could not reach
+- 2026-09-07: closed — Form 2.2 (cloze) ships. Unit: play/cloze_test.go + optionset_test.go (prompt hides the answer, reveal restores the sentence and names a wrong pick, digits-only grading, flag heard in all three session states, no re-pick on a stray digit). Main: cloze_test.go (blankStem leaks nothing through repeat/inflection/case/substring; usableItem refuses every unrenderable item; clozeFor deterministic under a fixed seed, shuffled). FuzzBlankStem found and fixed a hang and a wrong invariant, both seeded into the corpus. Click safety: TestAPromptRegionCoversTheTextItClaims reads every form region back out of the text written (derived over docSyncForms) and TestAClozePromptOffersNoHeadwordToClick pins the specific leak; both mutation-checked, and the general guard reddens for Board too. ARCH-SECURE: oneLine drops control runes, asserted over unicode.IsControl in storetest so Mem and YAML are both held, mutation-checked. Docs derive: TestREADMEQuotesThePromptsTheLoopActuallyPrints, TestEveryFormIsEnrolled (extent regexed out of play/*.go), TestREADMEKeyTableNamesEveryLiveKey (scoped to the table, mutation-checked three ways). CaptureFlag pinned through schedule.Fold — a flag-only log moves no schedule. Hand-verified live over a pty: a flagged question writes kind: flagged with all four options and no correct:, and the word has no reviewed event. go test ./... green; go vet clean under default, pty and conformance tags; gofmt clean.; review verdict: FIX-THEN-SHIP
 
 Scope was a third of what the issue was written as: three of five Done-when rows
 moved to `#10 M2` with the selection they belong to. What remained was rendering
@@ -306,6 +308,46 @@ fact (after the prompt lines and the enrolment that checks them). It now derives
 `TestREADMEKeyTableNamesEveryLiveKey` reads each form's `Keys()` line and
 requires the table to name what each key does, scoped to the table itself so
 prose elsewhere cannot satisfy it. Mutation-checked three ways.
+
+**Close review round 4: FIX-THEN-SHIP.** No blocker. Two Importants demoted past
+the round cap, both real and both fixed before this commit.
+
+**BR-17 — my own derivation under-derived silently.** `TestEveryFormIsEnrolled`
+scraped `Form()` with a regex demanding a single-letter pointer receiver, a
+one-line body and a lowercase literal all at once, and the assertion was
+`declared ⊆ enrolled` — so a form the regex MISSED was silence. Measured: rename
+`Cloze`'s receiver to `cz` (still gofmt-clean), un-enrol it, and this guard, both
+README guards and BR-14's region guard all go green. **I wrote the lesson about
+guards that under-derive one round before writing this one.** Now parsed with
+`go/parser`, and it FAILS CLOSED: `len(declared) == len(enrolled)`, because
+subset-only is satisfied by deriving nothing. The exact case BR-17 measured now
+reddens.
+
+**BR-18 — the fourth finding in one family, and the instruction was: do not fix
+the eleven sites.** A document restating a fact the code owns had been found in
+rounds 1, 2 and 3; each round fixed instances and the open count went from five
+to ELEVEN, three added by the commits that were fixing the other findings. The
+missing thing was never a fix, it was an ENUMERATION. So:
+
+- **Derived what could derive.** `store.EventKinds()` is now the extent, and
+  `TestStoreLayoutDocsNameEveryEventKind` requires both the README's store-layout
+  block and the atlas's to name every kind — scoped to the fenced block, so prose
+  elsewhere cannot satisfy it, and mutation-checked on both halves. Those two
+  blocks had read `kinds: looked-up, asked` since before `reviewed` existed, and
+  the README's is the only documentation a human reading their own log has.
+- **Enumerated what could not.** `workshop/targets/derived-restatement.md` — the
+  invariant, the table of what already derives (eight facts, eight guards), the
+  two rules those guards taught (scope to the block; fail closed), and the
+  close-time checklist for prose. Its last line is the one that matters: every
+  checklist row that turns out to be machine-readable belongs in the table, so
+  the checklist should be getting shorter.
+- **Swept the eleven**, including the five standing verbatim from earlier rounds:
+  the atlas's removed prompt-region premise, both stale store layouts, the
+  `Outcome.Form` "set in ONE place" comment that #12 falsified twice over, the
+  `optionset.go` tense that a mechanical rewrite had turned into a false
+  statement of fact, `choice.go`'s citation of a file deleted with form 2.1, the
+  project's veto attribution, and the plan's two superseded names (as a
+  `## Revisions` entry, not an overwrite).
 
 ### 2026-08-20
 

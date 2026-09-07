@@ -155,9 +155,15 @@ type Outcome struct {
 	// observation the session makes rather than a confidence the learner
 	// asserts.
 	Unaided bool
-	// Form is which form asked, on every Record outcome (#40 D4a). Set in ONE
-	// place — see Apply — because three call sites building Records is three
-	// chances to ship a promotion the log cannot attribute.
+	// Form is which form asked (#40 D4a). Set on every Record outcome, and on
+	// OutcomeFlag too, because a flag the log cannot attribute to a form is not
+	// diagnosable — which is the whole reason a flag is recorded at all.
+	//
+	// It was once set in one place, and that sentence stood here after #12 added
+	// the two sites that set it directly on a non-Record kind. The reason behind
+	// it still holds and is worth stating as the rule rather than the count: a
+	// call site building an Outcome without a Form ships a record nobody can
+	// attribute, so every site that builds one sets it.
 	Form string
 	// Options is the option set of a FLAGGED question, and is set on no other
 	// kind. See Flagging for why a flag carries what Missed deliberately does
@@ -259,9 +265,9 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 	// advance. That is the state it matters MOST in — a learner discovers a
 	// question is broken by reading the reveal.
 	//
-	// The keystroke reaches the form through Grade, which returns false for it
-	// (the flag is not an ANSWER), and the flag itself comes back out of advance
-	// beside the drop.
+	// The keystroke is offered to Flag DIRECTLY, never to Grade. Routing it
+	// through Grade was the close review's I-2: a graded question handed any rune
+	// to Grade to discover a flag, and a stray digit then re-picked the answer.
 	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal || in.Kind == InputFinish) {
 		// ASKED BEFORE "any key advances" swallows it. After a verdict is the
 		// state a flag matters MOST in, because a learner discovers a question is
