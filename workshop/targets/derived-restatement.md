@@ -67,6 +67,11 @@ this family grew to eleven. For each fact the window's diff changed, check:
 - [ ] **`README.md`** — every block a user reads to interpret their own data.
 - [ ] **`atlas/`** — surface, flow, terminology, and the premises it records.
 - [ ] **the issue's `## Spec` and `## Done when`** — a row resolved elsewhere.
+- [ ] **the plan's OWN earlier sections** — a gate finding fixed where it was
+      raised leaves every other statement of the same fact standing, and a plan
+      is read top to bottom by whoever implements it. `#46` PQ-10: one key
+      changed, four restatements survived, and Task 2 contradicted itself eight
+      lines apart.
 - [ ] **the plan** — a `## Revisions` entry, never an overwrite.
 - [ ] **the project file** — scope events and ticks.
 

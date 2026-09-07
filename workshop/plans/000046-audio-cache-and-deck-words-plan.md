@@ -72,8 +72,8 @@ handed the wrong thing.
 | `wordRegions` | `cmd/define/deckwords.go` | new |
 | `RegionWord` | `cmd/define/render.go` | new |
 | `surface` | `cmd/define/deckwords.go` | new |
-| `audioName` | `cmd/define/store/audio.go` | new |
-| `audioVerdict` | `cmd/define/store/audio.go` | new |
+| `audioKey` | `cmd/define/store/audio.go` | new |
+| `audioRecord` | `cmd/define/store/audio.go` | new |
 | `perWordDir` | `cmd/define/store/yaml.go` | modified |
 | `RenderOpts` | `cmd/define/render.go` | modified |
 
@@ -198,9 +198,10 @@ handed the wrong thing.
     cover the text it claims; now also: no two may cover the same cell).
 
 - **`perWordDir`** *(modified)* — gains the ability to remove more than
-  `<slug>.yaml`. Audio is the first per-word directory whose file is not a single
-  YAML: it is `<slug>.mp3` or `<slug>.none`. `Forget` removes the word's whole
-  set.
+  `<slug>.yaml`. Audio is the first per-word directory where a word owns SEVERAL
+  files, because one word has a recording per voice — see `audioKey` for the
+  shape, which this bullet deliberately does not restate. `Forget` globs the
+  word's prefix and removes the set.
 
 - **`RenderOpts`** *(modified)* — no field changes; `Vocab` STAYS. `Render` keeps
   colouring the entry itself, because it colours with a per-region BASE style
@@ -278,63 +279,87 @@ called out here rather than discovered later.
 - Modify: `cmd/define/play_loop.go` (`runPlay` — the missing wrap)
 - Test: `cmd/define/fetch_test.go`, `cmd/define/play_loop_test.go`
 
-**PQ-3 REVERSED THIS TASK'S FIRST DRAFT, and it was right to.** The draft moved
-the wrap into `realDeps()` and claimed "a test driving any loop through realDeps
-now gets the same source production gets" — but **no test calls `realDeps()`**;
-the suite builds `deps{...}` literals at 21 sites. Moving the wrap there would
-have left every loop test on an uncached source, which is precisely the `#2` I-1
-failure `repl.go:256` exists to record: the line the tests exercise must be the
-line production runs.
+**TWO ROUNDS REVERSED THIS TASK, and the second reversal is the interesting
+one.** Round 1 (PQ-3) killed "move the wrap into `realDeps`": no test calls
+`realDeps()`, so every loop test would have run uncached — the exact `#2` I-1
+failure `repl.go:256` records. Round 2 (PQ-9) then killed the replacement: the
+guard derived "loops" as `run()`'s deps-taking callees, which is **seven
+one-shot commands and neither of the functions that actually wrap**. Measured:
+`run` calls `ask`, `defineOnce`, `forgetWord`, `runHarvest`, `runReflect`,
+`applyVoice`, `newDict`, `repl`, `runPlay`; the wraps live in `replLines`
+(`repl.go:257`) and `replRaw` (`replraw.go:264`), and `repl` only dispatches to
+them.
 
-So the wrap stays in the loop, where both paths traverse it, and **the derived
-thing is the guard**. That is the same correction `#12` BR-17 made: the extent
-must be parsed, not remembered.
+**There is no clean syntactic derivation of "loop", and the last two rounds were
+spent inventing worse and worse ones.** Every candidate over-derives (a
+dispatcher taking `deps` and an `io.Reader` looks identical) or under-derives.
+Nor can the wrap simply move up to `repl`: tests drive `replLines` DIRECTLY
+(`askroute_test.go:31`, `askhighlight_test.go:310`), so hoisting it reproduces
+PQ-3's failure one level down.
 
-- [ ] **Step 1: Write the derived guard, and watch it fail on `runPlay`**
+**So make over-application harmless, and the undecidable set stops mattering.**
+`newCachingAudioSource` becomes IDEMPOTENT — handed a source that already caches,
+it returns it unchanged. Then every function on the path may wrap, a dispatcher
+wrapping costs nothing, and the guard can afford to over-derive because a false
+positive is a no-op rather than a second cache that halves the hit rate.
+
+That is the shape of the fix: **not a better enumeration, but an operation that
+does not need one.**
+
+- [ ] **Step 1: Make the wrap idempotent, and pin it**
 
 ```go
-// EVERY LOOP WRAPS, and the set of loops is PARSED rather than listed (#46 PQ-3).
+// newCachingAudioSource is IDEMPOTENT: wrapping a source that already caches
+// returns it unchanged.
 //
-// The bug this exists for: repl and replraw each wrapped and runPlay did not, so
-// the one loop that replays the same handful of words all sitting was the one
-// with no cache — and an unrecorded word cost four candidate requests on every
-// replay, because the misses set that prevents exactly that was never built.
+// #46 PQ-9 is why. Which functions are "loops" turns out not to be derivable —
+// a dispatcher and a loop have the same signature, the wraps live one level
+// below the functions run() dispatches to, and tests drive BOTH levels
+// directly. Two rounds of the plan gate went into worse and worse enumerations
+// of that set.
 //
-// A hand-listed set of loops would be the same bug one level up (#12 BR-17: a
-// hand-maintained extent is half a guard). The loops are exactly the functions
-// run() dispatches to that take a deps, so that is what this reads.
-func TestEveryLoopWrapsTheAudioSource(t *testing.T) {
-	for _, fn := range loopsDispatchedByRun(t) { // AST: callees of run() taking deps
-		if !callsIn(t, fn, "newCachingAudioSource") {
-			t.Errorf("%s takes deps and is dispatched by run(), but never wraps "+
-				"d.audio — it will re-fetch every recording, and an unrecorded "+
-				"word will cost four requests per replay.", fn.Name.Name)
-		}
+// Idempotence dissolves the question. Every function on the path may wrap;
+// wrapping twice is a no-op rather than a second memo in front of the first
+// (which would silently halve the hit rate, and is the bug this would otherwise
+// have traded for). #2's I-1 lesson still holds and is now cheap to honour: the
+// wrap sits in the function that USES the source, wherever tests enter.
+func newCachingAudioSource(inner AudioSource) *cachingAudioSource {
+	if c, ok := inner.(*cachingAudioSource); ok {
+		return c
 	}
-	if len(loopsDispatchedByRun(t)) < 2 {
-		t.Fatal("found fewer than two loops; the derivation is under-deriving " +
-			"and this guard would certify nothing")
-	}
+	...
 }
 ```
 
-The `len(...) < 2` floor is the fail-closed clause `#12` BR-17 taught: a
-derivation satisfied by finding nothing is not a derivation.
+```go
+// Double-wrapping shares ONE memo, so a second wrap cannot cost a second fetch.
+func TestWrappingTwiceKeepsOneCache(t *testing.T)
+```
 
-- [ ] **Step 2: Run it**
+- [ ] **Step 2: Write the derived guard, now that over-deriving is safe**
 
-Run: `go test ./cmd/define/ -run EveryLoopWraps -v`
-Expected: FAIL, naming `runPlay` and nothing else.
+```go
+// EVERY FUNCTION THAT READS A STREAM WITH deps WRAPS THE AUDIO SOURCE (#46).
+//
+// The set is deliberately WIDER than "the loops": it is every function taking a
+// deps, an io.Reader and writers. Some of those are dispatchers that would cache
+// nothing, and that is fine — the wrap is idempotent, so a false positive costs
+// a type assertion. An enumeration that cannot be wrong is worth more than one
+// that is exactly right and hand-maintained (#12 BR-17), and the last two gate
+// rounds were spent proving the exactly-right version cannot be derived.
+func TestEveryStreamReadingEntryPointWrapsTheAudioSource(t *testing.T)
+```
 
-- [ ] **Step 3: Add the wrap to `runPlay`**, carrying `repl.go:256`'s reason
-      across verbatim — it is the same reason.
+- [ ] **Step 3: Run it.** Expected: FAIL, naming `runPlay` — the one that never
+      wrapped, which is the whole bug.
 
-- [ ] **Step 4: Run it again.** Expected: PASS.
+- [ ] **Step 4: Add the wrap to `runPlay`**, and to any other member the guard
+      names, carrying `repl.go:256`'s reason across — it is the same reason.
 
-- [ ] **Step 5: Mutation-sweep the guard, not just the fix.** Delete the wrap
-      from `repl.go` and confirm the guard names `repl`; restore. *A pin that
-      cannot fail is not a pin*, and a guard that only ever names the loop you
-      already fixed is sized to the bug rather than the class.
+- [ ] **Step 5: Sweep the guard in BOTH directions.** Delete `replLines`'s wrap
+      and confirm it is named; restore. Then confirm it does NOT name `ask`,
+      `runReflect` or `forgetWord` — a guard that cannot be shown to exclude
+      anything has not been shown to derive anything.
 
 - [ ] **Step 6: The behavioural pin, at the loop, through the CDN recorder**
 
@@ -378,17 +403,20 @@ items that made it worth forgetting).
 
 - [ ] **Step 2: Classify it, on BOTH axes**
 
-`{path: y.audioDir(), scoped: true}` — per-word, and language-scoped, because
-`AudioCandidates(word, voice)` keys on the voice's Lang and Locale: the English
-and Spanish recordings of `red` are different files and forgetting one must not
-take the other.
+`{path: y.audioDir(), scoped: true}` — per-word, and language-scoped **the way
+its siblings are**: `audioDir()` scopes on the STORE's language (`y.lang`,
+`yaml.go:178`), exactly like `factsDir` and `itemsDir`. It is a shelf, not the
+identity — the identity is `audioKey`, and the first draft's justification here
+("AudioCandidates keys on the voice's Lang and Locale") was the false sentence
+PQ-1 quoted. Do not restate the key in this step; it is defined once, above.
 
-- [ ] **Step 3: Teach `perWordDir` that a word can own more than one file**
+- [ ] **Step 3: Teach `perWordDir` that a word can own SEVERAL files**
 
-Audio is the first per-word directory whose file is not `<slug>.yaml`: a hit is
-`<slug>.mp3`, a verdict is `<slug>.none`. Give `perWordDir` the extension set it
-owns and have `Forget` remove each. Pin it: forgetting a word with BOTH a
-recording and a stale verdict leaves neither.
+One word has one file per voice, plus a blob beside each record — the shape
+`audioKey`/`audioRecord` define and that nothing else in this plan restates.
+`perWordDir` gains a prefix glob rather than an exact name, and `Forget` removes
+everything the word owns. Pin it: forget a word holding two voices' recordings
+AND a stale verdict, and nothing of it survives.
 
 - [ ] **Step 4: The KEY, derived from the seam rather than from the word**
 
@@ -714,3 +742,42 @@ which test fails and adds the mutation sweep; Task 2's file list gains
 M1 gains an ARCH-ORDER statement (process death mid-write, two processes in one
 directory, blob-before-record); M2 gains the ARCH-CONSTRAINTS envelope M1 already
 had.
+
+### 2026-09-07 — plan-quality round 2: 1 Critical, 1 Important
+
+**PQ-9 (Critical) — the derivation invented in round 1 was wrong, and measurably
+so.** It read "loops" as `run()`'s deps-taking callees; that set is seven
+one-shot commands (`ask`, `defineOnce`, `forgetWord`, `runHarvest`,
+`runReflect`, …) and contains neither function that actually wraps — the wraps
+live in `replLines` and `replRaw`, one level below what `run` dispatches to.
+
+**The lesson is bigger than the finding, and it is about my own two rounds.**
+Round 1 replaced a bad wrap site with a derived guard; round 2 found the
+derivation was worse than the thing it replaced. Checking properly: there is no
+clean syntactic derivation of "loop" here — a dispatcher and a loop share a
+signature, and tests drive BOTH levels directly, so hoisting the wrap to `repl`
+would reproduce PQ-3's failure one level down (`askroute_test.go:31` calls
+`replLines`).
+
+**So the fix is not a better enumeration but an operation that does not need
+one.** `newCachingAudioSource` becomes idempotent, over-application becomes a
+no-op, and the guard is then free to over-derive: every function taking a `deps`,
+an `io.Reader` and writers must wrap. A false positive costs a type assertion. An
+enumeration that cannot be wrong beats one that is exactly right and
+hand-maintained — and the sweep now runs in BOTH directions, because a guard that
+cannot be shown to EXCLUDE anything has not been shown to derive anything.
+
+**PQ-10 (Important) — I fixed PQ-1 at the site it named and left four
+restatements of the superseded shape.** The entity table still declared
+`audioName`/`audioVerdict`, the `perWordDir` bullet still said "`<slug>.mp3` or
+`<slug>.none`", Task 2 Step 3 repeated that pair eight lines before Step 4
+contradicted it, and Step 2 still carried the exact sentence PQ-1 had quoted as
+false. An implementer working Task 2 in order would have built the rejected
+design.
+
+**This is `#12`'s stale-restatement family, one issue later, in a document rather
+than in code** — and `workshop/targets/derived-restatement.md` exists precisely
+because fixing named sites does not close it. The rule applied here: the
+artifact's key and on-disk shape are stated ONCE, in `audioKey`/`audioRecord`,
+and every other mention references that definition rather than repeating it. The
+target's checklist gains "the plan's own earlier sections" as a sweep row.

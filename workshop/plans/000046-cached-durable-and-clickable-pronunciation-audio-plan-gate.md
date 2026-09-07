@@ -113,6 +113,85 @@ rounds:
           family: constraints-envelope-missing
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-07T13:10:28-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: Key is now a digest of the candidate list and the record carries `from`; the un-swept restatements are raised separately.
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: mergeRegions states precedence and the disjoint-ascending property is checked and mutation-swept.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: Wrap stays in the loop and the guard became the derived thing; the guard's own derivation is raised separately.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: surfaceOf(q) switches on q.Form() over docSyncForms, and the board row now asserts a reachable fact.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          round: 2
+        - id: PQ-6
+          disposition: addressed
+          round: 2
+        - id: PQ-7
+          disposition: addressed
+          round: 2
+        - id: PQ-8
+          disposition: addressed
+          round: 2
+      findings:
+        - id: PQ-9
+          severity: Critical
+          title: 'Task 1''s guard derives the wrong set: `run()`''s deps-taking callees are seven non-loops, and the two functions that actually wrap are not among them'
+          detail: |-
+            This is the 2nd finding in family `seam-wrap-site`. Do NOT just fix this
+            instance. The rule: every statement about where the wrap lives must be
+            checked against the real call graph, and the derivation validated in BOTH
+            directions. Measured prevalence — 2 of 2 such statements this plan has made
+            have been wrong: round 1's `realDeps` traversal, and now "the loops are
+            exactly the functions run() dispatches to that take a deps". `run()`
+            dispatches to forgetWord (main.go:1092), runPlay (play_loop.go:24),
+            runReflect (reflect.go:338), runHarvest (harvest.go:109), repl
+            (repl.go:203), ask (ask.go:80), defineOnce (main.go:775) and newCommandCtx
+            (command.go:211); the wraps live in replLines (repl.go:263) and runEditor
+            (replraw.go:264), reached only via repl.go:232/235. So Step 2's "FAIL,
+            naming runPlay and nothing else" would name six, and the guard never
+            inspects either function that wraps today. The `len(...) < 2` floor and
+            Step 5's delete-and-confirm sweep both only test under-derivation, so
+            neither catches this. "Anything reaching d.audio" over-derives too:
+            defineOnce reaches it through speak (main.go:1058) and correctly does not
+            wrap. Name a predicate that actually separates a replay loop from a
+            one-shot, and add the complementary sweep — the guard must be shown NOT to
+            name a non-loop.
+          family: seam-wrap-site
+          round: 2
+        - id: PQ-10
+          severity: Important
+          title: Round 1's key fix was applied at the site the finding named; four other statements of the superseded on-disk shape survive, and Task 2 now contradicts itself
+          detail: |-
+            This is the 2nd finding in family `cache-key-narrower-than-seam`. Do NOT
+            fix the four sites one by one. The rule: the artifact's key and on-disk
+            shape are stated ONCE, in `audioKey`/`audioRecord`, and every other mention
+            references that definition instead of restating it. Measured prevalence —
+            after round 1, 4 of 7 mentions still carry the superseded design: the
+            entity table names `audioName`/`audioVerdict` (plan:75-76), types absent
+            from the rest of the document; the `perWordDir` bullet says "it is
+            `<slug>.mp3` or `<slug>.none`" (plan:201-202); Task 2 Step 3 repeats the
+            `.mp3`/`.none` pair (plan:388-389) that Step 4 contradicts eight lines
+            later and that `audioRecord` argues against by name (plan:173); and Task 2
+            Step 2 still justifies `scoped: true` with the exact sentence PQ-1 quoted
+            as false (plan:382) — `audioDir` would scope on `y.lang`, like its siblings
+            at store/yaml.go:178-179. An implementer working Task 2 in order builds the
+            shape the plan already rejected.
+          family: cache-key-narrower-than-seam
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#46 (plan-quality)
@@ -190,13 +269,58 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   per write (per question, per reveal) rather than per keystroke, bounded
   against a full-entry reveal, closes ARCH-CONSTRAINTS for the walk.
 
+## Round 2 — 2026-09-07T13:10:28-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — addressed — Key is now a digest of the candidate list and the record carries `from`; the un-swept restatements are raised separately.
+- PQ-2 — addressed — mergeRegions states precedence and the disjoint-ascending property is checked and mutation-swept.
+- PQ-3 — addressed — Wrap stays in the loop and the guard became the derived thing; the guard's own derivation is raised separately.
+- PQ-4 — addressed — surfaceOf(q) switches on q.Form() over docSyncForms, and the board row now asserts a reachable fact.
+- PQ-5 — addressed
+- PQ-6 — addressed
+- PQ-7 — addressed
+- PQ-8 — addressed
+
+### Raised
+
+- **PQ-9** [Critical] `seam-wrap-site` Task 1's guard derives the wrong set: `run()`'s deps-taking callees are seven non-loops, and the two functions that actually wrap are not among them
+  This is the 2nd finding in family `seam-wrap-site`. Do NOT just fix this
+  instance. The rule: every statement about where the wrap lives must be
+  checked against the real call graph, and the derivation validated in BOTH
+  directions. Measured prevalence — 2 of 2 such statements this plan has made
+  have been wrong: round 1's `realDeps` traversal, and now "the loops are
+  exactly the functions run() dispatches to that take a deps". `run()`
+  dispatches to forgetWord (main.go:1092), runPlay (play_loop.go:24),
+  runReflect (reflect.go:338), runHarvest (harvest.go:109), repl
+  (repl.go:203), ask (ask.go:80), defineOnce (main.go:775) and newCommandCtx
+  (command.go:211); the wraps live in replLines (repl.go:263) and runEditor
+  (replraw.go:264), reached only via repl.go:232/235. So Step 2's "FAIL,
+  naming runPlay and nothing else" would name six, and the guard never
+  inspects either function that wraps today. The `len(...) < 2` floor and
+  Step 5's delete-and-confirm sweep both only test under-derivation, so
+  neither catches this. "Anything reaching d.audio" over-derives too:
+  defineOnce reaches it through speak (main.go:1058) and correctly does not
+  wrap. Name a predicate that actually separates a replay loop from a
+  one-shot, and add the complementary sweep — the guard must be shown NOT to
+  name a non-loop.
+- **PQ-10** [Important] `cache-key-narrower-than-seam` Round 1's key fix was applied at the site the finding named; four other statements of the superseded on-disk shape survive, and Task 2 now contradicts itself
+  This is the 2nd finding in family `cache-key-narrower-than-seam`. Do NOT
+  fix the four sites one by one. The rule: the artifact's key and on-disk
+  shape are stated ONCE, in `audioKey`/`audioRecord`, and every other mention
+  references that definition instead of restating it. Measured prevalence —
+  after round 1, 4 of 7 mentions still carry the superseded design: the
+  entity table names `audioName`/`audioVerdict` (plan:75-76), types absent
+  from the rest of the document; the `perWordDir` bullet says "it is
+  `<slug>.mp3` or `<slug>.none`" (plan:201-202); Task 2 Step 3 repeats the
+  `.mp3`/`.none` pair (plan:388-389) that Step 4 contradicts eight lines
+  later and that `audioRecord` argues against by name (plan:173); and Task 2
+  Step 2 still justifies `scoped: true` with the exact sentence PQ-1 quoted
+  as false (plan:382) — `audioDir` would scope on `y.lang`, like its siblings
+  at store/yaml.go:178-179. An implementer working Task 2 in order builds the
+  shape the plan already rejected.
+
 ## Open findings
 
-- **PQ-1** [Critical] `cache-key-narrower-than-seam` The durable audio key drops locale, source voice and `from`, so it collides where the in-memory memo does not
-- **PQ-2** [Important] `region-overlap-precedence` Appending `wordRegions` to existing regions creates duplicate spans that silently kill underlines to their right
-- **PQ-3** [Important] `seam-wrap-site` Moving the wrap into `realDeps` leaves every loop test on an uncached source
-- **PQ-4** [Important] `surface-extent-axis` `surface` is a property of the form, not the write site — and a board never reaches `writeRendered` at all
-- **PQ-5** [Minor] `guard-cannot-fail` `TestTheRawAudioSourceIsConstructedOnceAndWrapped` is green before the change
-- **PQ-6** [Minor] `runtimedirs-fanout` Task 2's file list omits `.gitignore` and `store/store.go`
-- **PQ-7** [Minor] `durable-write-ordering` No ARCH-ORDER statement for the first binary artifact written to the working directory
-- **PQ-8** [Minor] `constraints-envelope-missing` M2 carries no operating envelope while M1 carries a good one
+- **PQ-9** [Critical] `seam-wrap-site` Task 1's guard derives the wrong set: `run()`'s deps-taking callees are seven non-loops, and the two functions that actually wrap are not among them
+- **PQ-10** [Important] `cache-key-narrower-than-seam` Round 1's key fix was applied at the site the finding named; four other statements of the superseded on-disk shape survive, and Task 2 now contradicts itself
