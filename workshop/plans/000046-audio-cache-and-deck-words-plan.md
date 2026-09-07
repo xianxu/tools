@@ -23,6 +23,46 @@ is the deck itself.
 
 ## Core concepts
 
+### Three layers, and where each one stops
+
+Stated before the entity table because the table's rows land in three different
+places, and flattening them is the likeliest way this milestone goes wrong. The
+work is mostly INSERTING the middle layer and re-pointing what already exists
+through it — layers 1 and 3-as-colour are built and wired point-to-point today,
+which is exactly why colour reaches the entry and clicks reach the headword and
+neither reaches a form's own text.
+
+**Layer 1 — the matcher.** `wordRuns` + `highlightSpans`, both existing and both
+unchanged by this plan. Takes text and a phrase set, returns which BYTE RANGES
+are known, longest phrase winning. No ANSI, no coordinates, no `Region`, no
+terminal.
+
+- **Keep it that way.** This is the only layer that would travel to another
+  program, and every terminal concern pushed down into it is a concern that has
+  to be unpicked later. If Task 4 finds itself editing `highlightSpans`, that is
+  the signal something belongs in layer 2 instead.
+- **Do NOT extract it into a shared package here.** No second consumer outside
+  this binary exists yet, and an interface guessed for an imaginary caller is
+  guessed wrong. The cross-program version of this idea is the VOCABULARY AS
+  DATA — a directory another program is handed and walks itself — which is the
+  operator's own framing, works whatever language that program is written in,
+  and needs no code shared at all. Post-MVP, and unblocked by this milestone
+  rather than part of it.
+
+**Layer 2 — the locator.** `deckSpans`, the one genuinely new thing. Answers
+"where is that on screen": visible cells, line indices, and skipping escape
+sequences. Terminal-shaped by nature and it will not travel — but it works on
+ANY string this program writes, which is the reach that matters here.
+
+**Layer 3 — the consumers.** Colour and clicks, each a loop over layer 2's
+output. Both become thin, and that is the test of whether the seam is right: a
+consumer that needs to re-tokenise, re-scan, or re-decide what a word is has been
+handed the wrong thing.
+
+- **Future extensions:** the third consumer is `#13`, marking which deck words a
+  learner actually used in a written sentence. If that is a loop, this milestone
+  succeeded.
+
 ### Pure entities
 
 | Name | Lives in | Status |
