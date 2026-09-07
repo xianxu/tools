@@ -36,9 +36,6 @@ type Cloze struct {
 	// would teach less than the easier form did. The restored sentence is the
 	// payload; this is what you read when the payload was not enough.
 	definition string
-	// flagged is set by Grade when the learner pressed FlagKey, and read once by
-	// Flagged. Grade is the only place a keystroke reaches this form.
-	flagged bool
 }
 
 // NewCloze takes a finished item: the stem already blanked, the same stem
@@ -54,20 +51,6 @@ func NewCloze(word, blanked, restored, definition string, options []Option) *Clo
 }
 
 func (c *Cloze) Word() string { return c.word }
-
-// Grade reads the digits through the embedded set, and intercepts FlagKey.
-//
-// It answers FALSE for the flag, which is the whole trick: false means "this key
-// meant nothing to me as an ANSWER", so the session records no verdict — and the
-// flag itself travels out through Flagging instead. A form returning a verdict
-// here would put "the question was broken" into the ladder.
-func (c *Cloze) Grade(k rune) (Verdict, bool) {
-	if k == FlagKey {
-		c.flagged = true
-		return Skipped, false
-	}
-	return c.optionSet.Grade(k)
-}
 
 // Prompt is the blanked sentence, a blank line, then the numbered words.
 //
@@ -110,16 +93,15 @@ func (c *Cloze) Reveal() string {
 // questionable.
 const FlagKey = '?'
 
-// Flagged reports whether the last keystroke called this question broken, and
-// returns the options that made it so.
+// Flag reports whether a keystroke is the bad-question gesture, and returns the
+// options that made the question bad.
 //
-// ONE-SHOT: cleared as it is read, because advance asks after every mark and an
-// implementation that kept answering would record the same flag repeatedly.
-func (c *Cloze) Flagged() ([]string, bool) {
-	if !c.flagged {
+// STATELESS: it answers about the rune it is given rather than remembering one,
+// so there is no one-shot to get wrong and Grade never has to see the key.
+func (c *Cloze) Flag(k rune) ([]string, bool) {
+	if k != FlagKey {
 		return nil, false
 	}
-	c.flagged = false
 	words := make([]string, 0, len(c.options))
 	for _, o := range c.options {
 		words = append(words, o.Word)
@@ -127,8 +109,11 @@ func (c *Cloze) Flagged() ([]string, bool) {
 	return words, true
 }
 
-// Keys names the digits, and what they mean for this form.
-func (c *Cloze) Keys() string { return c.keysFor("pick the word") }
+// Keys names the digits AND the flag, because the keys line is the only place a
+// learner is told what a key does. `?` documented nowhere is `?` nobody presses.
+func (c *Cloze) Keys() string {
+	return c.keysFor("pick the word") + ", " + string(FlagKey) + " = bad question"
+}
 
 // Form names this form in the log (#40 D4a). `cloze` rather than "2.2": a log
 // read years later by a script or a person needs no atlas to decode `cloze`.

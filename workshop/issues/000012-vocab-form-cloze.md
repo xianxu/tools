@@ -161,12 +161,12 @@ where they went instead of building them again.
 **What is still this issue's to build**, and it is the whole of the remaining
 work:
 
-- [ ] The blanked sentence never leaks the answer (stem, plural, hyphenation).
+- [x] The blanked sentence never leaks the answer (stem, plural, hyphenation).
       `#10`'s `blankOut` is a PROMPT-SHAPING helper for the veto and explicitly
       not this — it is deliberately simple, and here it is the LEARNER who must
       not see the answer.
-- [ ] Deterministic under a fixed seed.
-- [ ] The bad-question keypress records the flag with the full option set.
+- [x] Deterministic under a fixed seed.
+- [x] The bad-question keypress records the flag with the full option set.
 
 ## Plan
 
@@ -177,18 +177,85 @@ the blanking, the wiring. Tagging them M1/M2/M3 would force three
 milestone-closes on work with one natural review point — and `#10` measured what
 a boundary costs.
 
-- [ ] The form: extract the option-set contract `Choice` and `Cloze` share, then
+- [x] The form: extract the option-set contract `Choice` and `Cloze` share, then
       `Cloze` over it, then `Flagging` as the fifth optional capability beside
       `Missed` and `Dropping`.
-- [ ] The blanking: `blankStem` against a leak table — capitalised, inflected,
+- [x] The blanking: `blankStem` against a leak table — capitalised, inflected,
       possessive, EVERY occurrence, and a substring that is not the word.
-- [ ] The wiring: one clause on the form-selection rule ("an authored item beats
+- [x] The wiring: one clause on the form-selection rule ("an authored item beats
       a definition match"), the flag reaching the log with its option set, and a
       sitting still asserted to make no model call.
-- [ ] Docs, this issue's OWN mutation sweep, and a real sitting run by hand
+- [x] Docs, this issue's OWN mutation sweep, and a real sitting run by hand
       against `#10`'s generated batch.
 
 ## Log
+
+### 2026-09-07 — built, swept, and one thing the sweep could not reach
+
+Scope was a third of what the issue was written as: three of five Done-when rows
+moved to `#10 M2` with the selection they belong to. What remained was rendering
+and wiring, plus the bad-question gesture `#12` credited to `#6` and `#6` never
+built.
+
+**Plan-quality took two rounds.** Round 1's four Importants were gaps rather
+than errors — the plan named the endpoints and not the path between them — and
+two would have shipped real damage: a flag written the natural way DEMOTES the
+word (`CaptureReview` hardcodes `EventReviewed`, `Fold` folds every one,
+`GradeOf(false)` is `GradeWrong`), and `?` after answering would have silently
+advanced, which is the exact moment a learner discovers a question is broken.
+
+**The fuzz paid twice in two minutes.** A HANG first: invalid UTF-8 decodes to
+`RuneError`, which matches itself and is not a word rune, so the match had no
+word run and the loop never advanced — `workshop/lessons.md` carries that exact
+rule from one issue ago and I wrote the defect anyway. Then a wrong INVARIANT,
+whose real defect was upstream: an answer with no letter and no digit is not a
+word. The first fix for THAT had a hole one predicate over, because `isWordRune`
+counts hyphens as inside a word. 4M executions clean after all three.
+
+**This issue's own mutation sweep: 19 properties, one green** — and the green one
+was the finding plan-quality had already raised. Changing
+`storeCapturer.CaptureFlag` to write `EventReviewed` left the whole suite green,
+despite an end-to-end test and a `storetest` row: the first drives a FAKE
+capturer, the second asserts a hand-written event. Neither touched the line the
+gate warned about. Fixed by asserting through the CONSUMER — `schedule.Fold`
+must read nothing from a flag-only log.
+
+**THE HAND-RUN, recorded honestly because the first attempt was not one.** The
+plan's Verification and the estimate's third named deviation both commit to
+running a real sitting. What I did first was render questions
+PROGRAMMATICALLY against `#10`'s generated batch — 19 of 20 words, the answer
+landing at all four positions — and hand the operator a built binary, who ran it
+and reported it working. **Neither of us pressed `?`**, and the close review
+found why that mattered: the keys line never named the gesture, and after
+answering the prompt said "any key = next word", which is a lie on a form where
+`?` does something else. A programmatic render cannot see a prompt line. Booking
+the deviation did not prevent the failure it was booked to prevent; running it
+would have.
+
+**So it was then actually run**, through a pty against the same batch:
+
+```
+Crews working on the Hoover Dam poured the last of the ___ into the final
+block in May 1935.
+
+1  concrete   2  set   3  parrot   4  bank
+
+1-4 = pick the word, ? = bad question, d = remove from deck, Ctrl-C to stop
+```
+
+Pressing `?` on the next question printed `flagged "defenestrate" as a bad
+question`, advanced, and left the sitting counter at 1 — the answer before it
+counted, the flag did not. The event log carries `kind: flagged` with all four
+options and **no `correct:` field**, and `defenestrate` has no reviewed event at
+all. That is the whole of PQ-2's concern, verified against a real log rather
+than a fake capturer.
+
+**Close review round 1: FIX-THEN-SHIP, four Importants, all addressed.** The keys
+line and the graded prompt now derive from the form; the flag gesture is asked
+WITH the rune so `Grade` never sees it (the previous shape handed every rune to
+`Grade` to discover a flag, which re-picked the answer on a graded question); an
+unreadable items file is reported rather than swallowed, matching its neighbour
+four lines away.
 
 ### 2026-08-20
 

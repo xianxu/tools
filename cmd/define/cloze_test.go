@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -417,5 +419,85 @@ func TestFlaggingAQuestionRecordsItWithoutScoringIt(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "flagged") {
 		t.Errorf("the flag was silent: %q", out.String())
+	}
+}
+
+// I-1: THE KEYS LINE IS THE ONLY PLACE a learner is told what a key does, and
+// after answering is when the flag matters most — a broken question is
+// discovered by reading the reveal.
+//
+// gradePrompt's own doc comment records the prior instance of this class: a keys
+// line naming keys the form does not grade, "a bug no test could see, because
+// every test typed the keys the const named".
+func TestThePromptNamesTheFlagWhenTheFormHasIt(t *testing.T) {
+	c := play.NewCloze("sycophantic", "a ___ b", "a sycophantic b", "", []play.Option{
+		{Word: "sycophantic", Correct: true}, {Word: "ephemeral"},
+	})
+	ch := play.NewChoice("keel", "def", []play.Option{
+		{Gloss: "a", Correct: true}, {Gloss: "b"},
+	})
+
+	// Before answering: the form's own keys line.
+	if got := gradePrompt(c); !strings.Contains(got, "? = bad question") {
+		t.Errorf("the ungraded prompt does not name the flag: %q", got)
+	}
+	// AFTER answering, where the constant used to say "any key = next word" —
+	// which is a lie on a form where `?` does something else.
+	graded := gradedPromptFor(c)
+	if !strings.Contains(graded, "? = bad question") {
+		t.Errorf("the graded prompt does not name the flag: %q", graded)
+	}
+	// And a form WITHOUT the gesture must not be told about it.
+	if got := gradedPromptFor(ch); strings.Contains(got, "bad question") {
+		t.Errorf("a non-flagging form's prompt names the flag: %q", got)
+	}
+	if got := gradePrompt(ch); strings.Contains(got, "bad question") {
+		t.Errorf("a non-flagging form's keys line names the flag: %q", got)
+	}
+}
+
+// I-3: an unreadable items file is an EVENT about material that cost a model
+// call to author, and its neighbour reports a dictionary failure the same way.
+// Swallowing it makes the cloze form vanish for that word forever with no signal.
+func TestAnUnreadableItemsFileIsReported(t *testing.T) {
+	dir := t.TempDir()
+	st := store.NewYAML(dir, store.DefaultLang, nil)
+	if err := st.Upsert(store.Word{Text: "sycophantic", FirstSeen: aDay, LastSeen: aDay, Lookups: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "items", "en"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A DIRECTORY where the file should be: unreadable in a way no YAML parse
+	// can rescue, so Items() returns an error rather than degrading.
+	if err := os.MkdirAll(filepath.Join(dir, "items", "en", "sycophantic.yaml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	d, opt, _ := playRig(t, "sycophantic")
+	d.deck = st
+	var warn bytes.Buffer
+	q := clozeAsk(d, opt, "sycophantic", ParseEntry("sycophantic\n|ˌsɪkəˈfæntɪk|\nflattering."), map[string]clickable{}, "2026-09-07", &warn)
+
+	if q != nil {
+		t.Error("a question was built from unreadable items")
+	}
+	if !strings.Contains(warn.String(), "could not read the practice items") {
+		t.Errorf("the read failure was silent: %q", warn.String())
+	}
+}
+
+// The ordinary case — a word with no authored material — is NOT an event and
+// says nothing. That is the row that stops the fix above becoming noise on every
+// unharvested word.
+func TestAWordWithNoItemsSaysNothing(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	var warn bytes.Buffer
+	q := clozeAsk(d, opt, "sycophantic", ParseEntry("sycophantic\n|ˌsɪkəˈfæntɪk|\nflattering."), map[string]clickable{}, "2026-09-07", &warn)
+	if q != nil {
+		t.Error("a question was built with no items")
+	}
+	if warn.Len() != 0 {
+		t.Errorf("an unharvested word warned: %q", warn.String())
 	}
 }

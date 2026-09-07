@@ -263,18 +263,21 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 	// (the flag is not an ANSWER), and the flag itself comes back out of advance
 	// beside the drop.
 	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal || in.Kind == InputFinish) {
-		// OFFERED TO THE FORM FIRST, when the form can flag.
+		// ASKED BEFORE "any key advances" swallows it. After a verdict is the
+		// state a flag matters MOST in, because a learner discovers a question is
+		// broken by reading the reveal — InputDrop and InputQuit sit outside this
+		// branch for the same reason.
 		//
-		// "Any key advances" would otherwise swallow a gesture the form
-		// recognises — and after a verdict is the state a flag matters MOST in,
-		// because a learner discovers a question is broken by reading the reveal.
-		// InputDrop and InputQuit sit outside this branch for the same reason.
-		//
-		// Only when the form can flag: a form that cannot has nothing to claim
-		// here, and re-grading it would move a pick on a question already
-		// answered. advance asks for the flag itself, beside the drop.
-		if in.Kind == InputRune && canFlag(q) {
-			q.Grade(in.Rune)
+		// The GESTURE is asked, not Grade: handing every rune to Grade to find
+		// out would re-pick the answer on a question already graded.
+		if in.Kind == InputRune {
+			if opts, ok := flaggedBy(q, in.Rune); ok {
+				next, _ := advance(s, q, Skipped, false)
+				return next, []Outcome{{
+					Kind: OutcomeFlag, Word: q.Word(), Options: opts,
+					Form: q.Form(), SessionDone: next.Done,
+				}}
+			}
 		}
 		next, out := advance(s, q, Skipped, false)
 		return next, []Outcome{out}
@@ -402,20 +405,18 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 
 	case InputRune:
 		// The graded case is handled above.
+		// THE GESTURE FIRST, before the key is offered as an answer: a flag is a
+		// statement about the QUESTION, and Grade is only asked about answers.
+		if opts, ok := flaggedBy(q, in.Rune); ok {
+			next, _ := advance(s, q, Skipped, false)
+			return next, []Outcome{{
+				Kind: OutcomeFlag, Word: q.Word(), Options: opts,
+				Form: q.Form(), SessionDone: next.Done,
+			}}
+		}
 		verdict, ok := q.Grade(in.Rune)
 		if !ok {
-			// A key this form does not use AS AN ANSWER — which is not the same
-			// as a key it does not use. A flag lands here: Grade answers false
-			// because a broken question is not a verdict, and the gesture travels
-			// out through Flagging instead.
-			if opts, flagged := flaggedBy(q); flagged {
-				next, _ := advance(s, q, Skipped, false)
-				return next, []Outcome{{
-					Kind: OutcomeFlag, Word: q.Word(), Options: opts,
-					Form: q.Form(), SessionDone: next.Done,
-				}}
-			}
-			return s, []Outcome{{Kind: OutcomeNone}}
+			return s, []Outcome{{Kind: OutcomeNone}} // a key this form does not use
 		}
 		if s.Revealed || verdict != Wrong {
 			// Nothing left to show: the answer is already on screen, or the
@@ -503,16 +504,6 @@ func advance(s Session, q Question, v Verdict, unaided bool) (Session, Outcome) 
 	if word, ok := droppedBy(q); ok {
 		return s, Outcome{Kind: OutcomeDrop, Word: word, SessionDone: s.Done}
 	}
-	// A FLAG, asked HERE for the reason the drop is: this is the one place both
-	// mark paths meet, so the question is put once rather than at two call sites
-	// that could drift.
-	//
-	// BEFORE the Skipped branch below, because a flag arrives with no verdict and
-	// would otherwise be swallowed as an ordinary skip — which is exactly the
-	// silent-advance failure this whole gesture exists to avoid.
-	if opts, ok := flaggedBy(q); ok {
-		return s, Outcome{Kind: OutcomeFlag, Word: q.Word(), Options: opts, Form: q.Form(), SessionDone: s.Done}
-	}
 	if v == Skipped {
 		// Not an assessment. schedule.Fold would read a recorded skip as a miss
 		// and demote the word.
@@ -562,23 +553,30 @@ func missedAxis(q Question) Axis {
 // exists" — but a flag's whole purpose is diagnosing THAT question, so the
 // options are the evidence and a flag naming none is "something was wrong once".
 //
-// ONE-SHOT BY CONTRACT, as Dropping is: advance asks after every mark.
+// ASKED WITH THE RUNE, not read off the form afterwards. The first shape had
+// Grade intercept the key and set a one-shot field, which meant the session had
+// to hand EVERY rune to Grade to find out — and on a graded question that
+// RE-PICKED the answer. "Is this a flag" and "is this an answer" are different
+// questions about a keystroke, and keeping them different is what stops one
+// corrupting the other. It also leaves the form stateless.
 type Flagging interface {
-	Flagged() ([]string, bool)
+	// Flag reports whether this keystroke is the form's bad-question gesture,
+	// and if so the options that made the question bad.
+	Flag(k rune) ([]string, bool)
 }
 
-// canFlag reports whether a form has the gesture at all, so the session can
-// offer it a keystroke it would otherwise swallow — without asking any form that
-// cannot answer.
-func canFlag(q Question) bool {
+// CanFlag reports whether a form has the gesture at all, so the KEYS LINE can
+// name it. A prompt promising `?` on a form that ignores it is the bug
+// gradePrompt was created to fix, one form later.
+func CanFlag(q Question) bool {
 	_, ok := q.(Flagging)
 	return ok
 }
 
-// flaggedBy asks a question whether its last keystroke called it broken.
-func flaggedBy(q Question) ([]string, bool) {
+// flaggedBy asks a question whether a keystroke called it broken.
+func flaggedBy(q Question, k rune) ([]string, bool) {
 	if f, ok := q.(Flagging); ok {
-		return f.Flagged()
+		return f.Flag(k)
 	}
 	return nil, false
 }

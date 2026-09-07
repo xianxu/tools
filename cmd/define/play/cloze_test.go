@@ -107,8 +107,10 @@ func TestClozeGradesDigitsAndIgnoresStrays(t *testing.T) {
 			t.Errorf("%q graded; it is reserved or unrelated", r)
 		}
 	}
-	if got := c.Keys(); got != "1-3 = pick the word" {
-		t.Errorf("Keys() = %q, want the digits that actually work", got)
+	// The keys line names the flag too: `?` documented nowhere is `?` nobody
+	// presses, and the learner has no other source for it.
+	if got := c.Keys(); got != "1-3 = pick the word, ? = bad question" {
+		t.Errorf("Keys() = %q, want the digits AND the flag", got)
 	}
 }
 
@@ -197,17 +199,45 @@ func TestANonFlaggingFormStillAdvancesOnAnyKey(t *testing.T) {
 	}
 }
 
-// The flag is ONE-SHOT, as Dropping is: advance asks after every mark, and an
-// implementation that kept answering would record the same flag repeatedly.
-func TestAFlagFiresOnce(t *testing.T) {
+// The gesture is asked ABOUT A RUNE and the form keeps no state, so there is no
+// one-shot to get wrong.
+func TestFlagAnswersAboutTheRune(t *testing.T) {
 	c := newTestCloze()
+	if opts, ok := c.Flag(FlagKey); !ok || len(opts) != 3 {
+		t.Errorf("Flag(FlagKey) = %v, %v; want the option set, true", opts, ok)
+	}
+	// Asking again gives the same answer: stateless, not one-shot.
+	if _, ok := c.Flag(FlagKey); !ok {
+		t.Error("the gesture stopped answering; it should be stateless")
+	}
+	for _, r := range []rune{'1', ' ', 'd', 'y'} {
+		if _, ok := c.Flag(r); ok {
+			t.Errorf("%q was read as the flag gesture", r)
+		}
+	}
+	// AND THE FLAG KEY IS NEVER AN ANSWER: Grade never sees it, so a graded
+	// question cannot have its pick moved by one.
+	before := c.chosen
 	if _, ok := c.Grade(FlagKey); ok {
 		t.Error("the flag key graded as an ANSWER; it is not one")
 	}
-	if _, ok := c.Flagged(); !ok {
-		t.Fatal("the flag did not register")
+	if c.chosen != before {
+		t.Error("the flag key moved the pick")
 	}
-	if _, ok := c.Flagged(); ok {
-		t.Error("the flag fired twice from one keystroke")
+}
+
+// THE RE-PICK the close review found: the graded branch used to hand every rune
+// to Grade to discover a flag, so a stray digit after answering moved the pick
+// and changed what the reveal said.
+func TestAStrayDigitAfterAnsweringDoesNotRePick(t *testing.T) {
+	c := newTestCloze()
+	s := NewSession([]Question{c})
+	s, _ = Apply(s, Input{Kind: InputRune, Rune: '1'}) // a wrong pick
+	before := c.chosen
+
+	Apply(s, Input{Kind: InputRune, Rune: '3'})
+	if c.chosen != before {
+		t.Errorf("a stray digit moved the pick from %d to %d after the question was graded",
+			before, c.chosen)
 	}
 }

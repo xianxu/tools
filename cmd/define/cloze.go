@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"strings"
 	"unicode"
 
@@ -184,14 +186,23 @@ func hasLetterOrDigit(s string) bool {
 // It mirrors `ask` deliberately, including registering the click regions in the
 // same map: one place renders, so the click map and the question cannot be built
 // from different strings.
-func clozeAsk(d deps, opt options, key string, entry Entry, marks map[string]clickable, day string) play.Question {
+func clozeAsk(d deps, opt options, key string, entry Entry, marks map[string]clickable, day string, warn io.Writer) play.Question {
 	if d.deck == nil {
 		return nil
 	}
 	items, err := d.deck.Items(key)
-	if err != nil || len(items) == 0 {
-		// Unreadable items are not a session failure: the word simply falls
-		// through to form 2.3, which is what a word with no material does too.
+	if err != nil {
+		// SAID, not swallowed. Four lines away, a dictionary failure prints
+		// "define: skipping %q: %v" — and an unreadable items file is the same
+		// kind of event about material that cost a model call to author. Silently
+		// falling through would make the cloze form vanish for that word forever
+		// with no signal.
+		fmt.Fprintf(warn, "define: could not read the practice items for %q (%v); asking a definition instead\n", key, err)
+		return nil
+	}
+	if len(items) == 0 {
+		// The ordinary state of a word --harvest has not authored yet. Not an
+		// event, so nothing is printed.
 		return nil
 	}
 	rendered, rs := Render(entry, RenderOpts{

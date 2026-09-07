@@ -1007,7 +1007,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// The board still triages mature words above (#42's rule, unchanged):
 		// that rule was hard-won and changing it is a different issue with its
 		// own evidence.
-		if q := clozeAsk(d, opt, key, entry, marks, day); q != nil {
+		if q := clozeAsk(d, opt, key, entry, marks, day, stderr); q != nil {
 			qs = append(qs, q)
 			continue
 		}
@@ -1232,9 +1232,28 @@ func livePrompt(s play.Session) string {
 		// Answered, and the answer is on screen. The only thing left is to read
 		// it and move on — offering y/n here would invite a second verdict on a
 		// question that already has one.
-		return gradedPrompt
+		//
+		// EXCEPT the flag, which is not a second verdict and is most useful
+		// exactly here: a learner discovers a question was broken by reading the
+		// reveal. Derived from the FORM rather than a constant, because "any key
+		// = next word" is a lie on a form where `?` does something else — the
+		// same class gradePrompt below was created to fix.
+		return gradedPromptFor(q)
 	}
 	return gradePrompt(q)
+}
+
+// gradedPromptFor is the post-answer line, naming the flag when the form has one.
+//
+// A function rather than the const it used to be, for the reason gradePrompt is:
+// a keys line promising a key that does nothing — or omitting one that does
+// something — is a bug no test could see, because every test types the keys the
+// line names.
+func gradedPromptFor(q play.Question) string {
+	if play.CanFlag(q) {
+		return "any key = next word, " + flagKeys + sessionKeys
+	}
+	return gradedPrompt
 }
 
 // The two prompt lines livePrompt returns, named because README.md quotes them
@@ -1257,6 +1276,11 @@ const (
 	// gradedPrompt is shown once the answer is in and the definition is up.
 	// DERIVED from the pair above, so the wording cannot drift between them.
 	gradedPrompt = "any key = next word, " + sessionKeys
+	// flagKeys names the bad-question gesture for a form that has one (#12).
+	// After a verdict is when a learner discovers a question was broken, so this
+	// is the state where naming it matters most — and "any key = next word" is
+	// actively wrong there, because `?` does something else.
+	flagKeys = string(play.FlagKey) + " = bad question, "
 )
 
 // reservedKeys is the session's own half of the prompt, for THIS form.
