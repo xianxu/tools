@@ -220,7 +220,7 @@ exception is `perWordDir`, whose test is the existing
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `diskAudioCache` | `cmd/define/audiodisk.go` | new | the working directory |
-| `cachingAudioSource` | `cmd/define/fetch.go` | modified | an `AudioSource` |
+| `audioSeam` | `cmd/define/fetch.go` | new | an `AudioSource`, with its memo |
 | `audioDir` | `cmd/define/store/yaml.go` | new | the filesystem |
 | `writeRendered` | `cmd/define/main.go` | modified | stdout + the click map |
 
@@ -239,13 +239,15 @@ exception is `perWordDir`, whose test is the existing
     dictionary it sits beside. Recorded as a number rather than omitted, so the
     decision is reviewable.
 
-- **`cachingAudioSource`** *(modified)* — unchanged behaviour; what changes is
-  that it is constructed ONCE.
-  - **THE BUG IS THAT WRAPPING IS REMEMBERED.** `repl.go:257` and
-    `replraw.go:264` each wrap; `runPlay` does not, so the one loop that replays
-    the same handful of words is the one with no cache. Fixing `runPlay` fixes
-    the site; making the source impossible to obtain unwrapped fixes the class.
-  - **Injected into:** `deps.audio`, in `realDeps()`.
+- **`audioSeam`** — the source and its memo as one value, replacing the
+  `cachingAudioSource` decorator.
+  - **THE BUG WAS THAT WRAPPING WAS REMEMBERED.** `replLines` and `runEditor`
+    each wrapped; `runPlay` did not, so the one loop that replays the same
+    handful of words was the one with no cache. Fixing `runPlay` fixes the site.
+    Making the source impossible to obtain unwrapped fixes the class — and four
+    plan-gate rounds established that no predicate over functions can do it.
+  - **Injected into:** `deps.audio`, whose TYPE is now `*audioSeam`. A pointer,
+    so every by-value copy of `deps` shares one memo.
 
 - **`audioDir`** — the per-language audio directory, appended to `RuntimeDirs`
   AT THE TAIL (the file's own positional-index rule).

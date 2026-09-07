@@ -259,9 +259,6 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		interrupts = &interrupter{}
 	}
 
-	// Same wiring as replLines: cached behind the seam, in the function that uses
-	// it, so a test driving runEditor gets exactly what production gets.
-	d.audio = newCachingAudioSource(d.audio)
 	// The seam is filled at the boundary (#3). The loop never decides where
 	// history lives — which is what let persistence land without the editor
 	// changing at all.

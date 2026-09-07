@@ -20,8 +20,11 @@ import (
 // driven end-to-end by fakes (ARCH-PURE): main() supplies the real ones, tests
 // supply recorders.
 type deps struct {
-	dict   Dictionary
-	audio  AudioSource
+	dict Dictionary
+	// audio is the seam AND its memo. A *audioSeam rather than an AudioSource so
+	// there is no unwrapped source to hold: the type is what guarantees a caller
+	// cannot reach the network twice for one key, however it obtained its deps.
+	audio  *audioSeam
 	player Player
 	// history is the durable word history. Constructed at the boundary so the
 	// loop takes a seam rather than deciding where state lives. NOT in langDeps:
@@ -95,7 +98,7 @@ type deps struct {
 func realDeps() deps {
 	return deps{
 		newDict:         systemDictionary, // dict itself is language-dependent, built in run()
-		audio:           newHTTPAudioSource(),
+		audio:           newAudioSeam(newHTTPAudioSource()),
 		player:          afplayPlayer{},
 		newStore:        openStore,
 		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },

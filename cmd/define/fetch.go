@@ -79,19 +79,32 @@ func (s *httpAudioSource) Fetch(ctx context.Context, urls []string) ([]byte, str
 	return nil, "", ErrNoAudio
 }
 
-// cachingAudioSource memoises fetches by candidate list.
+// audioSeam is the audio source AND its memo, as one value.
 //
-// It is a decorator on the seam rather than a map inside the REPL loop, so the
-// existing fakeCDN request recorder is the assertion that a replay costs no
-// second request — no bespoke test scaffolding.
-type cachingAudioSource struct {
+// A POINTER, so every by-value copy of deps shares one memo — which a decorator
+// on the field could never guarantee, because deps is copied at every call.
+//
+// THIS SHAPE IS WHAT FOUR PLAN-GATE ROUNDS CONVERGED ON, and the reason is that
+// the previous shape asked a question with no derivable answer. "Which functions
+// must remember to wrap the source" was answered wrongly four times: realDeps
+// (no test calls it), run()'s callees (seven one-shot commands), replRaw (the
+// wrap is in runEditor), and "~8 functions" (measured: three times that). Every
+// answer was a statement about the code that the code did not support.
+//
+// A field of this type does not ask the question. There is no unwrapped source
+// to hold, so there is no wrap to forget, no predicate to derive and no guard to
+// keep honest — the COMPILER enumerates the construction sites, which is the
+// only enumeration in this program that cannot drift. #2's I-1 lesson is
+// satisfied absolutely rather than by convention: a test cannot build a deps
+// whose audio differs in KIND from production's, only in what it wraps.
+type audioSeam struct {
 	inner AudioSource
 	mu    sync.Mutex
 	hits  map[string]cachedAudio
-	// misses records words the CDN has no recording for. That is PERMANENT —
-	// unlike a transport failure — so replaying such a word must not re-issue
-	// all four candidate requests every time. The error taxonomy above is the
-	// single source of that distinction; this derives from it rather than
+	// misses records candidate lists the CDN has no recording for. That is
+	// PERMANENT — unlike a transport failure — so replaying such a word must not
+	// re-issue all four candidate requests every time. The error taxonomy above
+	// is the single source of that distinction; this derives from it rather than
 	// re-deciding what "failed" means.
 	misses map[string]struct{}
 }
@@ -101,11 +114,27 @@ type cachedAudio struct {
 	from string
 }
 
-func newCachingAudioSource(inner AudioSource) *cachingAudioSource {
-	return &cachingAudioSource{inner: inner, hits: map[string]cachedAudio{}, misses: map[string]struct{}{}}
+// newAudioSeam is the ONE door. Production and every test reach the source
+// through it, which is what makes "the line the tests exercise is the line
+// production runs" (#2 I-1) a property of the type rather than a habit.
+//
+// A nil inner is legal and means "no audio": Fetch reports ErrNoAudio without
+// reaching for anything. That is what the tests that used to write
+// noAudioSource{} want, and it removes their need to define a source at all.
+func newAudioSeam(inner AudioSource) *audioSeam {
+	return &audioSeam{inner: inner, hits: map[string]cachedAudio{}, misses: map[string]struct{}{}}
 }
 
-func (c *cachingAudioSource) Fetch(ctx context.Context, urls []string) ([]byte, string, error) {
+// Fetch answers from the memo, or from the source once.
+//
+// The KEY is the whole candidate list, because that is what identifies a
+// recording: utterance.Candidates() builds it from a source voice, a session
+// voice and the spellings, so `-locale gb` and `-locale us` are different keys
+// for one word — and anything narrower would serve the wrong recording.
+func (c *audioSeam) Fetch(ctx context.Context, urls []string) ([]byte, string, error) {
+	if c == nil || c.inner == nil {
+		return nil, "", ErrNoAudio
+	}
 	key := strings.Join(urls, "\n")
 
 	c.mu.Lock()

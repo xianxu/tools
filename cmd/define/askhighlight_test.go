@@ -317,7 +317,7 @@ func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
 			d, fake, _, _ := askRig(t)
 			fake.Script("", llmtest.Reply{Capture: streamCapture})
 			d.dict = testDict(t)
-			d.audio = noAudioSource{}
+			d.audio = newAudioSeam(nil)
 			d.player = &fakePlayer{}
 			d.stdinIsTerminal = func() bool { return true }
 			d.vocab = newDeck(t)

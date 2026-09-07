@@ -79,11 +79,11 @@ func TestFetchContextCancellationReachesTheCaller(t *testing.T) {
 	}
 }
 
-// --- cachingAudioSource ------------------------------------------------------
+// --- audioSeam ---------------------------------------------------------------
 
-func TestCachingAudioSourceServesRepeatsFromMemory(t *testing.T) {
+func TestAudioSeamServesRepeatsFromMemory(t *testing.T) {
 	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("ID3audio")})
-	src := newCachingAudioSource(cdn.source())
+	src := newAudioSeam(cdn.source())
 	urls := cdn.urls("/a.mp3")
 
 	first, _, err := src.Fetch(t.Context(), urls)
@@ -102,9 +102,9 @@ func TestCachingAudioSourceServesRepeatsFromMemory(t *testing.T) {
 	}
 }
 
-func TestCachingAudioSourceDistinguishesWords(t *testing.T) {
+func TestAudioSeamDistinguishesWords(t *testing.T) {
 	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("A"), "/b.mp3": []byte("B")})
-	src := newCachingAudioSource(cdn.source())
+	src := newAudioSeam(cdn.source())
 
 	src.Fetch(t.Context(), cdn.urls("/a.mp3"))
 	src.Fetch(t.Context(), cdn.urls("/b.mp3"))
@@ -116,10 +116,10 @@ func TestCachingAudioSourceDistinguishesWords(t *testing.T) {
 // A TRANSPORT failure is transient and must stay retryable — unlike ErrNoAudio,
 // which is permanent and is cached (see the test below). A 404 is not a
 // transport failure, so this closes the server to produce a real one.
-func TestCachingAudioSourceDoesNotCacheTransportFailures(t *testing.T) {
+func TestAudioSeamDoesNotCacheTransportFailures(t *testing.T) {
 	cdn := newFakeCDN(t, nil)
 	urls := cdn.urls("/a.mp3")
-	src := newCachingAudioSource(cdn.source())
+	src := newAudioSeam(cdn.source())
 	cdn.Close()
 
 	for i := 0; i < 2; i++ {
@@ -137,9 +137,9 @@ func TestCachingAudioSourceDoesNotCacheTransportFailures(t *testing.T) {
 
 // "No recording exists" is permanent, unlike a transport failure. Replaying a
 // word with no audio must not re-issue all four candidate requests every time.
-func TestCachingAudioSourceCachesErrNoAudio(t *testing.T) {
+func TestAudioSeamCachesErrNoAudio(t *testing.T) {
 	cdn := newFakeCDN(t, nil) // every candidate 404s → ErrNoAudio
-	src := newCachingAudioSource(cdn.source())
+	src := newAudioSeam(cdn.source())
 	urls := cdn.urls("/a.mp3", "/b.mp3")
 
 	if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrNoAudio) {

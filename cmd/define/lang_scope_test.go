@@ -178,7 +178,7 @@ func TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage(t *testing.T) {
 	cdn := newFakeCDN(t, nil) // every URL 404s: we are watching what is ASKED for
 	d := deps{
 		dict:     testDict(t),
-		audio:    &rebasedSource{cdn: cdn},
+		audio:    newAudioSeam(&rebasedSource{cdn: cdn}),
 		player:   &fakePlayer{},
 		newStore: openStore,
 	}
@@ -235,7 +235,7 @@ func TestAOneShotLookupReadsThePersistedLanguage(t *testing.T) {
 			// whatever the language is. That would make this test pass for the
 			// wrong reason in the opposite direction.
 			d := deps{
-				dict: testDict(t), audio: noAudioSource{}, player: &fakePlayer{},
+				dict: testDict(t), audio: newAudioSeam(nil), player: &fakePlayer{},
 				newStore: openStore,
 			}
 			if err := store.WriteLang(dir, "es"); err != nil {
@@ -330,7 +330,7 @@ func TestTheDictionaryIsBuiltForTheLanguageAtBothMoments(t *testing.T) {
 		"en": &fakeDictionary{entries: map[string]string{"mesa": "an isolated flat-topped hill"}},
 		"es": &fakeDictionary{entries: map[string]string{"mesa": "nombre femenino"}},
 	}}
-	d := deps{newStore: openStore, newDict: seam.build, audio: noAudioSource{}, player: &fakePlayer{}}
+	d := deps{newStore: openStore, newDict: seam.build, audio: newAudioSeam(nil), player: &fakePlayer{}}
 	t.Chdir(dir)
 
 	// 1. The BOUNDARY, through run() — the production path, not a copy of it.
@@ -415,7 +415,7 @@ func TestLocaleFlagReachesTheCDN(t *testing.T) {
 			dir := t.TempDir()
 			cdn := newFakeCDN(t, nil) // every URL 404s: we watch what is ASKED for
 			d := deps{
-				dict: testDictFor(t, tc.dict), audio: &rebasedSource{cdn: cdn},
+				dict: testDictFor(t, tc.dict), audio: newAudioSeam(&rebasedSource{cdn: cdn}),
 				player: &fakePlayer{}, newStore: openStore,
 			}
 			t.Chdir(dir)
