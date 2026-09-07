@@ -6,9 +6,10 @@
 deck is clickable wherever it is written, and coloured wherever colour still
 means something.
 
-**Architecture:** Two independent halves. **M1** makes `cachingAudioSource`
-structural rather than remembered — one construction site, so no loop can hold
-an uncached source — and gives it a home on disk under the working directory,
+**Architecture:** Two independent halves. **M1** makes the memo part of the
+SEAM rather than a decorator anyone must remember to apply: `deps.audio` becomes
+a `*audioSeam` that is cached by construction, so there is no unwrapped source to
+hold and the compiler enumerates the construction sites — and gives it a home on disk under the working directory,
 which makes it a `perWordDir` and therefore something `Forget` takes with a
 word. **M2** collapses two span producers into one: `highlightSpans` already
 finds deck words in text with longest-phrase-wins, and `deckSpans` puts that walk
@@ -297,93 +298,82 @@ writers") excludes it outright, while roughly 55 tests drive it directly
 Deleting its wrap would leave the guard green and every raw-loop test on an
 uncached source: `#2` I-1 again, which PQ-3 already rejected once.
 
-**Two mechanisms, one for each direction of error.**
+**FOUR OF FOUR prose statements of the wrap set have been wrong** — `realDeps`,
+`run()`'s callees, `replRaw`, and then "~8 functions" — which the gate measured
+and found three times larger. The fourth is the decisive one: it was made while
+ARGUING that the predicate should be generous, and still got the size wrong. Step
+4 would have written `d.audio = newCachingAudioSource(d.audio)` into most of
+those functions, which never read `d.audio` at all (`vocabularyFor`, `clozeAsk`, `todaysQuestions`,
+`newCommandCtx`, `playRegion`, `submitLine`, …), contradicting this plan's own
+Architecture line — *one construction site* — and leaving a guard that checks a
+TOKEN APPEARS IN A BODY rather than that a caller's source is cached.
 
-- **Over-derivation is made HARMLESS** by idempotence: `newCachingAudioSource`
-  handed a source that already caches returns it unchanged. So the predicate can
-  afford to be generous, and the generous predicate is the simple one — **every
-  function taking a `deps` and an `options`**. That is ~8 functions including the
-  one-shot commands, and a one-shot wrapping costs a type assertion and a
-  single-entry map. It also removes the judgement call that produced all three
-  wrong answers: nobody has to decide what a "loop" is.
-- **Under-derivation is made IMPOSSIBLE** by the guard checking itself: it
-  computes the set of functions that wrap TODAY — the enclosing `func` of every
-  non-test `newCachingAudioSource` call — and asserts that set is a SUBSET of its
-  own membership. A wrap site the predicate cannot see is then a failure of the
-  GUARD, reported as one. That is what round 2's Step 5 gestured at and only half
-  implemented.
-
-Together those are the closure: one direction cannot hurt, the other cannot hide.
-
-- [ ] **Step 1: Make the wrap idempotent, and pin it**
+**So M1 takes the third shape, and the plan states it once: `d.audio` becomes
+unreachable except through a seam that is already cached.**
 
 ```go
-// newCachingAudioSource is IDEMPOTENT: wrapping a source that already caches
-// returns it unchanged.
+// audioSeam is the audio source AND its memo, as one value.
 //
-// #46 PQ-9 is why, and the reason is not efficiency. Which functions are "loops"
-// turned out not to be decidable here — a dispatcher and a loop share a
-// signature, the wraps live below what run() dispatches to, one of them takes
-// neither a Reader nor a Writer, and tests drive every level directly. Three
-// rounds of the plan gate produced three wrong answers to "where does the wrap
-// go".
+// A POINTER, so every by-value copy of deps shares one memo — which is what the
+// decorator could never guarantee, because deps is copied at every call.
 //
-// Idempotence dissolves the question: every entry point may wrap, and wrapping
-// twice is a no-op rather than a second memo in front of the first — which would
-// silently halve the hit rate, and is the bug this would otherwise trade for.
-// #2's I-1 lesson still holds and is now cheap to honour: the wrap sits in the
-// function that USES the source, wherever tests enter.
-func newCachingAudioSource(inner AudioSource) *cachingAudioSource {
-	if c, ok := inner.(*cachingAudioSource); ok {
-		return c
-	}
-	...
+// This is the shape four rounds of the plan gate converged on, and the reason is
+// that the previous shape asked a question with no derivable answer. "Which
+// functions must remember to wrap the source" was answered wrongly four times:
+// realDeps (no test calls it), run()'s callees (seven one-shot commands),
+// replRaw (the wrap is in runEditor), and "~8 functions" (measured: three times
+// that). Every answer was a statement about the code the code did not support.
+//
+// A field of this type does not ask the question. There is no unwrapped source
+// to hold, so there is no wrap to forget, no predicate to derive, and no guard
+// to keep honest — the COMPILER enumerates the construction sites, which is the
+// only enumeration in this program that cannot drift. #2's I-1 lesson is
+// satisfied absolutely rather than by convention: a test cannot build a deps
+// whose audio differs in kind from production's.
+type audioSeam struct {
+	inner AudioSource
+	mu    sync.Mutex
+	hits  map[string]cachedAudio
+	misses map[string]missRecord
 }
 ```
 
+- [ ] **Step 1: Change the field's TYPE, and let the compiler find the sites**
+
+`deps.audio` becomes `*audioSeam`. Build the package and the tests: every site
+that assigns an `AudioSource` is now a compile error, and that list is the
+construction enumeration — complete, by definition, and free.
+
+Run: `go build ./... && go vet ./...`
+Expected: errors at `realDeps` and at every test literal. **Do not count them in
+prose.** Paste the compiler's list into the Log; a number written by hand here
+would be the fifth wrong statement of this set.
+
+- [ ] **Step 2: Give tests one door.** `newAudioSeam(src AudioSource) *audioSeam`,
+      and a test helper for the silent source that `noAudioSource{}` served.
+      Mechanical, and the churn is the price of the class: it is paid once, by the
+      compiler, instead of every time someone adds an entry point.
+
+- [ ] **Step 3: Delete the wraps.** `repl.go:257` and `replraw.go:264` go, along
+      with `cachingAudioSource` as a decorator — its memo logic moves into
+      `audioSeam` unchanged, including the hits/misses split and the
+      `ErrNoAudio`-vs-`ErrFetchFailed` taxonomy, which is the single source of
+      what "permanent" means and is not re-decided here.
+
+- [ ] **Step 4: The property, now stated where it is TRUE by construction**
+
 ```go
-// Double-wrapping shares ONE memo, so a second wrap cannot cost a second fetch.
-func TestWrappingTwiceKeepsOneCache(t *testing.T)
+// There is no unwrapped source to hold. This asserts the shape rather than a
+// habit: deps.audio is a *audioSeam, so a caller cannot reach the network twice
+// for one key however it obtained its deps.
+func TestASecondFetchOfOneKeyDoesNotReachTheSource(t *testing.T)
 ```
 
-- [ ] **Step 2: Write the guard, with BOTH mechanisms in it**
+- [ ] **Step 5: The regression that started M1, at the loop that had it**
 
-```go
-// EVERY deps-AND-options ENTRY POINT WRAPS THE AUDIO SOURCE (#46 PQ-9).
-//
-// Two assertions, one per direction of error, and the second is the one three
-// gate rounds paid for:
-//
-//   - COMPLETENESS: every member wraps. The membership is deliberately wide —
-//     every function taking a deps and an options, one-shot commands included —
-//     because the wrap is idempotent, so a member that caches nothing costs a
-//     type assertion, and nobody has to decide what a "loop" is. Every attempt
-//     to decide that produced a wrong answer.
-//   - NO BLIND SPOT: the set of functions that wrap TODAY (the enclosing func of
-//     every non-test newCachingAudioSource call) must be a SUBSET of the
-//     membership. A wrap site this predicate cannot see is a failure OF THIS
-//     GUARD, and it says so. Round 2's predicate would have failed here:
-//     runEditor (replraw.go:253) wraps and takes neither a Reader nor a Writer.
-func TestEveryEntryPointWrapsTheAudioSource(t *testing.T)
-```
-
-- [ ] **Step 3: Run it.** Expect BOTH halves to have something to say: the
-      completeness half names every member that does not yet wrap, and the
-      blind-spot half is already satisfied (`replLines` and `runEditor` both take
-      a `deps` and an `options`). Do not predict a single name — the round-2 plan
-      predicted "FAIL, naming `runPlay`" and the predicate named four.
-
-- [ ] **Step 4: Add the wrap to every member the guard names**, carrying
-      `repl.go:255`'s reason across — it is the same reason, and it is now the
-      same one line everywhere.
-
-- [ ] **Step 5: Sweep BOTH mechanisms, not both directions of one.**
-      (a) Delete `runEditor`'s wrap — completeness must name it. This is the
-      exact site round 2's predicate could not see, so it is the sweep that
-      proves the fix. (b) Delete `replLines`'s wrap — completeness must name it.
-      (c) Narrow the predicate to require an `io.Reader` — the blind-spot half
-      must fail, naming `runEditor`. (d) Confirm the guard is not vacuous: a
-      predicate matching nothing must fail rather than pass.
+`runPlay` needed no wrap line and never will. Pin the behaviour anyway, because
+the behaviour is what the learner meets and the type is only how it is
+guaranteed.
 
 - [ ] **Step 6: The behavioural pin, at the loop, through the CDN recorder**
 
@@ -841,3 +831,31 @@ production yields the memo outermost. Both work; they are not the same wiring,
 and this plan leans on "the line tests exercise is the line production runs"
 twice. Production layering — memo over disk over HTTP — is now stated once and
 the test matches it.
+
+### 2026-09-07 — plan-quality round 4: cleared, and the recorded finding taken anyway
+
+**Plan-quality passed** (round cap reached; one finding recorded, not blocking).
+Taking it before implementation regardless, because it names a SEAM decision and
+those are expensive to reverse once sites carry them.
+
+**The finding: "that is ~8 functions" was the 4th wrong statement of the wrap
+set; the gate measured the predicate and found three times that.** And Step 4
+would have written the wrap into most of them, functions that never read
+`d.audio` (`vocabularyFor`, `clozeAsk`, `todaysQuestions`,
+`newCommandCtx`, `playRegion`, `submitLine`), contradicting the plan's own
+Architecture line and leaving a guard that checks a token appears in a body.
+
+**Four wrong statements about one set is not four mistakes; it is the wrong
+question asked four times.** The finding offered three shapes and the third is
+the only one that stops asking it: make `d.audio` unreachable except through a
+seam that is already cached. `deps.audio` becomes a `*audioSeam` — a pointer, so
+every by-value copy of `deps` shares one memo, which the decorator could never
+guarantee. Then there is no wrap to forget, no predicate to derive, no guard to
+keep honest, and **the compiler enumerates the construction sites** — the only
+enumeration in this program that cannot drift. `#2`'s I-1 lesson stops being a
+convention: a test cannot build a `deps` whose audio differs in kind from
+production's.
+
+The cost is mechanical churn across the test literals, paid once by the compiler.
+The plan now carries no prose statement of the set's membership or size, which is
+the rule the finding actually asked for.

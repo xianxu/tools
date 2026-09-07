@@ -205,6 +205,37 @@ rounds:
           note: All four restatements now defer to audioKey/audioRecord, and the scoped:true justification matches store/yaml.go:177-178.
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-07T13:22:37-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-9
+          disposition: addressed
+          note: 'Verified: replLines (repl.go:249), runEditor (replraw.go:253) and runPlay (play_loop.go:24) all take deps+options, so both guard halves cover the real sites.'
+          round: 4
+      findings:
+        - id: PQ-11
+          severity: Important
+          title: '"That is ~8 functions" is the 4th wrong prose statement of the wrap set — the real membership is 24, and Step 4 writes the line into functions that never touch audio'
+          detail: |-
+            This is the 3rd finding in family `seam-wrap-site`; measured prevalence is 4 of 4 prose
+            statements about the wrap set being wrong (round 1 `realDeps`, round 2 `run()`'s callees,
+            round 3 `replRaw`, now "~8"). Do not fix the instance by writing "24". The rule: the plan
+            must carry NO prose statement of the set's membership or size — run the predicate, paste the
+            computed set in, and decide before implementation what Step 4 does with the members that
+            never read `d.audio` (`vocabularyFor` vocab.go:191, `clozeAsk` cloze.go:189, `todaysQuestions`
+            play_loop.go:896, `newCommandCtx` command.go:211, `playRegion` replraw.go:587, `submitLine`
+            replraw.go:642) and whether `*deps`/`*options` members are in (`sessionSetLang` command.go:352,
+            `applyLang` command.go:400). As written, Step 4 produces ~22 copies of
+            `d.audio = newCachingAudioSource(d.audio)`, contradicting the plan's own Architecture line
+            ("one construction site") and violating ARCH-DRY: the guard then checks that a token appears
+            in a body, not that a caller's source is cached. Name which shape M1 takes — every member
+            wraps, only members reaching `d.audio` wrap, or `d.audio` becomes unreachable except through
+            an accessor — since that is a seam decision and is hard to reverse once 24 sites carry it.
+          family: seam-wrap-site
+          round: 4
+      blocked: false
+content_hash: 8f2924ca524326f69c1d4ee3492b7341e50aa710c0cd67be3411095ab19f8ac8
 ---
 
 # Gate ledger — tools#46 (plan-quality)
@@ -340,6 +371,30 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - PQ-9 — not-addressed — Idempotence fixes over-derivation, but the predicate still excludes runEditor (replraw.go:253), a wrap site driven directly by ~55 tests; plan:290 and plan:752 still name it `replRaw`.
 - PQ-10 — addressed — All four restatements now defer to audioKey/audioRecord, and the scoped:true justification matches store/yaml.go:177-178.
 
+## Round 4 — 2026-09-07T13:22:37-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-9 — addressed — Verified: replLines (repl.go:249), runEditor (replraw.go:253) and runPlay (play_loop.go:24) all take deps+options, so both guard halves cover the real sites.
+
+### Raised
+
+- **PQ-11** [Important] `seam-wrap-site` "That is ~8 functions" is the 4th wrong prose statement of the wrap set — the real membership is 24, and Step 4 writes the line into functions that never touch audio
+  This is the 3rd finding in family `seam-wrap-site`; measured prevalence is 4 of 4 prose
+  statements about the wrap set being wrong (round 1 `realDeps`, round 2 `run()`'s callees,
+  round 3 `replRaw`, now "~8"). Do not fix the instance by writing "24". The rule: the plan
+  must carry NO prose statement of the set's membership or size — run the predicate, paste the
+  computed set in, and decide before implementation what Step 4 does with the members that
+  never read `d.audio` (`vocabularyFor` vocab.go:191, `clozeAsk` cloze.go:189, `todaysQuestions`
+  play_loop.go:896, `newCommandCtx` command.go:211, `playRegion` replraw.go:587, `submitLine`
+  replraw.go:642) and whether `*deps`/`*options` members are in (`sessionSetLang` command.go:352,
+  `applyLang` command.go:400). As written, Step 4 produces ~22 copies of
+  `d.audio = newCachingAudioSource(d.audio)`, contradicting the plan's own Architecture line
+  ("one construction site") and violating ARCH-DRY: the guard then checks that a token appears
+  in a body, not that a caller's source is cached. Name which shape M1 takes — every member
+  wraps, only members reaching `d.audio` wrap, or `d.audio` becomes unreachable except through
+  an accessor — since that is a seam decision and is hard to reverse once 24 sites carry it.
+
 ## Open findings
 
-- **PQ-9** [Critical] `seam-wrap-site` Task 1's guard derives the wrong set: `run()`'s deps-taking callees are seven non-loops, and the two functions that actually wrap are not among them
+- **PQ-11** [Important] `seam-wrap-site` "That is ~8 functions" is the 4th wrong prose statement of the wrap set — the real membership is 24, and Step 4 writes the line into functions that never touch audio
