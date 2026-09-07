@@ -425,3 +425,17 @@ enumerates what a hand-edited item can break rather than naming one instance; an
 `blankStem` gets a fuzz target — it is model-authored input whose sibling shipped
 a slice-bounds panic on folding runes two weeks ago, and a leak here renders
 perfectly while giving the answer away.
+
+### 2026-09-07 — round 2 of the close gate: the doc guard's extent
+
+**Reason.** `sdlc close --issue 12` round 2 raised BR-10: the plan specified the
+README lines for the new form (Task 7) and the doc-sync guard that pins them, but
+not that the guard's forms slice is HAND-MAINTAINED — so building both left the
+new form unenrolled and the README lines absent, with a full green suite.
+
+**Delta.** The plan's Task 7 now understates what it costs to add a form: the
+enrolment is derived rather than written. `TestEveryFormIsEnrolled`
+(`cmd/define/doc_sync_test.go`) reads the extent out of `play/*.go`, and
+`docSyncForms(t)` is the one slice both README guards consume. A future form
+added to `play/` fails the suite until it is enrolled — which is the property the
+plan should have asked for and did not.

@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -44,25 +46,15 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 	// 2.1's y/n was printed under form 2.3's numbered options and told the
 	// learner to press a key that did nothing.
 	//
-	// The residual, stated rather than hidden: a form added to play and not added
-	// to this slice is not checked here. That half is human. What is mechanical is
-	// that Question.Keys() is on the interface, so a new form cannot compile
-	// without writing one, and the rows below fail the build the moment an
-	// existing form's wording moves.
-	//
-	// TWO FORMS, not three: `#42` deleted form 2.1, so the set is "2.3 tests you,
-	// the board triages you" and the README says so in one sentence.
-	forms := []play.Question{
-		play.NewChoice("ephemeral", "", []play.Option{
-			{Gloss: "a", Correct: true}, {Gloss: "b"}, {Gloss: "c"}, {Gloss: "d"},
-		}),
-		// The board's line differs in its RESERVED half too, not only in its own
-		// keys: `d` is refused on a form holding many words, so the prompt must
-		// not offer it (#40 D12). That is the second thing this row checks, and
-		// the reason it is worth adding rather than being the "third form" the
-		// comment above calls human.
-		play.NewBoard([]play.Cell{{Word: "ephemeral"}, {Word: "quokka"}}, 80, play.Palette{}),
-	}
+	// THE RESIDUAL IS NO LONGER HUMAN (#12). This comment used to say "a form
+	// added to play and not added to this slice is not checked here — that half
+	// is human", and #12 then added a form and did not add it here, so neither of
+	// its prompt lines was a README consumer. TestEveryFormIsEnrolled below
+	// derives the extent from the package's Form() declarations, the same move
+	// numRegionKinds makes for region kinds: the set has one source, and a form
+	// that is not enrolled fails the build.
+	forms := docSyncForms(t)
+
 	seen := map[string]bool{}
 	for _, f := range forms {
 		line := gradePrompt(f)
@@ -78,11 +70,96 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 			}
 		})
 	}
-	t.Run("the graded prompt, shown once the answer is up", func(t *testing.T) {
-		if !strings.Contains(readme, gradedPrompt) {
-			t.Errorf("README.md does not contain:\n\t%q", gradedPrompt)
+	// THE GRADED LINE IS PER-FORM TOO, since #12: a form with the flag gesture
+	// says so after the answer as well, because that is when a learner discovers
+	// a question was broken. Checking only the const would have missed exactly
+	// the line the close review found wrong.
+	gradedSeen := map[string]bool{}
+	for _, f := range forms {
+		line := gradedPromptFor(f)
+		if gradedSeen[line] {
+			continue // two forms may legitimately share the post-answer line
 		}
-	})
+		gradedSeen[line] = true
+		t.Run("graded: "+line, func(t *testing.T) {
+			if !strings.Contains(readme, line) {
+				t.Errorf("README.md does not contain the line livePrompt returns for %T once graded:"+
+					"\n\t%q", f, line)
+			}
+		})
+	}
+}
+
+// docSyncForms is the ONE list of forms the documentation guards walk.
+//
+// A helper rather than a local, so the keys-line guard and the enrolment guard
+// cannot disagree about what the set is — which would put the extent back in two
+// places, the thing TestEveryFormIsEnrolled exists to stop.
+func docSyncForms(t *testing.T) []play.Question {
+	t.Helper()
+	return []play.Question{
+		play.NewChoice("ephemeral", "", []play.Option{
+			{Gloss: "a", Correct: true}, {Gloss: "b"}, {Gloss: "c"}, {Gloss: "d"},
+		}),
+		// The board's line differs in its RESERVED half too, not only in its own
+		// keys: `d` is refused on a form holding many words, so the prompt must
+		// not offer it (#40 D12). That is the second thing this row checks, and
+		// the reason it is worth adding rather than being the "third form" the
+		// comment above calls human.
+		play.NewBoard([]play.Cell{{Word: "ephemeral"}, {Word: "quokka"}}, 80, play.Palette{}),
+		// The cloze's line differs in its OWN half twice over: it grades digits
+		// like 2.3 but says "pick the word", and it is the first form with a
+		// gesture that is neither an answer nor reserved, so `?` has to be named
+		// or a learner has no source for it (#12).
+		play.NewCloze("ephemeral", "a ___ b", "a ephemeral b", "", []play.Option{
+			{Word: "ephemeral", Correct: true}, {Word: "quokka"}, {Word: "keel"}, {Word: "mesa"},
+		}),
+	}
+}
+
+// TestEveryFormIsEnrolled makes the doc guard's extent MECHANICAL.
+//
+// Its sibling above used to record "a form added to play and not added to this
+// slice is not checked here — that half is human", and #12 then added a form and
+// did not add it. So the set is derived: every type in `play` that declares
+// Form() is a form, and every form must appear in the slice the doc guard walks.
+//
+// Same move numRegionKinds makes for region kinds — the extent has one source,
+// and a member added without being enrolled fails the build rather than being
+// silently unchecked.
+func TestEveryFormIsEnrolled(t *testing.T) {
+	declared := map[string]bool{}
+	entries, err := os.ReadDir("play")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`func \([a-z] \*[A-Za-z]+\) Form\(\) string \{ return "([a-z]+)" \}`)
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join("play", e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			declared[m[1]] = true
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("no Form() declarations found; this guard would pass vacuously")
+	}
+
+	enrolled := map[string]bool{}
+	for _, f := range docSyncForms(t) {
+		enrolled[f.Form()] = true
+	}
+	for name := range declared {
+		if !enrolled[name] {
+			t.Errorf("form %q is declared in play/ but not enrolled in the doc guard's slice, "+
+				"so neither of its prompt lines is checked against README.md", name)
+		}
+	}
 }
 
 // The atlas's raw-notation count DERIVES from the ratchet rather than restating

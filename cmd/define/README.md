@@ -59,10 +59,22 @@ fits a sentence is a harder and more useful test than picking a definition that
 matches a word. Reveal it and you see the sentence whole, which is the point:
 the word doing its work in the context it was written for.
 
+The line under the question tells you what works:
+
+```
+1-4 = pick the word, ? = bad question, d = remove from deck, Ctrl-C to stop
+```
+
 **If a question is bad, press `?`.** That records it — with the four options you
 were shown, which is what makes it diagnosable later — and moves on WITHOUT
 marking you wrong. A broken question is not evidence about you, so it does not
 move the word's schedule in either direction.
+
+It stays offered after you have answered, which is usually when you notice:
+
+```
+any key = next word, ? = bad question, d = remove from deck, Ctrl-C to stop
+```
 
 ### Multiple choice, once your deck can supply distractors
 

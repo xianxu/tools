@@ -163,3 +163,184 @@ findings:
       the table now names a field that does not exist. Same entry should note optionset_test.go was
       deliberately not created and that Tasks 5/6's tests landed in cmd/define/cloze_test.go.
 ```
+
+---
+
+## Re-review — 2026-09-07T11:41:55-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 12 — review form 2.2: cloze from current news with curated distractors |
+| repo | tools |
+| issue file | workshop/issues/000012-vocab-form-cloze.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 0b8d9930762168cf52f77c5d0864599f678d3b5d..0698b277f1ca6cc9f2e1365d89493daaa075f6fd |
+| command | sdlc close --issue 12 |
+| reviewer | claude |
+| timestamp | 2026-09-07T11:41:55-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All four blocking Importants from round 1 are genuinely fixed and genuinely pinned — I reverted each fix in a scratch copy and every one reddened a named test with a legible message (BR-2's `TestAStrayDigitAfterAnsweringDoesNotRePick` names the moved pick; BR-1 reddens twice, once for `Keys()` and once for `gradedPromptFor`; BR-3's `TestAnUnreadableItemsFileIsReported` reports the silent read). `go test ./...`, `go vet ./...`, `go vet -tags conformance ./...` and `gofmt -l` are clean at HEAD, and the BR-2 fix is a strictly better design than the one I sketched: moving the gesture onto `Flagging` as `Flag(k rune)` removed the interception, the one-shot field and the carried state together. What holds it back from SHIP is that the *class* behind BR-1 was not swept: this repo already owns the mechanism that exists to stop a keys line drifting from the README (`doc_sync_test.go`), its own comment names the human residual, and the very next form added walked straight through it — neither of Cloze's two prompt lines appears in README.md, and the key table never lists `?`. Three prior families also recur, one of them as a regression the deleted code's own comment argued against.
+
+## 1. Strengths
+
+- **The BR-2 fix is better than the finding asked for, and it is pinned.** `Flagging.Flag(k rune)` (`play/session.go:556`) makes "is this a flag" and "is this an answer" different questions about a keystroke, so `Grade` never sees `?` at all. That deletes the `flagged` field, the one-shot contract, and the `(Graded, non-flag rune)` cell in one move — ARCH-ORDER's preferred shape. `TestAStrayDigitAfterAnsweringDoesNotRePick` (`play/cloze_test.go:232`) goes red the moment `q.Grade(in.Rune)` is put back into the graded branch; I checked.
+- **BR-3's fix splits the branches at the right seam and adds the row that keeps it from becoming noise.** `cmd/define/cloze.go:190` warns on the error; `TestAWordWithNoItemsSaysNothing` (`cloze_test.go:494`) pins that an unharvested word stays silent. Both directions, which is what a "report it" fix usually skips.
+- **BR-1's fix derives both lines from the form** — `Cloze.Keys()` and `gradedPromptFor(q)` (`play_loop.go:1291`) — rather than adding a second constant, and the non-flagging negative is asserted in the same test (`cloze_test.go:452`).
+- **The Log now records the boundary honestly, including the part that went wrong.** The issue's `2026-09-07` entry says plainly that the first "hand-run" was a programmatic render, that neither party pressed `?`, and that booking the deviation did not prevent the failure it was booked to prevent. The pty transcript, the flag output, and the "no `correct:` field" check are all in the record.
+- **Independently confirmed the graded-state flag works end to end.** A probe driving a wrong pick then `?` through `playSession` records exactly one flag with the full option set and one review — so the restructured graded branch is correct, only unpinned at the loop level.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-1 — `Cloze` was never enrolled in `doc_sync_test.go`, the mechanism that exists to catch exactly the bug BR-1 was.** `cmd/define/doc_sync_test.go:56` holds a `forms` slice of `Choice` and `Board`, with a comment reading *"TWO FORMS, not three"* and a stated residual: *"a form added to play and not added to this slice is not checked here. That half is human."* This diff added the third shipped form and the human half did not fire. Measured, not inferred — a probe enrolling `Cloze` fails today on both lines:
+
+```
+README.md does not contain "1-4 = pick the word, ? = bad question, d = remove from deck, Ctrl-C to stop"
+README.md does not contain "any key = next word, ? = bad question, d = remove from deck, Ctrl-C to stop"
+```
+
+The README's cloze section (`cmd/define/README.md:41-65`) shows the four options with **no keys line at all**, unlike the 2.3 example at :84 which quotes one; the key table at :187-196 lists `1`–`4` as *"multiple choice: pick the definition"* and never mentions `?`; and the only graded prompt the README quotes (:205) is the non-flagging one, which is now the wrong line for the form the README says the tool *prefers*. `?` is documented in prose at :62, so this is not "undocumented" — it is "not derived, and the lines that are quoted are now incomplete."
+
+> **This is the 2nd finding in family `prompt-line-matches-live-keys`.** Round 1 fixed the instance (the on-screen prompt). Do NOT fix this instance by hand-pasting two lines into README.md — state the rule and fix that. The rule is stateable: **every shipped `play` form's keys line and graded prompt are README consumers, enforced mechanically, not by remembering.** The concrete fix is to close the residual the test's own comment confesses to — enumerate the shipped forms in one place `todaysQuestions`-side code and `doc_sync_test.go` both derive from (or a guard that fails when a `Question` implementation in `play` is absent from the slice), add `Cloze` and `gradedPromptFor` to the pinned set, and update the README key table so the `?` row derives from `play.FlagKey`. `gradePrompt`'s doc comment already records the first instance of this class and `doc_sync_test.go`'s header records three more; this is the fourth, and it is the one where the general fix existed and was not extended.
+
+## 4. Minor findings
+
+- **`stale-artifact-restatement`, 3rd finding — three more restatements now contradict the code.** (a) `play/session.go:262-264` still says *"The keystroke reaches the form through Grade, which returns false for it … and the flag itself comes back out of advance beside the drop"* — both halves are false as of `0698b27`: `Grade` never sees `?`, and `advance` no longer emits `OutcomeFlag`. (b) `workshop/plans/000012-vocab-form-cloze-plan.md:211` declares `Flagging { Flagged() ([]string, bool) }`; the code ships `Flag(k rune)`. (c) `cmd/define/README.md:486` says `items/` — *"Nothing writes this yet — authoring is the next milestone"* — three paragraphs below the README's own *"It then writes the practice items."* (introduced by `#10 M1`, falsified by `#10 M2`, both inside this window). With BR-8 and BR-9 still open that is **five open instances in one family**. Do NOT fix these five one at a time: the rule is that a prose or comment restatement of a fact the code owns must either derive from it or be swept at the boundary that changed it. The enumerable class here is small and worth writing down as a close-time sweep list — the issue's own artifacts (`issue`, `plan`, `project`), the README, the atlas, and the doc comments on every symbol the diff renamed or re-shaped.
+- **`one-place-renders`, 2nd finding — a regression, and the code's surviving comment argues against it.** `0698b27` deleted the `flaggedBy` block from `advance` and open-coded the identical six-line `OutcomeFlag` literal at `play/session.go:273-279` and `:409-415`. The deleted block's comment said it lived in `advance` because *"this is the one place both mark paths meet, so the question is put once rather than at two call sites that could drift"* — and the drop's version of that same comment is still there at `:498-503` (#42). So this is not a nit: the rule is written in the file, next to the code that now breaks it. Combined with BR-6's still-open `Render`+`marks` duplication, the rule to state and sweep is **one constructor per outcome/render, called from N sites — never N constructions**. A `flagOutcome(s, q, opts)` helper and BR-6's `renderInto(marks, key, entry)` are the same fix twice.
+- **`boundary-record-unwritten`, 2nd finding — `workshop/lessons.md` carries nothing from close-review round 1.** AGENTS.md §4 says a code review adds rules to `lessons.md`. `46a769b` added the `#12` section (the fuzz, the unreachable pin, the small-rig row) but `0698b27` — which fixed two user-facing bugs and whose own commit body states the transferable rule (*"a programmatic render cannot see a prompt line"*, and the finding-under-the-finding that booking a deviation is not running it) — added none. The rule covering this and BR-4: **a boundary's durable record has more than one home** — the issue `## Log`, `lessons.md` when a review found something, the plan's `## Revisions`, and the project file — and "the record" is not written until all of them are. BR-8/BR-9 are the same rule seen from the artifact side, which is why this family and `stale-artifact-restatement` keep alternating.
+
+## 5. Test coverage notes
+
+The reverts hold: I independently reddened BR-1 (twice), BR-2 and BR-3 by undoing each fix in a scratch tree, so none of the three is a test written to assert whatever the fix happened to do. `TestFlagAnswersAboutTheRune` (`play/cloze_test.go:204`) is a good replacement for the deleted one-shot test — it asserts statelessness *and* that `Grade(FlagKey)` leaves `chosen` untouched, which is the property BR-2 was actually about. Two gaps, both one test each and neither hiding a defect (I verified both by probe): the flag **after a miss** is pinned in `play` (`TestAFlagIsHeardInEverySessionState/after_answering`) but still never driven through `playSession`, so the graded branch's second `OutcomeFlag` construction site has no loop-level pin — and it is now a *second* site, which is exactly when that matters; and `gradedPromptFor` is asserted only against its own wording, never against the README (I-1). `optionset_test.go` remains deliberately unwritten, which is coherent given Task 1's oracle was `#7`'s untouched suite — but it should be said in the plan rather than left to be discovered.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** `optionSet`, the `blankOut → blankStem` delegation and `wordRunEnd` reusing `isWordRune` are three real consolidations. Against them, this round *added* a duplication (`OutcomeFlag` at two sites) and left BR-6's open. Both are the same rule; fix them together.
+- **ARCH-PURE — pass.** `play` is still import-guarded pure; `blankStem`, `usableItem`, `clozeFor` and the two prompt helpers are pure and tested with no store, dictionary or model. `clozeAsk` is the only `Items()` call and is the thin seam; `warn io.Writer` was threaded rather than reaching for `os.Stderr`, which keeps it injectable.
+- **ARCH-PURPOSE — flag.** The gesture is now discoverable *in the TUI*, which is the purpose. But the class behind the finding was not swept: the mechanism that makes keys lines derive (`doc_sync_test.go`) was left un-extended, and five restatement instances remain across the plan, project, README and a doc comment. Fixing the site a finding names while enumerable siblings stay in the tree is the instance, not the class.
+- **ARCH-MOCK — pass.** No new external dependency. `CaptureFlag` landed as a `storetest` row held by both `Mem` and `YAML`, and `TestCaptureFlagWritesAFlagAndNotAReview` drives the *real* `storeCapturer` through `schedule.Fold` — the consumer, not the field. The offline claim is asserted with the model seam made to **panic**, not nil.
+- **ARCH-CONSTRAINTS — pass.** One `Items()` read per due word, no model or network call on any sitting path, no new concurrency or unbounded loop. `blankStem`'s termination is now bounded by construction (`if end <= at { end = at + n }`) with the fuzz corpus committed, which is the right answer to a loop whose termination depended on the property under test. The only waste is the double `Render` (BR-6).
+- **ARCH-SECURE — pass, improved this round.** `usableItem` is the typed floor at the on-disk boundary and enumerates the class rather than an example; `oneLine` at both `SetItems` and YAML `Items()` stops model-authored text forging a record in the day log; and BR-3's fix is precisely the ARCH-SECURE ask that a parse failure "degrade visibly rather than substituting a fabricated value." Nothing in the new warn path reaches a credential.
+- **ARCH-ORDER — pass, and this round improved it.** Making the gesture a function of the rune rather than a remembered field removed a state from the constellation instead of adding one, and closed the `(Graded, non-flag rune)` cell by construction rather than by a test. What remains is pre-existing and not this boundary's: `Session` still carries `Graded`/`Revealed` as independent bools with the legal combinations unwritten; a tagged enum over `asking | revealed | graded` is what would make the next cell of this shape unrepresentable. Worth naming in `#13`'s plan, since it adds the fourth form.
+
+## 7. Plan revision recommendations
+
+Add one `## Revisions` entry to `workshop/plans/000012-vocab-form-cloze-plan.md` recording the four places the plan now claims something the code does not do:
+
+1. **`ReviewEvent.Flagged` shipped as `ReviewEvent.Options`** (`store/event.go:93`), with the flagged fact carried by `Kind`. The code is better than the plan; record the rename so the Integration points table stops naming a field that does not exist. (BR-9, still open.)
+2. **`Flagging` ships as `Flag(k rune) ([]string, bool)`, not `Flagged() ([]string, bool)`** — the plan's Task 3 Step 2 snippet at line 211 is the pre-review shape. Record *why*: the `Flagged()` shape forced the session to hand every rune to `Grade` to discover a flag, which re-picked the answer on a graded question (close review I-2). Same entry should note that the flag outcome is now built in `apply` rather than in `advance`, and that this is the ARCH-DRY debt above rather than a decision.
+3. **`cmd/define/play/optionset_test.go` was deliberately not created** — Task 1 Step 4 requires no test file to change, so `#7`'s untouched suite is the oracle. Say so, so a reader does not go looking for it.
+4. **Tasks 5 and 6 name `cmd/define/play_loop_test.go`; the pins landed in `cmd/define/cloze_test.go`** (`TestTheFormSelectionRule`, `TestAClozeSittingNeverReachesForTheModel`, `TestFlaggingAQuestionRecordsItWithoutScoringIt`, and the two prompt/warn rows added this round). Point the rows at where the tests actually live.
+
+Also correct `workshop/projects/define-learn.md:75` (BR-8) as part of the family sweep rather than on its own — the row still attributes the distractor veto to `#12` after the 2026-09-04 revision moved it to `#10`, and line 257's `form 2.2` task is still unticked (the close gate ticks it, so that one needs no manual edit).
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Keys() and gradedPromptFor both derive from the form; reverting each independently
+      reddens a named test. The class-level gap (doc_sync enrollment) is raised separately.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Flagging now takes the rune, so Grade never sees the key; reverting reddens
+      TestAStrayDigitAfterAnsweringDoesNotRePick, which names the moved pick.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      err and len==0 split; reverting the warn reddens TestAnUnreadableItemsFileIsReported,
+      and TestAWordWithNoItemsSaysNothing pins the silent ordinary case.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      The 2026-09-07 Log entry records the sweep, the pty transcript, and that the first
+      "hand-run" was a programmatic render. See the new lessons.md finding for the sibling.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      capture.go:149 still omits Form: out.Form; set at two sites, read at zero.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      cloze.go:207 still copies play_loop.go:975 and still renders above clozeFor's nil check.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      cloze.go:101 TrimSpace(Answer)=="" is still unreachable behind hasLetterOrDigit.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      define-learn.md:75 still reads "veto a distractor | #12".
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      No Revisions entry was added; the plan still names ReviewEvent.Flagged.
+findings:
+  - id: new
+    severity: Important
+    family: prompt-line-matches-live-keys
+    title: |
+      Cloze was never enrolled in doc_sync_test's forms slice, so neither of its prompt lines is a README consumer
+    detail: |
+      2nd in this family — round 1 fixed the instance, not the class. doc_sync_test.go:56
+      pins Choice and Board and its own comment names the residual ("a form added to play
+      and not added to this slice is not checked here. That half is human"); this diff added
+      the third shipped form and skipped it. Probed: README.md contains neither
+      "1-4 = pick the word, ? = bad question, ..." nor "any key = next word, ? = bad question,
+      ...", and the key table at README.md:187 never lists `?`. Do not hand-paste the lines —
+      enroll every shipped form by construction and make the key table's `?` row derive from
+      play.FlagKey.
+  - id: new
+    severity: Minor
+    family: stale-artifact-restatement
+    title: |
+      three more restatements now contradict the code, bringing the open family to five
+    detail: |
+      3rd in this family. play/session.go:262-264 still says the keystroke reaches the form
+      through Grade and the flag comes out of advance — both false since 0698b27. The plan's
+      Flagging snippet (line 211) still declares Flagged(). README.md:486 says items/ has
+      "Nothing writes this yet" three paragraphs below the README's own "It then writes the
+      practice items". With BR-8 and BR-9 open that is five instances. Fix the rule, not the
+      five: a restatement of a fact the code owns must derive from it or be swept at the
+      boundary that changed it — write the close-time sweep list (issue, plan, project,
+      README, atlas, and the doc comments on every symbol the diff re-shaped).
+  - id: new
+    severity: Minor
+    family: one-place-renders
+    title: |
+      the OutcomeFlag literal is now built at two call sites, against the rule the surviving drop comment states
+    detail: |
+      2nd in this family, and a regression. 0698b27 deleted flaggedBy from advance and
+      open-coded the identical six-line OutcomeFlag at play/session.go:273-279 and :409-415.
+      The deleted block's comment justified the single site ("the one place both mark paths
+      meet ... rather than at two call sites that could drift"), and the drop's version of
+      that comment is still at :498-503. With BR-6 open the rule to state is: one constructor
+      per outcome/render called from N sites, never N constructions — a flagOutcome helper
+      and BR-6's renderInto are the same fix twice.
+  - id: new
+    severity: Minor
+    family: boundary-record-unwritten
+    title: |
+      lessons.md carries nothing from close-review round 1, whose commit body states the rule
+    detail: |
+      2nd in this family. 46a769b added the #12 lessons section; 0698b27 fixed two
+      user-facing bugs and added none, though its own body states the transferable rule
+      ("a programmatic render cannot see a prompt line"; booking a deviation is not running
+      it). AGENTS.md section 4 requires it. The rule covering this and BR-4: a boundary's
+      durable record has more than one home — issue Log, lessons.md when a review found
+      something, the plan's Revisions, the project file — and it is not written until all of
+      them are.
+```

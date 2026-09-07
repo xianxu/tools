@@ -93,6 +93,110 @@ rounds:
           family: stale-artifact-restatement
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-07T11:41:55-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: |-
+            Keys() and gradedPromptFor both derive from the form; reverting each independently
+            reddens a named test. The class-level gap (doc_sync enrollment) is raised separately.
+          round: 2
+        - id: BR-2
+          disposition: addressed
+          note: |-
+            Flagging now takes the rune, so Grade never sees the key; reverting reddens
+            TestAStrayDigitAfterAnsweringDoesNotRePick, which names the moved pick.
+          round: 2
+        - id: BR-3
+          disposition: addressed
+          note: |-
+            err and len==0 split; reverting the warn reddens TestAnUnreadableItemsFileIsReported,
+            and TestAWordWithNoItemsSaysNothing pins the silent ordinary case.
+          round: 2
+        - id: BR-4
+          disposition: addressed
+          note: |-
+            The 2026-09-07 Log entry records the sweep, the pty transcript, and that the first
+            "hand-run" was a programmatic render. See the new lessons.md finding for the sibling.
+          round: 2
+        - id: BR-5
+          disposition: not-addressed
+          note: 'capture.go:149 still omits Form: out.Form; set at two sites, read at zero.'
+          round: 2
+        - id: BR-6
+          disposition: not-addressed
+          note: cloze.go:207 still copies play_loop.go:975 and still renders above clozeFor's nil check.
+          round: 2
+        - id: BR-7
+          disposition: not-addressed
+          note: cloze.go:101 TrimSpace(Answer)=="" is still unreachable behind hasLetterOrDigit.
+          round: 2
+        - id: BR-8
+          disposition: not-addressed
+          note: 'define-learn.md:75 still reads "veto a distractor | #12".'
+          round: 2
+        - id: BR-9
+          disposition: not-addressed
+          note: No Revisions entry was added; the plan still names ReviewEvent.Flagged.
+          round: 2
+      findings:
+        - id: BR-10
+          severity: Important
+          title: Cloze was never enrolled in doc_sync_test's forms slice, so neither of its prompt lines is a README consumer
+          detail: |-
+            2nd in this family — round 1 fixed the instance, not the class. doc_sync_test.go:56
+            pins Choice and Board and its own comment names the residual ("a form added to play
+            and not added to this slice is not checked here. That half is human"); this diff added
+            the third shipped form and skipped it. Probed: README.md contains neither
+            "1-4 = pick the word, ? = bad question, ..." nor "any key = next word, ? = bad question,
+            ...", and the key table at README.md:187 never lists `?`. Do not hand-paste the lines —
+            enroll every shipped form by construction and make the key table's `?` row derive from
+            play.FlagKey.
+          family: prompt-line-matches-live-keys
+          round: 2
+        - id: BR-11
+          severity: Minor
+          title: three more restatements now contradict the code, bringing the open family to five
+          detail: |-
+            3rd in this family. play/session.go:262-264 still says the keystroke reaches the form
+            through Grade and the flag comes out of advance — both false since 0698b27. The plan's
+            Flagging snippet (line 211) still declares Flagged(). README.md:486 says items/ has
+            "Nothing writes this yet" three paragraphs below the README's own "It then writes the
+            practice items". With BR-8 and BR-9 open that is five instances. Fix the rule, not the
+            five: a restatement of a fact the code owns must derive from it or be swept at the
+            boundary that changed it — write the close-time sweep list (issue, plan, project,
+            README, atlas, and the doc comments on every symbol the diff re-shaped).
+          family: stale-artifact-restatement
+          round: 2
+        - id: BR-12
+          severity: Minor
+          title: the OutcomeFlag literal is now built at two call sites, against the rule the surviving drop comment states
+          detail: |-
+            2nd in this family, and a regression. 0698b27 deleted flaggedBy from advance and
+            open-coded the identical six-line OutcomeFlag at play/session.go:273-279 and :409-415.
+            The deleted block's comment justified the single site ("the one place both mark paths
+            meet ... rather than at two call sites that could drift"), and the drop's version of
+            that comment is still at :498-503. With BR-6 open the rule to state is: one constructor
+            per outcome/render called from N sites, never N constructions — a flagOutcome helper
+            and BR-6's renderInto are the same fix twice.
+          family: one-place-renders
+          round: 2
+        - id: BR-13
+          severity: Minor
+          title: lessons.md carries nothing from close-review round 1, whose commit body states the rule
+          detail: |-
+            2nd in this family. 46a769b added the #12 lessons section; 0698b27 fixed two
+            user-facing bugs and added none, though its own body states the transferable rule
+            ("a programmatic render cannot see a prompt line"; booking a deviation is not running
+            it). AGENTS.md section 4 requires it. The rule covering this and BR-4: a boundary's
+            durable record has more than one home — issue Log, lessons.md when a review found
+            something, the plan's Revisions, the project file — and it is not written until all of
+            them are.
+          family: boundary-record-unwritten
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#12 (boundary-review)
@@ -145,14 +249,69 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   the table now names a field that does not exist. Same entry should note optionset_test.go was
   deliberately not created and that Tasks 5/6's tests landed in cmd/define/cloze_test.go.
 
+## Round 2 — 2026-09-07T11:41:55-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Keys() and gradedPromptFor both derive from the form; reverting each independently
+reddens a named test. The class-level gap (doc_sync enrollment) is raised separately.
+- BR-2 — addressed — Flagging now takes the rune, so Grade never sees the key; reverting reddens
+TestAStrayDigitAfterAnsweringDoesNotRePick, which names the moved pick.
+- BR-3 — addressed — err and len==0 split; reverting the warn reddens TestAnUnreadableItemsFileIsReported,
+and TestAWordWithNoItemsSaysNothing pins the silent ordinary case.
+- BR-4 — addressed — The 2026-09-07 Log entry records the sweep, the pty transcript, and that the first
+"hand-run" was a programmatic render. See the new lessons.md finding for the sibling.
+- BR-5 — not-addressed — capture.go:149 still omits Form: out.Form; set at two sites, read at zero.
+- BR-6 — not-addressed — cloze.go:207 still copies play_loop.go:975 and still renders above clozeFor's nil check.
+- BR-7 — not-addressed — cloze.go:101 TrimSpace(Answer)=="" is still unreachable behind hasLetterOrDigit.
+- BR-8 — not-addressed — define-learn.md:75 still reads "veto a distractor | #12".
+- BR-9 — not-addressed — No Revisions entry was added; the plan still names ReviewEvent.Flagged.
+
+### Raised
+
+- **BR-10** [Important] `prompt-line-matches-live-keys` Cloze was never enrolled in doc_sync_test's forms slice, so neither of its prompt lines is a README consumer
+  2nd in this family — round 1 fixed the instance, not the class. doc_sync_test.go:56
+  pins Choice and Board and its own comment names the residual ("a form added to play
+  and not added to this slice is not checked here. That half is human"); this diff added
+  the third shipped form and skipped it. Probed: README.md contains neither
+  "1-4 = pick the word, ? = bad question, ..." nor "any key = next word, ? = bad question,
+  ...", and the key table at README.md:187 never lists `?`. Do not hand-paste the lines —
+  enroll every shipped form by construction and make the key table's `?` row derive from
+  play.FlagKey.
+- **BR-11** [Minor] `stale-artifact-restatement` three more restatements now contradict the code, bringing the open family to five
+  3rd in this family. play/session.go:262-264 still says the keystroke reaches the form
+  through Grade and the flag comes out of advance — both false since 0698b27. The plan's
+  Flagging snippet (line 211) still declares Flagged(). README.md:486 says items/ has
+  "Nothing writes this yet" three paragraphs below the README's own "It then writes the
+  practice items". With BR-8 and BR-9 open that is five instances. Fix the rule, not the
+  five: a restatement of a fact the code owns must derive from it or be swept at the
+  boundary that changed it — write the close-time sweep list (issue, plan, project,
+  README, atlas, and the doc comments on every symbol the diff re-shaped).
+- **BR-12** [Minor] `one-place-renders` the OutcomeFlag literal is now built at two call sites, against the rule the surviving drop comment states
+  2nd in this family, and a regression. 0698b27 deleted flaggedBy from advance and
+  open-coded the identical six-line OutcomeFlag at play/session.go:273-279 and :409-415.
+  The deleted block's comment justified the single site ("the one place both mark paths
+  meet ... rather than at two call sites that could drift"), and the drop's version of
+  that comment is still at :498-503. With BR-6 open the rule to state is: one constructor
+  per outcome/render called from N sites, never N constructions — a flagOutcome helper
+  and BR-6's renderInto are the same fix twice.
+- **BR-13** [Minor] `boundary-record-unwritten` lessons.md carries nothing from close-review round 1, whose commit body states the rule
+  2nd in this family. 46a769b added the #12 lessons section; 0698b27 fixed two
+  user-facing bugs and added none, though its own body states the transferable rule
+  ("a programmatic render cannot see a prompt line"; booking a deviation is not running
+  it). AGENTS.md section 4 requires it. The rule covering this and BR-4: a boundary's
+  durable record has more than one home — issue Log, lessons.md when a review found
+  something, the plan's Revisions, the project file — and it is not written until all of
+  them are.
+
 ## Open findings
 
-- **BR-1** [Important] `prompt-line-matches-live-keys` the flag key `?` is named in no on-screen prompt, and the graded prompt contradicts it
-- **BR-2** [Important] `capability-guard-too-wide` the graded branch hands ANY rune to Grade, so a stray digit re-picks the answer on a Cloze
-- **BR-3** [Important] `silent-degradation-unreported` clozeAsk swallows an Items() read error where the adjacent lookup failure is reported
-- **BR-4** [Important] `boundary-record-unwritten` the issue's Log records nothing this boundary did, including the hand-run sitting
 - **BR-5** [Minor] `outcome-field-unread` the flag outcome carries Form and CaptureFlag drops it
 - **BR-6** [Minor] `one-place-renders` clozeAsk duplicates ask's render+marks block, and renders twice for an unusable item
 - **BR-7** [Minor] `dead-guard` usableItem's TrimSpace(Answer) == "" check is unreachable
 - **BR-8** [Minor] `stale-artifact-restatement` the project's model-task table still attributes the distractor veto to #12
 - **BR-9** [Minor] `stale-artifact-restatement` the plan's Integration points table names ReviewEvent.Flagged; the code ships ReviewEvent.Options
+- **BR-10** [Important] `prompt-line-matches-live-keys` Cloze was never enrolled in doc_sync_test's forms slice, so neither of its prompt lines is a README consumer
+- **BR-11** [Minor] `stale-artifact-restatement` three more restatements now contradict the code, bringing the open family to five
+- **BR-12** [Minor] `one-place-renders` the OutcomeFlag literal is now built at two call sites, against the rule the surviving drop comment states
+- **BR-13** [Minor] `boundary-record-unwritten` lessons.md carries nothing from close-review round 1, whose commit body states the rule

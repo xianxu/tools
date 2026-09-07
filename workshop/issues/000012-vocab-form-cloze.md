@@ -257,6 +257,19 @@ WITH the rune so `Grade` never sees it (the previous shape handed every rune to
 unreadable items file is reported rather than swallowed, matching its neighbour
 four lines away.
 
+**Close review round 2: one blocker, and the guard that should have caught it.**
+BR-10 — `Cloze` was never enrolled in `doc_sync_test`'s forms slice, so neither
+of its prompt lines was checked against the README, and neither was in it. The
+guard's own comment had named its residual: *"a form added to play and not added
+to this slice is not checked here. That half is human."* Fixed as the CLASS
+rather than by enrolling one form: `docSyncForms(t)` is now the single source
+both guards read, the graded-line check loops over it via `gradedPromptFor`, and
+`TestEveryFormIsEnrolled` derives the extent by regexing `Form() string { return
+"…" }` out of `play/*.go` — the same move `numRegionKinds` makes for region
+kinds. Mutation-checked: un-enrolling `Cloze` reddens it by name. The two missing
+prompt lines are now in the README. Also took the Minor: `workshop/lessons.md`
+carries this round, per AGENTS.md §4.
+
 ### 2026-08-20
 
 Created as part of the `define-learn` project.

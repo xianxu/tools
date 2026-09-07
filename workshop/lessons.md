@@ -3705,3 +3705,21 @@ distractors from the sitting's pool, so a one-word rig cannot build one and ever
 word falls to the board. The two "still takes 2.3" rows of the selection rule
 passed on a one-word deck — for `#42`'s reason, not the rule's. Size the fixture
 to the path under test.
+
+**A guard that names its own residual has told you where the next bug is.**
+`doc_sync_test.go` checked that every enrolled form's prompt lines appear in the
+README, and its comment said the quiet part: *"a form added to play and not added
+to this slice is not checked here. That half is human."* `Cloze` was then added
+to `play/` and not to the slice — so both of its prompt lines went unchecked, and
+neither was in the README. The close review found it, not the guard.
+
+**A guard whose extent is hand-maintained is half a guard.** The fix is the move
+`numRegionKinds` already makes for region kinds: DERIVE the extent from the code
+rather than restating it. `TestEveryFormIsEnrolled` regexes `func (x *T) Form()
+string { return "…" }` out of `play/*.go` and fails when a declared form is not
+enrolled. When you catch yourself writing "that half is human" in a test comment,
+that sentence is the finding — write the test that closes it instead.
+
+**A boundary's durable record has more than one home**, and it is not written
+until all of them are: the issue `## Log`, `workshop/lessons.md` when a review
+found something (AGENTS.md §4), the plan's `## Revisions`, and the project file.
