@@ -192,6 +192,19 @@ rounds:
           family: cache-key-narrower-than-seam
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-07T13:17:19-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-9
+          disposition: not-addressed
+          note: Idempotence fixes over-derivation, but the predicate still excludes runEditor (replraw.go:253), a wrap site driven directly by ~55 tests; plan:290 and plan:752 still name it `replRaw`.
+          round: 3
+        - id: PQ-10
+          disposition: addressed
+          note: All four restatements now defer to audioKey/audioRecord, and the scoped:true justification matches store/yaml.go:177-178.
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#46 (plan-quality)
@@ -320,7 +333,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   at store/yaml.go:178-179. An implementer working Task 2 in order builds the
   shape the plan already rejected.
 
+## Round 3 — 2026-09-07T13:17:19-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-9 — not-addressed — Idempotence fixes over-derivation, but the predicate still excludes runEditor (replraw.go:253), a wrap site driven directly by ~55 tests; plan:290 and plan:752 still name it `replRaw`.
+- PQ-10 — addressed — All four restatements now defer to audioKey/audioRecord, and the scoped:true justification matches store/yaml.go:177-178.
+
 ## Open findings
 
 - **PQ-9** [Critical] `seam-wrap-site` Task 1's guard derives the wrong set: `run()`'s deps-taking callees are seven non-loops, and the two functions that actually wrap are not among them
-- **PQ-10** [Important] `cache-key-narrower-than-seam` Round 1's key fix was applied at the site the finding named; four other statements of the superseded on-disk shape survive, and Task 2 now contradicts itself

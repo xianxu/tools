@@ -279,32 +279,41 @@ called out here rather than discovered later.
 - Modify: `cmd/define/play_loop.go` (`runPlay` — the missing wrap)
 - Test: `cmd/define/fetch_test.go`, `cmd/define/play_loop_test.go`
 
-**TWO ROUNDS REVERSED THIS TASK, and the second reversal is the interesting
-one.** Round 1 (PQ-3) killed "move the wrap into `realDeps`": no test calls
-`realDeps()`, so every loop test would have run uncached — the exact `#2` I-1
-failure `repl.go:256` records. Round 2 (PQ-9) then killed the replacement: the
-guard derived "loops" as `run()`'s deps-taking callees, which is **seven
-one-shot commands and neither of the functions that actually wrap**. Measured:
-`run` calls `ask`, `defineOnce`, `forgetWord`, `runHarvest`, `runReflect`,
-`applyVoice`, `newDict`, `repl`, `runPlay`; the wraps live in `replLines`
-(`repl.go:257`) and `replRaw` (`replraw.go:264`), and `repl` only dispatches to
-them.
+**THREE ROUNDS REVERSED THIS TASK, and every reversal was the same mistake: a
+statement about WHERE THE WRAP LIVES that was never checked against the code.**
 
-**There is no clean syntactic derivation of "loop", and the last two rounds were
-spent inventing worse and worse ones.** Every candidate over-derives (a
-dispatcher taking `deps` and an `io.Reader` looks identical) or under-derives.
-Nor can the wrap simply move up to `repl`: tests drive `replLines` DIRECTLY
-(`askroute_test.go:31`, `askhighlight_test.go:310`), so hoisting it reproduces
-PQ-3's failure one level down.
+| round | the claim | what the tree says |
+|---|---|---|
+| 1 (PQ-3) | move the wrap to `realDeps()`; tests traverse it | no test calls `realDeps()` — 21 `deps{...}` literals |
+| 2 (PQ-9) | loops are `run()`'s deps-taking callees | that set is seven one-shot commands and neither wrap site |
+| 3 (PQ-9) | the wraps live in `replLines` and `replRaw` | `replraw.go:264` is inside **`runEditor`** (`replraw.go:253`), not `replRaw` |
 
-**So make over-application harmless, and the undecidable set stops mattering.**
-`newCachingAudioSource` becomes IDEMPOTENT — handed a source that already caches,
-it returns it unchanged. Then every function on the path may wrap, a dispatcher
-wrapping costs nothing, and the guard can afford to over-derive because a false
-positive is a no-op rather than a second cache that halves the hit rate.
+Three for three. The third is the one that shows why this cannot be fixed by
+being more careful: `runEditor`'s signature is `(ctx, keys <-chan Key,
+interrupts, d deps, opt options, con console) int` — **no `io.Reader`, no
+`io.Writer`** — so the round-2 predicate ("takes a `deps`, an `io.Reader` and
+writers") excludes it outright, while roughly 55 tests drive it directly
+(`askroute_test.go:40`, `editorloop_test.go:252`, `commandloop_test.go:87`).
+Deleting its wrap would leave the guard green and every raw-loop test on an
+uncached source: `#2` I-1 again, which PQ-3 already rejected once.
 
-That is the shape of the fix: **not a better enumeration, but an operation that
-does not need one.**
+**Two mechanisms, one for each direction of error.**
+
+- **Over-derivation is made HARMLESS** by idempotence: `newCachingAudioSource`
+  handed a source that already caches returns it unchanged. So the predicate can
+  afford to be generous, and the generous predicate is the simple one — **every
+  function taking a `deps` and an `options`**. That is ~8 functions including the
+  one-shot commands, and a one-shot wrapping costs a type assertion and a
+  single-entry map. It also removes the judgement call that produced all three
+  wrong answers: nobody has to decide what a "loop" is.
+- **Under-derivation is made IMPOSSIBLE** by the guard checking itself: it
+  computes the set of functions that wrap TODAY — the enclosing `func` of every
+  non-test `newCachingAudioSource` call — and asserts that set is a SUBSET of its
+  own membership. A wrap site the predicate cannot see is then a failure of the
+  GUARD, reported as one. That is what round 2's Step 5 gestured at and only half
+  implemented.
+
+Together those are the closure: one direction cannot hurt, the other cannot hide.
 
 - [ ] **Step 1: Make the wrap idempotent, and pin it**
 
@@ -312,17 +321,18 @@ does not need one.**
 // newCachingAudioSource is IDEMPOTENT: wrapping a source that already caches
 // returns it unchanged.
 //
-// #46 PQ-9 is why. Which functions are "loops" turns out not to be derivable —
-// a dispatcher and a loop have the same signature, the wraps live one level
-// below the functions run() dispatches to, and tests drive BOTH levels
-// directly. Two rounds of the plan gate went into worse and worse enumerations
-// of that set.
+// #46 PQ-9 is why, and the reason is not efficiency. Which functions are "loops"
+// turned out not to be decidable here — a dispatcher and a loop share a
+// signature, the wraps live below what run() dispatches to, one of them takes
+// neither a Reader nor a Writer, and tests drive every level directly. Three
+// rounds of the plan gate produced three wrong answers to "where does the wrap
+// go".
 //
-// Idempotence dissolves the question. Every function on the path may wrap;
-// wrapping twice is a no-op rather than a second memo in front of the first
-// (which would silently halve the hit rate, and is the bug this would otherwise
-// have traded for). #2's I-1 lesson still holds and is now cheap to honour: the
-// wrap sits in the function that USES the source, wherever tests enter.
+// Idempotence dissolves the question: every entry point may wrap, and wrapping
+// twice is a no-op rather than a second memo in front of the first — which would
+// silently halve the hit rate, and is the bug this would otherwise trade for.
+// #2's I-1 lesson still holds and is now cheap to honour: the wrap sits in the
+// function that USES the source, wherever tests enter.
 func newCachingAudioSource(inner AudioSource) *cachingAudioSource {
 	if c, ok := inner.(*cachingAudioSource); ok {
 		return c
@@ -336,30 +346,44 @@ func newCachingAudioSource(inner AudioSource) *cachingAudioSource {
 func TestWrappingTwiceKeepsOneCache(t *testing.T)
 ```
 
-- [ ] **Step 2: Write the derived guard, now that over-deriving is safe**
+- [ ] **Step 2: Write the guard, with BOTH mechanisms in it**
 
 ```go
-// EVERY FUNCTION THAT READS A STREAM WITH deps WRAPS THE AUDIO SOURCE (#46).
+// EVERY deps-AND-options ENTRY POINT WRAPS THE AUDIO SOURCE (#46 PQ-9).
 //
-// The set is deliberately WIDER than "the loops": it is every function taking a
-// deps, an io.Reader and writers. Some of those are dispatchers that would cache
-// nothing, and that is fine — the wrap is idempotent, so a false positive costs
-// a type assertion. An enumeration that cannot be wrong is worth more than one
-// that is exactly right and hand-maintained (#12 BR-17), and the last two gate
-// rounds were spent proving the exactly-right version cannot be derived.
-func TestEveryStreamReadingEntryPointWrapsTheAudioSource(t *testing.T)
+// Two assertions, one per direction of error, and the second is the one three
+// gate rounds paid for:
+//
+//   - COMPLETENESS: every member wraps. The membership is deliberately wide —
+//     every function taking a deps and an options, one-shot commands included —
+//     because the wrap is idempotent, so a member that caches nothing costs a
+//     type assertion, and nobody has to decide what a "loop" is. Every attempt
+//     to decide that produced a wrong answer.
+//   - NO BLIND SPOT: the set of functions that wrap TODAY (the enclosing func of
+//     every non-test newCachingAudioSource call) must be a SUBSET of the
+//     membership. A wrap site this predicate cannot see is a failure OF THIS
+//     GUARD, and it says so. Round 2's predicate would have failed here:
+//     runEditor (replraw.go:253) wraps and takes neither a Reader nor a Writer.
+func TestEveryEntryPointWrapsTheAudioSource(t *testing.T)
 ```
 
-- [ ] **Step 3: Run it.** Expected: FAIL, naming `runPlay` — the one that never
-      wrapped, which is the whole bug.
+- [ ] **Step 3: Run it.** Expect BOTH halves to have something to say: the
+      completeness half names every member that does not yet wrap, and the
+      blind-spot half is already satisfied (`replLines` and `runEditor` both take
+      a `deps` and an `options`). Do not predict a single name — the round-2 plan
+      predicted "FAIL, naming `runPlay`" and the predicate named four.
 
-- [ ] **Step 4: Add the wrap to `runPlay`**, and to any other member the guard
-      names, carrying `repl.go:256`'s reason across — it is the same reason.
+- [ ] **Step 4: Add the wrap to every member the guard names**, carrying
+      `repl.go:255`'s reason across — it is the same reason, and it is now the
+      same one line everywhere.
 
-- [ ] **Step 5: Sweep the guard in BOTH directions.** Delete `replLines`'s wrap
-      and confirm it is named; restore. Then confirm it does NOT name `ask`,
-      `runReflect` or `forgetWord` — a guard that cannot be shown to exclude
-      anything has not been shown to derive anything.
+- [ ] **Step 5: Sweep BOTH mechanisms, not both directions of one.**
+      (a) Delete `runEditor`'s wrap — completeness must name it. This is the
+      exact site round 2's predicate could not see, so it is the sweep that
+      proves the fix. (b) Delete `replLines`'s wrap — completeness must name it.
+      (c) Narrow the predicate to require an `io.Reader` — the blind-spot half
+      must fail, naming `runEditor`. (d) Confirm the guard is not vacuous: a
+      predicate matching nothing must fail rather than pass.
 
 - [ ] **Step 6: The behavioural pin, at the loop, through the CDN recorder**
 
@@ -485,11 +509,16 @@ as absent; `Forget` takes every file a word owns, hit and verdict together.
 func TestASecondRunReusesTheRecordingOnDisk(t *testing.T) {
 	cdn := newFakeCDN(t)
 	dir := t.TempDir()
-	first := newDiskAudioCache(openStoreIn(t, dir), newCachingAudioSource(cdn.source()))
+	// THE PRODUCTION LAYERING, exactly: memo OUTERMOST over disk over HTTP, so a
+	// repeat within one process never touches the filesystem. The disk layer is
+	// applied where the store is known; the memo is applied at the entry point.
+	// Wiring the test the other way round would make "the line tests exercise is
+	// the line production runs" false in the very task that argues for it.
+	first := newCachingAudioSource(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
 	mustFetch(t, first, "sycophantic")
 	// A NEW decorator over a NEW memo — everything in memory is gone, exactly as
 	// it is between two runs of the binary.
-	second := newDiskAudioCache(openStoreIn(t, dir), newCachingAudioSource(cdn.source()))
+	second := newCachingAudioSource(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
 	mustFetch(t, second, "sycophantic")
 	if got := cdn.requests(); got != 1 {
 		t.Errorf("the CDN saw %d requests across two processes; want 1", got)
@@ -781,3 +810,34 @@ because fixing named sites does not close it. The rule applied here: the
 artifact's key and on-disk shape are stated ONCE, in `audioKey`/`audioRecord`,
 and every other mention references that definition rather than repeating it. The
 target's checklist gains "the plan's own earlier sections" as a sweep row.
+
+### 2026-09-07 — plan-quality round 3: 1 Critical (PQ-9, third disposition)
+
+**PQ-10 addressed. PQ-9 not, and the reason is worth more than the fix.**
+
+The plan said the wraps live in `replLines` and `replRaw`. `replraw.go:264` is
+inside **`runEditor`** (`replraw.go:253`), not `replRaw` (`replraw.go:18`) — and
+the finding's own text had said so. **Three of three statements this plan has
+made about where the wrap lives have been wrong**: round 1's `realDeps`, round
+2's `run()` callees, round 3's `replRaw`.
+
+That is no longer a run of carelessness, it is evidence the question is the wrong
+one. `runEditor` takes `(ctx, keys <-chan Key, interrupts, d deps, opt options,
+con console) int` — no `io.Reader`, no `io.Writer` — so round 2's predicate
+excluded it structurally while ~55 tests drive it directly. Being more careful
+would have produced a fourth answer, not a right one.
+
+**Delta.** The predicate widens to every function taking a `deps` and an
+`options`, which needs no judgement about what a loop is; idempotence makes that
+generosity free. And the guard now **checks itself**: the enclosing functions of
+every non-test `newCachingAudioSource` call must be a subset of its own
+membership, so a wrap site the predicate cannot see is reported as a failure of
+the guard. The sweep exercises both mechanisms rather than both directions of
+one, and step (c) deliberately re-narrows the predicate to prove the blind-spot
+half fires.
+
+**Folded in while here:** Task 3's test wired the disk cache outermost while
+production yields the memo outermost. Both work; they are not the same wiring,
+and this plan leans on "the line tests exercise is the line production runs"
+twice. Production layering — memo over disk over HTTP — is now stated once and
+the test matches it.
