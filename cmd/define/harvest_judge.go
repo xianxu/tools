@@ -174,20 +174,17 @@ func renderVetoPrompt(lang store.Lang, answer, stem, candidate string) llm.Reque
 	return llm.Request{Task: vetoTaskName, System: vetoSystem, Prompt: b.String(), Schema: schema}
 }
 
-// blankOut replaces the answer with a blank, case-insensitively, so the veto
-// judges the QUESTION rather than the sentence with its answer still in it.
+// blankOut hides the answer so the veto judges the QUESTION rather than the
+// sentence with its answer still in it.
 //
-// Deliberately simple: this is a prompt-shaping helper, not #12's renderer.
-// Leaking the answer to the veto would make every candidate look wrong, and
-// #12 owns the real blanking — stem, plural, hyphenation — where it is the
-// learner who must not see it.
-func blankOut(stem, answer string) string {
-	// Through wordIndexIn, the same predicate stemUsesTheWord uses, and it
-	// answers in ORIGINAL-string offsets — see its comment for the panic that
-	// folded offsets caused here.
-	i, n := wordIndexIn(stem, answer)
-	if i < 0 {
-		return stem
-	}
-	return stem[:i] + "___" + stem[i+n:]
-}
+// DELEGATES to blankStem (#12), and the delegation fixed a real defect rather
+// than tidying one. This blanked the FIRST occurrence only and consumed only the
+// answer's own match — so a stem using the word twice showed the judge the
+// answer verbatim, and `keels` became `___s`. #10's plan justified keeping a
+// separate simple helper here on the grounds that a miss "costs the judge some
+// context"; that was wrong. The veto asks whether a candidate would ALSO fit the
+// blank, and a blank that still contains or half-shows the answer is a different
+// question — on a veto #10's Revisions make load-bearing.
+//
+// One blanker, one leak table, one fuzz target.
+func blankOut(stem, answer string) string { return blankStem(stem, answer) }

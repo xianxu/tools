@@ -501,6 +501,29 @@ func wordIndexIn(stem, word string) (int, int) {
 	return -1, 0
 }
 
+// wordRunEnd is where the word-run starting at `at` ends: the other half of
+// wordIndexIn's question.
+//
+// wordIndexIn finds the START of a match and returns the length of the ANSWER,
+// which is not the length of what must be HIDDEN. #10's author prompt permits
+// inflection to follow (`keels`, `runs`), so blanking an answer's own length out
+// of `keels` leaves `___s` — the answer in all but one letter.
+//
+// isWordRune is highlight.go's, which counts apostrophes and hyphens as inside a
+// word, so a possessive and a compound go with the run. That is the conservative
+// reading and it is the right one here: `___-dog` for the answer `hot` narrows
+// the answer to one word, which is a leak in the other direction.
+func wordRunEnd(s string, at int) int {
+	for i := at; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !isWordRune(r) {
+			return i
+		}
+		i += size
+	}
+	return len(s)
+}
+
 // foldedPrefixLen reports how many bytes OF s a case-insensitive match of word
 // occupies at the start of s.
 //
