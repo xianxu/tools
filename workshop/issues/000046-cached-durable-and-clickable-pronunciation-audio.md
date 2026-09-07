@@ -1,11 +1,12 @@
 ---
 id: 000046
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-07
 updated: 2026-09-07
 estimate_hours:
+started: 2026-09-07T12:42:34-07:00
 ---
 
 # cached, durable and clickable pronunciation audio
