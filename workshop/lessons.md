@@ -3792,3 +3792,16 @@ just for the assertion's own words**; and **write the mutation so it still
 compiles** — key on `word + strings.Join(urls[:0], "")` rather than deleting the
 argument — so the run is a real one. Also `go test` serves CACHED results: a
 sweep needs `-count=1` or it may report the pre-mutation verdict.
+
+**A capability asked for by type assertion must be asserted at COMPILE TIME.**
+`#46`'s disk cache is reached through `wordFiler`, an optional-capability
+interface the seam asks for with `if wf, ok := inner.(wordFiler); ok`. The first
+`forWord` returned `*diskAudioCache` instead of `AudioSource` — a signature Go
+accepts everywhere except as an implementation of that interface. So the
+assertion never matched, every fetch bypassed the disk, and **the cache did
+nothing at all** while compiling and running cleanly.
+
+One line prevents the whole family: `var _ wordFiler = (*diskAudioCache)(nil)`.
+Write it beside every type that exists to satisfy an optional interface — the
+failure mode is silence, and silence is what a type assertion returns when a
+signature drifts.

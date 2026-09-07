@@ -176,6 +176,19 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	if d.deck == nil {
 		d.deck = sd.deck
 	}
+	// THE DISK LAYER GOES BENEATH THE MEMO, here, because here is where the
+	// store first exists. Layering: memo → disk → network, so a repeat within a
+	// sitting never touches the filesystem and a repeat across sittings never
+	// touches the network.
+	//
+	// Rebuilt rather than mutated in place: the seam is shared by every copy of
+	// deps, and installing the disk layer into the running memo would leave
+	// entries fetched before the store opened un-filed.
+	if d.deck != nil && d.audio != nil && d.audio.inner != nil {
+		if _, already := d.audio.inner.(*diskAudioCache); !already {
+			d.audio = newAudioSeam(newDiskAudioCache(d.deck, d.audio.inner))
+		}
+	}
 	// nil is the ONE representation of "nothing to highlight" — no second
 	// empty-set stand-in. highlightSpans is where that nil is interpreted; the
 	// only other guards are where a nil would panic (Load, Add).
@@ -1059,7 +1072,7 @@ func utteranceFor(word, entry string, pron store.Lang, opt options) utterance {
 // what lets the caller report which voice was heard from what actually happened
 // rather than from what was requested (#29).
 func speak(ctx context.Context, d deps, u utterance, n int) (from string, err error) {
-	data, from, err := d.audio.Fetch(ctx, u.Candidates())
+	data, from, err := d.audio.FetchFor(ctx, u.Word, u.Candidates())
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", u.Word, err)
 	}

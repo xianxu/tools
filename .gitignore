@@ -34,6 +34,7 @@ events/
 usage/
 facts/
 items/
+audio/
 
 # The runtime FILES, single-sourced in store.RuntimeFiles the same way — a
 # directory list could never cover them, which is how user-model.md (inferred

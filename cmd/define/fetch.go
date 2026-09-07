@@ -125,6 +125,37 @@ func newAudioSeam(inner AudioSource) *audioSeam {
 	return &audioSeam{inner: inner, hits: map[string]cachedAudio{}, misses: map[string]struct{}{}}
 }
 
+// wordFiler is an AudioSource that can file what it caches under a WORD.
+//
+// An optional capability, asked for rather than assumed — the same shape `play`
+// uses for Missed and Flagging, and for the same reason: most sources have no
+// use for a word, and a mandatory parameter would put one in the interface that
+// AudioCandidates and the fake both have to carry for nothing.
+//
+// It exists because the seam's key is the CANDIDATE LIST while a durable cache
+// must also be reachable by the word Forget names. Neither can be derived from
+// the other — parsing a word out of a URL is the driftable second statement of
+// identity AudioKey refuses — so the caller that has both says so.
+type wordFiler interface {
+	AudioSource
+	forWord(word string) AudioSource
+}
+
+// FetchFor is Fetch, told which word the recording belongs to.
+//
+// The memo does not use the word: its key is the candidate list, and two words
+// that somehow produced one candidate list would BE one recording. The word is
+// carried for the layer below, which files what it stores so Forget can find it.
+func (c *audioSeam) FetchFor(ctx context.Context, word string, urls []string) ([]byte, string, error) {
+	if c == nil {
+		return nil, "", ErrNoAudio
+	}
+	if wf, ok := c.inner.(wordFiler); ok {
+		return c.fetch(ctx, wf.forWord(word), urls)
+	}
+	return c.Fetch(ctx, urls)
+}
+
 // Fetch answers from the memo, or from the source once.
 //
 // The KEY is the whole candidate list, because that is what identifies a
@@ -132,7 +163,19 @@ func newAudioSeam(inner AudioSource) *audioSeam {
 // voice and the spellings, so `-locale gb` and `-locale us` are different keys
 // for one word — and anything narrower would serve the wrong recording.
 func (c *audioSeam) Fetch(ctx context.Context, urls []string) ([]byte, string, error) {
-	if c == nil || c.inner == nil {
+	if c == nil {
+		return nil, "", ErrNoAudio
+	}
+	return c.fetch(ctx, c.inner, urls)
+}
+
+// fetch is the memo itself, over whichever source the caller resolved.
+//
+// The source is a PARAMETER so FetchFor can hand down a word-filed view without
+// a second memo — one map, one lock, one set of hits, however the inner was
+// resolved. Two memos would be two answers to "have we fetched this".
+func (c *audioSeam) fetch(ctx context.Context, inner AudioSource, urls []string) ([]byte, string, error) {
+	if inner == nil {
 		return nil, "", ErrNoAudio
 	}
 	key := strings.Join(urls, "\n")
@@ -148,7 +191,7 @@ func (c *audioSeam) Fetch(ctx context.Context, urls []string) ([]byte, string, e
 		return nil, "", ErrNoAudio
 	}
 
-	data, from, err := c.inner.Fetch(ctx, urls)
+	data, from, err := inner.Fetch(ctx, urls)
 	if err != nil {
 		if errors.Is(err, ErrNoAudio) {
 			c.mu.Lock()
