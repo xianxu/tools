@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-07
 updated: 2026-09-07
-estimate_hours: 5.29
+estimate_hours: 7.02
 started: 2026-09-07T12:42:34-07:00
 ---
 
@@ -161,7 +161,7 @@ blocks use the same primitives on the same codebase.
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
-item: issue-spec               design=0.45 impl=0.08
+item: issue-spec               design=0.60 impl=0.10
 item: cross-cutting-refactor   design=0.06 impl=0.24
 item: smaller-go-module        design=0.02 impl=0.12
 item: greenfield-go-module     design=0.06 impl=0.28
@@ -169,17 +169,22 @@ item: cross-cutting-refactor   design=0.04 impl=0.20
 item: smaller-go-module        design=0.02 impl=0.14
 item: greenfield-go-module     design=0.05 impl=0.24
 item: smaller-go-module        design=0.02 impl=0.12
+item: milestone-review         design=0.0  impl=0.45
 item: milestone-review         design=0.0  impl=0.60
 item: greenfield-go-module     design=0.06 impl=0.28
 item: smaller-go-module        design=0.03 impl=0.14
-item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.04 impl=0.14
 item: smaller-go-module        design=0.03 impl=0.14
 item: cross-cutting-refactor   design=0.05 impl=0.24
 item: atlas-docs               design=0.03 impl=0.06
 item: smaller-go-module        design=0.0  impl=0.20
+item: smaller-go-module        design=0.0  impl=0.20
+item: smaller-go-module        design=0.0  impl=0.20
+item: ux-rename-iteration      design=0.0  impl=0.20
+item: milestone-review         design=0.0  impl=0.60
 item: milestone-review         design=0.0  impl=0.85
 design-buffer: 0.15
-total: 5.29
+total: 7.02
 ```
 
 **What each row is**, in plan order, so the derivation is checkable rather than
@@ -187,7 +192,7 @@ asserted:
 
 | row | the work |
 |---|---|
-| `issue-spec` 0.45/0.08 | the design carrier: the Spec, an operator scope widening mid-plan, and FOUR plan-quality rounds. Above `#12`'s 0.35 and below `#10`'s 0.50 — the rounds were expensive (three of them were one finding, re-answered) but the Spec itself was short, and the widening made the design simpler rather than larger. |
+| `issue-spec` 0.60/0.10 | the design carrier: the Spec, an operator scope widening mid-plan, and FOUR plan-quality rounds. **Above** `#10`'s 0.50 — 4 rounds against its 2, an 861-line plan against its 693, and a widening neither neighbour had. |
 | `cross-cutting-refactor` 0.06/0.24 | `deps.audio` becomes `*audioSeam`. Mechanical but wide: the compiler names every construction site, including the test literals. |
 | `smaller-go-module` 0.02/0.12 | the memo logic relocated into `audioSeam` — existing code, existing tests, new home. |
 | `greenfield-go-module` 0.06/0.28 | `store/audio.go`: `audioKey`'s digest, `audioRecord`, the TTL. |
@@ -195,24 +200,40 @@ asserted:
 | `smaller-go-module` 0.02/0.14 | the `storetest` conformance rows, so `Mem` and YAML are both held. |
 | `greenfield-go-module` 0.05/0.24 | `diskAudioCache`. |
 | `smaller-go-module` 0.02/0.12 | the degrade-never-fail paths and the `--forget` end-to-end. |
-| `milestone-review` 0.0/0.60 | M1's boundary. Below M2's, because M1 changes one seam and M2 changes what every write site does. |
+| `milestone-review` 0.0/0.45 + 0.0/0.60 | **M1's boundary, priced as run + remediation** — the house convention `#12` and `#42` set, which the first draft misread as one row per boundary. Below the close's pair, because M1 changes one seam where M2 changes what every write site does. |
 | `greenfield-go-module` 0.06/0.28 | `deckSpans` — the coordinate layer, and the escape-awareness that is the design's load-bearing row. |
 | `smaller-go-module` 0.03/0.14 | `RegionWord`: the kind, `playRegion`'s row, `String`/`identifier`, the atlas. |
-| `greenfield-go-module` 0.05/0.24 | `mergeRegions` and the disjointness property — `markClickable`'s unwritten precondition, written down. |
+| `smaller-go-module` 0.04/0.14 | `mergeRegions` and the disjointness property. A sort-and-drop helper plus one property test — `#12`'s `Flagging` shape, not `diskAudioCache`'s; the first draft priced it as greenfield. |
 | `smaller-go-module` 0.03/0.14 | `surface`/`surfaceOf` and `TestEveryFormHasASurface`. |
 | `cross-cutting-refactor` 0.05/0.24 | the write door: three call sites, and colouring outside the embedded render. |
 | `atlas-docs` 0.03/0.06 | README's key table and click sentence; the atlas. |
-| `smaller-go-module` 0.0/0.20 | the mutation sweeps both milestones commit to. |
-| `milestone-review` 0.0/0.85 | the close review. `#12` booked 0.85 here and spent four rounds; this issue's plan gate already took four, which is evidence about the issue rather than about the plan. |
+| three × `smaller-go-module` 0.0/0.20 | **three DISTINCT mutation sweeps**, not one: revert `deckSpans`' escape-awareness; append an overlapping region and confirm the golden loses an underline; turn the surface rule off. `#12` booked 0.20 for a single sweep. |
+| `ux-rename-iteration` 0.0/0.20 | **the pty hand-run.** M2 is entirely about what a person SEES — colour on or off, which words are click targets — and this issue was born from exactly such a sitting. Both neighbours added this row on review; `#12`'s deviation 3 records that pricing it at nothing is the omission `#10` had already made. |
+| `milestone-review` 0.0/0.60 + 0.0/0.85 | the close boundary, run + remediation. This is `#12`'s pair for one boundary, which is the right comparable for M2's. |
 
-**Reconciliation.** Σdesign = 0.97, Σimpl = 4.17.
-0.97 × 1.15 + 4.17 × 1.0 = **5.29**.
+**Reconciliation.** Σdesign = 1.11, Σimpl = 5.74.
+1.11 × 1.15 + 5.74 × 1.0 = **7.02**.
 
-**Read against the neighbours:** `#12` estimated 4.54 and measured 3.70; `#10`
-estimated 7.94 and measured 12.77. This sits between them, which matches the
-shape — two milestones like `#10`, but M1 is mostly a type change the compiler
-drives and M2 is one new pure function plus wiring, where `#10` was five
-greenfield modules and a live model loop.
+**Trailing ledger read**, which is better evidence than a bracket between two
+neighbours. This repo's rows: `#42` 0.36, `#44` 0.47, `#10` 0.62, `#12` 1.23 —
+median ≈ 0.55, which at 7.02 would predict roughly 13h actual. **That gap is not
+a reason to inflate the primitives.** Per the model's own unit note it is the
+within-session parallelism and overlap that `#117`'s ledger exists to instrument,
+and multiplying the rows to meet it would destroy the only signal the ledger
+carries. The estimate is the derivation; the ratio is the measurement; the two
+are supposed to differ and be recorded.
+
+**Deviations from the neighbours, named rather than absorbed:**
+
+1. **`issue-spec` above `#10`'s**, where both neighbours' rows sat at or below
+   0.50. Four plan-quality rounds, three of them re-answering ONE finding, plus a
+   mid-plan scope widening. This row is partly retrospective — the rounds are in
+   `git log` — so it is checkable rather than predicted.
+2. **Two `milestone-review` PAIRS**, one per boundary. The first draft booked one
+   row per boundary and cited `#12`'s 0.85 as a single-boundary comparable; 0.85
+   was `#12`'s remediation half, with 0.60 for the run.
+3. **Three sweep rows.** The plan commits to three distinct mutation sweeps and
+   the first draft priced them as one.
 
 ## Done when
 
