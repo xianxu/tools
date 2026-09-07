@@ -4314,18 +4314,23 @@ func TestAClozePromptOffersNoHeadwordToClick(t *testing.T) {
 	}
 }
 
-// THE M1 REGRESSION, stated where a learner would meet it (#46).
+// ONE WORD COSTS ONE FETCH, however often it is played (#46).
 //
-// A sitting shows the same handful of words over and over, so it is the loop
-// where a missing memo costs the most — and it was the loop that had none.
-// `replLines` and `runEditor` each wrapped the source for themselves; `runPlay`
-// never did, so every replay re-fetched, and a word the CDN has no recording for
-// cost four candidate requests EVERY time.
+// NAMED FOR WHAT IT ASSERTS. It was called TestASittingFetchesARecordingOnce and
+// the boundary review pointed out that it never calls runPlay — the M1
+// regression was "runPlay forgot to wrap the source", and a test that does not
+// enter runPlay cannot pin that.
+//
+// The right response turned out not to be a loop-level test, because the failure
+// mode NO LONGER EXISTS: with deps.audio a *audioSeam there is no wrap line in
+// runPlay to forget, and `isTerminal(stdout)` is a real syscall with no seam, so
+// a sitting cannot be driven in-process anyway. What can still regress is the
+// WIRING — TestWithStorePutsTheDiskCacheUnderTheMemo, which the same review
+// found unpinned — and the memo itself, which is this.
 //
 // Asserted through the CDN's own request recorder rather than by inspecting the
-// seam: what matters is that no second request leaves the process, which is the
-// thing a `*audioSeam` field now guarantees by construction.
-func TestASittingFetchesARecordingOnce(t *testing.T) {
+// seam: what matters is that no second request leaves the process.
+func TestOneWordCostsOneFetchHoweverOftenItIsPlayed(t *testing.T) {
 	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("ID3audio")})
 	seam := newAudioSeam(cdn.source())
 	urls := cdn.urls("/a.mp3")
@@ -4337,7 +4342,7 @@ func TestASittingFetchesARecordingOnce(t *testing.T) {
 		}
 	}
 	if got := cdn.Requested(); len(got) != 1 {
-		t.Errorf("a sitting made %d requests for one word, want 1: %v", len(got), got)
+		t.Errorf("one word cost %d requests, want 1: %v", len(got), got)
 	}
 
 	// AND THE SEAM IS NOT SOMETHING A CALLER CAN OPT OUT OF. deps.audio is a

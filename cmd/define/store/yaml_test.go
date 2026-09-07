@@ -721,6 +721,23 @@ func TestPerWordDirsCoverEveryRuntimeDir(t *testing.T) {
 			t.Errorf("%q declares scoped=%v but builds the path %q; a per-word verb is scoped "+
 				"the same way the surface it touches is", name, d.Scoped, rel)
 		}
+		// THE THIRD AXIS (#46) is pinned BEHAVIOURALLY, not here, and the
+		// distinction is worth stating because the obvious test is a trap.
+		//
+		// `many` says a word owns SEVERAL files here, so Forget globs its prefix
+		// instead of removing one name. The obvious guard — plant files and see
+		// what Forget takes — is SELF-FULFILLING: the planted names have to come
+		// from somewhere, and taking them from the declaration under test makes
+		// the assertion true by construction. Flipping audio's `many` to false
+		// then leaves it green, which I confirmed by running it.
+		//
+		// What knows the naming convention is the code that WRITES it. So the pin
+		// is storetest's "forget takes every recording a word owns", which goes
+		// through SetAudio and Audio: flipping `many` reddens it by name, on both
+		// twins. This guard's job is the classification's COMPLETENESS, and the
+		// third axis reaches it by being reported at all — a helper that dropped
+		// it would fail to compile here.
+		_ = d.Many
 	}
 
 	for _, d := range store.RuntimeDirs {
@@ -734,5 +751,44 @@ func TestPerWordDirsCoverEveryRuntimeDir(t *testing.T) {
 				"perWordDirs, so forgetting a word removes what it owns, or classify it as "+
 				"history beside events/ and say why.", d)
 		}
+	}
+}
+
+// A LANGUAGE SWITCH MUST NOT STRAND A RECORDING (#46 BR-2).
+//
+// The first version scoped audio/ per language, like facts/ and items/. So a
+// recording fetched while the session was English landed under audio/en, `/lang
+// es` made it unreachable, and `--forget` cleared audio/es, reported success and
+// left the file on disk — #10's BR-45 exactly, one directory further on.
+//
+// Flat is also the HONEST shape rather than merely the safe one: a language
+// shelf would be a second statement of which voice a recording is for, and
+// AudioKey's digest over the candidate list already carries voice and locale.
+//
+// Mem cannot reproduce a language switch — it has no shelves — so this lives
+// here rather than in storetest.
+func TestForgetTakesARecordingFetchedInAnotherLanguage(t *testing.T) {
+	dir := t.TempDir()
+	en := store.NewYAML(dir, store.Lang("en"), nil)
+	if err := en.Upsert(store.Word{Text: "red"}); err != nil {
+		t.Fatal(err)
+	}
+	k := store.NewAudioKey("red", []string{"https://cdn/red_en_us_1.mp3"})
+	if err := en.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The session switches language, exactly as /lang does.
+	es := store.NewYAML(dir, store.Lang("es"), nil)
+	if _, err := es.Forget("red"); err != nil {
+		t.Fatalf("Forget: %v", err)
+	}
+	data, _, err := en.Audio(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != 0 {
+		t.Error("forgetting in another language left the recording on disk, " +
+			"and reported success — the word kept the material that made it worth forgetting")
 	}
 }

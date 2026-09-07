@@ -76,7 +76,6 @@ handed the wrong thing.
 | `audioKey` | `cmd/define/store/audio.go` | new |
 | `audioRecord` | `cmd/define/store/audio.go` | new |
 | `perWordDir` | `cmd/define/store/yaml.go` | modified |
-| `RenderOpts` | `cmd/define/render.go` | modified |
 
 - **`deckSpan`** — one deck word located in RENDERED text: `{Line, Col, Width,
   Word, Text}`. Coordinates are display cells and line indices, the units
@@ -204,11 +203,14 @@ handed the wrong thing.
   shape, which this bullet deliberately does not restate. `Forget` globs the
   word's prefix and removes the set.
 
-- **`RenderOpts`** *(modified)* — no field changes; `Vocab` STAYS. `Render` keeps
-  colouring the entry itself, because it colours with a per-region BASE style
-  (amber part-of-speech labels, the `p.ex` example style) and ANSI does not nest
-  — a flat pass at the write door cannot reproduce those resume rules. What
-  changes is that the write door now colours the text OUTSIDE the render.
+**`RenderOpts` is UNCHANGED, and that is a decision rather than an omission.**
+`Render` keeps colouring the entry itself, because it colours with a per-region
+BASE style (amber part-of-speech labels, the `p.ex` example style) and ANSI does
+not nest — a flat pass at the write door cannot reproduce those resume rules. So
+the write door colours the text OUTSIDE the render instead, locating the boundary
+rather than assuming it. The first draft listed this type as `modified`, which
+`TestPlanTableStatusMatchesTheChangeWindow` correctly called work that did not
+happen.
 
 **Test surface.** Every entity above is PURE and gets a colocated unit test that
 runs with no IO and no fake: `deckwords_test.go`, `store/audio_test.go`. The one
@@ -228,7 +230,7 @@ exception is `perWordDir`, whose test is the existing
   recordings under the store's directory.
   - **Injected into:** nothing pure; it is the outermost decorator on
     `deps.audio`, so every existing consumer is unchanged.
-  - **A DECORATOR, LIKE ITS SIBLING.** the decorator it replaced's doc comment records
+  - **A DECORATOR, LIKE ITS SIBLING.** The memo's own doc comment records
     why the memo is a decorator rather than a map inside the REPL loop: "the
     existing `fakeCDN` request recorder is the assertion that a replay costs no
     second request — no bespoke test scaffolding". That argument carries over
@@ -361,7 +363,7 @@ would be the fifth wrong statement of this set.
       compiler, instead of every time someone adds an entry point.
 
 - [ ] **Step 3: Delete the wraps.** `repl.go:257` and `replraw.go:264` go, along
-      with the decorator it replaced as a decorator — its memo logic moves into
+      along with the decorator itself — its memo logic moves into
       `audioSeam` unchanged, including the hits/misses split and the
       `ErrNoAudio`-vs-`ErrFetchFailed` taxonomy, which is the single source of
       what "permanent" means and is not re-decided here.
@@ -381,13 +383,24 @@ func TestASecondFetchOfOneKeyDoesNotReachTheSource(t *testing.T)
 the behaviour is what the learner meets and the type is only how it is
 guaranteed.
 
-- [ ] **Step 6: The behavioural pin, at the loop, through the CDN recorder**
+- [ ] **Step 6: The behavioural pins — the memo, and the WIRING**
 
 ```go
-// The regression itself, stated where a learner would meet it: a sitting that
-// shows the same word twice fetches it once.
-func TestASittingFetchesARecordingOnce(t *testing.T) { /* fakeCDN + runPlay, two questions on one word */ }
+// One word costs one fetch, however often it is played.
+func TestOneWordCostsOneFetchHoweverOftenItIsPlayed(t *testing.T)
+
+// And something USES it: build deps the way a loop does, run withStore, and
+// require a fetch to reach the disk. The boundary review found that deleting the
+// whole production wiring left the suite green, because every disk test built
+// the layering by hand.
+func TestWithStorePutsTheDiskCacheUnderTheMemo(t *testing.T)
 ```
+
+**NOT a test at the loop.** The obvious name would put "a sitting" in it,
+and it is the wrong test twice over: `isTerminal(stdout)` is a real syscall with
+no seam, so a sitting cannot be driven in-process; and with `deps.audio` a
+`*audioSeam` there is no wrap line in `runPlay` to forget, so the loop-specific
+failure mode no longer exists. What can still regress is the wiring.
 
 - [ ] **Step 7: Commit**
 
@@ -442,7 +455,7 @@ AND a stale verdict, and nothing of it survives.
 
 The filename is `<slug>--<digest>` where the digest is over the candidate list
 `Fetch` is actually given — `strings.Join(urls, "\n")`, the very string
-the decorator it replaced keys its memo on. Two things fall out and both are the
+the seam keys its memo on. Two things fall out and both are the
 point: `-locale gb` and `-locale us` are different files rather than one wrong
 one, and `Forget` still globs `<slug>--*` because the word is what the file is
 filed under.
@@ -526,7 +539,7 @@ func TestASecondRunReusesTheRecordingOnDisk(t *testing.T) {
 - [ ] **Step 3: Implement the decorator.** Read-through on `Fetch`; write the
       bytes on a hit; write a dated verdict on `ErrNoAudio`; leave
       `ErrFetchFailed` alone, because a transient outage must not be recorded as
-      a permanent absence — the taxonomy the decorator it replaced already documents
+      a permanent absence — the taxonomy `fetch.go` already documents
       is the single source of that distinction and this derives from it.
 - [ ] **Step 4: The verdict half of the same test** — an unrecorded word costs
       four candidate requests once, and zero on the second process.
@@ -703,7 +716,8 @@ Automated, and each row names the thing it would catch:
 
 1. `go test ./...`, `go vet ./...` under default, `pty` and `conformance` tags,
    `gofmt -l` clean.
-2. `TestASittingFetchesARecordingOnce` — the M1 regression at the loop.
+2. `TestOneWordCostsOneFetchHoweverOftenItIsPlayed` and
+   `TestWithStorePutsTheDiskCacheUnderTheMemo` — the memo, and that something uses it.
 3. `TestASecondRunReusesTheRecordingOnDisk` — two processes, one request.
 4. `TestPerWordDirsCoverEveryRuntimeDir` — `Forget` takes the audio.
 5. `TestASpanWalkSkipsEscapeSequences` — the design's load-bearing row.
@@ -785,7 +799,7 @@ would reproduce PQ-3's failure one level down (`askroute_test.go:31` calls
 `replLines`).
 
 **So the fix is not a better enumeration but an operation that does not need
-one.** the wrap that used to be remembered becomes idempotent, over-application becomes a
+one.** The wrap becomes idempotent, over-application becomes a
 no-op, and the guard is then free to over-derive: every function taking a `deps`,
 an `io.Reader` and writers must wrap. A false positive costs a type assertion. An
 enumeration that cannot be wrong beats one that is exactly right and
@@ -826,7 +840,7 @@ would have produced a fourth answer, not a right one.
 **Delta.** The predicate widens to every function taking a `deps` and an
 `options`, which needs no judgement about what a loop is; idempotence makes that
 generosity free. And the guard now **checks itself**: the enclosing functions of
-every non-test the wrap that used to be remembered call must be a subset of its own
+every non-test wrap call must be a subset of its own
 membership, so a wrap site the predicate cannot see is reported as a failure of
 the guard. The sweep exercises both mechanisms rather than both directions of
 one, and step (c) deliberately re-narrows the predicate to prove the blind-spot

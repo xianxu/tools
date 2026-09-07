@@ -177,13 +177,21 @@ func (y *YAML) usageDir() string { return filepath.Join(y.dir, RuntimeDirs[2]) }
 func (y *YAML) factsDir() string { return filepath.Join(y.dir, RuntimeDirs[3], string(y.lang)) }
 func (y *YAML) itemsDir() string { return filepath.Join(y.dir, RuntimeDirs[4], string(y.lang)) }
 
-// audioDir holds cached recordings, per language like its siblings.
+// audioDir holds cached recordings, FLAT — not per language.
 //
-// The language here is a SHELF, not the identity — a recording is identified by
-// the candidate list it was fetched for (see audioKey), which carries the voice
-// and the locale. Scoping the directory the way factsDir and itemsDir do keeps
-// Forget's two axes honest without pretending the path is the key.
-func (y *YAML) audioDir() string { return filepath.Join(y.dir, RuntimeDirs[5], string(y.lang)) }
+// The first draft scoped it like factsDir and itemsDir, and the boundary review
+// found the bug that makes: a recording fetched while the session was English
+// lands under audio/en, and `/lang es` then makes it unreachable — `--forget`
+// clears audio/es, reports success, and the file survives. That is #10's BR-45
+// exactly, one directory further on.
+//
+// FLAT IS ALSO THE HONEST SHAPE, not merely the safe one. A language shelf would
+// be a SECOND statement of which voice a recording is for, and the first one —
+// AudioKey's digest over the candidate list — already carries the voice and the
+// locale. Two statements of one fact is the drift this repo keeps paying for. The
+// same reasoning usage/ records: per-word, flat, and forgetting is therefore
+// cross-language, which for a cache costs a refetch rather than lost work.
+func (y *YAML) audioDir() string { return filepath.Join(y.dir, RuntimeDirs[5]) }
 
 // SetUserModel writes the learner model.
 //
@@ -711,10 +719,12 @@ func (y *YAML) perWordDirs() []perWordDir {
 		{path: y.usageDir(), scoped: false},
 		{path: y.factsDir(), scoped: true},
 		{path: y.itemsDir(), scoped: true},
-		// audio/ is the first directory where a word owns MORE THAN ONE file:
-		// one per voice, plus a blob beside each record. So it is globbed by
-		// prefix rather than removed by name — see `many`.
-		{path: y.audioDir(), scoped: true, many: true},
+		// audio/ is per-word, FLAT, and MANY — the first directory to need all
+		// three answers. Flat because the recording's identity is the candidate
+		// list, not a shelf (see audioDir); many because a word owns one file per
+		// voice plus a blob beside each record, so it is globbed by prefix rather
+		// than removed by name.
+		{path: y.audioDir(), scoped: false, many: true},
 	}
 }
 
@@ -766,7 +776,7 @@ func (y *YAML) Forget(key string) (bool, error) {
 	var removed bool
 	for i, dir := range y.perWordDirs() {
 		if dir.many {
-			if err := removeByPrefix(dir.path, Slug(k)); err != nil {
+			if err := removeWordTree(dir.path, Slug(k)); err != nil {
 				return false, err
 			}
 			continue
@@ -786,36 +796,38 @@ func (y *YAML) Forget(key string) (bool, error) {
 	return removed, nil
 }
 
-// removeByPrefix deletes every file a word owns in a `many` directory.
+// removeWordTree deletes the directory a word owns in a `many` directory.
 //
-// The separator is what makes this safe: files are named `<slug>--<digest>.<ext>`
-// and the prefix matched is `<slug>--`, so forgetting `red` cannot reach
-// `redact--…`. Matching `<slug>` alone would, which is the bug this line exists
-// to not have.
+// AN EXACT NAME, not a prefix. The first version globbed `<slug>--` and claimed
+// a slug could not contain "--"; `re-` slugs to `re--ddf427`, so forgetting `re`
+// took a different word's recordings. A directory name has no such ambiguity.
 //
 // A missing directory is not an error, exactly as a missing file is not: most
 // words have no cached recording.
-func removeByPrefix(dir, slug string) error {
+func removeWordTree(dir, slug string) error {
 	if slug == "" {
 		return nil
 	}
-	entries, err := os.ReadDir(dir)
+	return os.RemoveAll(filepath.Join(dir, slug))
+}
+
+// readCapped reads a file, refusing anything past max.
+//
+// The network path caps at maxAudioBytes because "anything far larger is not a
+// pronunciation"; a file on disk deserves the same ceiling and did not have one.
+// The directory is documented as inspectable and hand-editable, so its contents
+// are untrusted input like any other (ARCH-SECURE).
+func readCapped(path string, max int64) ([]byte, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
+		return nil, err
 	}
-	prefix := slug + audioNameSep
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
-			continue
-		}
-		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil && !os.IsNotExist(err) {
-			return err
-		}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, max))
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	return b, nil
 }
 
 // audioRecordFile is the YAML beside the bytes.
@@ -834,19 +846,19 @@ func (y *YAML) Audio(k AudioKey) ([]byte, AudioRecord, error) {
 	if !k.ok() {
 		return nil, AudioRecord{}, nil
 	}
-	b, err := os.ReadFile(filepath.Join(y.audioDir(), k.name()+".yaml"))
+	b, err := os.ReadFile(filepath.Join(y.audioDir(), k.dir(), k.stem()+".yaml"))
 	if err != nil {
 		return nil, AudioRecord{}, nil
 	}
 	var f audioRecordFile
 	if err := yaml.Unmarshal(b, &f); err != nil {
-		y.warnf("skipping unreadable audio record %s: %v", k.name(), err)
+		y.warnf("skipping unreadable audio record %s/%s: %v", k.dir(), k.stem(), err)
 		return nil, AudioRecord{}, nil
 	}
 	if f.Record.Missing {
 		return nil, f.Record, nil
 	}
-	data, err := os.ReadFile(filepath.Join(y.audioDir(), k.name()+audioBlobExt))
+	data, err := readCapped(filepath.Join(y.audioDir(), k.dir(), k.stem()+audioBlobExt), maxAudioBlobBytes)
 	if err != nil {
 		// A record naming a blob that is gone is not a hit. Reporting the record
 		// alone would serve an EMPTY recording, which plays as silence and reads
@@ -855,6 +867,12 @@ func (y *YAML) Audio(k AudioKey) ([]byte, AudioRecord, error) {
 	}
 	return data, f.Record, nil
 }
+
+// maxAudioBlobBytes caps a cached recording read back off disk, mirroring the
+// ceiling fetch.go puts on the network path — "anything far larger is not a
+// pronunciation". The two are the same number stated where each is enforced;
+// the store cannot import main.
+const maxAudioBlobBytes = 4 << 20
 
 // audioBlobExt is what the bytes are called. The CDN serves mp3 and the
 // extension is for a human browsing the directory, which the README documents as
@@ -874,17 +892,25 @@ func (y *YAML) SetAudio(k AudioKey, data []byte, rec AudioRecord) error {
 	if !k.ok() {
 		return nil
 	}
-	if err := os.MkdirAll(y.audioDir(), 0o755); err != nil {
+	dir := filepath.Join(y.audioDir(), k.dir())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if !rec.Missing {
-		if err := writeBytesAtomic(filepath.Join(y.audioDir(), k.name()+audioBlobExt), data); err != nil {
+	blob := filepath.Join(dir, k.stem()+audioBlobExt)
+	if rec.Missing {
+		// A VERDICT REPLACES A RECORDING. Skipping the blob write would leave a
+		// stale .mp3 beside a record saying there is none — and Audio reads the
+		// record first, so the bytes would be unreachable debris that Forget
+		// still has to carry.
+		if err := os.Remove(blob); err != nil && !os.IsNotExist(err) {
 			return err
 		}
+	} else if err := writeBytesAtomic(blob, data); err != nil {
+		return err
 	}
 	b, err := yaml.Marshal(audioRecordFile{Record: rec})
 	if err != nil {
 		return err
 	}
-	return writeBytesAtomic(filepath.Join(y.audioDir(), k.name()+".yaml"), b)
+	return writeBytesAtomic(filepath.Join(dir, k.stem()+".yaml"), b)
 }

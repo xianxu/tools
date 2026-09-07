@@ -162,7 +162,28 @@ func TestEveryFormHasASurface(t *testing.T) {
 
 // A cloze's options are CLICKABLE BUT NOT COLOURED — the operator's rule, and
 // the case it was asked for.
+//
+// BOTH HALVES. The first version asserted only the colour half, so a change that
+// removed every click target from a cloze would have left it green — and
+// "clickable" is the half the operator asked for first.
 func TestClozeOptionsAreClickableButNotColoured(t *testing.T) {
+	// The click half, through the write door a sitting actually uses.
+	rw := &recordingRegionWriter{}
+	prompt := "\nThe Times dismissed it as ___.\n\n1  keel\n2  mesa\n"
+	writeWords(rw, prompt, nil, deckOf("keel", "mesa"), true, surfaceOf("cloze"), "")
+	if len(rw.regions) != 2 {
+		t.Errorf("a cloze prompt offered %d click targets, want 2: %+v", len(rw.regions), rw.regions)
+	}
+	for _, r := range rw.regions {
+		if r.Kind != RegionWord {
+			t.Errorf("region %+v is not a deck word", r)
+		}
+	}
+	if strings.Contains(rw.String(), knownOn) {
+		t.Errorf("the cloze prompt was coloured: %q", rw.String())
+	}
+
+	// And the rule itself.
 	if surfaceOf("cloze").admitsColour() {
 		t.Error("a cloze admits colour; all four options are deck words, so every one would go green")
 	}
@@ -238,4 +259,94 @@ type recordingRegionWriter struct {
 func (w *recordingRegionWriter) WriteRegions(text string, rs []Region) {
 	w.WriteString(text)
 	w.regions = append(w.regions, rs...)
+}
+
+// EVERY DECK WORD IS CLICKABLE WHEREVER IT IS WRITTEN, on every surface the
+// write door serves. Driven through writeWords rather than through the rule, so
+// it fails if a call site stops passing the vocabulary.
+func TestEveryDeckWordInASittingIsClickable(t *testing.T) {
+	v := deckOf("keel", "mesa", "sycophantic")
+	for _, tc := range []struct {
+		name string
+		text string
+		sf   surface
+		want int
+	}{
+		{"a cloze prompt", "\nthe ___ shifts\n\n1  keel\n2  mesa\n", surfaceDeck, 2},
+		{"a meaning prompt", "\nsycophantic\n\n1  a keel is a thing\n", surfaceProse, 2},
+		// EXACT TOKENS. `keels` is not `keel` to the matcher — isWordRune
+		// tokenises whole words and does no inflection — so a fixture using
+		// the inflected form would assert the wrong count for the right
+		// reason.
+		{"a reveal", "\nThe keel shifts sharply.\n\nyou chose\n1  mesa\n", surfaceProse, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rw := &recordingRegionWriter{}
+			writeWords(rw, tc.text, nil, v, true, tc.sf, "")
+			if len(rw.regions) != tc.want {
+				t.Errorf("got %d click targets, want %d: %+v", len(rw.regions), tc.want, rw.regions)
+			}
+		})
+	}
+}
+
+// A MEANING QUESTION'S GLOSSES ARE COLOURED, which is the contrast that makes
+// the cloze rule a rule rather than a special case: 2.3's options are
+// DEFINITIONS, prose in which a word you know is a discovery.
+func TestChoiceOptionGlossesAreColoured(t *testing.T) {
+	var out strings.Builder
+	writeWords(&out, "\nsycophantic\n\n1  a part of a keel, in a boat\n",
+		nil, deckOf("keel"), true, surfaceOf("meaning"), "")
+	if !strings.Contains(out.String(), knownOn+"keel") {
+		t.Errorf("a gloss was not coloured: %q", out.String())
+	}
+}
+
+// A BOARD'S CELLS CARRY NO DECK COLOUR even though every one is a deck word.
+//
+// NOT A VACUOUS PIN. A board renders through boardFooter into the FOOTER and
+// never reaches the write door, so "the board is not coloured" is true today for
+// a reason that has nothing to do with the rule. This asserts the reachable
+// thing instead — that routing a board's cells through the door still produces
+// no colour — which is what reddens the day someone wires the footer through it.
+func TestBoardCellsCarryNoDeckColourEvenWhenTheyAreDeckWords(t *testing.T) {
+	var out strings.Builder
+	writeWords(&out, "0  keel   1  mesa\n", nil, deckOf("keel", "mesa"), true, surfaceOf("board"), "")
+	if strings.Contains(out.String(), knownOn) {
+		t.Errorf("a board's cells were coloured: %q — every cell is a deck word, "+
+			"so colour marks everything and distinguishes nothing", out.String())
+	}
+}
+
+// THE EMBEDDED RENDER IS NOT RE-COLOURED.
+//
+// Render colours the entry with a per-region BASE style (amber part-of-speech
+// labels, the example style) and ANSI DOES NOT NEST — a second flat pass over
+// the same bytes produces escapes inside escapes, which still renders and reads
+// wrong. So the write door colours only OUTSIDE the range Render produced, and
+// finds that range rather than assuming where it starts.
+func TestTheRenderedEntryIsNotRecoloured(t *testing.T) {
+	v := deckOf("keel", "mesa")
+	// What Render would have handed back: already highlighted.
+	already := "keel\n  noun\n    a mesa is not a " + knownOn + "keel" + sgrOff
+	text := "\nThe keel shifts sharply.\n\n" + already + "\n"
+
+	var out strings.Builder
+	writeWords(&out, text, nil, v, true, surfaceProse, already)
+	got := out.String()
+
+	// The render arrives byte-for-byte as Render produced it.
+	if !strings.Contains(got, already) {
+		t.Errorf("the rendered entry was rewritten:\n got %q\n want it to contain %q", got, already)
+	}
+	// Nothing nested: no highlight opens immediately inside another.
+	if strings.Contains(got, knownOn+knownOn) || strings.Contains(got, knownOn+"keel"+knownOn) {
+		t.Errorf("colour was nested: %q", got)
+	}
+	// And the text OUTSIDE the render still got its colour — otherwise this
+	// would pass by colouring nothing at all.
+	before, _, _ := strings.Cut(got, already)
+	if !strings.Contains(before, knownOn) {
+		t.Errorf("nothing outside the render was coloured, so this proves nothing: %q", before)
+	}
 }

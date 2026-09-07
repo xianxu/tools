@@ -7,15 +7,6 @@ import (
 	"time"
 )
 
-// audioNameSep separates the word a file is FILED under from the key that
-// IDENTIFIES it.
-//
-// Two characters rather than one, and not a character a slug can contain: Slug
-// keeps letters, digits and single hyphens, so a doubled hyphen cannot occur
-// inside one. That is what makes Forget's prefix match exact — forgetting `red`
-// globs `red--` and cannot reach `redact--…`.
-const audioNameSep = "--"
-
 // AudioKey identifies one cached recording.
 //
 // IT IS THE SEAM'S KEY, NOT THE WORD, and that distinction is the whole reason
@@ -52,8 +43,20 @@ func NewAudioKey(word string, urls []string) AudioKey {
 	return AudioKey{Word: Key(word), Digest: hex.EncodeToString(sum[:])[:16]}
 }
 
-// name is the file stem: `<slug>--<digest>`.
-func (k AudioKey) name() string { return Slug(k.Word) + audioNameSep + k.Digest }
+// dir is the word's own directory; stem is the file inside it.
+//
+// A DIRECTORY PER WORD, not a filename prefix — and the boundary review is why.
+// The first version filed recordings as `<slug>--<digest>` and claimed a slug
+// could not contain "--". That is false: `re-` slugs to `re--ddf427`, so
+// forgetting `re` would glob `re--` and take a DIFFERENT WORD's recordings.
+//
+// The fix is not a rarer separator. Any separator has to be reasoned about
+// against Slug's alphabet, and that reasoning is what was wrong. A directory
+// name is an EXACT match — `audio/re` and `audio/re--ddf427` are simply
+// different directories — so Forget removes a tree by name and no prefix
+// ambiguity exists to get wrong.
+func (k AudioKey) dir() string  { return Slug(k.Word) }
+func (k AudioKey) stem() string { return k.Digest }
 
 // ok reports whether the key is usable as a filename.
 func (k AudioKey) ok() bool { return Slug(k.Word) != "" && k.Digest != "" }

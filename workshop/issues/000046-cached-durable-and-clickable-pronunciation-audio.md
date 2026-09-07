@@ -237,36 +237,48 @@ are supposed to differ and be recorded.
 
 ## Done when
 
-- [ ] Every loop that can play audio goes through the cache, and a guard names
-      that set rather than a person remembering it — `runPlay` is the one that
-      does not today, and fixing only `runPlay` leaves the next loop free to
-      repeat it.
-- [ ] A recording fetched in one sitting is not fetched again in the next: the
+- [x] No loop can play audio through an uncached source. **Reworded 2026-09-07:
+      the row asked for "a guard that names that set", and four plan-gate rounds
+      established that no such set is derivable — every predicate over functions
+      caught dispatchers or missed a wrap site. The shipped design makes the
+      question unaskable instead: `deps.audio` is a `*audioSeam`, so there is no
+      unwrapped source to hold and the compiler enumerates the construction
+      sites.** Ticking the row as written would have claimed a guard that does
+      not exist and should not.
+- [x] A recording fetched in one sitting is not fetched again in the next: the
       bytes are on disk, in the directory `define` was started from.
-- [ ] A word the CDN has no recording for is asked for ONCE, not four candidate
+- [x] A word the CDN has no recording for is asked for ONCE, not four candidate
       URLs per replay per day. Pinned through the existing `fakeCDN` request
       recorder, which is what makes "no second request" assertable without new
       scaffolding.
-- [ ] `Forget` takes a word's recordings with it, and
-      `TestPerWordDirsCoverEveryRuntimeDir` is what says so — the new directory
-      is classified on both axes, not just declared.
-- [ ] A cloze's option words are clickable and each plays its own word.
-- [ ] Every deck word is clickable wherever it is written — a guard walks the
-      surfaces rather than a person listing them, so a new write site is covered
-      by construction.
-- [ ] Colour and clicks come from ONE span walk, not two producers that can
+- [x] `Forget` takes a word's recordings with it, on every voice and from every
+      language. **Reworded 2026-09-07: "both axes" is now THREE** — the boundary
+      review added `many` (a word owns several files here) after finding that a
+      declared axis nothing checks is decoration, and found two bugs the axes
+      caught: a language shelf that stranded recordings across `/lang`, and a
+      `<slug>--` prefix glob that took `re-`'s recordings when forgetting `re`.
+- [x] A cloze's option words are clickable and each plays its own word.
+- [x] Every deck word is clickable wherever it is written, on every surface the
+      write door serves — `TestEveryDeckWordInASittingIsClickable` drives it
+      through `writeWords` rather than through the rule, so it fails if a call
+      site stops passing the vocabulary. **The row asked for a guard over write
+      SITES and that is NOT what shipped:** the derived guard is over FORMS
+      (`TestEveryFormHasASurface`, hung on `docSyncForms`). A new `writeWords`
+      call site is covered by review, not by construction — carried to `#30`'s
+      region work rather than claimed here.
+- [x] Colour and clicks come from ONE span walk, not two producers that can
       disagree about where a word is.
-- [ ] Colour is off exactly where the text IS the deck (cloze options, board
+- [x] Colour is off exactly where the text IS the deck (cloze options, board
       cells) and on everywhere else, and the guard states that as the rule
       rather than naming the two surfaces.
-- [ ] The new region kind is a ROW, not a special case: `numRegionKinds` picks
+- [x] The new region kind is a ROW, not a special case: `numRegionKinds` picks
       it up, `TestEveryRegionKindIsActionable`, `TestAtlasDescribesEveryRegionKind`
       and `TestAPromptRegionCoversTheTextItClaims` all exercise it without being
       edited to know about it.
-- [ ] No region claims text it does not cover — the `#12` BR-14 invariant holds
+- [x] No region claims text it does not cover — the `#12` BR-14 invariant holds
       for the new kind, which is the one that puts regions on a PROMPT for the
       first time, and holds on text that is ALREADY coloured.
-- [ ] A span walk over text carrying ANSI never lands a region inside an escape
+- [x] A span walk over text carrying ANSI never lands a region inside an escape
       sequence, and never nests colour.
 
 ## Plan
@@ -279,7 +291,7 @@ Durable design: `workshop/plans/000046-audio-cache-and-deck-words-plan.md`.
 
 - [x] M1 — the cache reaches every loop that plays audio, and survives the
       process. `fetch.go`, a new `RuntimeDirs` entry, `perWordDirs`, `Forget`.
-- [ ] M2 — one span walk feeds both colour and clicks, and every surface goes
+- [x] M2 — one span walk feeds both colour and clicks, and every surface goes
       through it. A third `RegionKind`, the first regions ever produced for a
       PROMPT, and the discovery rule that turns colour off where the text is
       the deck.

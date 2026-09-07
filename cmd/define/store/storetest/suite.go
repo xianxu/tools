@@ -746,8 +746,19 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		if err := s.SetAudio(stale, nil, store.AudioRecord{At: day(1), Missing: true}); err != nil {
 			t.Fatal(err)
 		}
-		// A NEIGHBOUR THE PREFIX MUST NOT REACH. `red` and `redact` share three
-		// letters, and a glob on the slug alone would take both.
+		// TWO NEIGHBOURS FORGETTING MUST NOT REACH.
+		//
+		// `redact` is the easy one: a glob on the bare slug would take it.
+		//
+		// `re-` is the one that caught the first design out. It SLUGS to
+		// `re--ddf427`, so a scheme filing recordings as `<slug>--<digest>` and
+		// globbing `<slug>--` would have had forgetting `re` take `re-`'s
+		// recordings — the claim "a slug cannot contain --" was simply false.
+		// A directory per word has no such ambiguity.
+		hyphen := store.NewAudioKey("re-", []string{"https://cdn/re-_en_us_1.mp3"})
+		if err := s.SetAudio(hyphen, []byte("hyphen"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
 		keep := store.NewAudioKey("redact", []string{"https://cdn/redact_en_us_1.mp3"})
 		if err := s.SetAudio(keep, []byte("keep"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
 			t.Fatal(err)
@@ -765,12 +776,79 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 				t.Errorf("%v survived Forget — the word kept the material that made it worth forgetting", k)
 			}
 		}
-		data, _, err := s.Audio(keep)
+		for _, tc := range []struct {
+			k    store.AudioKey
+			want string
+			word string
+		}{{keep, "keep", "redact"}, {hyphen, "hyphen", "re-"}} {
+			data, _, err := s.Audio(tc.k)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != tc.want {
+				t.Errorf("forgetting %q took %q's recording too", "red", tc.word)
+			}
+		}
+	})
+
+	t.Run("forgetting a word does not reach a word whose SLUG starts with it", func(t *testing.T) {
+		// THE FIXTURE HAS TO REACH THE BRANCH. A `red`/`redact` pair does not:
+		// the collision needs the forgotten word's slug plus the separator to be
+		// a PREFIX of the neighbour's slug, and `redact` does not start with
+		// `red--`.
+		//
+		// `re` and `re-` do. `re-` slugs to `re--ddf427`, so a scheme filing
+		// recordings as `<slug>--<digest>` and globbing `<slug>--` has forgetting
+		// `re` take `re-`'s recordings. The first design made exactly that claim
+		// — "a slug cannot contain --" — and it is false.
+		s := newStore(t)
+		if err := s.Upsert(store.Word{Text: "re"}); err != nil {
+			t.Fatal(err)
+		}
+		mine := store.NewAudioKey("re", []string{"https://cdn/re_en_us_1.mp3"})
+		theirs := store.NewAudioKey("re-", []string{"https://cdn/re-_en_us_1.mp3"})
+		if err := s.SetAudio(mine, []byte("MINE"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetAudio(theirs, []byte("THEIRS"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Forget("re"); err != nil {
+			t.Fatalf("Forget: %v", err)
+		}
+		if data, _, _ := s.Audio(mine); len(data) != 0 {
+			t.Error(`forgetting "re" left its own recording`)
+		}
+		data, _, err := s.Audio(theirs)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(data) != "keep" {
-			t.Errorf("forgetting %q took %q's recording too", "red", "redact")
+		if string(data) != "THEIRS" {
+			t.Errorf(`forgetting "re" took "re-"'s recording — its slug is %q, `+
+				`which starts with "re" plus a separator`, store.Slug(store.Key("re-")))
+		}
+	})
+
+	t.Run("a verdict replaces the recording it supersedes", func(t *testing.T) {
+		// Skipping the blob write would leave a stale .mp3 beside a record saying
+		// there is none. Audio reads the record first, so those bytes become
+		// unreachable debris that Forget still has to carry — and a later reader
+		// of the directory, which the README invites, sees a file the program
+		// says does not exist.
+		s := newStore(t)
+		k := store.NewAudioKey("keel", []string{"https://cdn/keel.mp3"})
+		if err := s.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetAudio(k, nil, store.AudioRecord{At: day(2), Missing: true}); err != nil {
+			t.Fatal(err)
+		}
+		data, rec, err := s.Audio(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !rec.Missing || len(data) != 0 {
+			t.Errorf("the verdict did not replace the recording: missing=%v bytes=%d", rec.Missing, len(data))
 		}
 	})
 

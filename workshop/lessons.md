@@ -3805,3 +3805,27 @@ One line prevents the whole family: `var _ wordFiler = (*diskAudioCache)(nil)`.
 Write it beside every type that exists to satisfy an optional interface — the
 failure mode is silence, and silence is what a type assertion returns when a
 signature drifts.
+
+**Three fixture-cannot-reach-the-branch failures in one issue.** `#46`'s
+`re`/`re-` collision needed the FORGOTTEN word's slug plus the separator to be a
+prefix of the neighbour's; my fixture forgot `red`, which never globs `re--`, so
+the mutation passed and the bug would have shipped. Before that, a
+`many`-axis probe took its file NAMES from the declaration it was testing —
+self-fulfilling, green under mutation. Before that, a test named for a loop
+never entered the loop.
+
+The pattern is one question, asked too late: **"what exact input reaches the
+line I am claiming to pin?"** Write the mutation first, watch it redden, and if
+it does not, suspect the fixture before the code.
+
+**And a probe whose shape comes from the thing under test proves nothing.** If
+the declaration says `many` and the probe therefore plants prefixed files, both
+branches agree with themselves. What knows the naming convention is the code that
+WRITES it — so the pin belongs in a conformance row driving the real API, not in
+a guard planting files it invented.
+
+**A guard that reads prose cannot tell a citation from a reminiscence.** The
+plan-cites-tests guard fired on "the obvious name is `TestFoo`" in a paragraph
+explaining why that test was NOT written. Backticks are the guard's whole signal,
+so historical mentions have to drop them — cheaper than teaching the guard about
+tense.

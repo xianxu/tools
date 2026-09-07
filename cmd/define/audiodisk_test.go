@@ -142,6 +142,11 @@ func TestPlaybackSurvivesAnUnusableCache(t *testing.T) {
 	}{
 		{"no store", newAudioSeam(newDiskAudioCache(nil, cdn.source())), "sycophantic"},
 		{"no word to file under", newAudioSeam(newDiskAudioCache(store.NewMem(), cdn.source())), ""},
+		// A store whose every read and write ERRORS, which is the case the
+		// "degrades, never fails" comment is actually about — an absent store
+		// takes a different branch and proves less. failingStore.Audio exists for
+		// this row; without it the method was interface padding claiming coverage.
+		{"a store that errors", newAudioSeam(newDiskAudioCache(failingStore{}, cdn.source())), "sycophantic"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data, _, err := tc.seam.FetchFor(t.Context(), tc.word, urls)
@@ -149,5 +154,45 @@ func TestPlaybackSurvivesAnUnusableCache(t *testing.T) {
 				t.Errorf("playback broke when the cache was unusable: %q, %v", data, err)
 			}
 		})
+	}
+}
+
+// THE PRODUCTION WIRING IS PINNED, not just the decorator (#46 BR-3).
+//
+// The review found that deleting the whole `withStore` block that installs
+// diskAudioCache left the suite GREEN: every disk test built the layering by
+// hand, so they proved the decorator works and nothing about whether anything
+// uses it. That is the "a pin that cannot fail" family, and it is the second
+// time in this issue — the first was the wordFiler signature, which also
+// compiled, ran, and cached nothing.
+//
+// So this asserts through the SEAM A LOOP ACTUALLY GETS: build deps the way a
+// loop does, run it through withStore, and require that a fetch reaches the
+// disk. Nothing here constructs a diskAudioCache.
+func TestWithStorePutsTheDiskCacheUnderTheMemo(t *testing.T) {
+	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("ID3audio")})
+	// openStore resolves the directory from the working directory, exactly as a
+	// real run does — so the rig is a real cwd rather than an injected path.
+	t.Chdir(t.TempDir())
+	urls := cdn.urls("/a.mp3")
+
+	// Two independent processes, each building deps the way run() does.
+	for i := 0; i < 2; i++ {
+		d := deps{
+			audio:    newAudioSeam(cdn.source()),
+			newStore: openStore,
+		}
+		d = d.withStore(options{}, io.Discard)
+		if d.deck == nil {
+			t.Fatalf("run %d: withStore opened no store, so this proves nothing", i)
+		}
+		if _, _, err := d.audio.FetchFor(t.Context(), "sycophantic", urls); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+	}
+	if got := cdn.Requested(); len(got) != 1 {
+		t.Errorf("two processes made %d requests, want 1: %v\n"+
+			"withStore is where the disk layer is installed; without it every "+
+			"sitting re-fetches and the milestone does nothing.", len(got), got)
 	}
 }
