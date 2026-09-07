@@ -77,8 +77,8 @@ type Option struct {
 // Choice is one question. Pointer receivers because it REMEMBERS what was
 // picked, which a self-rated form never has to.
 type Choice struct {
-	word    string
-	options []Option
+	optionSet
+	word string
 	// definition is the whole rendered entry, shown after the answer.
 	//
 	// The options carry ONE gloss each, which is enough to choose between and
@@ -87,22 +87,14 @@ type Choice struct {
 	// for exactly this reason before #42 deleted it, and a recognition form that
 	// revealed less would have taught less than the easier form did.
 	definition string
-	chosen     int // -1 until graded
 }
 
 // NewChoice takes finished options — glosses already extracted, axes already
 // assigned, near-synonyms already excluded. See D5: prose does not cross into
 // this package.
 func NewChoice(word, definition string, options []Option) *Choice {
-	return &Choice{word: word, definition: definition, options: options, chosen: -1}
+	return &Choice{optionSet: newOptionSet(options), word: word, definition: definition}
 }
-
-// Options is the option set, in the order the learner sees it.
-//
-// Exported for two consumers that both need to know WHERE an option is on
-// screen: tests, which cannot know which digit is correct once the set is
-// shuffled, and #38, which will mark the option lines clickable.
-func (c *Choice) Options() []Option { return c.options }
 
 func (c *Choice) Word() string { return c.word }
 
@@ -155,19 +147,16 @@ func optionLine(i int, gloss string) string {
 // to work out which of four they had chosen.
 func (c *Choice) Reveal() string {
 	var s string
-	for i, o := range c.options {
-		if o.Correct {
-			s = optionLine(i, o.Gloss)
-			break
-		}
+	if i := c.correctIndex(); i >= 0 {
+		s = optionLine(i, c.options[i].Gloss)
 	}
-	if c.chosen >= 0 && c.chosen < len(c.options) && !c.options[c.chosen].Correct {
+	if i := c.wrongPick(); i >= 0 {
 		// The label gets its OWN line, and that is a consequence of the gloss
 		// arriving pre-wrapped: "you chose " in front of it would push the first
 		// line ten columns past the width it was wrapped to, and a frame clips
 		// what does not fit. Wrapping every option ten columns narrower to buy
 		// room for one line in one state is the worse trade.
-		s += "\n\nyou chose\n" + optionLine(c.chosen, c.options[c.chosen].Gloss)
+		s += "\n\nyou chose\n" + optionLine(i, c.options[i].Gloss)
 	}
 	if c.definition != "" {
 		s += "\n\n" + c.definition
@@ -175,40 +164,12 @@ func (c *Choice) Reveal() string {
 	return s
 }
 
-// Keys names the digits that actually work, which on a young deck is fewer than
-// four (D9). Telling a learner "1-4" beside a two-option question invites a
-// keystroke that does nothing.
-func (c *Choice) Keys() string {
-	// No branch for fewer than two options: choiceFor refuses below two, so
-	// such a Choice is not constructible through production. One built by hand
-	// gets "1-1", which is honest about what this form would actually grade.
-	return "1-" + string(rune('0'+len(c.options))) + " = pick the definition"
-}
+// Keys names the digits, and what they mean for THIS form.
+func (c *Choice) Keys() string { return c.keysFor("pick the definition") }
 
 // Form names this form in the log (#40 D4a). `meaning` rather than "2.3",
 // because that is what the learner types to reach it.
 func (c *Choice) Form() string { return "meaning" }
-
-// Grade reads 1-4 and nothing else.
-//
-// A digit past the end of the option set returns false rather than a verdict:
-// D9 allows a two-option question on a young deck, and pressing `3` there is a
-// stray key, not a wrong answer. Grading it would demote a word the learner
-// never actually answered about.
-//
-// The session RESERVES Enter, space, `d` and Ctrl-C (question.go:74-77), and
-// digits collide with none of them.
-func (c *Choice) Grade(k rune) (Verdict, bool) {
-	i := int(k - '1')
-	if i < 0 || i >= len(c.options) {
-		return Skipped, false
-	}
-	c.chosen = i
-	if c.options[i].Correct {
-		return Correct, true
-	}
-	return Wrong, true
-}
 
 // MissedAxis is why the option they picked was in the set, or AxisNone.
 //
@@ -217,8 +178,9 @@ func (c *Choice) Grade(k rune) (Verdict, bool) {
 // forms have, and the session would then be carrying a concept form 2.1 had no
 // answer for.
 func (c *Choice) MissedAxis() Axis {
-	if c.chosen < 0 || c.chosen >= len(c.options) || c.options[c.chosen].Correct {
+	i := c.wrongPick()
+	if i < 0 {
 		return AxisNone
 	}
-	return c.options[c.chosen].Axis
+	return c.options[i].Axis
 }

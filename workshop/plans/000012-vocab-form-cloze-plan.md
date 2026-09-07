@@ -89,7 +89,7 @@ Three of `#12`'s five original Done-when rows moved to `#10 M2` with the selecti
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | the store and the dictionary |
-| `ReviewEvent.Flagged` | `cmd/define/store/event.go` | modified | the event log |
+| `ReviewEvent.Flagged` | `cmd/define/store/event.go` | new | the event log |
 
 - **`todaysQuestions`** — gains a third source: `d.deck.Items(key)`.
   - **Injected into:** nothing new; it already holds `store.Store`.
