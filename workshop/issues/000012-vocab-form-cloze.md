@@ -5,7 +5,7 @@ deps: ["tools#6", "tools#10", "tools#11"]
 github_issue:
 created: 2026-08-20
 updated: 2026-09-06
-estimate_hours:
+estimate_hours: 3.99
 started: 2026-09-06T17:17:21-07:00
 ---
 
@@ -48,6 +48,76 @@ must be rejected by the distance filter. That case belongs in the tests.
   harvested.
 - Bad-question keypress (#6) records the flag with the full option set, so a
   filter failure is diagnosable rather than anecdotal.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
+`sdlc estimate-source`, so the per-primitive hours are provisional.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.35 impl=0.06
+item: cross-cutting-refactor   design=0.04 impl=0.16
+item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.04 impl=0.14
+item: greenfield-go-module     design=0.06 impl=0.28
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.02 impl=0.14
+item: greenfield-go-module     design=0.05 impl=0.24
+item: cross-cutting-refactor   design=0.04 impl=0.20
+item: cross-cutting-refactor   design=0.05 impl=0.24
+item: atlas-docs               design=0.03 impl=0.06
+item: smaller-go-module        design=0.0  impl=0.20
+item: milestone-review         design=0.0  impl=0.45
+item: milestone-review         design=0.0  impl=0.60
+design-buffer: 0.15
+total: 3.99
+```
+
+| item | task | why this primitive |
+|---|---|---|
+| `issue-spec` 0.35/0.06 | the design carrier | the plan and TWO gate rounds. Below `#10`'s 0.50 because the Spec was already written and three Done-when rows had just been resolved by `#10`; round 1's four Importants were gaps in a plan whose shape was settled, not a redesign. |
+| `cross-cutting-refactor` 0.04/0.16 | T1 extract `optionSet` | touches `Choice` and every one of `#7`'s tests must stay untouched — the constraint is the work |
+| `greenfield-go-module` 0.05/0.24 | T2 `Cloze` | a new form: prompt, reveal, and the three `Question` methods that are not the embedded set's |
+| `smaller-go-module` 0.04/0.14 | T3 `Flagging` | one interface plus a helper, mirroring `Missed`; the design cost is the three session states, not the code |
+| `greenfield-go-module` 0.06/0.28 | T4 `blankStem` + `wordRunEnd` | the highest-risk task: a six-row leak table where every row is a way to hand over the answer |
+| `smaller-go-module` 0.02/0.12 | T4 `blankOut` delegates | plus confirming the golden does not move, which is what makes it a refactor |
+| `smaller-go-module` 0.02/0.14 | T4 `FuzzBlankStem` | the repo has nine targets; this follows their shape |
+| `greenfield-go-module` 0.05/0.24 | T5 `clozeFor` + `usableItem` | which item, which seed, which order, and the four ways a hand-edited item is unusable |
+| `cross-cutting-refactor` 0.04/0.20 | T5 the selection clause | one clause in `todaysQuestions`, but `#7`'s and `#42`'s rules must both still hold |
+| `cross-cutting-refactor` 0.05/0.24 | T6 the flag's signal path | five stages across `play`, `main` and `store`, plus a `storetest` row |
+| `atlas-docs` 0.03/0.06 | T7 | README's "three kinds of question" is now four; the atlas needs the new clause |
+| `smaller-go-module` 0.0/0.20 | T7 the mutation sweep | `#10` measured this at roughly this cost twice |
+| `milestone-review` 0.0/0.45 | the boundary: run | |
+| `milestone-review` 0.0/0.60 | the boundary: remediation | |
+
+**TWO NAMED DEVIATIONS.**
+
+1. **Two `milestone-review` rows for a single-boundary issue**, which is `#42`'s
+   deviation and the house convention. Booking two prices ROUNDS rather than
+   boundaries.
+2. **They are priced at 0.45/0.60 rather than `#10`'s 0.30/0.32 — nearly double —
+   and that is the one number in this block chosen from measurement rather than
+   from the table.** `#10 M2` booked 0.75 for its boundary and spent roughly 6h
+   across four rounds; `#10 M1` booked 0.62 and its own note said the row was 3x
+   low. Pricing this boundary at `#10`'s rate would repeat a figure already
+   proven wrong twice on the immediately preceding issue.
+
+**The trailing record.** Six v3.1 rows: `#38` 0.67, `#39` 1.85, `#40` 0.48,
+`#41` 0.69, `#42` 0.36, `#44` 0.47 — and now `#10` at 0.62. Median 0.62, range
+0.36-1.85. At the median, 3.99 predicts about 6.4h. **Not multiplied to meet it**:
+the primitives are the method and `#117`'s ledger is where a systematic ratio
+belongs. The boundary rows above are the one place this estimate moves toward the
+record, and they move on `#10`'s specific measured boundary cost rather than on
+the global ratio.
+
+**What could make this cheaper than it looks**, recorded because the estimate
+does not assume it: three of the five original Done-when rows are already
+satisfied by `#10`, the selection and veto that would have been this issue's hard
+parts are gone, and `wordIndexIn` — the blanker's core predicate — already exists
+and is already mutation-tested.
 
 ## Done when
 
