@@ -1061,7 +1061,14 @@ var retiredSymbolNames = map[string]string{
 	"newDeck":         "newLangDeps",
 	"MigrateFlatDeck": "MigrateToLanguages",
 	"dictChoice":      "dictMeta",
-	"dcsDictionaries": "installedDictionaries",
+	// #46 dissolved the decorator into the seam: deps.audio is a *audioSeam, so
+	// there is no unwrapped source to wrap and no wrap site to remember. Four
+	// plan-gate rounds went into naming which functions must call the old
+	// constructor, and all four answers were wrong — the type is what stopped the
+	// question being askable.
+	"newCachingAudioSource": "newAudioSeam (the memo IS the seam now)",
+	"cachingAudioSource":    "audioSeam",
+	"dcsDictionaries":       "installedDictionaries",
 	// #27 renamed this when the atlas joined the README as a consumer. The
 	// rename skipped this row and left a stale mention in voice.go — the human
 	// half of this mechanism failing, in the same commit that widened the test

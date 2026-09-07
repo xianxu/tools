@@ -201,7 +201,7 @@ test can. As a board closes it leaves one line naming the words you marked no.
 | `1`–`4` | multiple choice: pick the definition, or on a cloze pick the word |
 | `?` | on a cloze: bad question — records it with the options you were shown, and moves on without marking you wrong |
 | `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
-| click | board: mark that word. Anywhere else in a sitting, a click plays the word rather than answering |
+| click | board: mark that word. Anywhere else, a click plays the word — the headword, a language named in the ORIGIN, or any word already in your deck, wherever it appears |
 | Tab | board: cycle what a mark means — yes, no, then drop |
 | Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
 | space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
@@ -320,6 +320,19 @@ looked up in this session turns green the moment you next see it.
 Definition headwords and labels stay their own colour; the highlight marks
 vocabulary in prose, which is where noticing a word you know actually tells you
 something.
+
+**Green is for prose, and it stops where the text IS your deck.** A cloze
+question offers four words all drawn from your deck, so colouring them would mark
+everything and tell you nothing; the same is true of a board, where every cell is
+a word you are learning. Those stay plain. A multiple-choice question's options
+are definitions — prose — so a word you know shows up there, which is usually the
+most useful thing on the screen.
+
+**Clicking is not subject to that rule.** Every deck word is clickable wherever
+it appears, coloured or not, and plays its own recording — including a cloze's
+four options, which are the words you most want to hear before choosing between
+them. Turning colour off with `-no-color` does not take the click targets with
+it.
 
 ### Completion
 

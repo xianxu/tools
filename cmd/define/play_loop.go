@@ -222,8 +222,12 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
 			//
-			// THE PROMPT WORD IS CLICKABLE (T4), when the prompt has one.
-			writeRendered(stdout, "\n"+q.Prompt()+"\n", promptRegions(q))
+			// THE PROMPT WORD IS CLICKABLE (T4), when the prompt has one — and so
+			// is every deck word in it. The SURFACE comes from the form, because
+			// this one site serves them all.
+			prompt := "\n" + q.Prompt() + "\n"
+			writeWords(stdout, prompt, promptRegions(q),
+				deckVocabulary(d), opt.color, surfaceOf(q.Form()), "")
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -468,7 +472,11 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					// begins, and those coordinates belong to the render, not to
 					// the reveal.
 					reveal := "\n" + asked.Reveal() + "\n"
-					writeRendered(stdout, reveal, held.marksIn(asked.Word(), reveal))
+					// A reveal is PROSE — the restored sentence, the entry — so
+					// its deck words are worth spotting even for a form whose
+					// prompt is the deck itself.
+					writeWords(stdout, reveal, held.marksIn(asked.Word(), reveal),
+						deckVocabulary(d), opt.color, surfaceProse, held.renderOf(asked.Word()))
 				}
 				// THE PREDICATE, not a fifth hand-copy of `!opt.noAudio &&
 				// opt.times > 0` (T0). playAnnounced applies it itself, so being
@@ -1149,6 +1157,20 @@ func (sd *sittingDeck) answered(out play.Outcome, at time.Time) {
 func (sd *sittingDeck) dropped(word string) {
 	key := store.Key(word)
 	sd.deck = slices.DeleteFunc(sd.deck, func(w store.Word) bool { return store.Key(w.Text) == key })
+}
+
+// renderOf is the rendered entry held for a word, or "".
+//
+// It is the boundary writeWords needs: the range Render already coloured, which
+// a second flat pass must not touch because Render colours with a per-region
+// base style and ANSI does not nest. Beside marksIn because they read the same
+// field for two halves of one question — where the render is, and what it offers.
+func (sd *sittingDeck) renderOf(word string) string {
+	c, ok := sd.marks[store.Key(word)]
+	if !ok {
+		return ""
+	}
+	return c.text
 }
 
 // marksIn is the clicked spans for a word, moved into the coordinates of the

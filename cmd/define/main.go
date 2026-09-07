@@ -874,7 +874,11 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	rendered, regions := Render(ParseEntry(text), RenderOpts{
 		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt), Word: word,
 	})
-	writeRendered(stdout, rendered, regions)
+	// EVERY DECK WORD IN THE DEFINITION IS CLICKABLE TOO. Render already coloured
+	// them — with its own per-region base styles, which is why `already` is the
+	// whole output and this pass adds no colour of its own — but until #46 a
+	// click only reached the headword and the ORIGIN languages.
+	writeWords(stdout, rendered, regions, deckVocabulary(d), opt.color, surfaceProse, rendered)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: opt.playsAudio(), entry: text}
 }
@@ -900,6 +904,54 @@ func writeRendered(w io.Writer, text string, rs []Region) {
 		return
 	}
 	fmt.Fprint(w, text)
+}
+
+// writeWords is writeRendered with the DECK WALK applied: every deck word in the
+// text becomes clickable, and — where the surface admits it — coloured.
+//
+// THE ONE DOOR, so a click and a highlight cannot disagree about where a word is.
+// Both derive from `deckSpans` over the same string at the same moment; the
+// alternative is what this replaces, two independent walks covering different
+// surfaces.
+//
+// COLOUR AND CLICKS ARE INDEPENDENT. `colour` is the session's setting and `sf`
+// is the text's nature; a click needs neither. `--no-color` must not silently
+// remove every click target, which is what taking the vocabulary from
+// `vocabularyFor` alone would have done.
+//
+// `already` is the byte range of text that `Render` produced and has therefore
+// ALREADY COLOURED. It is located rather than assumed — a form's reveal embeds a
+// rendered entry, and Render colours with a per-region BASE style (amber
+// part-of-speech labels, the example style) that a flat pass here could not
+// reproduce, because ANSI does not nest. Regions are still produced across the
+// whole text; only the colour pass stops at that boundary.
+func writeWords(w io.Writer, text string, rs []Region, v Vocabulary, colour bool, sf surface, already string) {
+	rs = mergeRegions(rs, wordRegions(text, v))
+	if v != nil && colour && sf.admitsColour() {
+		text = colourOutside(text, already, v)
+	}
+	writeRendered(w, text, rs)
+}
+
+// colourOutside highlights the deck words in text, skipping a span that is
+// already highlighted.
+//
+// Located with strings.Index, the way marksIn locates the same render: a formula
+// for "where does the entry start" would be a second copy of a form's layout,
+// which is exactly what #12 BR-14 was about.
+func colourOutside(text, already string, v Vocabulary) string {
+	if already == "" {
+		return highlightRegion(text, v, knownOn, "")
+	}
+	at := strings.Index(text, already)
+	if at < 0 {
+		// The render is not in what is being written. Colour nothing rather than
+		// colouring an entry twice: nested ANSI is the failure that renders fine
+		// and reads wrong.
+		return text
+	}
+	return highlightRegion(text[:at], v, knownOn, "") + already +
+		highlightRegion(text[at+len(already):], v, knownOn, "")
 }
 
 // defaultIndicator is the ephemeral form on a terminal, the record form on a pipe.

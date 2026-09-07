@@ -1761,9 +1761,21 @@ Return during playback is echoed by the driver, moves the cursor down, and the
 post-playback erase then clears the echoed line instead of the indicator —
 stranding `♫ playing N×` on screen. So "the view never scrolls" holds for a user
 who waits, not unconditionally. Raw mode removes the assumption entirely by not
-echoing at all, which is `#14`'s job. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
-*inside* `repl`, so the production and test wiring are the same line and
-`fakeCDN.Requested()` is the assertion.
+echoing at all, which is `#14`'s job. Replay costs no network, and after `#46`
+that is a property of the TYPE rather than of a habit: `deps.audio` is a
+`*audioSeam` — the source and its memo as one value, a pointer so every copy of
+`deps` shares it. There is no unwrapped source to hold, so no loop can forget to
+wrap one, which is what `runPlay` had been doing since it was written.
+`fakeCDN.Requested()` is still the assertion.
+
+Beneath it sits `diskAudioCache`, which puts the recording in the working
+directory: memo → disk → network, so a repeat within a sitting never touches the
+filesystem and a repeat across sittings never touches the network. A recording is
+keyed by the CANDIDATE LIST, not the word — `-locale gb` and `-locale us` are
+different recordings — and filed under the word so `Forget` takes every voice of
+it. A word with no recording is asked once and the verdict expires after thirty
+days, because the CDN gains recordings and the rare words a learner most wants
+are the likeliest to gain one.
 
 `main` wraps the context in `signal.NotifyContext`, which changed the one-shot
 path too: Ctrl-C during playback now cancels `afplay` through
@@ -2581,6 +2593,14 @@ with no row there draws an underline that does nothing, which
 `TestEveryRegionKindIsActionable` catches by deriving its loop from
 `numRegionKinds`.
 
+- **`RegionWord` — a deck word, wherever it is written (`#46`).** The registry's
+  third kind, and the first produced for a PROMPT rather than for a rendered
+  entry. It is distinct from `RegionHeadword` by provenance, not behaviour: a
+  headword region carries the entry's lookup key, which can differ from the text
+  under it (`define jalapeno` renders `jalapeño`), where a deck word is matched
+  and played by its own text. Its spans come from `deckSpans`, which is the same
+  walk that decides colour — one producer, two consumers, so a click and a
+  highlight cannot disagree about where a word is.
 - **A prompt region is issued only when its claim is TRUE (`promptRegions`).**
   This was once "the prompt word is line 1, column 0", justified by "both forms
   put the headword on their first line" — a premise `#12`'s cloze broke, which

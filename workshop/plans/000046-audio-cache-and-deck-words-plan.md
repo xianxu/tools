@@ -222,13 +222,13 @@ exception is `perWordDir`, whose test is the existing
 | `diskAudioCache` | `cmd/define/audiodisk.go` | new | the working directory |
 | `audioSeam` | `cmd/define/fetch.go` | new | an `AudioSource`, with its memo |
 | `audioDir` | `cmd/define/store/yaml.go` | new | the filesystem |
-| `writeRendered` | `cmd/define/main.go` | modified | stdout + the click map |
+| `writeWords` | `cmd/define/main.go` | new | stdout + the click map |
 
 - **`diskAudioCache`** — an `AudioSource` decorator that reads and writes
   recordings under the store's directory.
   - **Injected into:** nothing pure; it is the outermost decorator on
     `deps.audio`, so every existing consumer is unchanged.
-  - **A DECORATOR, LIKE ITS SIBLING.** `cachingAudioSource`'s doc comment records
+  - **A DECORATOR, LIKE ITS SIBLING.** the decorator it replaced's doc comment records
     why the memo is a decorator rather than a map inside the REPL loop: "the
     existing `fakeCDN` request recorder is the assertion that a replay costs no
     second request — no bespoke test scaffolding". That argument carries over
@@ -240,7 +240,7 @@ exception is `perWordDir`, whose test is the existing
     decision is reviewable.
 
 - **`audioSeam`** — the source and its memo as one value, replacing the
-  `cachingAudioSource` decorator.
+  decorator this issue removed.
   - **THE BUG WAS THAT WRAPPING WAS REMEMBERED.** `replLines` and `runEditor`
     each wrapped; `runPlay` did not, so the one loop that replays the same
     handful of words was the one with no cache. Fixing `runPlay` fixes the site.
@@ -252,9 +252,13 @@ exception is `perWordDir`, whose test is the existing
 - **`audioDir`** — the per-language audio directory, appended to `RuntimeDirs`
   AT THE TAIL (the file's own positional-index rule).
 
-- **`writeRendered`** *(modified)* — the one door for text that reaches the
-  sitting's scrollback, so it is where the span walk lands. It gains the
-  vocabulary and the surface.
+- **`writeWords`** — the one door for text that reaches the sitting's scrollback
+  with the deck walk applied. It takes the vocabulary and the surface.
+  - **NEW, beside `writeRendered` rather than replacing it.** The plain door
+    still serves callers with nothing to mark, and keeping them separate means
+    the walk is opted into at a site rather than imposed on every write — which
+    is what let the lookup path keep `Render`'s own per-region colouring
+    untouched.
 
 **Test surface for integration points.** `fakeCDN` (existing, wire-level) plus a
 real `t.TempDir()` store. No function-call mocks: a request recorder is what
@@ -304,7 +308,7 @@ uncached source: `#2` I-1 again, which PQ-3 already rejected once.
 `run()`'s callees, `replRaw`, and then "~8 functions" — which the gate measured
 and found three times larger. The fourth is the decisive one: it was made while
 ARGUING that the predicate should be generous, and still got the size wrong. Step
-4 would have written `d.audio = newCachingAudioSource(d.audio)` into most of
+4 would have written the wrap line into most of
 those functions, which never read `d.audio` at all (`vocabularyFor`, `clozeAsk`, `todaysQuestions`,
 `newCommandCtx`, `playRegion`, `submitLine`, …), contradicting this plan's own
 Architecture line — *one construction site* — and leaving a guard that checks a
@@ -357,7 +361,7 @@ would be the fifth wrong statement of this set.
       compiler, instead of every time someone adds an entry point.
 
 - [ ] **Step 3: Delete the wraps.** `repl.go:257` and `replraw.go:264` go, along
-      with `cachingAudioSource` as a decorator — its memo logic moves into
+      with the decorator it replaced as a decorator — its memo logic moves into
       `audioSeam` unchanged, including the hits/misses split and the
       `ErrNoAudio`-vs-`ErrFetchFailed` taxonomy, which is the single source of
       what "permanent" means and is not re-decided here.
@@ -438,7 +442,7 @@ AND a stale verdict, and nothing of it survives.
 
 The filename is `<slug>--<digest>` where the digest is over the candidate list
 `Fetch` is actually given — `strings.Join(urls, "\n")`, the very string
-`cachingAudioSource` keys its memo on. Two things fall out and both are the
+the decorator it replaced keys its memo on. Two things fall out and both are the
 point: `-locale gb` and `-locale us` are different files rather than one wrong
 one, and `Forget` still globs `<slug>--*` because the word is what the file is
 filed under.
@@ -506,11 +510,11 @@ func TestASecondRunReusesTheRecordingOnDisk(t *testing.T) {
 	// applied where the store is known; the memo is applied at the entry point.
 	// Wiring the test the other way round would make "the line tests exercise is
 	// the line production runs" false in the very task that argues for it.
-	first := newCachingAudioSource(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
+	first := newAudioSeam(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
 	mustFetch(t, first, "sycophantic")
 	// A NEW decorator over a NEW memo — everything in memory is gone, exactly as
 	// it is between two runs of the binary.
-	second := newCachingAudioSource(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
+	second := newAudioSeam(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
 	mustFetch(t, second, "sycophantic")
 	if got := cdn.requests(); got != 1 {
 		t.Errorf("the CDN saw %d requests across two processes; want 1", got)
@@ -522,7 +526,7 @@ func TestASecondRunReusesTheRecordingOnDisk(t *testing.T) {
 - [ ] **Step 3: Implement the decorator.** Read-through on `Fetch`; write the
       bytes on a hit; write a dated verdict on `ErrNoAudio`; leave
       `ErrFetchFailed` alone, because a transient outage must not be recorded as
-      a permanent absence — the taxonomy `cachingAudioSource` already documents
+      a permanent absence — the taxonomy the decorator it replaced already documents
       is the single source of that distinction and this derives from it.
 - [ ] **Step 4: The verdict half of the same test** — an unrecorded word costs
       four candidate requests once, and zero on the second process.
@@ -781,7 +785,7 @@ would reproduce PQ-3's failure one level down (`askroute_test.go:31` calls
 `replLines`).
 
 **So the fix is not a better enumeration but an operation that does not need
-one.** `newCachingAudioSource` becomes idempotent, over-application becomes a
+one.** the wrap that used to be remembered becomes idempotent, over-application becomes a
 no-op, and the guard is then free to over-derive: every function taking a `deps`,
 an `io.Reader` and writers must wrap. A false positive costs a type assertion. An
 enumeration that cannot be wrong beats one that is exactly right and
@@ -822,7 +826,7 @@ would have produced a fourth answer, not a right one.
 **Delta.** The predicate widens to every function taking a `deps` and an
 `options`, which needs no judgement about what a loop is; idempotence makes that
 generosity free. And the guard now **checks itself**: the enclosing functions of
-every non-test `newCachingAudioSource` call must be a subset of its own
+every non-test the wrap that used to be remembered call must be a subset of its own
 membership, so a wrap site the predicate cannot see is reported as a failure of
 the guard. The sweep exercises both mechanisms rather than both directions of
 one, and step (c) deliberately re-narrows the predicate to prove the blind-spot

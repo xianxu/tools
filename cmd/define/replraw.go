@@ -599,6 +599,9 @@ func playRegion(ctx context.Context, d deps, opt options, r Region, entry string
 		// The entry's own language, which utteranceFor resolves from opt.
 	case RegionOriginLang:
 		pron = r.Lang
+	case RegionWord:
+		// A deck word plays in the SESSION's voice, like a headword — it is a
+		// word of the language being learned, wherever it happens to appear.
 	default:
 		return
 	}
