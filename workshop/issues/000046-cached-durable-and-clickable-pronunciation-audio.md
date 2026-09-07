@@ -277,7 +277,7 @@ and closing them separately would buy a redundant review (AGENTS.md §3).
 
 Durable design: `workshop/plans/000046-audio-cache-and-deck-words-plan.md`.
 
-- [ ] M1 — the cache reaches every loop that plays audio, and survives the
+- [x] M1 — the cache reaches every loop that plays audio, and survives the
       process. `fetch.go`, a new `RuntimeDirs` entry, `perWordDirs`, `Forget`.
 - [ ] M2 — one span walk feeds both colour and clicks, and every surface goes
       through it. A third `RegionKind`, the first regions ever produced for a
@@ -285,6 +285,48 @@ Durable design: `workshop/plans/000046-audio-cache-and-deck-words-plan.md`.
       the deck.
 
 ## Log
+
+### 2026-09-07 — built through both milestones, then smoke-tested
+
+**Both milestones landed before any boundary review**, because the operator asked
+for a runnable sitting ("go ahead till I can smoke test"). So M1's boundary
+review sees M2's diff as well. Recorded rather than hidden: the review is wider
+than the milestone, and the close's delta is correspondingly small.
+
+**The manual verification the plan commits to (steps 8-10) is done, by the
+operator, on a generated deck** — `scratchpad/smoke`, ten words and five authored
+cloze items written THROUGH the store package rather than by hand, with the word
+list chosen so the definitions cross-reference each other (`sycophantic`'s NOAD
+gloss reads "behaving in an *obsequious* way", and `obsequious` is in the deck).
+Verdict: **passed**.
+
+Independently confirmed over a pty before handing it over, which is what makes
+the two halves of the operator's rule checkable rather than asserted:
+
+- the cloze frame carries **four underlined option words and no `knownOn`
+  escape anywhere in it** — clickable, uncoloured;
+- the reveal frame **does** carry `knownOn`, on a deck word inside the gloss.
+
+**Three things changed during implementation, all recorded in the plan's
+Revisions or below:**
+
+1. **The disk cache did nothing at all in its first version, silently.**
+   `forWord` returned `*diskAudioCache` where `wordFiler` wanted `AudioSource` —
+   a signature Go accepts everywhere except as an implementation of that
+   interface. The assertion never matched, every fetch bypassed the disk, and it
+   compiled and ran cleanly. Only the request-count assertions caught it. A
+   `var _ wordFiler = (*diskAudioCache)(nil)` now stands beside it, and
+   `lessons.md` carries the rule: the failure mode of an optional-capability
+   interface is SILENCE.
+2. **Clicks were about to depend on colour.** `vocabularyFor` returns nil when
+   colour is off — correct for its own caller, since loading the deck to inject
+   an invisible style is IO for a disabled feature. Taking the click vocabulary
+   from the same place would have made `-no-color` silently remove every click
+   target. Split into `deckVocabulary`, pinned by
+   `TestClicksSurviveNoColour`.
+3. **The lookup path was wired too**, not only the sitting. "All places" includes
+   `define <word>`, where a click previously reached only the headword and the
+   ORIGIN languages.
 
 ### 2026-09-07 — filed
 
