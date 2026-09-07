@@ -190,6 +190,8 @@ Two boundaries, because the work splits cleanly at a seam and neither half needs
 the other. Not three: the two cache gaps are one change to one type in one file,
 and closing them separately would buy a redundant review (AGENTS.md §3).
 
+Durable design: `workshop/plans/000046-audio-cache-and-deck-words-plan.md`.
+
 - [ ] M1 — the cache reaches every loop that plays audio, and survives the
       process. `fetch.go`, a new `RuntimeDirs` entry, `perWordDirs`, `Forget`.
 - [ ] M2 — one span walk feeds both colour and clicks, and every surface goes
