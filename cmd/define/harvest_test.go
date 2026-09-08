@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -621,14 +625,21 @@ func TestHarvestSendsTheDecksLanguage(t *testing.T) {
 
 // The mode rule, pinned on the RULE rather than on the pairs.
 //
-// modeCollision is what run() calls, so this covers every pair including the
-// ones nobody has typed — and a sixth mode added to run()'s slice is covered by
-// construction rather than by someone remembering to add a case here.
+// modeCollision is what run() calls, so this covers every pair including the ones
+// nobody has typed.
+//
+// AND THE LIST IS DERIVED, which it was not (#8). This comment used to claim "a
+// sixth mode added to run()'s slice is covered by construction rather than by
+// someone remembering", and main.go said "modeCollision's table test derives from
+// this" — both false while the names were hand-written here. The PAIRS derived;
+// the SET did not, so the sixth mode would have been the first one no pair test
+// ever saw, in a place two comments called safe. `#8` is that sixth mode.
+//
+// Same move TestEveryFormIsEnrolled makes for forms: read the extent out of the
+// code that owns it, and fail closed when the read finds less than the code
+// declares.
 func TestModeCollision(t *testing.T) {
-	all := []mode{
-		{"-llm-check", false}, {"-forget", false}, {"-play", false},
-		{"-reflect", false}, {"-harvest", false},
-	}
+	all := declaredModes(t)
 	if _, _, clash := modeCollision(all); clash {
 		t.Error("no mode requested reported a collision")
 	}
@@ -774,3 +785,63 @@ func TestRunHarvestThroughTheWiringHop(t *testing.T) {
 }
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }
+
+// declaredModes reads run()'s mode list out of main.go.
+//
+// PARSED, NOT LISTED. The names live in one place — the `modes := []mode{...}`
+// literal that run() hands to modeCollision — and this reads them there, so a
+// mode added to run() joins every pair check without anyone remembering.
+//
+// It fails closed on the count for the reason #12 BR-17 established: an
+// extraction that finds FEWER members than the code declares is under-deriving,
+// and every guard built on it is then checking a set nobody chose.
+func declaredModes(t *testing.T) []mode {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing main.go: %v", err)
+	}
+	var names []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		at, ok := lit.Type.(*ast.ArrayType)
+		if !ok {
+			return true
+		}
+		if id, ok := at.Elt.(*ast.Ident); !ok || id.Name != "mode" {
+			return true
+		}
+		for _, el := range lit.Elts {
+			row, ok := el.(*ast.CompositeLit)
+			if !ok || len(row.Elts) == 0 {
+				continue
+			}
+			s, ok := row.Elts[0].(*ast.BasicLit)
+			if !ok || s.Kind != token.STRING {
+				t.Errorf("%s: a mode's name is not a string literal, so the set of "+
+					"modes cannot be known statically", fset.Position(row.Pos()))
+				continue
+			}
+			name, err := strconv.Unquote(s.Value)
+			if err != nil {
+				t.Fatalf("%s: %v", fset.Position(row.Pos()), err)
+			}
+			names = append(names, name)
+		}
+		return true
+	})
+	if len(names) < 5 {
+		t.Fatalf("found %d modes in main.go %v; run() declares at least five, so this "+
+			"derivation is under-deriving and every check built on it would be "+
+			"certifying a set nobody chose", len(names), names)
+	}
+	out := make([]mode, 0, len(names))
+	for _, n := range names {
+		out = append(out, mode{name: n})
+	}
+	return out
+}

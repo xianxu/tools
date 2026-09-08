@@ -593,8 +593,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// again, and the pairwise form cannot cover the pair nobody has typed yet.
 	//
 	// A slice rather than a chain of cases so the CHECK and the LIST are the same
-	// object: modeCollision's table test derives from this, so a sixth mode is
-	// covered by construction rather than by remembering.
+	// object — and TestModeCollision now PARSES this literal (declaredModes), so
+	// a mode added here joins every pair check without anyone remembering.
+	//
+	// That was claimed here before it was true: the test hand-listed five names
+	// while this comment and the test's own said the set derived. `#8`'s -stats
+	// was the sixth, and would have been the first mode no pair check ever saw.
 	modes := []mode{
 		{"-llm-check", *llmCheck},
 		{"-forget", forgetting},
