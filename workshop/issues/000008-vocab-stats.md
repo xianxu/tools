@@ -1,11 +1,12 @@
 ---
 id: 000008
-status: open
+status: working
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-09-07
 estimate_hours:
+started: 2026-09-07T19:04:15-07:00
 ---
 
 # define --stats: deck, streak and mastery statistics
