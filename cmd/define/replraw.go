@@ -75,7 +75,7 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 		// narrow terminal, and only one of them may be zero.
 		return winSize{rows: terminalRows(stdout), cols: terminalCols(stdout)}
 	})
-	return console{
+	con := console{
 		view: live, resizes: resizes,
 		// ONCE, and the transcript is why it has to be: restore() and Stop() are
 		// both idempotent because they run from more than one exit path, and
@@ -91,6 +91,18 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 		// piped paths keep the real stderr (D6), so a script's `2>` is untouched.
 		stdout: live, stderr: live,
 	}
+	// newSitting builds a console for a full-screen sitting on THIS terminal.
+	//
+	// Built HERE because this is where `sess`, the real `stdout` and the concrete
+	// screen are in scope — runEditor has none of them, and widening its
+	// signature would undo the thing its own doc calls the point: "the editor
+	// loop with the terminal factored out". The closure carries the terminal so
+	// the loop never has to (#48 PQ-2).
+	con.newSitting = func(ctx context.Context, d deps, opt options, keys <-chan Key,
+		interrupts *interrupter, stderr io.Writer) int {
+		return sittingInPlace(ctx, d, opt, keys, interrupts, live, resizes, stdout, stderr)
+	}
+	return con
 }
 
 // viewportGesture moves the VIEW rather than the state, and reports whether it
@@ -150,6 +162,11 @@ type console struct {
 	resizes <-chan winSize
 	// finish hands the terminal back — see handBack for the order and why.
 	finish func()
+	// newSitting runs today's review on THIS terminal, or is nil where one
+	// cannot run — a test's console, and the line-mode loop, which has no
+	// terminal at all. Nil is what /play refuses on (#48).
+	newSitting func(ctx context.Context, d deps, opt options, keys <-chan Key,
+		interrupts *interrupter, stderr io.Writer) int
 	// stdout and stderr are where the session's bytes go.
 	stdout io.Writer
 	stderr io.Writer
@@ -499,7 +516,23 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					if sess.hasCurrent() {
 						cc.replay = func(l store.Lang) { pron = l }
 					}
+					// RECORDED here, PERFORMED below — /pron's rule one verb up.
+					// Supplied only when this console can host a sitting, so a
+					// nil capability IS /play's refusal.
+					var sitting bool
+					if con.newSitting != nil {
+						cc.startSitting = func() { sitting = true }
+					}
 					dispatchCommand(cmd, commands, cc)
+					if sitting {
+						// The loop owns running it, so --play and /play reach one
+						// playSession. Its exit code is the SITTING's and does not
+						// end the loop: a review that finished, or a Ctrl-C that
+						// ended one, both land back at this prompt.
+						con.newSitting(ctx, d, opt, keys, interrupts, stderr)
+						draw()
+						continue
+					}
 					if pron != "" {
 						// The same replay a bare Enter takes, one parameter apart.
 						// No reset: pron is declared inside this block and

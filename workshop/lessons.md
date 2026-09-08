@@ -4023,3 +4023,13 @@ a form name for display while the accuracy map was still keyed by the raw string
 so `meaning` and `meaning\x1b[2J` printed as two identical-looking rows with
 different numbers. Group by what the reader SEES, after the transform, or the
 screen contradicts itself.
+
+**Check the RELEASE side, not just the acquisition.** `#48`'s plan took three
+gate rounds and every finding was the same shape. `enterAlt` is idempotent — but
+`restore` is shared. The sitting gets its own `finish` — but the entity row still
+called `newConsole`, which installs the restoring one. Two painters were handled —
+but so were two resize watchers, and only one had been noticed.
+
+When a design borrows something a caller already holds, enumerate what the
+ordinary constructor ACQUIRES and answer each one. `newConsole` acquires three
+things; the plan answered one per round until the gate had asked three times.

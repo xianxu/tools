@@ -125,21 +125,21 @@ finding out that it had to be, which is design and is priced in `issue-spec`.
 
 ## Done when
 
-- [ ] `/play` runs today's sitting from inside the loop and returns to the
+- [x] `/play` runs today's sitting from inside the loop and returns to the
       definition prompt, both on finishing the queue and on Ctrl-C.
-- [ ] Ctrl-C during a sitting ends the SITTING, not the program — through
+- [x] Ctrl-C during a sitting ends the SITTING, not the program — through
       `interrupter.Set`, not a second interrupt path.
-- [ ] The terminal is entered ONCE. A guard, not a comment: nothing may call
+- [x] The terminal is entered ONCE. A guard, not a comment: nothing may call
       `enterRaw` while a session is live, and the check derives its set of call
       sites rather than listing them.
-- [ ] `--play` and `/play` reach the same `playSession`, so a change to the
+- [x] `--play` and `/play` reach the same `playSession`, so a change to the
       sitting cannot apply to only one of them.
-- [ ] `/play` on the line-mode REPL refuses with a sentence naming the cause.
-- [ ] The command appears in `/help` (which reads the `commands` registry, so it
+- [x] `/play` on the line-mode REPL refuses with a sentence naming the cause.
+- [x] The command appears in `/help` (which reads the `commands` registry, so it
       follows from the row) and in the ATLAS's command list, which is the derived
       one — `TestDocsQuoteTheCommandList` checks `atlas/define.md`, not the
       README. The README's own prose is hand-written and swept, not derived.
-- [ ] Everything a sitting records is recorded identically from either entry
+- [x] Everything a sitting records is recorded identically from either entry
       point — one capture path, asserted through the store rather than through a
       fake.
 
@@ -152,8 +152,8 @@ that implements it rather than ahead of it (#8 BR-12).
 
 Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
 
-- [ ] The command — /play records the intent, refuses where it cannot run.
-- [ ] The sitting — sittingInPlace on the terminal the loop already holds, with
+- [x] The command — /play records the intent, refuses where it cannot run.
+- [x] The sitting — sittingInPlace on the terminal the loop already holds, with
       Ctrl-C scoped through interrupter.Set.
 
 ## Log
@@ -173,3 +173,47 @@ project's scope event of the same date.
 for exactly the "something narrower than the session owns Ctrl-C" case a sitting
 now needs. The work is joining three seams, and the failure mode is writing a
 fourth path through terminal setup instead.
+
+### 2026-09-08 — built, and smoke-tested by the operator
+
+**Operator smoke test PASSED** on a freshly restaged deck (ten words, five
+authored cloze items, no events), including the Ctrl-C path the first run had
+missed.
+
+**What the four plan rounds bought.** The issue was filed as three existing seams
+meeting, and the operator and I both read it as straightforward. The command half
+was. The terminal half needed three things, none of which existed:
+
+1. **`liveScreen.suspend`/`resume`** — two screens now share one terminal, and
+   each carries a throttled painter that fires on its own goroutine. `Stop` is
+   one-way; it is the end of a screen's life, not a pause. One flag, checked in
+   `repaint`'s existing gate, which is the only thing that writes to the tty.
+2. **A console that BORROWS.** `newConsole` acquires three things a borrower must
+   not: a `finish` that restores the SHARED session and prints to a cooked
+   terminal, a second `watchResize` goroutine, and a second `enterMouse`. The
+   sitting assembles its console by hand and borrows the loop's resize channel,
+   so there is one watcher for the process's life.
+3. **`console.newSitting`**, built where `sess` and the real stdout are in scope,
+   so `runEditor`'s signature stays what its own doc calls the point: "the editor
+   loop with the terminal factored out".
+
+**The summary goes UP, not out.** `handBack` prints the transcript AFTER
+restoring to cooked mode, and the order is the precondition — the first revision
+proposed a no-op restorer, which keeps the order and removes what it was for.
+The sitting writes its transcript into the editor's buffer instead, where it is
+in the scrollback when the prompt returns.
+
+**Three guards, each mutation-checked with the real regression:**
+`TestASittingFromTheLoopNeverEntersRawMode` walks `sittingInPlace`'s callees
+transitively and names the path (routing `/play` through `runPlay` reddens it as
+`sittingInPlace → runPlay → enterRaw`);
+`TestBothEntryPointsReachOnePlaySession` is the Done-when that stops a change
+applying to only one door; and
+`TestASuspendedScreenPaintsNothingAndResumesWhereItWas` carries the clause that
+separates suspend from `Stop` — after resume, the frame comes back.
+
+**One comment corrected mid-build.** `suspend` disarms the timer, and the comment
+said the frame stayed off the terminal because of it. The sweep proved otherwise:
+removing the disarm reddened nothing, because `repaint`'s gate already stops the
+flush. It is hygiene, and the comment says so now rather than claiming a
+load-bearing role it does not have.
