@@ -35,7 +35,13 @@ Whether any of this is working should be visible in one screen.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Durable design: `workshop/plans/000008-vocab-stats-plan.md`.
+
+Single-pass: one boundary, plain checkboxes (AGENTS.md §3 — tagging Mx would
+force a redundant milestone-close on atomic work).
+
+- [ ] The fold — Stats, Summarise, the two streaks, accuracy by form.
+- [ ] The screen — renderStats, the -stats flag, docs.
 
 ## Log
 
