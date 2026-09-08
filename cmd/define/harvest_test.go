@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -621,14 +626,21 @@ func TestHarvestSendsTheDecksLanguage(t *testing.T) {
 
 // The mode rule, pinned on the RULE rather than on the pairs.
 //
-// modeCollision is what run() calls, so this covers every pair including the
-// ones nobody has typed — and a sixth mode added to run()'s slice is covered by
-// construction rather than by someone remembering to add a case here.
+// modeCollision is what run() calls, so this covers every pair including the ones
+// nobody has typed.
+//
+// AND THE LIST IS DERIVED, which it was not (#8). This comment used to claim "a
+// sixth mode added to run()'s slice is covered by construction rather than by
+// someone remembering", and main.go said "modeCollision's table test derives from
+// this" — both false while the names were hand-written here. The PAIRS derived;
+// the SET did not, so the sixth mode would have been the first one no pair test
+// ever saw, in a place two comments called safe. `#8` is that sixth mode.
+//
+// Same move TestEveryFormIsEnrolled makes for forms: read the extent out of the
+// code that owns it, and fail closed when the read finds less than the code
+// declares.
 func TestModeCollision(t *testing.T) {
-	all := []mode{
-		{"-llm-check", false}, {"-forget", false}, {"-play", false},
-		{"-reflect", false}, {"-harvest", false},
-	}
+	all := declaredModes(t)
 	if _, _, clash := modeCollision(all); clash {
 		t.Error("no mode requested reported a collision")
 	}
@@ -774,3 +786,226 @@ func TestRunHarvestThroughTheWiringHop(t *testing.T) {
 }
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }
+
+// declaredModes reads run()'s mode list out of main.go.
+//
+// PARSED, NOT LISTED. The names live in one place — the `modes := []mode{...}`
+// literal that run() hands to modeCollision — and this reads them there, so a
+// mode added to run() joins every pair check without anyone remembering.
+//
+// It fails closed on the count for the reason #12 BR-17 established: an
+// extraction that finds FEWER members than the code declares is under-deriving,
+// and every guard built on it is then checking a set nobody chose.
+func declaredModes(t *testing.T) []mode {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing main.go: %v", err)
+	}
+	var names []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		at, ok := lit.Type.(*ast.ArrayType)
+		if !ok {
+			return true
+		}
+		if id, ok := at.Elt.(*ast.Ident); !ok || id.Name != "mode" {
+			return true
+		}
+		for _, el := range lit.Elts {
+			row, ok := el.(*ast.CompositeLit)
+			if !ok || len(row.Elts) == 0 {
+				continue
+			}
+			s, ok := row.Elts[0].(*ast.BasicLit)
+			if !ok || s.Kind != token.STRING {
+				t.Errorf("%s: a mode's name is not a string literal, so the set of "+
+					"modes cannot be known statically", fset.Position(row.Pos()))
+				continue
+			}
+			name, err := strconv.Unquote(s.Value)
+			if err != nil {
+				t.Fatalf("%s: %v", fset.Position(row.Pos()), err)
+			}
+			names = append(names, name)
+		}
+		return true
+	})
+	if len(names) < 5 {
+		t.Fatalf("found %d modes in main.go %v; run() declares at least five, so this "+
+			"derivation is under-deriving and every check built on it would be "+
+			"certifying a set nobody chose", len(names), names)
+	}
+	out := make([]mode, 0, len(names))
+	for _, n := range names {
+		out = append(out, mode{name: n})
+	}
+	return out
+}
+
+// EVERY MODE run() DISPATCHES IS IN THE COLLISION LIST (#8 BR-1).
+//
+// declaredModes reads the LIST, so it derives whatever is there — and removing a
+// row leaves it deriving one fewer, silently. The boundary review measured
+// exactly that: deleting `{"-stats", *statsFlag}` left the whole package green,
+// so the mode would still dispatch while colliding with nothing.
+//
+// The extent that matters is therefore not the list but the DISPATCH: a flag
+// run() returns on is a mode, whether or not anyone remembered to write it down.
+// This reads both out of main.go and requires them to agree, which is the same
+// both-directions closure #46 BR-9 arrived at — one side cannot hide what the
+// other declares.
+func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing main.go: %v", err)
+	}
+
+	// 1. Every `x := fs.Bool("name", …)` — the variable a flag is read through,
+	//    and the name a user types.
+	flagName := map[string]string{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		id, ok := as.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		call, ok := as.Rhs[0].(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if sel.Sel.Name != "Bool" {
+			return true
+		}
+		lit, ok := call.Args[0].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		name, err := strconv.Unquote(lit.Value)
+		if err == nil {
+			flagName[id.Name] = "-" + name
+		}
+		return true
+	})
+	// A mode can also be a bool LOCAL that names its flag directly —
+	// `forgetting := isSet(fs, "forget")`. That is one of the six, and the first
+	// version of this guard missed it (#8 BR-11): it found five, and its
+	// hand-typed floor of five certified exactly the gap it existed to catch.
+	//
+	// Read from the CALL rather than from the variable's name: `isSet(fs, "x")`
+	// says which flag it is, so nothing here has to guess from spelling.
+	ast.Inspect(file, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		id, ok := as.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		call, ok := as.Rhs[0].(*ast.CallExpr)
+		if !ok || len(call.Args) != 2 {
+			return true
+		}
+		fn, ok := call.Fun.(*ast.Ident)
+		if !ok || fn.Name != "isSet" {
+			return true
+		}
+		lit, ok := call.Args[1].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		if name, err := strconv.Unquote(lit.Value); err == nil {
+			flagName[id.Name] = "-" + name
+		}
+		return true
+	})
+
+	// 2. Every `if *x { return runY(…) }` — a flag run() RETURNS on is a mode.
+	dispatched := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		is, ok := n.(*ast.IfStmt)
+		if !ok || is.Cond == nil || is.Else != nil {
+			return true
+		}
+		// TWO SHAPES, because run() has two. A bool flag is read through a
+		// pointer (`if *playFlag {`); a bool LOCAL derived from a string flag is
+		// read directly (`if forgetting {`). Recognising only the first is what
+		// left -forget uncovered (#8 BR-11).
+		var id *ast.Ident
+		switch cond := is.Cond.(type) {
+		case *ast.StarExpr:
+			id, _ = cond.X.(*ast.Ident)
+		case *ast.Ident:
+			id = cond
+		}
+		if id == nil {
+			return true
+		}
+		name, ok := flagName[id.Name]
+		if !ok {
+			return true
+		}
+		// The body must RETURN a call — that is what makes it a mode rather than
+		// a flag that merely adjusts behaviour.
+		for _, stmt := range is.Body.List {
+			ret, ok := stmt.(*ast.ReturnStmt)
+			if !ok || len(ret.Results) != 1 {
+				continue
+			}
+			if _, ok := ret.Results[0].(*ast.CallExpr); ok {
+				dispatched[name] = true
+			}
+		}
+		return true
+	})
+	listed := map[string]bool{}
+	for _, m := range declaredModes(t) {
+		listed[m.name] = true
+	}
+	// THE FLOORS DERIVE FROM EACH OTHER, not from typed numbers. The first
+	// version calibrated against three hand-written constants (#8 BR-11), and
+	// one of them — "at least five dispatched modes" — was exactly the count a
+	// derivation missing `-forget` produced, so the floor certified the gap it
+	// was meant to catch.
+	//
+	// The two sides are independent readings of one fact, so each is the other's
+	// floor: fewer dispatches than the list declares means this parse missed a
+	// shape, and that is a failure OF THIS GUARD rather than of the code.
+	if len(dispatched) < len(listed) {
+		t.Errorf("the dispatch parse found %d modes %v but the collision list declares "+
+			"%d %v — this guard is missing a dispatch SHAPE (a mode wired some way it "+
+			"does not recognise), so it would certify a set nobody chose.",
+			len(dispatched), keysOfBool(dispatched), len(listed), keysOfBool(listed))
+	}
+	for name := range dispatched {
+		if !listed[name] {
+			t.Errorf("run() returns on %s, so it is a MODE, but it is not in the "+
+				"collision list — it would coexist silently with every other mode, "+
+				"and `define %s -play` would honour one of them without saying so.",
+				name, name)
+		}
+	}
+}
+
+// keysOfBool is a stable listing for a diagnostic.
+func keysOfBool(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

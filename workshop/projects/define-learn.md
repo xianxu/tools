@@ -6,7 +6,7 @@ done_when: "A real day of use runs end to end on generated material: words captu
 status: defined
 created: 2026-08-20
 updated: 2026-09-07
-mvp_scope: ["tools#5", "tools#6", "tools#7", "tools#8", "tools#9", "tools#10", "tools#11", "tools#12", "tools#16", "tools#17"]
+mvp_scope: ["tools#5", "tools#6", "tools#7", "tools#8", "tools#9", "tools#10", "tools#11", "tools#12", "tools#16", "tools#17", "tools#48"]
 explicitly_out_note: "tools#18 (Spanish) is real and filed, but OUT of this project's MVP: define-learn is done when the English loop works end to end. #18 M1 (audio) is independently shippable at any time. tools#13 (form 2.4, the written sentence) left MVP on 2026-09-07 — see the scope event; the done-when never referenced it, and the operator wants the news-grounded version of production rather than the free-sentence one."
 explicitly_out: ["multi-learner accounts", "sync/replication beyond whichever directory you run it in", "languages other than English", "generated (TTS) pronunciation — recorded audio only", "a GUI or mobile client"]
 sources: ["workshop/parley/ — define-learn ideation", "operator conversation 2026-08-22 (adaptive scope)"]
@@ -250,7 +250,8 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
 - [x] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
 - [x] authored practice items — a CEFR band and a domain per word, cached forever and assigned once; two closed vocabularies in the store, the dictionary answering the domain where it can [tools#10 M1]
 - [x] authored practice items — stems the model writes offline; distractors SELECTED at the learner's band or one below and vetoed. **STOP HERE and read a real batch** [tools#10 M2]
-- [ ] `--stats` — all derived from the event log [tools#8]
+- [x] `--stats` — all derived from the event log [tools#8]
+- [ ] `/play` — a sitting from inside the loop, returning to it [tools#48]
 - [x] spaced repetition rework — one unbounded ladder, `floor(1.6**box)`, no ceiling [tools#39]
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]
 - [x] form 2.5 — the board, grid triage for mature words [tools#40]
@@ -1022,3 +1023,23 @@ version first would be shipping the version already superseded.
 **What the MVP is now:** ten issues, nine done, `#8` (`--stats`) the last one
 open. `#13` stays filed and open, outside the project's scope, carrying the
 news-grounded reshaping in its Spec for whoever picks it up.
+
+### 2026-09-07 — scope event: `/play` joins the MVP as `#48`
+
+**Operator decision:** *"we should add another /action in the TUI program, /play
+to trigger today's play. after play is finished, or ctrl-c to exit play mode, we
+go back to definition mode. this way user can always be in the TUI program."*
+
+**Why this belongs in the MVP where `#13` did not.** The done-when requires *"a
+review session played and scored"* and *"a free-form question answered in the
+console with the session's own words as context"* — both already true. What is
+NOT true is that they are reachable from one another: a learner asking a question
+in the console has to quit to review, and a learner reviewing has to quit to ask.
+The project's thesis is a loop, and the loop currently has a seam in it that the
+learner has to step over.
+
+That makes this a completeness fix on a done-when clause rather than a new verb,
+which is the distinction `#13` failed: `#13` added a fourth thing to do, `#48`
+makes the three that exist reachable without leaving.
+
+**The MVP is now `#8` and `#48`.** Nine issues done.

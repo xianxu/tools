@@ -1115,6 +1115,7 @@ catches up.
 |---|---|
 | `/help` | list the commands |
 | `/history` | words looked up recently |
+| `/stats` | deck, streak and accuracy figures |
 | `/sound` | how many times to play a pronunciation |
 | `/lang` | the language this deck is in |
 | `/pron` | replay this word in its source language, once |
@@ -2626,6 +2627,29 @@ with no row there draws an underline that does nothing, which
   narrow: a question never marks its own SUBJECT (that would answer it), and
   clicks are not subject to the rule at all, since a click costs nothing when it
   is everywhere while colour degrades.
+- **`--stats` is a FOLD, not a set of counters (`#8`).** `schedule.Summarise`
+  takes the log, the deck and `now`, and returns every figure the screen shows;
+  `renderStats` turns that into lines. Nothing is stored, which is `#3`'s second
+  reason for an append-only log.
+
+  Three decisions carry the design. **The deck and the log answer different
+  questions**: `Known`/`Mastered` come from the deck, because `--forget` leaves
+  events behind and a log-only count would report deleted words, while
+  `AddedPerDay` comes from the log, because a forgotten word was still added
+  that day. **Mastery is `schedule.Mastered`'s answer**, never a box comparison
+  written twice — its own doc names this as the second consumer. And **`now` is a
+  parameter rather than an injected clock**, so every timezone and DST case is a
+  table row.
+
+  **The day set is keyed by a DATE (`civilDay`), not by an instant**, and both
+  bugs behind that are worth keeping: a `time.Time` key carries the `*Location`
+  pointer, so one calendar day written in two offsets made two keys; and an
+  instant can fail to EXIST — where DST moves at local midnight (Havana
+  2026-03-08, Santiago 2026-09-06, Beirut 2026-03-29) `time.Date` normalises
+  00:00 into the previous day, so the key landed on its neighbour's date and a
+  run through that night read as broken. New York's transitions are at 02:00 and
+  hide this completely.
+
 - **`RegionWord` — a deck word, wherever it is written (`#46`).** The registry's
   third kind, and the first produced for a PROMPT rather than for a rendered
   entry. It is distinct from `RegionHeadword` by provenance, not behaviour: a

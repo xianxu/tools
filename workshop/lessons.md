@@ -3962,3 +3962,64 @@ sentence was checked**, and writing it forces the check.
 covered by construction". Neither is true, and the plan inherited the falsehood
 by reading the comment instead of the test. When a comment asserts a guard's
 extent, open the guard.
+
+**A guard that derives from the LIST it is checking cannot see a deletion.**
+`#8` fixed `TestModeCollision` to parse `run()`'s `modes` slice instead of
+hand-listing five names — and that was still not enough. The guard derives
+whatever is in the list, so deleting a row leaves it deriving one fewer and
+passing, while the mode goes on dispatching and colliding with nothing.
+
+**Derive from the OTHER side.** A mode is a flag `run()` returns on; the list is
+the claim about it. Read both and require them to agree, and neither side can
+hide what the other declares — the both-directions closure `#46` BR-9 arrived at
+by a different road. Mutation-check on a member the finding did NOT name, or you
+have pinned one instance again.
+
+**A comment asserting DRY is not DRY.** `runStats` and `runStatsCommand` each did
+their own read, fold and render — five duplicated statements under a doc comment
+reading "ONE FOLD, ONE RENDERER, TWO ENTRY POINTS… everything below that seam is
+shared". The sentence was aspirational and read as descriptive. When you write
+that a thing is shared, the next line should be the function it is shared
+through.
+
+**Keep a plan on the branch that implements it.** `#48`'s plan, committed onto
+`#8`'s branch, made `#8`'s suite red — the plan-vs-code guards correctly reported
+that it named entities and tests the window did not contain. Plans are checked
+against the code in their window, so a plan for other work is a plan that cannot
+pass.
+
+**A calendar day is a DATE, never an instant — an instant can fail to exist.**
+`#8` keyed its day set by `StartOfDay`'s `time.Time`, which was careful about
+zones and still wrong: where a DST transition happens at LOCAL MIDNIGHT, 00:00 is
+not a real moment, and `time.Date` normalises it. In Havana,
+`StartOfDay(2026-03-08)` returns **2026-03-07T23:00** — a key sitting on the
+previous day's date — so any streak through that night read as broken.
+
+New York hides it completely: its transitions are at 02:00, so every local
+midnight exists and a wrong implementation passes every test written there. The
+fixture has to be a zone that actually has the property — Havana 2026-03-08,
+Santiago 2026-09-06, Beirut 2026-03-29, found by PROBING the tzdata rather than
+by recall — and the test should assert the premise too, or it can pass for the
+wrong reason.
+
+**Do calendar arithmetic where no clock has ever moved.** `civilDay.add` converts
+to noon UTC, adds days, and converts back. "The day before" is then always the
+date a reader would name.
+
+**And I deleted the probe that was investigating this.** A stray `main.go` at the
+repo root, scanning Havana/Santiago/Beirut for exactly this — swept as debris
+without asking what it was for. The review found the bug an hour later. **Before
+deleting your own scratch work, read what question it was asking.**
+
+**One filter, every figure.** `#8`'s fold rejected hand-edited timestamps for the
+day set and the accuracy rows, and ran `Fold` on the RAW slice — so a future
+event was excluded from the streak and included in the mastery box. Two halves of
+one screen disagreeing about which events are real, on a log the README invites
+editing. **When a fold validates its input, it validates it ONCE, before anything
+reads it** — not at each reader, where the readers drift.
+
+**Sanitising at render can merge two rows or split one.** `formLabel` neutralised
+a form name for display while the accuracy map was still keyed by the raw string,
+so `meaning` and `meaning\x1b[2J` printed as two identical-looking rows with
+different numbers. Group by what the reader SEES, after the transform, or the
+screen contradicts itself.

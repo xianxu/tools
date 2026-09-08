@@ -140,6 +140,32 @@ rounds:
           family: unbacked-existing-behavior-claim
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-07T19:19:53-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-2
+          disposition: addressed
+          note: noDeckMessage named with its reason and exit 0 justified; stream left to the four existing callers' precedent.
+          round: 3
+        - id: PQ-4
+          disposition: addressed
+          note: ARCH-SECURE section states the zero/future At skips and the Form control-rune neutralisation, each pinned.
+          round: 3
+        - id: PQ-6
+          disposition: addressed
+          note: Now states the log IS chronological, citing store.go:18, mem.go:105, yaml.go:353; min/max kept on a correct basis.
+          round: 3
+        - id: PQ-7
+          disposition: addressed
+          note: Table reads Progress{Box, MaxBox, LastReviewed} and disclaims the lapse count.
+          round: 3
+        - id: PQ-9
+          disposition: addressed
+          note: Rule written into the plan and swept; fourteen citations verified against the tree, none wrong.
+          round: 3
+      blocked: false
+content_hash: 6fd099099a7b5b27e0f1027ffe774d56815891c8839eb412c29f07b2cf06a951
 ---
 
 # Gate ledger — tools#8 (plan-quality)
@@ -217,10 +243,16 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   a file:line, verified. Write the rule into the plan and sweep the whole document in this
   round rather than correcting the instances a reviewer happened to reach (ARCH-PURPOSE).
 
+## Round 3 — 2026-09-07T19:19:53-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-2 — addressed — noDeckMessage named with its reason and exit 0 justified; stream left to the four existing callers' precedent.
+- PQ-4 — addressed — ARCH-SECURE section states the zero/future At skips and the Form control-rune neutralisation, each pinned.
+- PQ-6 — addressed — Now states the log IS chronological, citing store.go:18, mem.go:105, yaml.go:353; min/max kept on a correct basis.
+- PQ-7 — addressed — Table reads Progress{Box, MaxBox, LastReviewed} and disclaims the lapse count.
+- PQ-9 — addressed — Rule written into the plan and swept; fourteen citations verified against the tree, none wrong.
+
 ## Open findings
 
-- **PQ-2** [Important] `reuse-existing-helper` No-deck path names two incompatible contracts and points away from the existing helper
-- **PQ-4** [Important] `untrusted-persisted-input` No ARCH-SECURE line for a hand-editable event log whose bad timestamps silently poison the figures
-- **PQ-6** [Minor] `unbacked-existing-behavior-claim` ARCH-ORDER says the log is not guaranteed sorted; the contract and both implementations say it is
-- **PQ-7** [Minor] `unbacked-existing-behavior-claim` The reuse table credits schedule.Fold with a lapse count that Progress does not carry
-- **PQ-9** [Important] `unbacked-existing-behavior-claim` 4th instance of the family — state the file:line rule and sweep the plan, do not fix the three sentences
+(none — every finding has been disposed)

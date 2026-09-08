@@ -1,12 +1,13 @@
 ---
 id: 000008
-status: working
+status: codecomplete
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
-updated: 2026-09-07
+updated: 2026-09-08
 estimate_hours: 3.71
 started: 2026-09-07T19:04:15-07:00
+actual_hours: 2.98
 ---
 
 # define --stats: deck, streak and mastery statistics
@@ -85,10 +86,10 @@ what the issue refuses to reimplement, and that is most of why the number is low
 
 ## Done when
 
-- [ ] Every figure derived from events, none stored separately.
-- [ ] Streak arithmetic verified across timezone boundaries and gaps with a fake
+- [x] Every figure derived from events, none stored separately.
+- [x] Streak arithmetic verified across timezone boundaries and gaps with a fake
       clock.
-- [ ] Renders sensibly on an empty deck.
+- [x] Renders sensibly on an empty deck.
 
 ## Plan
 
@@ -97,11 +98,13 @@ Durable design: `workshop/plans/000008-vocab-stats-plan.md`.
 Single-pass: one boundary, plain checkboxes (AGENTS.md §3 — tagging Mx would
 force a redundant milestone-close on atomic work).
 
-- [ ] The fold — Stats, Summarise, the two streaks, accuracy by form.
-- [ ] The screen — renderStats, the -stats flag, docs.
+- [x] The fold — Stats, Summarise, the two streaks, accuracy by form.
+- [x] The screen — renderStats, the -stats flag, `/stats`, docs.
 
 ## Log
 
+
+- 2026-09-08: closed — define --stats and /stats ship. Every figure folded from the append-only log by schedule.Summarise (pure; now is a parameter) and rendered by renderStats, through printStats — the ONE read-fold-render both doors call. ROUND 2 CRITICAL, BR-9: streaks broke across any DST transition at LOCAL MIDNIGHT. The day set was keyed by StartOfDay time.Time, and where clocks move at midnight that midnight is not a real instant — time.Date normalises it, so Havana StartOfDay(2026-03-08) returns 2026-03-07T23:00, a key on the previous day date, and a run through that night read as broken. New York hides it entirely (transitions at 02:00), so every DST test written there passed on the wrong implementation. The key is now civilDay, three integers, with arithmetic at noon UTC where no clock has ever moved; TestStreaksSurviveAMidnightDSTTransition covers Havana 2026-03-08, Santiago 2026-09-06 and Beirut 2026-03-29, found by PROBING tzdata rather than by recall, and TestTheMidnightZonesReallyLackAMidnight asserts the premise so the row cannot pass for the wrong reason. Mutation-verified: restoring the StartOfDay-derived key reddens Havana with ActiveDays 2 and CurrentStreak 1. BR-11: the dispatch derivation covered five of six modes and its hand-typed floor of five certified exactly that gap — -forget dispatches through isSet(fs, "forget"), a shape the parse did not know. It reads that shape now and the two derivations are each other floor rather than typed constants; swept on -forget, -stats and -llm-check, each reddening by name. BR-12: #48 issue no longer claims a durable plan no branch holds, and records WHY (a plan is checked against the code in its window by guards that walk every plan in the tree). BR-2: the plan entity table, the nil-deck exit code and the unticked steps are corrected with a Revisions entry. Round 1: BR-4, printStats is where "everything below that seam is shared" became true — the comment said it over five duplicated statements; BR-1, the mode guard derived from the LIST it was checking, so deleting a row left it deriving one fewer and passing while the mode still dispatched. Done-when 1: Known/Mastered from the DECK and AddedPerDay from the LOG, pinned by TestKnownCountsTheDeckNotTheLog; mastery asserted by AGREEMENT with the queue via schedule.Mastered. Done-when 2: streaks across both New York DST boundaries, three midnight-transition zones, and fractional offsets (+05:30, +05:45); now is a PARAMETER rather than a fake clock, recorded as a deviation; TestDaysAreCountedInTheLearnersZone pins the location-pointer bug found by re-reading. Done-when 3: TestStatsOnAnEmptyDeckSaysSoRatherThanPrintingZeros. ARCH-SECURE: zero and future timestamps SKIPPED not clamped; formLabel drops control runes, this being the first path putting ReviewEvent.Form on a terminal. A flagged question is not an attempt. TestEveryStatsFieldIsRendered derives the extent by reflection. TestSlashStatsAndTheFlagPrintTheSameScreen asserts byte-identical output from both doors. The nil-deck path returns stderr+1, matching four unanimous siblings. Hand-run against the operator real vocab directory and the smoke deck. go test -count=1 ./... green; go vet clean under default, pty and conformance; gofmt clean.; review verdict: FIX-THEN-SHIP
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
@@ -129,3 +132,43 @@ is a table row rather than a clock double. That is stronger than the row asks
 for: no interface to inject, no fake to keep honest, and the DST days are named
 constants in the test. `store.FixedClock` remains available and is simply not
 needed at this seam.
+
+### 2026-09-07 — built
+
+**Three bugs found before review, each by a different instrument**, which is
+worth recording because they are the same class caught three ways.
+
+**The compiler:** `Progress` has no `FirstSeen`. I assumed it did — the fourth
+time this issue's design leaned on a misremembered field — and the type checker
+said so immediately. `added` walks the events instead, which needs the log to be
+chronological; it is, and the seam promises it (`store/store.go:18`).
+
+**A re-read:** the day map is keyed by `time.Time`, whose equality includes the
+`*Location` POINTER. An event that came back carrying a fixed offset while `now`
+was in `time.Local` would produce two keys for one calendar day, so a streak
+would miss days the learner actually used — and a YAML log routinely holds mixed
+offsets, because DST changes the one the machine writes. Every event is converted
+into the learner's zone first, which is `DaysBetween`'s own rule
+(`clock.go:46`) applied where the keys are built. Pinned by
+`TestDaysAreCountedInTheLearnersZone`.
+
+**Running it:** the smoke deck showed `words 10` beside `words/day 0.0`, because
+those words were written straight to the store with no lookup events. A rate of
+zero next to a deck of ten reads as a broken figure rather than as the missing
+history it is. `Stats.Added` now gates the row on the COUNT, so it disappears
+when nothing was recorded and still shows for a genuinely slow learner whose rate
+rounds to 0.0.
+
+**And one correction on review of my own work.** `runStats` first printed
+`noDeckMessage` to stdout and returned 0, arguing a nil deck is "a statement
+about the directory, not a failure". Every sibling disagrees — `--forget`,
+`--harvest`, `--reflect` and `/history` all use stderr and return 1, unanimously.
+The case that argument was protecting is the EMPTY deck, which still exits 0 with
+a sentence.
+
+**`/stats` is a table row plus a run function**, exactly as `#16`'s Done-when
+promises, and the two entry points share everything below the door:
+`TestSlashStatsAndTheFlagPrintTheSameScreen` asserts the output is identical. That
+property is what `#48` will need for `/play`, arriving here first on the cheaper
+case — and the answer to the sequencing question raised before this issue closed
+is that the command table really is just a row.

@@ -1,0 +1,120 @@
+---
+id: 000048
+status: working
+deps: ["tools#6"]
+github_issue:
+created: 2026-09-07
+updated: 2026-09-07
+estimate_hours:
+started: 2026-09-07T23:50:42-07:00
+---
+
+# /play: a sitting without leaving the loop
+
+## Problem
+
+**You have to leave the program to review.** `define --play` is a mode: it runs
+from a shell, takes the terminal, and exits. So a session that starts as "look a
+few things up" and turns into "actually, let me review" costs a quit, a
+re-invocation, and — when the sitting ends — another invocation to get back to
+looking things up.
+
+The loop is where a learner already is. The sitting should be reachable from it.
+
+## Spec
+
+**`/play` runs today's sitting and returns to the prompt.** Ctrl-C ends the
+sitting the way it always has, and lands back at the definition prompt rather
+than at the shell. So does finishing the queue.
+
+### What makes this more than a command-table row
+
+Three things are already true, and they decide the shape:
+
+- **`playSession` is already separable from `runPlay`.** `runPlay`
+  (`play_loop.go:24`) does the guards, `enterRaw` and the console, then calls
+  `playSession(ctx, d, opt, session, held, keys, console)` (`play_loop.go:105`).
+  That call is the reusable half, and `/play` wants it rather than `runPlay`.
+- **BOTH loops call `enterRaw`** — `play_loop.go:85` and `replraw.go:25`. A
+  `/play` that called `runPlay` would put an already-raw terminal into raw mode
+  and take a second alternate screen inside the first. The command must reuse the
+  REPL's live `rawSession`, not open its own.
+- **The scoped interrupt already exists.** `interrupter.Set`
+  (`interrupt.go:34`) exists so something narrower than the session can own
+  Ctrl-C and hand it back — built in `#16` for a streaming answer. A sitting is
+  the second thing that wants it, and "Ctrl-C ends the sitting, not the program"
+  is exactly what `Set`/`restore` say.
+
+So this is not new machinery. It is three existing seams meeting, and the risk is
+that a fourth path through terminal setup gets written instead.
+
+### The decisions the plan owns
+
+- **Where the sitting draws.** The REPL is a scrolling loop with a pinned editor;
+  `--play` paints full frames. Does `/play` take the alternate screen inside the
+  REPL's, or draw into the same one? A wrong answer here is visible as corruption
+  rather than as a silent bug, which is a mercy.
+- **What the REPL looks like on return.** The sitting's summary is worth keeping
+  on screen; the frames are not. `--play` already draws its summary into the
+  buffer before handing the terminal back (`play_loop.go`'s exit comment), and
+  that ordering is the precedent.
+- **The line-mode REPL.** `replLines` has no raw terminal at all, and a sitting
+  needs one. `/play` there should refuse with a sentence — the same shape
+  `--play` uses when stdout is not a terminal — rather than degrade into
+  something unusable.
+- **`--play` stays.** A learner who wants only to review should not have to enter
+  a REPL to do it, and scripts use the flag. Two entry points, one
+  `playSession`.
+
+## Done when
+
+- [ ] `/play` runs today's sitting from inside the loop and returns to the
+      definition prompt, both on finishing the queue and on Ctrl-C.
+- [ ] Ctrl-C during a sitting ends the SITTING, not the program — through
+      `interrupter.Set`, not a second interrupt path.
+- [ ] The terminal is entered ONCE. A guard, not a comment: nothing may call
+      `enterRaw` while a session is live, and the check derives its set of call
+      sites rather than listing them.
+- [ ] `--play` and `/play` reach the same `playSession`, so a change to the
+      sitting cannot apply to only one of them.
+- [ ] `/play` on the line-mode REPL refuses with a sentence naming the cause.
+- [ ] The command appears in `/help` and in the README's command list, which are
+      already guarded by derived tests.
+- [ ] Everything a sitting records is recorded identically from either entry
+      point — one capture path, asserted through the store rather than through a
+      fake.
+
+## Plan
+
+**The durable plan lands with the implementation branch**, not before it.
+`workshop/plans/*-plan.md` is checked against the CODE by
+`TestPlanCitesTestsThatExist` and `TestPlanTableStatusMatchesTheChangeWindow`
+(`repo_guard_test.go:1306`, `:1271`), which walk every plan in the tree — so a
+plan committed ahead of its own branch turns the suite red for whatever issue is
+closing. It was written, it did that to `#8`, and it comes back with `#48`'s
+branch. `#8` BR-12 is why this sentence exists rather than a path to a file
+nothing holds.
+
+Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
+
+- [ ] The command — /play records the intent, refuses where it cannot run.
+- [ ] The sitting — sittingInPlace on the terminal the loop already holds, with
+      Ctrl-C scoped through interrupter.Set.
+
+## Log
+
+### 2026-09-07 — filed, IN the MVP
+
+Operator request: *"we should add another /action in the TUI program, /play to
+trigger today's play. after play is finished, or ctrl-c to exit play mode, we go
+back to definition mode. this way user can always be in the TUI program."*
+
+Added to `define-learn`'s `mvp_scope` on the operator's instruction — see that
+project's scope event of the same date.
+
+**Checked before filing**, because the interesting part is what already exists:
+`playSession` is already the separable half of `runPlay`; both loops already call
+`enterRaw`, so nesting is the hazard; and `interrupter.Set` was built in `#16`
+for exactly the "something narrower than the session owns Ctrl-C" case a sitting
+now needs. The work is joining three seams, and the failure mode is writing a
+fourth path through terminal setup instead.
