@@ -61,13 +61,26 @@ while the keys channel, the console and the interrupter are all locals of
 
 ### The three things that must be built
 
-**1. A console that borrows the terminal instead of owning it.** `newConsole`
-takes `sess` only to call `enterAlt` and to build `finish`. A nested console
-needs the first and must not do the second, so it is handed a restorer that does
-nothing — `handBack`'s parameter is already the interface `interface{ restore()
-}` (`replraw.go:238`), so this is an argument rather than a branch. The sitting's
-console still stops its own screen and prints its own transcript; it simply does
-not give back what it never took.
+**1. A console that borrows the terminal, with its own `finish` — NOT `handBack`
+with a no-op restorer.** That was the first revision's answer and it is wrong:
+`handBack` is `live.Stop(); sess.restore(); print transcript` (`replraw.go:239-241`),
+and the ORDER is the point — the transcript is printed after the terminal is back
+in cooked mode and out of the alternate screen. A no-op restorer keeps the order
+and breaks its precondition, printing raw text into the alternate screen.
+
+So the sitting's `finish` is a different three lines:
+
+```go
+// stop this screen's painter, then hand the summary UP rather than out.
+sitting.Stop()
+repl.Write(sitting.Transcript())
+```
+
+**And that answers where the summary lands** (PQ-1's second half): into the
+REPL's own buffer, so it is there in the scrollback when the loop resumes and the
+learner can page back to it — which is what `--play` achieves by printing into
+the normal buffer on exit, reached the only way that works when the REPL still
+owns the terminal.
 
 **2. A way for the loop to build one.** `runEditor` has no `sess`, and widening
 its signature would leak the terminal back into a function whose whole point is
@@ -138,10 +151,18 @@ not the table row it first looked like.
     differs — `newConsole(ctx, d, sess, stdout, newPinnedScreen)`.
   - **Injected into:** nothing. It is the performing half.
 
-**Test surface.** `runPlayCommand` is pure over `commandCtx` and unit-tested
-directly. `sittingInPlace` needs a terminal, so its coverage is the
-**pty test** the repo already runs under the `pty` tag, plus assertions through
-the store that a sitting entered this way records what `--play` records.
+**Test surface.**
+
+- `runPlayCommand` — pure over `commandCtx`, unit-tested directly.
+- `liveScreen.suspend`/`resume` — unit-tested against a buffer tty with a real
+  timer: write, suspend, assert NOTHING more reaches the buffer even after the
+  throttle window elapses, resume, assert the frame returns. That last clause is
+  what distinguishes suspend from `Stop`, and a test without it passes on a
+  `Stop` in disguise.
+- `sittingInPlace` — needs a terminal, so the **pty test** under the `pty` tag,
+  plus an assertion through the STORE that a sitting entered this way records
+  what `--play` records. Not through a fake capturer: `#12`'s sweep found a fake
+  proves the outcome reaches *a* capturer and nothing about what it writes.
 
 ### ARCH-ORDER — the events that matter
 
@@ -164,9 +185,15 @@ the store that a sitting entered this way records what `--play` records.
   viewport intact.
 - **A resize DURING a sitting** goes to the sitting's screen, and the suspended
   one takes the new size on resume rather than repainting at the old one.
-- **Still N/A, stated:** the key transport (one reader goroutine, borrowed rather
-  than duplicated) and durable state (the sitting's writes are `capture`'s,
-  unchanged, and this issue adds none).
+- **EXTENT — who is still running when `sittingInPlace` returns.** Nothing of the
+  sitting's: its screen is stopped (timer disarmed, no goroutine outlives the
+  call) and its console is dropped. The REPL's screen is resumed and its timer
+  re-arms on the next write. The ONE thing that spans both is the key reader
+  goroutine, which belongs to `replRaw` and is borrowed rather than duplicated —
+  it is still running because it was running before, and `sittingInPlace` never
+  owned it.
+- **Still N/A, stated:** durable state (the sitting's writes are `capture`'s,
+  unchanged, and this issue adds none) and retry.
 
 ### ARCH-CONSTRAINTS — the envelope
 
@@ -284,3 +311,35 @@ meeting, and the operator read it as straightforward — as did I. The command h
 is straightforward. The terminal half needs one genuinely new capability
 (suspend/resume on a screen) and two small ones, all three named above rather
 than met during implementation.
+
+### 2026-09-08 — plan-quality round 2
+
+Two findings survived round 1's revision, and both survived for the same reason:
+I answered the half of the question I had checked.
+
+**PQ-1 — the no-op restorer broke a precondition instead of a rule.** `handBack`
+is `live.Stop(); sess.restore(); print transcript`, and the ORDER is load-bearing:
+the transcript is printed once the terminal is back in cooked mode and out of the
+alternate screen. Handing it a restorer that does nothing keeps the order and
+removes the thing the order was for, so raw text would land inside the alternate
+screen. The sitting's `finish` is now its own three lines, and the summary goes
+UP into the REPL's buffer rather than out to the terminal — which also answers
+the half of PQ-1 the first revision left unwritten: where the summary lands.
+
+**PQ-4 — the extent clause.** "Two painters" was handled; "who is still running
+when `sittingInPlace` returns" was not. Written now: nothing of the sitting's
+outlives the call, the REPL's screen resumes, and the one thing spanning both is
+the key reader goroutine — borrowed, never owned, still running because it was
+running before.
+
+**PQ-5 — the new capability had no spec.** `suspend`/`resume` was named as "the
+smallest piece that cannot be avoided" and then given no entity row, no test and
+no state model. It has all three now, including the clause that distinguishes it
+from `Stop`: after `resume`, the frame comes BACK. A test without that clause
+passes on a `Stop` in disguise.
+
+**PQ-6 — a Done-when row rested on a false claim about existing guards.** It said
+the README's command list is guarded by a derived test. It is not: the guard
+reads `atlas/define.md`. `#8` learned that by adding `/stats` and watching which
+document failed, and this plan restated the wrong version anyway — the
+file:line rule at the top of this document exists precisely for that.

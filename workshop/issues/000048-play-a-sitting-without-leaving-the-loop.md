@@ -78,8 +78,10 @@ that a fourth path through terminal setup gets written instead.
 - [ ] `--play` and `/play` reach the same `playSession`, so a change to the
       sitting cannot apply to only one of them.
 - [ ] `/play` on the line-mode REPL refuses with a sentence naming the cause.
-- [ ] The command appears in `/help` and in the README's command list, which are
-      already guarded by derived tests.
+- [ ] The command appears in `/help` (which reads the `commands` registry, so it
+      follows from the row) and in the ATLAS's command list, which is the derived
+      one — `TestDocsQuoteTheCommandList` checks `atlas/define.md`, not the
+      README. The README's own prose is hand-written and swept, not derived.
 - [ ] Everything a sitting records is recorded identically from either entry
       point — one capture path, asserted through the store rather than through a
       fake.
