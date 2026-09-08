@@ -571,6 +571,126 @@ rounds:
           family: two-statements-one-fact
           round: 8
       blocked: true
+    - "n": 9
+      timestamp: "2026-09-07T18:31:57-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: not-addressed
+          note: plan:217 and plan:421 still cite store/audio_test.go (no such file; the rows are in storetest/suite.go), and :203/:449/:456/:827 still spell the types lowercase.
+          round: 9
+        - id: BR-17
+          disposition: not-addressed
+          note: command.go:397-399 unchanged; d.audio appears in neither applyLang's member list nor its "Deliberately NOT here" clause.
+          round: 9
+        - id: BR-18
+          disposition: not-addressed
+          note: yaml.go:858 still reads the record with an unbounded os.ReadFile beside the capped blob at :869; readCapped's doc still says "refusing" where io.LimitReader truncates; no single statement at the store boundary says which persisted reads are bounded.
+          round: 9
+        - id: BR-23
+          disposition: not-addressed
+          note: play_loop_test.go:4270-4291 still loops promptRegions(q) only; the issue row at :274-277 and plan:623/:731 still cite it for RegionWord.
+          round: 9
+        - id: BR-24
+          disposition: not-addressed
+          note: fetch.go:35 and yaml.go:892 are still two independent 4 << 20 constants with nothing holding them equal.
+          round: 9
+        - id: BR-26
+          disposition: not-addressed
+          note: The issue file has not changed since cd89212; both clauses of the row at :261-267 stand, as do Task 5 Step 4 and Verification row 6.
+          round: 9
+        - id: BR-27
+          disposition: not-addressed
+          note: noAudioSource is still declared at main_test.go:20 with zero instantiations; play_loop_test.go:64/:1444 and fetch.go:134 still describe it in the present tense; lessons.md has the filing-reversal grep but no "one grep per reversal" rule.
+          round: 9
+        - id: BR-28
+          disposition: not-addressed
+          note: audiodisk.go:80 still returns rec.From with no membership check against urls. Now the read half of the class named in this round's I-2.
+          round: 9
+        - id: BR-29
+          disposition: addressed
+          note: 'Mutation-verified: reverting withoutWord at main.go:943 reddens TestAQuestionDoesNotColourTheWordItAsks by name; the reveal exemption is pinned separately. The production wiring is a new finding, not this one.'
+          round: 9
+        - id: BR-30
+          disposition: addressed
+          note: 'Mutation-verified on both halves: renaming usage/ in README or audio/ in the atlas each reddens TestStoreLayoutDocsNameEveryRuntimeDir, and README''s missing usage/ row was added.'
+          round: 9
+        - id: BR-31
+          disposition: not-addressed
+          note: 'The appended Revisions entry covers the writeWords signature, the three-layer predicate and BR-30, but not the audioDir shelf: plan:255 and the ticked Step 2 at plan:446-447 still say audio/ is language-scoped "exactly like factsDir and itemsDir", contradicted by yaml.go:180 and yaml.go:727.'
+          round: 9
+        - id: BR-32
+          disposition: not-addressed
+          note: store/audio.go is untouched this window; Slug("") = "w-e3b0c4" so ok()'s Word clause is still a tautology, and deckwords_test.go:409's arg.Name == "nil" branch is still unreachable.
+          round: 9
+        - id: BR-33
+          disposition: addressed
+          note: newHTTPAudioSource2 is deleted and the call inlined to cdn.source() at fetch_test.go:282.
+          round: 9
+      findings:
+        - id: BR-34
+          severity: Important
+          title: Dropping the subject at the sitting's prompt site leaves the whole suite green, so the BR-29 fix is pinned at the door and nowhere else
+          detail: |-
+            Mutation-verified at HEAD: replacing q.Word() with "" at cmd/define/play_loop.go:229 passes the
+            full cmd/define suite. This is the 3rd finding in family production-wiring-unpinned (BR-3, BR-21).
+            Do NOT pin this instance. The rule: a behaviour proved at the door is unproven until the SITE
+            obliged to obey it is derived — the window's own lessons.md states the corollary ("a parameter
+            with one correct value is a parameter that will eventually be given another") and the head commit
+            then added a seventh parameter whose value differs per site and is checked by nothing. Aggravating:
+            subject and already are adjacent bare strings behind five arguments, so swapping them at the reveal
+            site compiles and silently re-colours the embedded render. Sketch: one writePrompt(stdout, q, d, opt)
+            deriving text, promptRegions(q), surfaceOf(q.Form()) and q.Word() from the single q, so the four
+            cannot disagree; or give isTerminal(stdout) at play_loop.go:60 the seam stdinIsTerminal already has,
+            which is what makes an in-process sitting undrivable and forces every prompt guard to be a door guard.
+          family: production-wiring-unpinned
+          round: 9
+        - id: BR-35
+          severity: Important
+          title: AudioKey.Digest reaches a filesystem path element unvalidated, and ok() — whose doc says "usable as a filename" — only checks that it is non-empty
+          detail: |-
+            Probe-verified: SetAudio(AudioKey{Word: "keel", Digest: "../../../../pwned"}, []byte("ID3"), rec)
+            wrote pwned.mp3 and pwned.yaml four levels above the store root and returned nil. Word is laundered
+            through Slug (which is what safeElement exists for); Digest reaches filepath.Join verbatim via stem()
+            (store/audio.go:60, yaml.go:925-943). Not reachable from production — NewAudioKey yields hex — but
+            AudioKey is newly EXPORTED with exported fields and SetAudio is on the exported store.Store interface.
+            This is the 2nd finding in family persisted-field-unvalidated (BR-28 is the read half, rec.From).
+            Do NOT patch Digest alone. The class: every field of an exported store type is validated by the
+            predicate its USE requires — path elements against safeElement, provenance against the candidate
+            list — never by non-emptiness and never by "this program wrote it". Enumeration is three fields:
+            AudioKey.Word (validated), AudioKey.Digest (not), AudioRecord.From (not). One ok() covering the
+            first two plus one membership check at audiodisk.go:88 closes the family.
+          family: persisted-field-unvalidated
+          round: 9
+        - id: BR-36
+          severity: Important
+          title: README states the colour rule with an exception it does not mention, and the atlas never got M2's write door, surface classification or locator layer
+          detail: |-
+            README.md:314-328 says looked-up words "show in green — in the line you type, in definitions, and
+            in answers" with one stated exception ("green stops where the text IS your deck"); a meaning
+            question's headword is prose on a colour-admitting surface and is now deliberately plain.
+            atlas/define.md's "Highlighting the words you are learning" (:917-945) still describes two layers
+            and never names deckSpans as the locator, writeWords as the one write door, or the surface enum
+            (surfaceProse/surfaceDeck/surfaceBoard, admitsColour) — M2's whole architectural surface, present
+            only as one region-registry bullet at :2603. This is the 5th finding in family
+            runtime-artifact-undocumented (BR-8, BR-16, BR-27, BR-30). Do NOT patch the two passages. The rule,
+            now paid for five times: the commit that changes a behaviour sweeps every present-tense statement of
+            it, by a grep written before the change — the derived consumer was right every time and every
+            hand-maintained one was wrong. Enumeration: README's "The words you already know" section, the
+            atlas's highlighting section (three layers, the door, the surface enum), the atlas's playback section.
+          family: runtime-artifact-undocumented
+          round: 9
+        - id: BR-37
+          severity: Minor
+          title: The layout-document extent table is now hand-copied into two guards, so a third document reaches one and not the other
+          detail: |-
+            doc_sync_test.go:625-629 and :684-687 both spell {README.md, "events/2026-08-21.yaml"} and
+            {../../atlas/define.md, "events/YYYY-MM-DD.yaml"}. 3rd finding in family two-statements-one-fact
+            (BR-24 is the 4MB ceiling); measured prevalence 2 sites. One package-level layoutDocs var both
+            range over is the whole fix, and it is the same move as exporting one of the two audio ceilings.
+          family: two-statements-one-fact
+          round: 9
+      blocked: false
 ---
 
 # Gate ledger — tools#46 (boundary-review)
@@ -856,6 +976,69 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-33** [Minor] `two-statements-one-fact` newHTTPAudioSource2 is a rename wrapper around cdn.source() whose name reads as a second constructor
   fetch_test.go:295 defines newHTTPAudioSource2(c *fakeCDN) *httpAudioSource { return c.source() } beside the real newHTTPAudioSource. Inline the call.
 
+## Round 9 — 2026-09-07T18:31:57-07:00 (claude) — passed
+
+### Disposed
+
+- BR-13 — not-addressed — plan:217 and plan:421 still cite store/audio_test.go (no such file; the rows are in storetest/suite.go), and :203/:449/:456/:827 still spell the types lowercase.
+- BR-17 — not-addressed — command.go:397-399 unchanged; d.audio appears in neither applyLang's member list nor its "Deliberately NOT here" clause.
+- BR-18 — not-addressed — yaml.go:858 still reads the record with an unbounded os.ReadFile beside the capped blob at :869; readCapped's doc still says "refusing" where io.LimitReader truncates; no single statement at the store boundary says which persisted reads are bounded.
+- BR-23 — not-addressed — play_loop_test.go:4270-4291 still loops promptRegions(q) only; the issue row at :274-277 and plan:623/:731 still cite it for RegionWord.
+- BR-24 — not-addressed — fetch.go:35 and yaml.go:892 are still two independent 4 << 20 constants with nothing holding them equal.
+- BR-26 — not-addressed — The issue file has not changed since cd89212; both clauses of the row at :261-267 stand, as do Task 5 Step 4 and Verification row 6.
+- BR-27 — not-addressed — noAudioSource is still declared at main_test.go:20 with zero instantiations; play_loop_test.go:64/:1444 and fetch.go:134 still describe it in the present tense; lessons.md has the filing-reversal grep but no "one grep per reversal" rule.
+- BR-28 — not-addressed — audiodisk.go:80 still returns rec.From with no membership check against urls. Now the read half of the class named in this round's I-2.
+- BR-29 — addressed — Mutation-verified: reverting withoutWord at main.go:943 reddens TestAQuestionDoesNotColourTheWordItAsks by name; the reveal exemption is pinned separately. The production wiring is a new finding, not this one.
+- BR-30 — addressed — Mutation-verified on both halves: renaming usage/ in README or audio/ in the atlas each reddens TestStoreLayoutDocsNameEveryRuntimeDir, and README's missing usage/ row was added.
+- BR-31 — not-addressed — The appended Revisions entry covers the writeWords signature, the three-layer predicate and BR-30, but not the audioDir shelf: plan:255 and the ticked Step 2 at plan:446-447 still say audio/ is language-scoped "exactly like factsDir and itemsDir", contradicted by yaml.go:180 and yaml.go:727.
+- BR-32 — not-addressed — store/audio.go is untouched this window; Slug("") = "w-e3b0c4" so ok()'s Word clause is still a tautology, and deckwords_test.go:409's arg.Name == "nil" branch is still unreachable.
+- BR-33 — addressed — newHTTPAudioSource2 is deleted and the call inlined to cdn.source() at fetch_test.go:282.
+
+### Raised
+
+- **BR-34** [Important] `production-wiring-unpinned` Dropping the subject at the sitting's prompt site leaves the whole suite green, so the BR-29 fix is pinned at the door and nowhere else
+  Mutation-verified at HEAD: replacing q.Word() with "" at cmd/define/play_loop.go:229 passes the
+  full cmd/define suite. This is the 3rd finding in family production-wiring-unpinned (BR-3, BR-21).
+  Do NOT pin this instance. The rule: a behaviour proved at the door is unproven until the SITE
+  obliged to obey it is derived — the window's own lessons.md states the corollary ("a parameter
+  with one correct value is a parameter that will eventually be given another") and the head commit
+  then added a seventh parameter whose value differs per site and is checked by nothing. Aggravating:
+  subject and already are adjacent bare strings behind five arguments, so swapping them at the reveal
+  site compiles and silently re-colours the embedded render. Sketch: one writePrompt(stdout, q, d, opt)
+  deriving text, promptRegions(q), surfaceOf(q.Form()) and q.Word() from the single q, so the four
+  cannot disagree; or give isTerminal(stdout) at play_loop.go:60 the seam stdinIsTerminal already has,
+  which is what makes an in-process sitting undrivable and forces every prompt guard to be a door guard.
+- **BR-35** [Important] `persisted-field-unvalidated` AudioKey.Digest reaches a filesystem path element unvalidated, and ok() — whose doc says "usable as a filename" — only checks that it is non-empty
+  Probe-verified: SetAudio(AudioKey{Word: "keel", Digest: "../../../../pwned"}, []byte("ID3"), rec)
+  wrote pwned.mp3 and pwned.yaml four levels above the store root and returned nil. Word is laundered
+  through Slug (which is what safeElement exists for); Digest reaches filepath.Join verbatim via stem()
+  (store/audio.go:60, yaml.go:925-943). Not reachable from production — NewAudioKey yields hex — but
+  AudioKey is newly EXPORTED with exported fields and SetAudio is on the exported store.Store interface.
+  This is the 2nd finding in family persisted-field-unvalidated (BR-28 is the read half, rec.From).
+  Do NOT patch Digest alone. The class: every field of an exported store type is validated by the
+  predicate its USE requires — path elements against safeElement, provenance against the candidate
+  list — never by non-emptiness and never by "this program wrote it". Enumeration is three fields:
+  AudioKey.Word (validated), AudioKey.Digest (not), AudioRecord.From (not). One ok() covering the
+  first two plus one membership check at audiodisk.go:88 closes the family.
+- **BR-36** [Important] `runtime-artifact-undocumented` README states the colour rule with an exception it does not mention, and the atlas never got M2's write door, surface classification or locator layer
+  README.md:314-328 says looked-up words "show in green — in the line you type, in definitions, and
+  in answers" with one stated exception ("green stops where the text IS your deck"); a meaning
+  question's headword is prose on a colour-admitting surface and is now deliberately plain.
+  atlas/define.md's "Highlighting the words you are learning" (:917-945) still describes two layers
+  and never names deckSpans as the locator, writeWords as the one write door, or the surface enum
+  (surfaceProse/surfaceDeck/surfaceBoard, admitsColour) — M2's whole architectural surface, present
+  only as one region-registry bullet at :2603. This is the 5th finding in family
+  runtime-artifact-undocumented (BR-8, BR-16, BR-27, BR-30). Do NOT patch the two passages. The rule,
+  now paid for five times: the commit that changes a behaviour sweeps every present-tense statement of
+  it, by a grep written before the change — the derived consumer was right every time and every
+  hand-maintained one was wrong. Enumeration: README's "The words you already know" section, the
+  atlas's highlighting section (three layers, the door, the surface enum), the atlas's playback section.
+- **BR-37** [Minor] `two-statements-one-fact` The layout-document extent table is now hand-copied into two guards, so a third document reaches one and not the other
+  doc_sync_test.go:625-629 and :684-687 both spell {README.md, "events/2026-08-21.yaml"} and
+  {../../atlas/define.md, "events/YYYY-MM-DD.yaml"}. 3rd finding in family two-statements-one-fact
+  (BR-24 is the 4MB ceiling); measured prevalence 2 sites. One package-level layoutDocs var both
+  range over is the whole fix, and it is the same move as exporting one of the two audio ceilings.
+
 ## Open findings
 
 - **BR-13** [Minor] `plan-table-drift` The plan's entity tables drift from the code: audioKey/audioRecord vs AudioKey/AudioRecord, no store/audio_test.go, mergeRegions has no row
@@ -866,8 +1049,9 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-26** [Minor] `claimed-coverage-absent` The "every deck word is clickable" Done-when row now carries two false statements, one of them created by this round's own fix
 - **BR-27** [Minor] `runtime-artifact-undocumented` The seam reversal never got the grep the filing reversal got, and left a dead double plus three present-tense claims about it
 - **BR-28** [Minor] `persisted-field-unvalidated` AudioRecord.From is read back from a hand-editable file and printed as the record of which voice answered, with no check that it is one of the URLs asked for
-- **BR-29** [Important] `discovery-colour-scope` A meaning question now paints the word under test deck-green, which is the one word on screen where the discovery rule says it should not
-- **BR-30** [Important] `runtime-artifact-undocumented` README's and the atlas's working-directory listings restate store.RuntimeDirs by hand with no guard, and README already omits usage/
 - **BR-31** [Important] `plan-table-drift` The durable plan has no Revisions entry for close rounds 3-7, and its writeWords bullet states a signature the head commit removed
 - **BR-32** [Minor] `claimed-coverage-absent` Two guard clauses added in this window cannot fire — AudioKey.ok's Word check is a tautology and the AST guard's nil branch does not compile
-- **BR-33** [Minor] `two-statements-one-fact` newHTTPAudioSource2 is a rename wrapper around cdn.source() whose name reads as a second constructor
+- **BR-34** [Important] `production-wiring-unpinned` Dropping the subject at the sitting's prompt site leaves the whole suite green, so the BR-29 fix is pinned at the door and nowhere else
+- **BR-35** [Important] `persisted-field-unvalidated` AudioKey.Digest reaches a filesystem path element unvalidated, and ok() — whose doc says "usable as a filename" — only checks that it is non-empty
+- **BR-36** [Important] `runtime-artifact-undocumented` README states the colour rule with an exception it does not mention, and the atlas never got M2's write door, surface classification or locator layer
+- **BR-37** [Minor] `two-statements-one-fact` The layout-document extent table is now hand-copied into two guards, so a third document reaches one and not the other

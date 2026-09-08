@@ -3920,3 +3920,28 @@ had also been ABANDONING THE REMAINING CANDIDATES, so a word whose recording sat
 one URL later played nothing. Three rounds, one predicate, because each time I
 fixed the layer the finding pointed at. Grep for every place that decides the
 thing and fix them together.
+
+**A guarantee proved AT THE DOOR is unproven at the site obliged to obey it.**
+Three times in one issue: the disk cache's wiring (BR-3), the vocabulary reaching
+the write door (BR-21), and then the subject argument the BR-21 fix itself added
+(BR-34) — each time the door was well tested and dropping the value at the single
+call site passed the whole suite.
+
+The escalation is the useful part. First fix: pin the instance. Second: derive
+the call sites and check the argument — which could only check its SOURCE TOKEN,
+so a plausible-but-wrong spelling passed. Third, and the one that holds: **give
+the function the thing the values are derived FROM.** `writePrompt(w, q, d, opt)`
+derives the text, the regions, the surface and the subject from one `q`, so
+there is nothing to pass wrongly and nothing for a guard to check.
+
+**Watch for two adjacent bare strings behind five arguments.** `subject` and
+`already` were both `string` and neighbours; swapping them compiles and silently
+re-colours the embedded render. That shape is a bug waiting for a hurried edit,
+and it is a reason to collapse parameters rather than to add a guard.
+
+**And when your own new test fails, suspect the assertion first.** My path-safety
+row demanded a traversing WORD be refused. It should not be: `Slug` launders any
+key into exactly one safe path element and `Forget` computes the same slug, so the
+file is both safe and reachable. `Digest` needed a predicate because it has no
+such laundering. Refusing the word would have broken real deck entries for a rule
+that does not apply to them.

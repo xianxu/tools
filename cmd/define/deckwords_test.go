@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/play"
 )
 
 // withDeck is deps carrying a vocabulary, which is what writeWords derives from.
@@ -484,4 +486,46 @@ func TestARevealStillMarksTheWordItRevealed(t *testing.T) {
 	if !strings.Contains(out.String(), knownOn+"ephemeral") {
 		t.Errorf("the reveal held its own word out of the colour pass: %q", out.String())
 	}
+}
+
+// THE PROMPT'S FOUR DERIVATIONS COME FROM ONE q (#46 BR-34).
+//
+// The door's guarantees were pinned at the door and nowhere else: replacing
+// q.Word() with "" at the single prompt call site passed the whole suite. Third
+// time in this window that a behaviour proved at a seam went unproven at the site
+// obliged to obey it.
+//
+// writePrompt is the fix — text, regions, surface and subject all derived from
+// one q — and this drives writePrompt itself, so a site that stops deriving them
+// reddens rather than a door that was never in doubt.
+func TestWritePromptDerivesEverythingFromTheQuestion(t *testing.T) {
+	d := deps{langDeps: langDeps{vocab: deckOf("ephemeral", "keel")}}
+	opt := options{color: true}
+
+	t.Run("a meaning question does not colour its own headword", func(t *testing.T) {
+		q := play.NewChoice("ephemeral", "", []play.Option{
+			{Gloss: "a keel is a thing", Correct: true}, {Gloss: "b"},
+		})
+		var out strings.Builder
+		writePrompt(&out, q, d, opt)
+		if strings.Contains(out.String(), knownOn+"ephemeral") {
+			t.Errorf("the word under test was coloured: %q", out.String())
+		}
+		if !strings.Contains(out.String(), knownOn+"keel") {
+			t.Errorf("no other deck word was coloured, so this proves nothing: %q", out.String())
+		}
+	})
+
+	t.Run("a cloze prompt is clickable and uncoloured", func(t *testing.T) {
+		q := play.NewCloze("sycophantic", "the ___ shifts", "the keel shifts", "",
+			[]play.Option{{Word: "keel", Correct: true}, {Word: "ephemeral"}})
+		rw := &recordingRegionWriter{}
+		writePrompt(rw, q, d, opt)
+		if strings.Contains(rw.String(), knownOn) {
+			t.Errorf("a cloze prompt was coloured: %q", rw.String())
+		}
+		if len(rw.regions) == 0 {
+			t.Error("a cloze prompt offered no click targets")
+		}
+	})
 }

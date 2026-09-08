@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -81,9 +82,32 @@ func (c *diskAudioCache) Fetch(ctx context.Context, urls []string) ([]byte, stri
 			if rec.Missing {
 				return nil, "", ErrNoAudio
 			}
+			// THE PROVENANCE IS CHECKED AGAINST WHAT WAS ASKED FOR, the same
+			// family as AudioKey.Digest reaching a path unvalidated.
+			//
+			// `from` is not decoration: utterance.spokeSource decides by
+			// MEMBERSHIP in the source candidate list, and reportVoice prints a
+			// RECORD from that decision — one which, as its own comment says,
+			// "survives on a pipe and cannot be taken back". README invites
+			// editing this directory, so a hand-edited From would flip the
+			// fallback announcement in either direction: absent when it should
+			// fire, or claimed when the session voice really answered.
+			//
+			// A record that cannot be believed is not evidence, so it reads as
+			// nothing cached and the fetch happens again — one wasted request
+			// against a false statement about which voice was heard.
+			if !slices.Contains(urls, rec.From) {
+				return c.fetchAndStore(ctx, k, urls)
+			}
 			return data, rec.From, nil
 		}
 	}
+	return c.fetchAndStore(ctx, k, urls)
+}
+
+// fetchAndStore goes to the source and records what came back.
+func (c *diskAudioCache) fetchAndStore(ctx context.Context, k store.AudioKey, urls []string) ([]byte, string, error) {
+	cacheable := k.Word != ""
 
 	data, from, err := c.inner.Fetch(ctx, urls)
 	if err != nil {

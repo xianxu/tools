@@ -222,11 +222,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
 			//
-			// THE PROMPT WORD IS CLICKABLE (T4), when the prompt has one — and so
-			// is every deck word in it. The SURFACE comes from the form, because
-			// this one site serves them all.
-			prompt := "\n" + q.Prompt() + "\n"
-			writeWords(stdout, prompt, promptRegions(q), d, opt, surfaceOf(q.Form()), q.Word(), "")
+			writePrompt(stdout, q, d, opt)
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -1201,6 +1197,32 @@ func (sd *sittingDeck) marksIn(word, written string) []Region {
 		out[i] = r
 	}
 	return out
+}
+
+// writePrompt writes a question's prompt with everything it offers.
+//
+// FOUR THINGS DERIVED FROM ONE q, so they cannot disagree: the text, the click
+// regions, the surface (which decides colour), and the subject (the word being
+// asked about, which is never marked as known because that would answer the
+// question).
+//
+// It exists because the door's guarantees were pinned AT THE DOOR and nowhere
+// else: replacing q.Word() with "" at the single call site passed the whole
+// suite, which is the third time this window found a behaviour proved at a seam
+// and unproven at the site obliged to obey it (BR-3, BR-21, BR-34). The
+// window's own lesson names the cause — "a parameter with one correct value is a
+// parameter that will eventually be given another" — and the fix that followed
+// it added a seventh parameter whose value differs per site and was checked by
+// nothing.
+//
+// Two adjacent bare strings behind five arguments is the aggravating shape:
+// swapping `subject` and `already` compiles and silently re-colours the embedded
+// render. With one q there is nothing to swap.
+func writePrompt(w io.Writer, q play.Question, d deps, opt options) {
+	// Plain \n: the screen places every row, so nothing here decides where a
+	// line goes (D1).
+	text := "\n" + q.Prompt() + "\n"
+	writeWords(w, text, promptRegions(q), d, opt, surfaceOf(q.Form()), q.Word(), "")
 }
 
 // promptRegions is what a form's PROMPT offers to a click.

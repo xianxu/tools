@@ -58,8 +58,28 @@ func NewAudioKey(word string, urls []string) AudioKey {
 func (k AudioKey) dir() string  { return Slug(k.Word) }
 func (k AudioKey) stem() string { return k.Digest }
 
-// ok reports whether the key is usable as a filename.
-func (k AudioKey) ok() bool { return Slug(k.Word) != "" && k.Digest != "" }
+// ok reports whether the key is usable as a filename — BOTH halves of it.
+//
+// EVERY FIELD IS VALIDATED BY THE PREDICATE ITS USE REQUIRES. Word is laundered
+// through Slug, which is what safeElement exists for; Digest reached
+// filepath.Join VERBATIM and was checked only for being non-empty, while this
+// comment already claimed "usable as a filename". Probe-verified: a Digest of
+// "../../../../pwned" wrote pwned.mp3 four levels above the store root and
+// SetAudio returned nil.
+//
+// Not reachable from production — NewAudioKey yields hex — but AudioKey is
+// EXPORTED with exported fields and SetAudio is on the exported Store interface,
+// so "the only caller is careful" is a property of today's callers rather than of
+// the type. ARCH-SECURE: a value crossing into a path is untrusted even when this
+// program produced it.
+func (k AudioKey) ok() bool {
+	// AN EMPTY WORD IS REFUSED even though Slug("") yields the legal filename
+	// "w-<hash>". The predicate a key's USE requires includes "Forget can reach
+	// it", and Forget("") returns early — so a recording filed under one would
+	// be material no forget could take, which is #10's BR-45 arriving by a new
+	// path. Found by the guard's own row rather than by review.
+	return Key(k.Word) != "" && safeElement(Slug(k.Word)) && safeElement(k.Digest)
+}
 
 // AudioRecord is what is stored beside the bytes: where they came from, when,
 // and whether there were any.

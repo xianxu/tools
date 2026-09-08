@@ -328,6 +328,11 @@ a word you are learning. Those stay plain. A multiple-choice question's options
 are definitions — prose — so a word you know shows up there, which is usually the
 most useful thing on the screen.
 
+**And the word you are being asked about is never green**, whichever form asks
+it. Marking it would tell you "you have looked this up before" while asking
+whether you know it — which is the answer, not a hint. Once the answer is on
+screen the rule lifts: the reveal marks it like any other word you know.
+
 **Clicking is not subject to that rule.** Every deck word is clickable wherever
 it appears, coloured or not, and plays its own recording — including a cloze's
 four options, which are the words you most want to hear before choosing between

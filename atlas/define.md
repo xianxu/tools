@@ -2600,6 +2600,32 @@ with no row there draws an underline that does nothing, which
 `TestEveryRegionKindIsActionable` catches by deriving its loop from
 `numRegionKinds`.
 
+- **One span walk feeds both the colour and the click (`#46` M2).** Three layers,
+  and the boundaries are the point. The MATCHER (`wordRuns` + `highlightSpans`)
+  answers "which byte ranges of this text are deck words", longest phrase
+  winning, with no ANSI and no coordinates — the only layer that would travel to
+  another program, and the one this milestone deliberately did not touch. The
+  LOCATOR (`deckSpans`) answers where those ranges are ON SCREEN, running the
+  matcher over `visibleIndex`'s plain text and mapping back through the column
+  table, so it works on text `Render` has already coloured. The CONSUMERS are a
+  loop each. Before this, colour and clicks were found by two separate walks
+  covering different surfaces, which is why colour reached a rendered entry and
+  clicks reached its headword and neither reached a form's own option lines.
+- **`writeWords` is the one door**, and `writePrompt` is the one caller that
+  derives everything from a question. Both exist because the same failure kept
+  recurring: a guarantee proved at a seam and unproven at the site obliged to
+  obey it. `writeWords` takes the `deps` rather than a vocabulary (a guard over
+  an argument can only check its source token, and `vocabularyFor` — colour-
+  conditioned — was a plausible wrong value); `writePrompt` takes the question
+  rather than four values derived from it.
+- **Colour is a property of the SURFACE, not a flag on a form.** It marks a deck
+  word inside PROSE, where finding one is a discovery; where the text IS the deck
+  — a cloze's four options, a board's cells — it marks everything and
+  distinguishes nothing. `surfaceOf` switches on `Form()`, and its extent is
+  `docSyncForms`, so a new form cannot arrive unclassified. Two exceptions, both
+  narrow: a question never marks its own SUBJECT (that would answer it), and
+  clicks are not subject to the rule at all, since a click costs nothing when it
+  is everywhere while colour degrades.
 - **`RegionWord` — a deck word, wherever it is written (`#46`).** The registry's
   third kind, and the first produced for a PROMPT rather than for a rendered
   entry. It is distinct from `RegionHeadword` by provenance, not behaviour: a
