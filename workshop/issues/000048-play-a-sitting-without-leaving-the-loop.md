@@ -86,14 +86,10 @@ that a fourth path through terminal setup gets written instead.
 
 ## Plan
 
-**The durable plan lands with the implementation branch**, not before it.
-`workshop/plans/*-plan.md` is checked against the CODE by
-`TestPlanCitesTestsThatExist` and `TestPlanTableStatusMatchesTheChangeWindow`
-(`repo_guard_test.go:1306`, `:1271`), which walk every plan in the tree — so a
-plan committed ahead of its own branch turns the suite red for whatever issue is
-closing. It was written, it did that to `#8`, and it comes back with `#48`'s
-branch. `#8` BR-12 is why this sentence exists rather than a path to a file
-nothing holds.
+Durable design: `workshop/plans/000048-play-from-the-loop-plan.md`, on this
+branch — a plan is checked against the code in its window by guards that walk
+every plan in the tree (`repo_guard_test.go:1306`), so it travels with the branch
+that implements it rather than ahead of it (#8 BR-12).
 
 Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
 
