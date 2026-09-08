@@ -1115,6 +1115,7 @@ catches up.
 |---|---|
 | `/help` | list the commands |
 | `/history` | words looked up recently |
+| `/stats` | deck, streak and accuracy figures |
 | `/sound` | how many times to play a pronunciation |
 | `/lang` | the language this deck is in |
 | `/pron` | replay this word in its source language, once |

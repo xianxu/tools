@@ -720,6 +720,10 @@ Tab to complete, `/help` to list them. It works the same from every entry mode:
 `define /help`, `echo /help | define`, and `/help` typed at the prompt are one
 thing.
 
+`/stats` is the screen above, from the prompt — the same figures `--stats`
+prints, because both doors reach one fold. It takes no argument: it reads
+everything.
+
 `/history [N]` lists what you looked up in the last N days — two by default,
 counted as local calendar days rather than N×24 hours. `N` can be written three
 ways, so it reads the same whichever you reach for: `/history 7`,

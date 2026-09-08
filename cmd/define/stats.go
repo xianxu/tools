@@ -19,12 +19,20 @@ import (
 // `--stats > report.txt` must not have "could not read the log" in the middle of
 // its figures.
 //
-// EXIT CODES. 0 when the screen printed, including on an empty deck: there is
+// EXIT CODES. 0 when the screen printed, including on an EMPTY deck: there is
 // nothing wrong with having done nothing yet, and a new learner meeting exit 1
-// would read it as breakage. 1 when the log could not be read, because the
-// figures would then be silently LOW rather than absent, and a wrong number is
-// worse than a refusal. A nil deck is 0 — a statement about the directory, not a
-// failure.
+// would read it as breakage. 1 when the deck or the log could not be read,
+// because the figures would then be silently LOW rather than absent, and a wrong
+// number is worse than a refusal.
+//
+// A NIL DECK IS ALSO 1, on stderr, which is a correction: this file first argued
+// it was "a statement about the directory, not a failure" and returned 0 to
+// stdout. Every sibling disagrees — --forget (main.go:1193), --harvest
+// (harvest.go:111), --reflect (reflect.go:340) and /history (history_cmd.go:220)
+// all print noDeckMessage to stderr and return 1, unanimously. The case that
+// argument was protecting is the EMPTY deck, which still exits 0 with a
+// sentence; a nil one means DEFINE_NO_CAPTURE or no directory at all, and a
+// script that asked for figures and got none should know.
 func runStats(ctx context.Context, d deps, opt options, out, errOut io.Writer) int {
 	if d.deck == nil {
 		// noDeckMessage, not a fourth copy of the sentence: the two causes need
@@ -32,8 +40,8 @@ func runStats(ctx context.Context, d deps, opt options, out, errOut io.Writer) i
 		// ordinary directory simply has no deck), and its own comment records
 		// that "the same fact stated in two places is how the atlas
 		// contradictions in #4 started".
-		fmt.Fprintln(out, noDeckMessage(opt.noCapture))
-		return 0
+		fmt.Fprintln(errOut, noDeckMessage(opt.noCapture))
+		return 1
 	}
 
 	deck, err := d.deck.Deck()
@@ -175,4 +183,44 @@ func formLabel(form string) string {
 		return "(unnamed form)"
 	}
 	return safe
+}
+
+// runStatsCommand is `/stats`, and it is `--stats` with a different door.
+//
+// ONE FOLD, ONE RENDERER, TWO ENTRY POINTS. The flag and the command differ only
+// in where the deck and the clock come from — deps for one, commandCtx for the
+// other — so everything below that seam is shared and a change to the screen
+// cannot apply to only one of them. That is the property #48 will need for
+// `/play`, arriving here first on the cheaper case.
+//
+// Adding a command is a row in `commands` plus this function; the dispatch loop
+// never changes, which is #16's Done-when.
+func runStatsCommand(c commandCtx, args []string) int {
+	if len(args) > 0 {
+		// The same rule the flag states, for the same reason: /stats reads
+		// everything and takes no subject, so a word beside it can only be a
+		// misread intent.
+		fmt.Fprintf(c.stderr, "define: /stats reads the whole log; it takes no arguments, not %q\n",
+			strings.Join(args, " "))
+		return 2
+	}
+	if c.deck == nil {
+		fmt.Fprintln(c.stderr, noDeckMessage(c.noCapture))
+		return 1
+	}
+	deck, err := c.deck.Deck()
+	if err != nil {
+		fmt.Fprintf(c.stderr, "define: /stats: %v\n", err)
+		return 1
+	}
+	events, err := c.deck.Events(time.Time{})
+	if err != nil {
+		fmt.Fprintf(c.stderr, "define: /stats: %v\n", err)
+		return 1
+	}
+	now := c.clock.Now()
+	for _, line := range renderStats(schedule.Summarise(events, deck, now), now) {
+		fmt.Fprintln(c.stdout, line)
+	}
+	return 0
 }

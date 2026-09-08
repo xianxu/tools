@@ -85,10 +85,10 @@ what the issue refuses to reimplement, and that is most of why the number is low
 
 ## Done when
 
-- [ ] Every figure derived from events, none stored separately.
-- [ ] Streak arithmetic verified across timezone boundaries and gaps with a fake
+- [x] Every figure derived from events, none stored separately.
+- [x] Streak arithmetic verified across timezone boundaries and gaps with a fake
       clock.
-- [ ] Renders sensibly on an empty deck.
+- [x] Renders sensibly on an empty deck.
 
 ## Plan
 
@@ -97,8 +97,8 @@ Durable design: `workshop/plans/000008-vocab-stats-plan.md`.
 Single-pass: one boundary, plain checkboxes (AGENTS.md §3 — tagging Mx would
 force a redundant milestone-close on atomic work).
 
-- [ ] The fold — Stats, Summarise, the two streaks, accuracy by form.
-- [ ] The screen — renderStats, the -stats flag, docs.
+- [x] The fold — Stats, Summarise, the two streaks, accuracy by form.
+- [x] The screen — renderStats, the -stats flag, `/stats`, docs.
 
 ## Log
 
@@ -129,3 +129,43 @@ is a table row rather than a clock double. That is stronger than the row asks
 for: no interface to inject, no fake to keep honest, and the DST days are named
 constants in the test. `store.FixedClock` remains available and is simply not
 needed at this seam.
+
+### 2026-09-07 — built
+
+**Three bugs found before review, each by a different instrument**, which is
+worth recording because they are the same class caught three ways.
+
+**The compiler:** `Progress` has no `FirstSeen`. I assumed it did — the fourth
+time this issue's design leaned on a misremembered field — and the type checker
+said so immediately. `added` walks the events instead, which needs the log to be
+chronological; it is, and the seam promises it (`store/store.go:18`).
+
+**A re-read:** the day map is keyed by `time.Time`, whose equality includes the
+`*Location` POINTER. An event that came back carrying a fixed offset while `now`
+was in `time.Local` would produce two keys for one calendar day, so a streak
+would miss days the learner actually used — and a YAML log routinely holds mixed
+offsets, because DST changes the one the machine writes. Every event is converted
+into the learner's zone first, which is `DaysBetween`'s own rule
+(`clock.go:46`) applied where the keys are built. Pinned by
+`TestDaysAreCountedInTheLearnersZone`.
+
+**Running it:** the smoke deck showed `words 10` beside `words/day 0.0`, because
+those words were written straight to the store with no lookup events. A rate of
+zero next to a deck of ten reads as a broken figure rather than as the missing
+history it is. `Stats.Added` now gates the row on the COUNT, so it disappears
+when nothing was recorded and still shows for a genuinely slow learner whose rate
+rounds to 0.0.
+
+**And one correction on review of my own work.** `runStats` first printed
+`noDeckMessage` to stdout and returned 0, arguing a nil deck is "a statement
+about the directory, not a failure". Every sibling disagrees — `--forget`,
+`--harvest`, `--reflect` and `/history` all use stderr and return 1, unanimously.
+The case that argument was protecting is the EMPTY deck, which still exits 0 with
+a sentence.
+
+**`/stats` is a table row plus a run function**, exactly as `#16`'s Done-when
+promises, and the two entry points share everything below the door:
+`TestSlashStatsAndTheFlagPrintTheSameScreen` asserts the output is identical. That
+property is what `#48` will need for `/play`, arriving here first on the cheaper
+case — and the answer to the sequencing question raised before this issue closed
+is that the command table really is just a row.

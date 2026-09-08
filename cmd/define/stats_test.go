@@ -157,7 +157,11 @@ func TestTheLongestStreakIsShownOnlyWhenItIsLonger(t *testing.T) {
 
 // --- the shell -------------------------------------------------------------
 
-// A NIL DECK IS NOT A FAILURE, and the two causes say different things.
+// A NIL DECK NAMES ITS CAUSE, on stderr, exactly as every sibling does.
+//
+// The two causes need different sentences — DEFINE_NO_CAPTURE opened nothing on
+// purpose; an ordinary directory simply has no deck — which is what
+// noDeckMessage exists for.
 func TestStatsWithNoDeckExplainsWhichCause(t *testing.T) {
 	for _, tc := range []struct {
 		name, want string
@@ -171,11 +175,15 @@ func TestStatsWithNoDeckExplainsWhichCause(t *testing.T) {
 			d := testDeps(t)
 			d.deck = nil
 			code := runStats(t.Context(), d, options{noCapture: tc.noCapture}, &out, &errb)
-			if code != 0 {
-				t.Errorf("exit = %d, want 0 — an empty directory is a statement, not a failure", code)
+			if code != 1 {
+				t.Errorf("exit = %d, want 1 — every sibling (--forget, --harvest, --reflect, "+
+					"/history) returns 1 for a nil deck", code)
 			}
-			if !strings.Contains(out.String(), tc.want) {
-				t.Errorf("said %q, want it to name the cause %q", out.String(), tc.want)
+			if !strings.Contains(errb.String(), tc.want) {
+				t.Errorf("stderr said %q, want it to name the cause %q", errb.String(), tc.want)
+			}
+			if out.Len() != 0 {
+				t.Errorf("a diagnostic reached stdout: %q", out.String())
 			}
 		})
 	}
@@ -254,5 +262,75 @@ func TestTheRateIsHiddenWhenNothingWasEverAdded(t *testing.T) {
 	slow := schedule.Stats{Known: 10, ActiveDays: 200, Added: 3, AddedPerDay: 0.015}
 	if got := strings.Join(renderStats(slow, statsAt(2026, time.June, 10)), "\n"); !strings.Contains(got, "words/day") {
 		t.Errorf("a slow learner's rate was hidden:\n%s", got)
+	}
+}
+
+// --- /stats ----------------------------------------------------------------
+
+// THE COMMAND AND THE FLAG SHARE EVERYTHING BELOW THE DOOR.
+//
+// They differ only in where the deck and the clock come from. Asserting the
+// OUTPUT is identical is what stops a change to the screen applying to one of
+// them — the property #48 will need for /play, on the cheaper case first.
+func TestSlashStatsAndTheFlagPrintTheSameScreen(t *testing.T) {
+	st := store.NewMem()
+	if err := st.Upsert(store.Word{Text: "sycophantic"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AppendEvent(store.ReviewEvent{
+		Word: "sycophantic", Kind: store.EventLookedUp, Found: true,
+		At: statsAt(2026, time.June, 9),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clk := store.FixedClock(statsAt(2026, time.June, 10))
+
+	var viaFlag, flagErr bytes.Buffer
+	d := testDeps(t)
+	d.deck, d.clock = st, clk
+	if code := runStats(t.Context(), d, options{}, &viaFlag, &flagErr); code != 0 {
+		t.Fatalf("--stats exit %d: %s", code, flagErr.String())
+	}
+
+	var viaCmd, cmdErr bytes.Buffer
+	c := commandCtx{deck: st, clock: clk, stdout: &viaCmd, stderr: &cmdErr}
+	if code := runStatsCommand(c, nil); code != 0 {
+		t.Fatalf("/stats exit %d: %s", code, cmdErr.String())
+	}
+
+	if viaFlag.String() != viaCmd.String() {
+		t.Errorf("the two entry points disagree:\n--stats:\n%s\n/stats:\n%s",
+			viaFlag.String(), viaCmd.String())
+	}
+	if viaCmd.Len() == 0 {
+		t.Error("both printed nothing, so this proves nothing")
+	}
+}
+
+// /stats TAKES NO ARGUMENT, the rule the flag states for the same reason.
+func TestSlashStatsRefusesArguments(t *testing.T) {
+	var out, errb bytes.Buffer
+	c := commandCtx{deck: store.NewMem(), clock: store.FixedClock(statsAt(2026, time.June, 10)),
+		stdout: &out, stderr: &errb}
+	if code := runStatsCommand(c, []string{"sycophantic"}); code != 2 {
+		t.Errorf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "/stats") {
+		t.Errorf("the refusal does not name the command: %q", errb.String())
+	}
+	if out.Len() != 0 {
+		t.Errorf("a refusal printed a screen: %q", out.String())
+	}
+}
+
+// A NIL DECK IN THE COMMAND SAYS WHICH CAUSE, like every sibling.
+func TestSlashStatsWithNoDeckNamesTheCause(t *testing.T) {
+	var out, errb bytes.Buffer
+	c := commandCtx{deck: nil, noCapture: true, stdout: &out, stderr: &errb}
+	if code := runStatsCommand(c, nil); code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errb.String(), "DEFINE_NO_CAPTURE") {
+		t.Errorf("stderr said %q, want it to name the cause", errb.String())
 	}
 }

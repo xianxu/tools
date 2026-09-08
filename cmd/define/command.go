@@ -24,6 +24,7 @@ type command struct {
 var commands = []command{
 	{name: "help", summary: "list the commands", run: runHelp},
 	{name: "history", summary: "words looked up recently", run: runHistory},
+	{name: "stats", summary: "deck, streak and accuracy figures", run: runStatsCommand},
 	{name: "sound", summary: "how many times to play a pronunciation", run: runSound},
 	{name: "lang", summary: "the language this deck is in", run: runLang},
 	{name: "pron", summary: "replay this word in its source language, once", run: runPron},
