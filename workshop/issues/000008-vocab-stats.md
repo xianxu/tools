@@ -48,3 +48,27 @@ force a redundant milestone-close on atomic work).
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
+
+## Revisions
+
+### 2026-09-07 — two Done-when rows, read precisely
+
+Both are deviations the plan makes deliberately; recorded here so the close gate
+reads criteria that match what shipped rather than a plan contradicting them.
+
+**"Every figure derived from events, none stored separately" — the second half is
+the invariant, the first is a shorthand.** `Known` and `Mastered` come from the
+DECK (folded through `schedule.Fold` for the box, but enumerated from the deck),
+because the log alone cannot answer them: `--forget` removes a word and
+deliberately leaves its events, so a log-only count reports words the learner has
+deleted. Nothing is STORED — no counter, no cache, no second source of truth —
+which is what the row exists to protect. `AddedPerDay` does count from the log,
+for the opposite reason: it asks what HAPPENED, and a forgotten word was still
+added that day.
+
+**"Streak arithmetic verified... with a fake clock" — `now` is a PARAMETER
+instead.** `Summarise(events, deck, now)` is pure, so every timezone and DST case
+is a table row rather than a clock double. That is stronger than the row asks
+for: no interface to inject, no fake to keep honest, and the DST days are named
+constants in the test. `store.FixedClock` remains available and is simply not
+needed at this seam.
