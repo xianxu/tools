@@ -5,9 +5,9 @@ goal: "Make define an adaptive vocabulary trainer on three verbs — definition,
 done_when: "A real day of use runs end to end on generated material: words captured by ordinary lookup; practice items authored from current usage and stored offline; a review session played and scored; a free-form question answered in the console with the session's own words as context; and the learner model regenerated from the resulting events, visibly steering the next batch of items."
 status: defined
 created: 2026-08-20
-updated: 2026-09-04
-mvp_scope: ["tools#5", "tools#6", "tools#7", "tools#8", "tools#9", "tools#10", "tools#11", "tools#12", "tools#13", "tools#16", "tools#17"]
-explicitly_out_note: "tools#18 (Spanish) is real and filed, but OUT of this project's MVP: define-learn is done when the English loop works end to end. #18 M1 (audio) is independently shippable at any time."
+updated: 2026-09-07
+mvp_scope: ["tools#5", "tools#6", "tools#7", "tools#8", "tools#9", "tools#10", "tools#11", "tools#12", "tools#16", "tools#17"]
+explicitly_out_note: "tools#18 (Spanish) is real and filed, but OUT of this project's MVP: define-learn is done when the English loop works end to end. #18 M1 (audio) is independently shippable at any time. tools#13 (form 2.4, the written sentence) left MVP on 2026-09-07 — see the scope event; the done-when never referenced it, and the operator wants the news-grounded version of production rather than the free-sentence one."
 explicitly_out: ["multi-learner accounts", "sync/replication beyond whichever directory you run it in", "languages other than English", "generated (TTS) pronunciation — recorded audio only", "a GUI or mobile client"]
 sources: ["workshop/parley/ — define-learn ideation", "operator conversation 2026-08-22 (adaptive scope)"]
 ---
@@ -255,7 +255,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]
 - [x] form 2.5 — the board, grid triage for mature words [tools#40]
 - [x] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
-- [ ] form 2.4 — free sentence, graded [tools#13]
+- [ ] form 2.4 — free sentence, graded [tools#13] — **OUT of MVP (2026-09-07)**
 - [ ] learner model — weakness taxonomy, steers authoring — **descoped from
       `#17 M2` into [tools#7]'s Done-when**, where the chosen distractor IS the
       error kind. Not delivered; not separately tracked.
@@ -997,3 +997,28 @@ learn from** — the arrow back into the model would have had nothing on it, and
 first closes the small loop (lookup → schedule → review → events) and gives the
 authoring half a learner to adapt to when it arrives. `#9` was not wasted: it is
 the input `#10` needs, and it is done and cached.
+
+### 2026-09-07 — scope event: `#13` leaves the MVP
+
+**Operator decision**, taken while reading what remained: *"let's move #13 out of
+mvp."*
+
+**The done-when does not change, and that is the whole argument.** It reads:
+words captured by ordinary lookup; items authored from current usage; a review
+session played and scored; a free-form question answered with the session's own
+words as context; the learner model regenerated and visibly steering the next
+batch. **Form 2.4 appears in none of those clauses.** It was in `mvp_scope` as
+the third verb's most obvious shape rather than as something the finish line
+required — so removing it costs the project nothing it had promised.
+
+**And the form was already going to be rebuilt.** The operator reshaped it in
+conversation on 2026-09-06: rather than "write a free-form sentence", use the
+model to construct a scenario or context those words fit into — either the model
+speaking with them, or the learner replying using them, grounded in current
+events from the news pool. That is a better product than `#13`-as-written and a
+bigger build, and it was marked post-MVP at the time. Shipping the free-sentence
+version first would be shipping the version already superseded.
+
+**What the MVP is now:** ten issues, nine done, `#8` (`--stats`) the last one
+open. `#13` stays filed and open, outside the project's scope, carrying the
+news-grounded reshaping in its Spec for whoever picks it up.
