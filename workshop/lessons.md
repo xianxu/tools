@@ -3881,3 +3881,21 @@ is a legal read of nothing, so it sailed past and was served as a permanent,
 never-expiring hit of silence — the exact outcome that branch existed to prevent.
 The predicate belonged on the PAYLOAD ("this cannot be a recording"), not on how
 the read failed.
+
+**"Fix the class" means every LAYER, not just the one the finding pointed at.**
+`#46` round 4 said an empty payload cannot be a recording; I fixed the store at
+both ends and left the memo one layer up doing exactly what the finding
+described — serving a zero-byte 200 as a hit for the whole sitting, with a `from`
+URL that `reportVoice` prints as the voice that answered. Round 5 found it there.
+
+When a finding names a predicate ("this cannot be a recording"), grep for every
+place that decides the same thing and fix them together. The finding names one
+site because that is where it was probed, not because that is where the class
+ends.
+
+**And a wiring guard for one milestone is a wiring guard for the next.** M1's
+BR-3 found that deleting the disk cache's production wiring left the suite green.
+I pinned that instance and shipped M2 with the identical hole: nilling the
+vocabulary at all three `writeWords` sites left the WHOLE suite green, because
+every M2 test built its own call. Both are now derived from the AST, so a fourth
+site is checked the moment it exists.

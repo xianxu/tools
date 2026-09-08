@@ -1,6 +1,10 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -348,5 +352,57 @@ func TestTheRenderedEntryIsNotRecoloured(t *testing.T) {
 	before, _, _ := strings.Cut(got, already)
 	if !strings.Contains(before, knownOn) {
 		t.Errorf("nothing outside the render was coloured, so this proves nothing: %q", before)
+	}
+}
+
+// EVERY writeWords CALL SITE PASSES A REAL VOCABULARY (#46 BR-21).
+//
+// The review found that nilling the vocabulary at all three sites left the WHOLE
+// SUITE green: every M2 test built its own call, so they proved the door works
+// and nothing about whether production opens it. That is the same finding M1's
+// BR-3 made about the disk cache's wiring, and I fixed the instance there
+// without applying the class here.
+//
+// PARSED, not listed. The extent is every writeWords call in non-test code, so a
+// fourth site added later is checked the moment it exists — the correction #12's
+// BR-17 made when a regex-scraped extent silently under-derived. It reads the
+// ARGUMENT rather than driving the loops, because `isTerminal(stdout)` is a real
+// syscall with no seam and a sitting cannot be driven in-process.
+func TestEveryWriteWordsCallSitePassesAVocabulary(t *testing.T) {
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sites := 0
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			ast.Inspect(file, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				id, ok := call.Fun.(*ast.Ident)
+				if !ok || id.Name != "writeWords" || len(call.Args) < 4 {
+					return true
+				}
+				sites++
+				// Argument 3 is the Vocabulary. A bare `nil` there is a site that
+				// marks nothing — no colour, and no click targets either.
+				if lit, ok := call.Args[3].(*ast.Ident); ok && lit.Name == "nil" {
+					t.Errorf("%s: writeWords is called with a nil vocabulary, so no deck "+
+						"word at that site is clickable or coloured. Pass deckVocabulary(d).",
+						fset.Position(call.Pos()))
+				}
+				return true
+			})
+		}
+	}
+	if sites < 3 {
+		t.Fatalf("found %d writeWords call sites, want at least 3 (the lookup entry, the "+
+			"sitting's prompt, the sitting's reveal) — the derivation is under-deriving "+
+			"and this guard would certify nothing", sites)
 	}
 }

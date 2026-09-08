@@ -202,6 +202,21 @@ func (c *audioSeam) fetch(ctx context.Context, inner AudioSource, urls []string)
 		// rest of the session.
 		return nil, "", err
 	}
+	if len(data) == 0 {
+		// A ZERO-BYTE 200 IS NOT A RECORDING, and the memo has to say so too.
+		//
+		// The store already refuses this at both ends, and the round-4 finding
+		// that produced those guards named the class — "the payload cannot be a
+		// recording" — while I fixed only the layer in front of me. Here it is
+		// one layer up: httpAudioSource returns an empty body as SUCCESS, so
+		// without this the sitting serves silence for every replay, with a `from`
+		// URL that reportVoice prints as the voice that answered. A memo entry
+		// never expires, so it lasts the whole session.
+		//
+		// Not recorded as a miss either: a miss suppresses the re-ask, and an
+		// empty body is a server hiccup rather than "this word has no recording".
+		return nil, "", ErrNoAudio
+	}
 	c.mu.Lock()
 	c.hits[key] = cachedAudio{data, from}
 	c.mu.Unlock()

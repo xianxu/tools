@@ -234,3 +234,32 @@ func TestTheVoiceReportNamesALanguageEvenWithAZeroVoice(t *testing.T) {
 		t.Errorf("report = %q, want it to name a language rather than a blank", got)
 	}
 }
+
+// A ZERO-BYTE 200 IS NOT A RECORDING, AT EVERY LAYER (#46 BR-22).
+//
+// The store learned this in round 4 and the memo did not, which is the same
+// finding one layer up: httpAudioSource returns an empty body as SUCCESS, so the
+// seam cached silence for the whole sitting and handed back a `from` URL that
+// reportVoice prints as the voice that answered — a fabricated record, which is
+// the half that makes it more than a nuisance.
+func TestAZeroByteResponseIsNotAHit(t *testing.T) {
+	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": {}})
+	seam := newAudioSeam(cdn.source())
+	urls := cdn.urls("/a.mp3")
+
+	data, from, err := seam.Fetch(t.Context(), urls)
+	if err == nil {
+		t.Errorf("an empty body was served as a hit: %d bytes, from %q — it plays as "+
+			"silence and reportVoice prints that URL as the voice that answered", len(data), from)
+	}
+	if !errors.Is(err, ErrNoAudio) {
+		t.Errorf("err = %v, want ErrNoAudio", err)
+	}
+	// AND IT IS NOT REMEMBERED AS A MISS. A miss suppresses the re-ask; an empty
+	// body is a server hiccup, not "this word has no recording".
+	before := len(cdn.Requested())
+	seam.Fetch(t.Context(), urls)
+	if after := len(cdn.Requested()); after <= before {
+		t.Error("the empty response was cached as a permanent miss; the next play must re-ask")
+	}
+}

@@ -22,7 +22,14 @@ type deckSpan struct {
 	Line int
 	// Col and Width are DISPLAY CELLS, the units Region speaks in.
 	Col, Width int
-	// Word is the deck key, which is what a click plays.
+	// Word is what a click plays — the span's text AS WRITTEN, not the
+	// normalised deck key.
+	//
+	// The distinction is small and the doc used to get it backwards. It is
+	// harmless because store.Key normalises before filing and AudioCandidates
+	// lower-cases before building URLs, so a sentence-initial "Keel" and a
+	// mid-sentence "keel" reach the same recording — but a caller reading "the
+	// deck key" would be relying on a normalisation this does not do.
 	Word string
 	// Text is the span exactly as it appears, which is what a region must be
 	// able to claim it covers (#12 BR-14).
