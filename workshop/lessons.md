@@ -3945,3 +3945,20 @@ key into exactly one safe path element and `Forget` computes the same slug, so t
 file is both safe and reachable. `Digest` needed a predicate because it has no
 such laundering. Refusing the word would have broken real deck entries for a rule
 that does not apply to them.
+
+**Every declarative sentence about existing code carries a file:line, verified.**
+`#8`'s plan broke this four times in two gate rounds — and each break was written
+while ARGUING for reuse, which is the tell: "call the existing function rather
+than re-deciding" is a good argument that gets made from memory of what the
+function does. `Mastered` reads `Box`, not `MaxBox`. The log IS chronological.
+`Progress` has no lapse count. `modeCollision`'s test hand-lists.
+
+Three of the four would have produced code or tests asserting behaviour that does
+not exist. **The citation is not decoration — it is the evidence that the
+sentence was checked**, and writing it forces the check.
+
+**A comment claiming a derivation is a claim like any other.** `main.go` says
+"modeCollision's table test derives from this" and the test says "a sixth mode is
+covered by construction". Neither is true, and the plan inherited the falsehood
+by reading the comment instead of the test. When a comment asserts a guard's
+extent, open the guard.

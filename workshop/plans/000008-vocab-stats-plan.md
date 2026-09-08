@@ -18,6 +18,30 @@ to copy rather than a pattern to invent.
 
 ## Core concepts
 
+### Every claim about existing code carries a file:line
+
+**The rule this plan is under, written down because it was broken four times in
+two rounds.** PQ-1: "`Mastered` reads `MaxBox`" — it reads `Box`. PQ-6: "the log
+is not guaranteed sorted" — `store.go:18` promises chronological order and both
+implementations sort. PQ-7: "`Fold` gives box, max box, lapses" — `Progress` has
+no lapse count. PQ-9: "`modeCollision`'s table test derives from the slice" — it
+hand-lists.
+
+Every one was written from recollection while ARGUING for reuse, and three of
+them would have produced code or tests asserting behaviour that does not exist.
+So: **a declarative sentence about what existing code does carries a `file:line`
+and is verified before it is written.** The citations below are not decoration;
+they are the evidence that the sentence was checked.
+
+**The fourth is not just a plan error — it is a live bug this issue trips.**
+`main.go:596-597` says *"modeCollision's table test derives from this"* and
+`harvest_test.go:622-626` says *"a sixth mode added to run()'s slice is covered
+by construction"*. Both are false: `TestModeCollision` hand-lists five modes at
+`harvest_test.go:628-631`. `#8` adds the sixth, which would be the first mode
+the guard does not cover — the "a hand-maintained extent is half a guard" family
+(`#12` BR-17, `#46` BR-21) arriving in a place two comments already claim is
+safe. Task 5 fixes it.
+
 ### What this issue is NOT
 
 Half the figures the Spec names already exist as pure functions, and the failure
@@ -26,11 +50,11 @@ So, explicitly (ARCH-DRY):
 
 | figure | already exists | this issue |
 |---|---|---|
-| a word's box, max box, lapses | `schedule.Fold` | folds it, adds nothing |
-| whether a word is mastered | `schedule.Mastered` | calls it, does not re-decide — and its doc ALREADY names this issue as the second consumer |
-| a local calendar day | `store.StartOfDay` | uses it |
-| days between two instants | `store.DaysBetween` | uses it — this is the DST-correct one, and re-deriving it is how a streak breaks on the 25-hour day |
-| a window of "the last N days" | `historyWindow` | reuses it if `--stats` grows a window; MVP has none |
+| a word's box and high-water mark | `schedule.Fold` → `Progress{Box, MaxBox, LastReviewed}` (`progress.go:52-63`) | folds it, adds nothing. There is no lapse COUNT to reuse; an earlier draft credited `Fold` with one |
+| whether a word is mastered | `schedule.Mastered` (`progress.go:130`) | calls it, does not re-decide — its doc already names this issue as the second consumer |
+| a local calendar day | `store.StartOfDay` (`clock.go:41`) | uses it |
+| days between two instants | `store.DaysBetween` (`clock.go:46`) | uses it — b's location defines the calendar, which is the correction a `Sub()/24h` fold does not have |
+| a window of "the last N days" | `historyWindow` (`history_cmd.go:37`) | reuses it if `--stats` grows a window; MVP has none |
 
 **A second definition of "mastered" is the specific thing this plan refuses**,
 and `Mastered`'s own doc comment says so in advance: *"Exported and defined once
@@ -60,9 +84,9 @@ DRY argument for calling the function is exactly that a second author's
 
 - **`Stats`** — every figure the screen shows, and nothing else.
   - **Relationships:** 1:1 with a fold over the whole log. Holds
-    `map[string]FormAccuracy` keyed by the form NAME (`meaning`, `cloze`,
-    `board`), which is what `Outcome.Form` already records and what the log
-    already speaks in — no enum to keep in step with `play`.
+    `map[string]FormAccuracy` keyed by the form NAME, which is what
+    `ReviewEvent.Form` already stores (`store/event.go:108`, a `string`) — no
+    enum to keep in step with `play`.
   - **DRY rationale:** the alternative is the command computing seven numbers
     inline, where each is untestable without parsing a screen. The Spec asks for
     exactly this split.
@@ -93,9 +117,9 @@ DRY argument for calling the function is exactly that a second author's
     active-day count are three questions about one set; computing them
     separately is three chances to disagree about what a day is.
 
-**Test surface.** `schedule/stats_test.go`, colocated, no IO and no fake — the
-package's `purity_test.go` already guards that `schedule` imports nothing but
-`store` and the standard library, so the boundary is mechanical rather than
+**Test surface.** `schedule/stats_test.go`, colocated, no IO and no fake —
+`TestSchedulePurity` (`schedule/purity_test.go:17`) already enforces "no IO and
+no hidden clock" for this package, so the boundary is mechanical rather than
 promised.
 
 ### Integration points
@@ -104,8 +128,17 @@ promised.
 |------|----------|--------|-------|
 | `runStats` | `cmd/define/stats.go` | new | the store and stdout |
 
-- **`runStats(d deps, opt options, out io.Writer) int`** — read the log, read the
-  deck, fold, render, print.
+- **`runStats(ctx context.Context, d deps, opt options, out, errOut io.Writer) int`**
+  — read the log, read the deck, fold, render, print.
+  - **The signature MIRRORS `runReflect` (`reflect.go:338`)**, which is the
+    closest sibling: same package, same shape, also a mode. Two writers because a
+    diagnostic is not output — a `--stats` piped to a file must not have "could
+    not read the log" in the middle of it.
+  - **EXIT CODES:** 0 when the screen printed, including on an empty deck (there
+    is nothing wrong with having done nothing yet); 1 when the log could not be
+    read, because the figures would then be silently low rather than absent, and
+    a wrong number is worse than a refusal. A nil deck is 0 with the explanatory
+    sentence — it is a statement about the directory, not a failure.
   - **Injected into:** nothing; it is the shell. It mirrors `runReflect` and the
     `--history` path, which is what makes it reviewable at a glance.
   - **No store, no problem — through `noDeckMessage`, not a fourth string.**
@@ -147,6 +180,20 @@ So the fold VALIDATES rather than trusts:
 - the figures degrade to "fewer events" rather than to a wrong number, which is
   the same choice `sanitiseItem` and `readCapped` make one package over.
 
+**And the FORM NAME is text from that file reaching a terminal.**
+`ReviewEvent.Form` is a bare `string` (`store/event.go:108`) written by
+`Outcome.Form`, and this screen prints it as a row label — the first path that
+puts it on screen. A hand-edited `form: "meaning\x1b[2J"` would clear the
+display, which is `#12` BR-15 exactly, one field over. The renderer neutralises
+it the way `oneLine` does (`store/item.go`): control runes that are not
+whitespace are dropped. An unknown form name is still SHOWN rather than filtered
+— a row labelled with a name nobody recognises is how a learner discovers a
+stale or hand-edited log, where silently dropping it hides the fact.
+
+**Every one of these is pinned**, not merely declared: a zero `At`, a future
+`At`, and an escape in `Form` each get a row asserting the figure the fold
+produces, and each must redden when its skip is removed.
+
 The alternative — validating in the store — is wrong here: the store's job is to
 return what is written, and `#3`'s whole design is that the log is the record.
 The consumer decides what it can count.
@@ -156,10 +203,15 @@ The consumer decides what it can count.
 `Summarise` holds no state between calls and reads a snapshot, so most of the
 lens is `N/A` — but written out rather than marked: there is no cancellation
 path (a fold that returns is done), no concurrency (one process, one read), and
-no ordering dependency between events beyond the timestamp each carries. The one
-real ordering question is that **the log is not guaranteed sorted** — it is one
-file per UTC day, appended within each — so anything reading "first" or "last"
-must not assume position. The fold takes min/max rather than `events[0]`.
+no ordering dependency between events beyond the timestamp each carries. **The log IS chronological** — `store/store.go:18` promises it ("Events returns
+events at or after since, in chronological order") and both implementations sort
+to keep it (`mem.go:105`, `yaml.go:353`). An earlier draft of this plan claimed
+the opposite and would have defended against a hazard the seam already excludes.
+
+The fold still takes min/max over timestamps rather than reading `events[0]`,
+but for a DIFFERENT and smaller reason: with the ARCH-SECURE skips below, the
+first element may be one of the skipped ones, so position is not the same
+question as order.
 
 ---
 
@@ -315,6 +367,19 @@ BR-17 forced: a hand-listed set of fields is half a guard.
       a word is refused, and one that `-stats -play` collides. Without them,
       omitting the slice entry leaves a mode that silently coexists with every
       other.
+
+- [ ] **Step 2b: Make `TestModeCollision` actually derive, because it does not.**
+      `main.go:596-597` claims *"modeCollision's table test derives from this"*
+      and `harvest_test.go:622-626` claims *"a sixth mode added to run()'s slice
+      is covered by construction"*. Both are false: the test hand-lists five
+      modes at `harvest_test.go:628-631`, and `#8` is the sixth — the first one
+      the guard would not have covered, in a place two comments say is safe.
+
+      Extract the slice so `run()` and the test read ONE source (the move
+      `docSyncForms` makes for forms, `#12` BR-10), and fail closed on the count
+      so a derivation that finds fewer than the code declares is loud rather than
+      silent (`#12` BR-17). Then mutate: remove `-stats` from the source and
+      confirm the guard names it.
 - [ ] **Step 3: The no-deck path** goes through `noDeckMessage(opt.noCapture)`,
       so the `DEFINE_NO_CAPTURE` cause and the no-directory cause say different
       things. Pin both, and assert the sentence comes from the helper rather than

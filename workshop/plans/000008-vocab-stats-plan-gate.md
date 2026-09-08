@@ -87,6 +87,59 @@ rounds:
           family: done-when-drift
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-07T19:15:02-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: Plan now states p.Box >= MasteredBox correctly and pins the agreement rather than a difference.
+          round: 2
+        - id: PQ-2
+          disposition: not-addressed
+          note: Helper named, but runStats(d, opt, out io.Writer) int has no errOut and the exit code is unstated.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: modes slice + NArg guard named and registration pinned; the false "derives by construction" claim rolls into the family finding.
+          round: 2
+        - id: PQ-4
+          disposition: not-addressed
+          note: At-validation is thorough; the Form-string-to-terminal half is untouched and no test pins the declared validation.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: AddedPerDay's log source is stated in the plan and in the issue's Revisions.
+          round: 2
+        - id: PQ-6
+          disposition: not-addressed
+          note: Still says the log is not guaranteed sorted; folded into the family enumeration.
+          round: 2
+        - id: PQ-7
+          disposition: not-addressed
+          note: Reuse table still credits Fold with lapses; folded into the family enumeration.
+          round: 2
+        - id: PQ-8
+          disposition: addressed
+          note: Issue now carries a Revisions section covering both deviations.
+          round: 2
+      findings:
+        - id: PQ-9
+          severity: Important
+          title: 4th instance of the family — state the file:line rule and sweep the plan, do not fix the three sentences
+          detail: |-
+            Measured prevalence in the current draft: three live claims about existing code with no
+            citation, and each is wrong. "modeCollision's table test derives from it" (TestModeCollision
+            hand-lists five modes, harvest_test.go:628-631, inheriting the false comment at
+            main.go:596-597); "the log is not guaranteed sorted" (store/store.go:18 documents
+            chronological order, mem.go:105 and yaml.go:352 both sort); "box, max box, lapses" from
+            schedule.Fold (Progress is Box, MaxBox, LastReviewed, progress.go:52-63). The rule is
+            enumerable: every declarative sentence in the plan asserting what existing code does carries
+            a file:line, verified. Write the rule into the plan and sweep the whole document in this
+            round rather than correcting the instances a reviewer happened to reach (ARCH-PURPOSE).
+          family: unbacked-existing-behavior-claim
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#8 (plan-quality)
@@ -138,13 +191,36 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   parameter rather than a fake clock. Both deviations are improvements; record them as a
   `## Revisions` note on the issue so the close gate does not read a plan contradicting its criteria.
 
+## Round 2 — 2026-09-07T19:15:02-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — addressed — Plan now states p.Box >= MasteredBox correctly and pins the agreement rather than a difference.
+- PQ-2 — not-addressed — Helper named, but runStats(d, opt, out io.Writer) int has no errOut and the exit code is unstated.
+- PQ-3 — addressed — modes slice + NArg guard named and registration pinned; the false "derives by construction" claim rolls into the family finding.
+- PQ-4 — not-addressed — At-validation is thorough; the Form-string-to-terminal half is untouched and no test pins the declared validation.
+- PQ-5 — addressed — AddedPerDay's log source is stated in the plan and in the issue's Revisions.
+- PQ-6 — not-addressed — Still says the log is not guaranteed sorted; folded into the family enumeration.
+- PQ-7 — not-addressed — Reuse table still credits Fold with lapses; folded into the family enumeration.
+- PQ-8 — addressed — Issue now carries a Revisions section covering both deviations.
+
+### Raised
+
+- **PQ-9** [Important] `unbacked-existing-behavior-claim` 4th instance of the family — state the file:line rule and sweep the plan, do not fix the three sentences
+  Measured prevalence in the current draft: three live claims about existing code with no
+  citation, and each is wrong. "modeCollision's table test derives from it" (TestModeCollision
+  hand-lists five modes, harvest_test.go:628-631, inheriting the false comment at
+  main.go:596-597); "the log is not guaranteed sorted" (store/store.go:18 documents
+  chronological order, mem.go:105 and yaml.go:352 both sort); "box, max box, lapses" from
+  schedule.Fold (Progress is Box, MaxBox, LastReviewed, progress.go:52-63). The rule is
+  enumerable: every declarative sentence in the plan asserting what existing code does carries
+  a file:line, verified. Write the rule into the plan and sweep the whole document in this
+  round rather than correcting the instances a reviewer happened to reach (ARCH-PURPOSE).
+
 ## Open findings
 
-- **PQ-1** [Critical] `unbacked-existing-behavior-claim` Plan asserts Mastered reads MaxBox; it reads Box, and the pin derived from that cannot be written
 - **PQ-2** [Important] `reuse-existing-helper` No-deck path names two incompatible contracts and points away from the existing helper
-- **PQ-3** [Important] `unguarded-enumeration` Mode registration names neither the modes slice nor the NArg guard, and no test would catch the miss
 - **PQ-4** [Important] `untrusted-persisted-input` No ARCH-SECURE line for a hand-editable event log whose bad timestamps silently poison the figures
-- **PQ-5** [Important] `deck-vs-log-source` Added-per-day leaves unstated the deck-vs-log choice the plan argues at length for Known
 - **PQ-6** [Minor] `unbacked-existing-behavior-claim` ARCH-ORDER says the log is not guaranteed sorted; the contract and both implementations say it is
 - **PQ-7** [Minor] `unbacked-existing-behavior-claim` The reuse table credits schedule.Fold with a lapse count that Progress does not carry
-- **PQ-8** [Minor] `done-when-drift` Plan deliberately deviates from two Done-when rows without amending the issue
+- **PQ-9** [Important] `unbacked-existing-behavior-claim` 4th instance of the family — state the file:line rule and sweep the plan, do not fix the three sentences
