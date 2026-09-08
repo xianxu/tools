@@ -233,20 +233,18 @@ invocation. Nothing here runs per keystroke.
 - Create: `cmd/define/play_cmd.go`, `cmd/define/play_cmd_test.go`
 - Modify: `cmd/define/command.go` (the row + the field)
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing tests.** Three, named for what each asserts —
+      written as prose because a plan citing a test that does not exist yet turns
+      the suite red (see Verification):
 
-```go
-// A NIL CAPABILITY IS THE REFUSAL, which is how /sound and /lang already handle
-// "there is no session here" (command.go:160). It covers the one-shot path, a
-// pipe, and the line-mode REPL in one rule rather than three checks.
-func TestSlashPlayRefusesWhereItCannotRun(t *testing.T)
-
-// It takes no argument, the rule --play and --stats already state.
-func TestSlashPlayRefusesArguments(t *testing.T)
-
-// It RECORDS rather than performs: the command returns and the loop acts.
-func TestSlashPlayRecordsTheIntent(t *testing.T)
-```
+      1. **a nil capability is the refusal**, which is how `/sound` and `/lang`
+         already handle "there is no session here" (`command.go:160`). One rule
+         covers the one-shot path, a pipe, and the line-mode REPL.
+      2. **a nil DECK is a second, separate refusal** — `todaysQuestions` reads
+         `d.deck.Deck()`, so the capability being present says the terminal can
+         host a sitting and nothing about there being one to review.
+      3. **it takes no argument**, the rule `--play` and `--stats` state, and it
+         RECORDS rather than performs: the command returns, the loop acts.
 
 - [ ] **Step 2: Run them, watch them fail.**
 - [ ] **Step 3: Add the row, the field and the function.**
@@ -269,7 +267,9 @@ func TestSlashPlayRecordsTheIntent(t *testing.T)
       call, write the helper — a second way to start a sitting is what this issue
       exists to not create.
 - [ ] **Step 2: Write the failing pty test.** Type `/play`, answer a question,
-      Ctrl-C, and assert the DEFINITION PROMPT is back — not a shell.
+      Ctrl-C, and assert the DEFINITION PROMPT is back — not a shell. And the
+      suspend/resume rows named in the Test surface, including the clause that
+      separates suspend from `Stop`: after resume the frame comes BACK.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: The scoped interrupt.** `interrupts.Set(cancel)` with a deferred
       `restore()`, and a test that Ctrl-C inside the sitting does not cancel the
@@ -294,10 +294,20 @@ func TestSlashPlayRecordsTheIntent(t *testing.T)
 
 1. `go test -count=1 ./...`, `go vet` under default, `pty` and `conformance`,
    `gofmt -l` clean.
-2. `TestSlashPlayRefusesWhereItCannotRun` — the nil-capability rule.
-3. The pty test: `/play`, answer, Ctrl-C, back at the prompt.
-4. The store assertion: both entry points record identically.
-5. The `enterRaw` guard, mutation-swept.
+2. The nil-capability rule — a refusal where no sitting can run.
+3. The suspend/resume rows, including the clause that separates suspend from
+   `Stop`: after resume, the frame comes back.
+4. The pty test: `/play`, answer, Ctrl-C, back at the prompt.
+5. The store assertion: both entry points record identically.
+6. The `enterRaw` guard, mutation-swept.
+
+**The test NAMES are deliberately un-backticked above and in the tasks below.**
+`TestPlanCitesTestsThatExist` (`repo_guard_test.go:1306`) walks every plan in the
+tree and requires every backticked test name in it to exist — so a plan written before its
+code, cited in its own convention, turns the suite red for whatever issue is
+closing. This plan tripped that guard while citing it. The names are written as
+prose until the tests land; the tasks say what each asserts, which is what a
+reader needs anyway.
 6. **Manual, once:** `/play` in the smoke deck — answer a question, Ctrl-C, look a
    word up, `/play` again. A terminal is a thing a person has to see.
 

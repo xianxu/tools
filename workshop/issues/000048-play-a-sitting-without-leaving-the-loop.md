@@ -5,7 +5,7 @@ deps: ["tools#6"]
 github_issue:
 created: 2026-09-07
 updated: 2026-09-07
-estimate_hours:
+estimate_hours: 3.60
 started: 2026-09-07T23:50:42-07:00
 ---
 
@@ -65,6 +65,63 @@ that a fourth path through terminal setup gets written instead.
 - **`--play` stays.** A learner who wants only to review should not have to enter
   a REPL to do it, and scripts use the flag. Two entry points, one
   `playSession`.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
+`sdlc estimate-source`, so the per-primitive hours are provisional; derived
+against `#8` (3.71/2.98) and `#46` (7.02/5.91), the two most recent closes.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.35 impl=0.06
+item: smaller-go-module        design=0.03 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.12
+item: greenfield-go-module     design=0.04 impl=0.20
+item: smaller-go-module        design=0.02 impl=0.12
+item: cross-cutting-refactor   design=0.03 impl=0.16
+item: smaller-go-module        design=0.02 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.12
+item: atlas-docs               design=0.02 impl=0.06
+item: smaller-go-module        design=0.0  impl=0.20
+item: ux-rename-iteration      design=0.0  impl=0.20
+item: milestone-review         design=0.0  impl=0.60
+item: milestone-review         design=0.0  impl=0.85
+design-buffer: 0.15
+total: 3.60
+```
+
+| row | the work |
+|---|---|
+| `issue-spec` 0.35/0.06 | the Spec plus FOUR plan rounds, two of them Criticals about terminal ownership. Level with `#12`'s 0.35 and below `#8`'s 0.30-equivalent inflated by rounds: the design was reshaped rather than merely evidenced. |
+| `smaller-go-module` 0.03/0.14 | `liveScreen.suspend`/`resume` — the one genuinely new capability, one flag in `repaint`'s existing guard plus a state model. |
+| `smaller-go-module` 0.02/0.12 | `console.newSitting`, the factory built where `sess` is in scope so `runEditor`'s signature stays untouched. |
+| `greenfield-go-module` 0.04/0.20 | `play_cmd.go`: `runPlayCommand` and `sittingInPlace`. |
+| `smaller-go-module` 0.02/0.12 | the command row, the two refusals (no terminal, no deck), the atlas's derived list. |
+| `cross-cutting-refactor` 0.03/0.16 | extracting `runPlay`'s shared half so both entry points reach one `playSession` — the Done-when that stops a change applying to only one. |
+| `smaller-go-module` 0.02/0.14 | the pty test: `/play`, answer, Ctrl-C, back at the prompt. |
+| `smaller-go-module` 0.02/0.12 | the `enterRaw` guard, and the store assertion that both doors record alike. |
+| `atlas-docs` 0.02/0.06 | the README's per-command paragraph and the atlas. |
+| `smaller-go-module` 0.0/0.20 | the mutation sweeps: the `Set`/`restore` pair, the `enterRaw` guard, suspend-is-not-Stop. |
+| `ux-rename-iteration` 0.0/0.20 | the hand-run. Above `#8`'s 0.15 because a TERMINAL is what is being changed, and a wrong answer shows as corruption a test cannot see. |
+| `milestone-review` 0.0/0.60 + 0.0/0.85 | the close boundary, run + remediation — the house pair. |
+
+**Reconciliation.** Σdesign = 0.55, Σimpl = 2.97.
+0.55 × 1.15 + 2.97 × 1.0 = **3.60**.
+
+**Read against the trailing record.** This repo's ledger: `#42` 0.36, `#44` 0.47,
+`#10` 0.62, `#12` 1.23, `#46` 1.18, `#8` 1.24 — median ≈ 0.62, which at 3.60
+predicts roughly 6h actual. That gap is the within-session parallelism `#117`'s
+ledger instruments; multiplying the rows to meet it would destroy the only signal
+it carries.
+
+**Why this is close to `#8` despite looking harder.** The variable impl is 1.32
+against `#8`'s 1.22 — the fixed tail (sweeps, hand-run, docs, two review rows) is
+1.91 in both. The terminal work is genuinely small ONCE NAMED: one flag in an
+existing guard, one factory, one struct assembled by hand. What was expensive was
+finding out that it had to be, which is design and is priced in `issue-spec`.
 
 ## Done when
 

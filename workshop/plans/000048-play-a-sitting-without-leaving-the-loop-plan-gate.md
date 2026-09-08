@@ -197,6 +197,41 @@ rounds:
           family: hand-swept-surface-unnamed
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-08T15:30:56-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-4
+          disposition: addressed
+          note: Extent is written — nothing of the sitting's outlives the call, the key reader is borrowed, and the sitting starts no second watchResize because it borrows the REPL's resizes channel.
+          round: 4
+        - id: PQ-8
+          disposition: addressed
+          note: The rule is stated as the three acquisitions a borrower must not take, and the newConsole call is gone from the sittingInPlace row.
+          round: 4
+        - id: PQ-7
+          disposition: not-addressed
+          note: Minor, carried — the plan still says five noDeckMessage callers (six exist) and play_loop.go:30 still hand-rolls the sentence.
+          round: 4
+        - id: PQ-9
+          disposition: not-addressed
+          note: Minor, carried — Step 8 is still the bare item and names no README section.
+          round: 4
+      findings:
+        - id: PQ-10
+          severity: Minor
+          title: the sittingInPlace signature still takes sess/stdout, the pair the stated rule says it must not build a console from
+          detail: 'This is the 4th finding in family terminal-ownership-unstated, so the rule not the row — and the plan now STATES the rule correctly (newSitting owns assembly, built where the rawSession and the real stdout are in scope). The signature is the one artifact left contradicting it: replayInPlace''s sess is the plain session struct (replraw.go:625, session.go:9) and its stdout at the call site is con.stdout, the liveScreen (replraw.go:507), so an implementer building the pinned screen from those arguments reproduces PQ-2''s fabricated 80x24 via defaultCols. Make the signature take the console.'
+          family: terminal-ownership-unstated
+          round: 4
+        - id: PQ-11
+          severity: Minor
+          title: the plan's Verification section backticks a test that does not exist, so TestPlanCitesTestsThatExist is red on main
+          detail: 'go test -run TestPlanCitesTestsThatExist ./... fails today: repo_guard_test.go:1353 reports that the plan cites TestSlashPlayRefusesWhereItCannotRun and no such test exists. The plan cites that guard itself (repo_guard_test.go:1306) and then trips it, and its own Verification step 1 demands a clean suite. Un-backtick the not-yet-written names, or note the expected red until Task 1 Step 1 lands.'
+          family: plan-cites-unwritten-test
+          round: 4
+      blocked: false
+content_hash: 4e5353d8d198b28ddd50be538190c2f7e3e132ce9df37df0915a82d8663992dc
 ---
 
 # Gate ledger — tools#48 (plan-quality)
@@ -330,9 +365,25 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   doc_sync_test.go:376-380. Here that is the per-command paragraphs at
   cmd/define/README.md:724-760, where /stats, /history and /pron each have one.
 
+## Round 4 — 2026-09-08T15:30:56-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-4 — addressed — Extent is written — nothing of the sitting's outlives the call, the key reader is borrowed, and the sitting starts no second watchResize because it borrows the REPL's resizes channel.
+- PQ-8 — addressed — The rule is stated as the three acquisitions a borrower must not take, and the newConsole call is gone from the sittingInPlace row.
+- PQ-7 — not-addressed — Minor, carried — the plan still says five noDeckMessage callers (six exist) and play_loop.go:30 still hand-rolls the sentence.
+- PQ-9 — not-addressed — Minor, carried — Step 8 is still the bare item and names no README section.
+
+### Raised
+
+- **PQ-10** [Minor] `terminal-ownership-unstated` the sittingInPlace signature still takes sess/stdout, the pair the stated rule says it must not build a console from
+  This is the 4th finding in family terminal-ownership-unstated, so the rule not the row — and the plan now STATES the rule correctly (newSitting owns assembly, built where the rawSession and the real stdout are in scope). The signature is the one artifact left contradicting it: replayInPlace's sess is the plain session struct (replraw.go:625, session.go:9) and its stdout at the call site is con.stdout, the liveScreen (replraw.go:507), so an implementer building the pinned screen from those arguments reproduces PQ-2's fabricated 80x24 via defaultCols. Make the signature take the console.
+- **PQ-11** [Minor] `plan-cites-unwritten-test` the plan's Verification section backticks a test that does not exist, so TestPlanCitesTestsThatExist is red on main
+  go test -run TestPlanCitesTestsThatExist ./... fails today: repo_guard_test.go:1353 reports that the plan cites TestSlashPlayRefusesWhereItCannotRun and no such test exists. The plan cites that guard itself (repo_guard_test.go:1306) and then trips it, and its own Verification step 1 demands a clean suite. Un-backtick the not-yet-written names, or note the expected red until Task 1 Step 1 lands.
+
 ## Open findings
 
-- **PQ-4** [Important] `unstated-goroutine-extent` the ARCH-ORDER "no concurrency" N/A is wrong — newConsole starts a resize watcher and each screen carries a paint timer
 - **PQ-7** [Minor] `refusal-enumeration-incomplete` the two entry points would print different sentences for the same nil deck
-- **PQ-8** [Important] `terminal-ownership-unstated` the sittingInPlace row still builds the console with newConsole, which re-installs the restoring finish and a second SIGWINCH watcher
 - **PQ-9** [Minor] `hand-swept-surface-unnamed` Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
+- **PQ-10** [Minor] `terminal-ownership-unstated` the sittingInPlace signature still takes sess/stdout, the pair the stated rule says it must not build a console from
+- **PQ-11** [Minor] `plan-cites-unwritten-test` the plan's Verification section backticks a test that does not exist, so TestPlanCitesTestsThatExist is red on main
