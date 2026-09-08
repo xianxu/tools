@@ -661,3 +661,40 @@ func layoutBlockIn(t *testing.T, path, doc, marker string) string {
 	}
 	return doc[start : i+end]
 }
+
+// THE STORE LAYOUTS NAME EVERY RUNTIME DIRECTORY (#46 BR-30).
+//
+// Both blocks — README.md's and the atlas's — restated `store.RuntimeDirs` by
+// hand, and the README had already fallen behind: `usage/` was missing, and
+// `audio/` only arrived because a reviewer noticed.
+//
+// Fourth finding in the family `workshop/targets/derived-restatement.md` exists
+// for, and the rule that target states is the fix: DERIVE where the fact is
+// machine-readable. `RuntimeDirs` is an exported slice; a directory added to it
+// now fails this until both blocks describe it, exactly as
+// `TestGitignoreCoversRuntimeDirs` already fails until `.gitignore` does. The
+// derived consumer was right through every one of those findings while every
+// hand-maintained one was wrong.
+func TestStoreLayoutDocsNameEveryRuntimeDir(t *testing.T) {
+	if len(store.RuntimeDirs) == 0 {
+		t.Fatal("no runtime directories; this guard would certify nothing")
+	}
+	for _, doc := range []struct{ path, marker string }{
+		{"README.md", "events/2026-08-21.yaml"},
+		{"../../atlas/define.md", "events/YYYY-MM-DD.yaml"},
+	} {
+		b, err := os.ReadFile(doc.path)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc.path, err)
+		}
+		block := layoutBlockIn(t, doc.path, string(b), doc.marker)
+		for _, dir := range store.RuntimeDirs {
+			if !strings.Contains(block, dir+"/") {
+				t.Errorf("%s's store layout does not describe %q.\n"+
+					"It is the block a reader consults to interpret their own "+
+					"directory; a directory the program writes and this does not "+
+					"name is a file nobody can account for.", doc.path, dir)
+			}
+		}
+	}
+}

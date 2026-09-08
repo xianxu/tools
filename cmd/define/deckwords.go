@@ -1,6 +1,10 @@
 package main
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
+)
 
 // deckSpan is one word from the learner's deck, LOCATED in rendered text.
 //
@@ -203,4 +207,39 @@ func surfaceOf(form string) surface {
 	// new form that is wrong here shows a learner too much green, which they can
 	// see; the opposite default would hide the signal silently.
 	return surfaceProse
+}
+
+// exceptWord is a vocabulary with one word held out.
+//
+// A QUESTION NEVER MARKS ITS OWN SUBJECT AS KNOWN, because that answers it. A
+// meaning question puts the headword on its first line and asks which definition
+// fits; painting that word deck-green says "you have looked this up before" to a
+// learner being asked whether they know it. Mild, but it is information the form
+// deliberately withholds — the same reason Blank hides a cloze's answer rather
+// than trusting the options to carry the test.
+//
+// A DECORATOR rather than a filter inside the walk: the deck is shared and
+// loaded once, and copying it per question to remove one word would be work per
+// frame for a set that changes once a sitting.
+//
+// The reveal is deliberately NOT subject to this. There the word has been shown
+// and its own sentence restored, so marking it is information rather than a
+// leak.
+type exceptWord struct {
+	Vocabulary
+	key string
+}
+
+func withoutWord(v Vocabulary, word string) Vocabulary {
+	if v == nil || word == "" {
+		return v
+	}
+	return exceptWord{Vocabulary: v, key: store.Key(word)}
+}
+
+func (e exceptWord) Has(key string) bool {
+	if key == e.key {
+		return false
+	}
+	return e.Vocabulary.Has(key)
 }

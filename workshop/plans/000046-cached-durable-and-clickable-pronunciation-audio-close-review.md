@@ -255,3 +255,162 @@ findings:
     detail: |
       diskAudioCache.Fetch (cmd/define/audiodisk.go:88) returns rec.From straight from audio/<slug>/<digest>.yaml. speak passes it to reportVoice, whose spokeSource decides by membership in sourceCandidates() and whose own doc says the report "survives on a pipe and cannot be taken back — and a record has to be true". README.md:535 now explicitly invites editing that directory, and this same round added readCapped and the empty-payload predicate on exactly that reasoning — the payload was hardened and the provenance field beside it was not. A hand-edited From flips the fallback announcement in either direction: absent when it should fire, or fired when the source recording really did answer. ARCH-SECURE: an input crossing a process boundary is untrusted even when this program wrote it. Cheapest fix is one membership check where the record is read — if rec.From is not in urls, treat the entry as nothing cached rather than as evidence.
 ```
+
+---
+
+## Re-review — 2026-09-07T18:14:42-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 46 — cached, durable and clickable pronunciation audio |
+| repo | tools |
+| issue file | workshop/issues/000046-cached-durable-and-clickable-pronunciation-audio.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 3effb6462ee74c0e1d45f8b6b5a49de939b2531e..a1d339b3ddf1c19d0360a51632133f600f382484 |
+| command | sdlc close --issue 46 |
+| reviewer | claude |
+| timestamp | 2026-09-07T18:14:42-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Both Important findings from the prior round are genuinely fixed and I mutation-verified each: passing `deps{}` at `play_loop.go:229` reddens `TestEveryWriteWordsCallSitePassesAVocabulary` by name, and deleting either the memo's or `httpAudioSource`'s zero-byte predicate reddens a differently-named row (`TestAZeroByteResponseIsNotAHit`, `TestAnEmptyBodyDoesNotStopTheCandidateWalk`/`TestAnEmptyResponseIsAVerdictNotAHit`). The suite is green at HEAD (`go test -count=1 ./...`, `go vet ./...`, `gofmt -l` all clean). Nothing blocks the boundary. What I am raising is one user-visible behaviour this window introduced and nothing pins — the word under test in a *meaning* question is now painted with the deck-known green, which is the one place on screen the Spec's own "colour is a discovery signal" criterion says it should not be — plus two class-level gaps: the README/atlas working-directory listings are still hand-maintained restatements of `store.RuntimeDirs` with no derived guard (and the README already omits `usage/` today), and the durable plan has had no `## Revisions` entry since M1 round 2 while five commits changed the design under it. Eight Minor findings from prior rounds remain open and unaddressed.
+
+## 1. Strengths
+
+- **The seam-not-wrap move is the right answer and the atlas records why.** `deps.audio` as `*audioSeam` (`main.go:23-26`) makes "which loop must remember to wrap" unaskable rather than answering it wrongly a fifth time, and `TestOneWordCostsOneFetchHoweverOftenItIsPlayed` (`play_loop_test.go:4351`) asserts the field's *type* as the guarantee rather than asserting a habit.
+- **`storetest/suite.go:640-880` holds both twins to the same audio contract**, including the `re`/`re-` prefix pair that only reddens under the superseded filing scheme. `Mem.Audio`/`Mem.SetAudio` (`mem.go:195-232`) carry the same emptiness predicate as YAML, so the fake cannot be more permissive than the real thing (ARCH-MOCK).
+- **The write-door guard was fixed at the right level.** Removing the `Vocabulary` argument (`main.go:939`) so `nil` no longer compiles is a strictly better fix than tightening a token check — verified: `writeWords(..., nil, ...)` fails to build, `deps{}` fires the AST guard.
+- **`readCapped` + the empty-payload predicate at three layers, each swept separately** (`lessons.md:3860-3880`), is the correct response to "defence in depth is not two pins"; the write half asserts through the filesystem, the read half plants a truncated file.
+- **`deckSpans` reuses `highlightSpans` over `visibleIndex`'s plain text** (`deckwords.go:53-77`) rather than teaching the matcher about ANSI — one matcher, two consumers, and the escape-awareness falls out (ARCH-DRY, ARCH-PURE).
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**a. `cmd/define/play_loop.go:229` — the word under test in a *meaning* question is now painted deck-green.**
+`surfaceOf("meaning")` is `surfaceProse`, so `colourOutside` runs over the whole prompt — and `Choice.Prompt()` (`play/choice.go:109-118`) is `word + "\n\n" + options`. Probed at HEAD: with a deck holding the headword, the prompt writes `"\n\x1b[1;32mephemeral\x1b[0m\n\n1  …"`. Every meaning question in a sitting now marks its own asked word as one you know, which is the clearest possible case of the Spec's "where finding one is a discovery" failing — and the same token renders in `Render`'s headword style one frame later in the reveal. `TestChoiceOptionGlossesAreColoured` cannot see it: its vocabulary is `deckOf("keel")` and the headword is `sycophantic`. The operator's pty pass checked the cloze frame and the reveal frame, not this one. Fix sketch: either classify the prompt's headword line out of the colour pass (the form knows which part of its prompt is the deck — the same asymmetry `promptRegions` already encodes), or accept it and add the case to `TestChoiceOptionGlossesAreColoured` with a deck containing the headword so the decision is pinned rather than incidental.
+
+**b. `cmd/define/README.md:501` and `atlas/define.md:608` — the working-directory listings restate `store.RuntimeDirs` by hand, unguarded. This is the 4th finding in family `runtime-artifact-undocumented`** (BR-8, BR-16, BR-27 preceding it). Earlier rounds fixed instances — BR-8 added the `audio/` lines to both docs. Do NOT fix another instance; the rule is already written in this repo and half-implemented. `RuntimeDirs` has four consumers: `.gitignore` (derived, guarded by `TestGitignoreCoversRuntimeDirs`), `perWordDirs` (derived, guarded by `TestPerWordDirsCoverEveryRuntimeDir`), and the two doc listings — hand-maintained, nothing checking them. The measured prevalence: **README.md never mentions `usage/` at all**, so the listing is already missing a runtime directory that no one has noticed. The class fix is ~12 lines and the shape exists in the same file: `TestStoreLayoutDocsNameEveryEventKind` (`doc_sync_test.go:622-644`) already walks both docs' fenced layout blocks via `layoutBlockIn`. Add `TestStoreLayoutDocsNameEveryRuntimeDir` over `store.RuntimeDirs` using the same markers, then fix whatever it reddens.
+
+**c. `workshop/plans/000046-audio-cache-and-deck-words-plan.md:690` — the plan has no `## Revisions` entry for close rounds 3–7, and its integration table now states two things the head commit falsified. This is the 2nd finding in family `plan-table-drift`.** The `writeWords` bullet says *"It takes the vocabulary and the surface"* — a1d339b removed the vocabulary argument for exactly the reason BR-21 gave, in the same commit that left this sentence standing. The `audioDir` bullet (`:257`) still says *"the per-language audio directory"*, which the flat-directory reversal falsified in round 2; BR-16's grep was written for the *filing* reversal's vocabulary (`slug>--`, `prefix glob`, `BOTH axes`) and structurally could not match this one — which is precisely what BR-27 asked for ("one grep per reversal, not one per issue") and did not get. State the rule: **a plan artifact's entity description is swept in the same commit that changes the entity's shape, by an APPENDED `## Revisions` entry (AGENTS.md §1), and each reversal earns its own grep.** The enumeration for this round: the `writeWords` signature, the `audioDir` shelf, the empty-payload predicate's three layers, and the two AST guards — none of which the plan records.
+
+## 4. Minor findings
+
+- **Two assertions added in this window cannot fire. This is the 4th finding in family `claimed-coverage-absent`.** Earlier rounds fixed instances (BR-6, BR-23, BR-26 — all prose naming a guard that could not go red); this is the same rule in code. Do NOT fix these two sites — state the rule (*every guard clause needs a witness input that makes it fire; write the witness or delete the clause*) and sweep the clauses this window added. Measured instances: (1) `store/audio.go:63` — `ok()`'s `Slug(k.Word) != ""` is a tautology, because `Slug` never returns `""` (`Slug("")` = `"w-e3b0c4"`). Probed: `SetAudio(NewAudioKey("", urls), …)` files a readable hit under `audio/w-e3b0c4/` that `Forget("")` returns `(false, nil)` for — unreachable from production only because `diskAudioCache.keyFor` happens to check `c.word == ""` separately. (2) `deckwords_test.go:409-413` — the `arg.Name == "nil"` branch is dead: `nil` is not assignable to the struct-typed `deps` parameter, so the package fails to build and the test never runs (verified: `cannot use nil as deps value`). Only the `default` branch does any work.
+- `cmd/define/fetch_test.go:295` — `newHTTPAudioSource2(c *fakeCDN) *httpAudioSource { return c.source() }` is a rename wrapper whose name reads as a second constructor beside `newHTTPAudioSource`. Inline `cdn.source()`.
+- `cmd/define/store/yaml.go:892` and `cmd/define/news.go:22` — `maxFeedBytes`' comment says it mirrors `maxAudioBytes`, so the 4MB ceiling is now stated in **three** places, not the two BR-24 counted.
+
+## 5. Test coverage notes
+
+- Mutation-verified this round: BR-21's AST guard (fires on `deps{}`), the memo's zero-byte predicate, and `httpAudioSource`'s empty-body skip (reddens two independently-named rows). All three are real pins.
+- `TestPlaybackSurvivesAnUnusableCache`'s `failingStore` row now has a real `Audio`/`SetAudio` implementation with a call site, so it is no longer interface padding.
+- The gap the diff could still ship: the meaning-prompt colouring above. No test drives `writeWords` with a vocabulary that contains the prompt's headword, so the whole class of "the prompt's own word is marked" is invisible to the suite.
+- `TestAPromptRegionCoversTheTextItClaims` still walks `promptRegions(q)` only, so the new kind's coverage invariant on a real prompt is unpinned — the invariant itself holds via `TestWordRegionsCoverTheTextTheyClaim` on synthetic text (see BR-23, still open).
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY** — flag (Minor above): the 4MB ceiling is three statements of one fact. Otherwise clean; `deckSpans` reusing `highlightSpans` is the diff's best DRY decision.
+- **ARCH-PURE** — pass. `deckwords.go` and `store/audio.go` are pure and tested without IO; `diskAudioCache` is the thin shell with `now` injected; the store's degrade branches are driven against a real `t.TempDir()` rather than a mock.
+- **ARCH-PURPOSE** — flag (Important b): the shadow-sweep over `RuntimeDirs` finds two hand-maintained consumers, and one of them is already stale for a *different* directory.
+- **ARCH-MOCK** — pass. `fakeCDN` is at the wire, `storetest` holds both store twins to one contract, and `fetch_conformance_test.go` is a live check run unfiltered. Note for later: the new "an empty 200 means no recording here" behaviour is a modelled assumption with no conformance row; it is defensive rather than a claim about Google's CDN, so a row is optional — but if the fallback walk ever depends on it, it earns one.
+- **ARCH-CONSTRAINTS** — pass. Eviction is declined with a number (10–30KB × 1000 words ≈ 30MB, `plan:240`); `deckSpans` is bounded to one walk per write, not per keystroke; the blob read is capped.
+- **ARCH-SECURE** — flag: BR-28 is still open and README.md:538 now makes it worse, claiming *"The program treats what it reads back as UNTRUSTED"* in the same block that invites editing `audio/`. `AudioRecord.From` is read straight off a hand-editable file and printed by `reportVoice` as the voice that answered. The payload was hardened this round; the provenance field beside it was not.
+- **ARCH-ORDER** — pass, with a note. `audioSeam` carries two maps (`hits`, `misses`) for one key, declaring four states where three are legal; concurrent first-fetches can land a key in both (hits wins, so behaviour is correct). If `#45`'s async playback makes concurrent fetches routine, collapse them into one map to a tagged `hit | verdict` value before adding a third state.
+
+## 7. Plan revision recommendations
+
+Append one `## Revisions` entry to `workshop/plans/000046-audio-cache-and-deck-words-plan.md` covering close-gate rounds 3–7, and within it:
+
+- **`writeWords` no longer takes a vocabulary.** Correct the integration-table bullet (`:690`): it takes the `deps` and derives the vocabulary itself, because a guard over an argument can only check the argument's source token.
+- **`audioDir` is FLAT, not per-language.** Correct `:257`, and record that the language-shelf reversal never got its own grep — the filing reversal's grep could not match it.
+- **`store/audio_test.go` was never created.** The "Test surface" paragraph (`:216-219`) still names it; its rows live in `storetest/suite.go`, which is the better home. Say so, and drop the lowercase `audioKey`/`audioRecord` spellings still in the prose at `:203`, `:449`, `:456`, `:827` (the entity table itself is now correct).
+- **Task 6 Step 3 and Verification row 6 are wrong for the same reason as the Done-when rows** — Step 3 says "give `writeRendered` the vocabulary and the surface", and row 6 says `TestAPromptRegionCoversTheTextItClaims` was "widened", which it was not.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Table fixed (AudioKey/AudioRecord, mergeRegions row added); the Test-surface paragraph at :216-219 still names a store/audio_test.go that does not exist, and :203/:449/:456/:827 still spell the types lowercase.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      applyLang (command.go) still lists neither d.audio among its members nor among its "Deliberately NOT here" exclusions.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      yaml.go:838 still reads the record with an unbounded os.ReadFile beside the capped blob at :843, and readCapped's doc still says "refusing" where io.LimitReader truncates. The blob cap IS pinned (yaml_test.go, "a blob larger than the cap is truncated") — that half of the finding was inaccurate.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      Mutation-verified: replacing d with deps{} at play_loop.go:229 reddens TestEveryWriteWordsCallSitePassesAVocabulary by name; nil no longer compiles.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      Mutation-verified separately at both layers; the store.Store interface doc now states the empty-payload refusal.
+  - id: BR-23
+    disposition: not-addressed
+    note: |
+      TestAPromptRegionCoversTheTextItClaims still loops promptRegions(q) only (play_loop_test.go:4276); the Done-when row still cites it.
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      maxAudioBytes and maxAudioBlobBytes still independent; news.go:22 makes it three statements of the same number.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      Both clauses of the Done-when row are unchanged, as are Task 5 Step 4 and Verification row 6.
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      noAudioSource still declared at main_test.go:20 with zero instantiations; the three present-tense claims stand; no grep for the seam reversal and no "one grep per reversal" rule in lessons.md. A THIRD reversal is now visible in the same artifact — the plan's audioDir bullet still says "the per-language audio directory".
+  - id: BR-28
+    disposition: not-addressed
+    note: |
+      audiodisk.go:88 still returns rec.From unchecked against urls, and README.md:538 now claims persisted input is treated as untrusted.
+findings:
+  - id: new
+    severity: Important
+    family: discovery-colour-scope
+    title: |
+      A meaning question now paints the word under test deck-green, which is the one word on screen where the discovery rule says it should not
+    detail: |
+      surfaceOf("meaning") is surfaceProse and Choice.Prompt() is word + "\n\n" + options, so colourOutside runs over the headword line too. Probed at HEAD with a deck holding the headword the prompt writes "\n\x1b[1;32mephemeral\x1b[0m\n\n1  ...". New behaviour — the prompt was written through writeRendered with no colour before. TestChoiceOptionGlossesAreColoured cannot see it because its vocabulary omits the headword, and the operator's pty pass covered the cloze and reveal frames only. Either classify the headword line out of the colour pass or pin the decision with a deck containing the headword.
+  - id: new
+    severity: Important
+    family: runtime-artifact-undocumented
+    title: |
+      README's and the atlas's working-directory listings restate store.RuntimeDirs by hand with no guard, and README already omits usage/
+    detail: |
+      This is the 4th finding in family runtime-artifact-undocumented (BR-8, BR-16, BR-27). Do NOT fix another instance. RuntimeDirs has four consumers; the two derived ones are guarded (TestGitignoreCoversRuntimeDirs, TestPerWordDirsCoverEveryRuntimeDir) and the two documentation ones are not. Measured prevalence: README.md contains no occurrence of "usage/" at all, so the listing is missing a runtime directory nobody noticed. The class fix is TestStoreLayoutDocsNameEveryRuntimeDir, mirroring TestStoreLayoutDocsNameEveryEventKind at doc_sync_test.go:622 and reusing its layoutBlockIn helper over both markers.
+  - id: new
+    severity: Important
+    family: plan-table-drift
+    title: |
+      The durable plan has no Revisions entry for close rounds 3-7, and its writeWords bullet states a signature the head commit removed
+    detail: |
+      This is the 2nd finding in family plan-table-drift. The plan's last Revisions entry is "M1 boundary review, rounds 1 and 2"; five commits since then changed the design. plan:690 says writeWords "takes the vocabulary and the surface" — a1d339b removed that argument, in the commit that left the sentence standing. plan:257 still calls audioDir "the per-language audio directory", falsified by the flat-shelf reversal whose vocabulary BR-16's grep could not match. State the rule: a plan artifact's entity description is swept in the same commit that changes the entity's shape, by an APPENDED Revisions entry per AGENTS.md section 1, and each reversal earns its own grep. Enumeration for this round: the writeWords signature, the audioDir shelf, the empty-payload predicate's three layers, the two AST guards.
+  - id: new
+    severity: Minor
+    family: claimed-coverage-absent
+    title: |
+      Two guard clauses added in this window cannot fire — AudioKey.ok's Word check is a tautology and the AST guard's nil branch does not compile
+    detail: |
+      This is the 4th finding in family claimed-coverage-absent (BR-6, BR-23, BR-26). Earlier rounds fixed prose instances; this is the same rule in code. Do NOT fix these two sites — state the rule (every guard clause needs a witness input that makes it fire; write the witness or delete the clause) and sweep the clauses this window added. Instances: store/audio.go:63, where Slug never returns "" (Slug("") = "w-e3b0c4"), so ok() is effectively just Digest != "" — probed, an AudioKey with an empty Word files a readable hit under audio/w-e3b0c4/ that Forget("") cannot remove, reachable through the newly exported NewAudioKey/SetAudio surface though not from production. And deckwords_test.go:409, where arg.Name == "nil" is dead because nil is not assignable to the struct-typed deps parameter (verified: "cannot use nil as deps value"), so the package would not build and the test would never run.
+  - id: new
+    severity: Minor
+    family: two-statements-one-fact
+    title: |
+      newHTTPAudioSource2 is a rename wrapper around cdn.source() whose name reads as a second constructor
+    detail: |
+      fetch_test.go:295 defines newHTTPAudioSource2(c *fakeCDN) *httpAudioSource { return c.source() } beside the real newHTTPAudioSource. Inline the call.
+```

@@ -878,7 +878,9 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	// them — with its own per-region base styles, which is why `already` is the
 	// whole output and this pass adds no colour of its own — but until #46 a
 	// click only reached the headword and the ORIGIN languages.
-	writeWords(stdout, rendered, regions, d, opt, surfaceProse, rendered)
+	// No subject: a lookup ANSWERS about its word rather than asking, and
+	// Render has already coloured the entry anyway.
+	writeWords(stdout, rendered, regions, d, opt, surfaceProse, "", rendered)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: opt.playsAudio(), entry: text}
 }
@@ -932,11 +934,13 @@ func writeRendered(w io.Writer, text string, rs []Region) {
 // part-of-speech labels, the example style) that a flat pass here could not
 // reproduce, because ANSI does not nest. Regions are still produced across the
 // whole text; only the colour pass stops at that boundary.
-func writeWords(w io.Writer, text string, rs []Region, d deps, opt options, sf surface, already string) {
+func writeWords(w io.Writer, text string, rs []Region, d deps, opt options, sf surface, subject, already string) {
+	// The SUBJECT is held out of the colour pass but not out of the click map: a
+	// learner may still want to hear the word they are being asked about.
 	v := deckVocabulary(d)
 	rs = mergeRegions(rs, wordRegions(text, v))
 	if v != nil && opt.color && sf.admitsColour() {
-		text = colourOutside(text, already, v)
+		text = colourOutside(text, already, withoutWord(v, subject))
 	}
 	writeRendered(w, text, rs)
 }

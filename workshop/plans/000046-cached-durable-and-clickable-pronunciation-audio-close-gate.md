@@ -495,6 +495,82 @@ rounds:
           family: persisted-field-unvalidated
           round: 7
       blocked: true
+    - "n": 8
+      timestamp: "2026-09-07T18:14:42-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: not-addressed
+          note: Table fixed (AudioKey/AudioRecord, mergeRegions row added); the Test-surface paragraph at :216-219 still names a store/audio_test.go that does not exist, and :203/:449/:456/:827 still spell the types lowercase.
+          round: 8
+        - id: BR-17
+          disposition: not-addressed
+          note: applyLang (command.go) still lists neither d.audio among its members nor among its "Deliberately NOT here" exclusions.
+          round: 8
+        - id: BR-18
+          disposition: not-addressed
+          note: yaml.go:838 still reads the record with an unbounded os.ReadFile beside the capped blob at :843, and readCapped's doc still says "refusing" where io.LimitReader truncates. The blob cap IS pinned (yaml_test.go, "a blob larger than the cap is truncated") — that half of the finding was inaccurate.
+          round: 8
+        - id: BR-21
+          disposition: addressed
+          note: 'Mutation-verified: replacing d with deps{} at play_loop.go:229 reddens TestEveryWriteWordsCallSitePassesAVocabulary by name; nil no longer compiles.'
+          round: 8
+        - id: BR-22
+          disposition: addressed
+          note: Mutation-verified separately at both layers; the store.Store interface doc now states the empty-payload refusal.
+          round: 8
+        - id: BR-23
+          disposition: not-addressed
+          note: TestAPromptRegionCoversTheTextItClaims still loops promptRegions(q) only (play_loop_test.go:4276); the Done-when row still cites it.
+          round: 8
+        - id: BR-24
+          disposition: not-addressed
+          note: maxAudioBytes and maxAudioBlobBytes still independent; news.go:22 makes it three statements of the same number.
+          round: 8
+        - id: BR-26
+          disposition: not-addressed
+          note: Both clauses of the Done-when row are unchanged, as are Task 5 Step 4 and Verification row 6.
+          round: 8
+        - id: BR-27
+          disposition: not-addressed
+          note: noAudioSource still declared at main_test.go:20 with zero instantiations; the three present-tense claims stand; no grep for the seam reversal and no "one grep per reversal" rule in lessons.md. A THIRD reversal is now visible in the same artifact — the plan's audioDir bullet still says "the per-language audio directory".
+          round: 8
+        - id: BR-28
+          disposition: not-addressed
+          note: audiodisk.go:88 still returns rec.From unchecked against urls, and README.md:538 now claims persisted input is treated as untrusted.
+          round: 8
+      findings:
+        - id: BR-29
+          severity: Important
+          title: A meaning question now paints the word under test deck-green, which is the one word on screen where the discovery rule says it should not
+          detail: surfaceOf("meaning") is surfaceProse and Choice.Prompt() is word + "\n\n" + options, so colourOutside runs over the headword line too. Probed at HEAD with a deck holding the headword the prompt writes "\n\x1b[1;32mephemeral\x1b[0m\n\n1  ...". New behaviour — the prompt was written through writeRendered with no colour before. TestChoiceOptionGlossesAreColoured cannot see it because its vocabulary omits the headword, and the operator's pty pass covered the cloze and reveal frames only. Either classify the headword line out of the colour pass or pin the decision with a deck containing the headword.
+          family: discovery-colour-scope
+          round: 8
+        - id: BR-30
+          severity: Important
+          title: README's and the atlas's working-directory listings restate store.RuntimeDirs by hand with no guard, and README already omits usage/
+          detail: 'This is the 4th finding in family runtime-artifact-undocumented (BR-8, BR-16, BR-27). Do NOT fix another instance. RuntimeDirs has four consumers; the two derived ones are guarded (TestGitignoreCoversRuntimeDirs, TestPerWordDirsCoverEveryRuntimeDir) and the two documentation ones are not. Measured prevalence: README.md contains no occurrence of "usage/" at all, so the listing is missing a runtime directory nobody noticed. The class fix is TestStoreLayoutDocsNameEveryRuntimeDir, mirroring TestStoreLayoutDocsNameEveryEventKind at doc_sync_test.go:622 and reusing its layoutBlockIn helper over both markers.'
+          family: runtime-artifact-undocumented
+          round: 8
+        - id: BR-31
+          severity: Important
+          title: The durable plan has no Revisions entry for close rounds 3-7, and its writeWords bullet states a signature the head commit removed
+          detail: 'This is the 2nd finding in family plan-table-drift. The plan''s last Revisions entry is "M1 boundary review, rounds 1 and 2"; five commits since then changed the design. plan:690 says writeWords "takes the vocabulary and the surface" — a1d339b removed that argument, in the commit that left the sentence standing. plan:257 still calls audioDir "the per-language audio directory", falsified by the flat-shelf reversal whose vocabulary BR-16''s grep could not match. State the rule: a plan artifact''s entity description is swept in the same commit that changes the entity''s shape, by an APPENDED Revisions entry per AGENTS.md section 1, and each reversal earns its own grep. Enumeration for this round: the writeWords signature, the audioDir shelf, the empty-payload predicate''s three layers, the two AST guards.'
+          family: plan-table-drift
+          round: 8
+        - id: BR-32
+          severity: Minor
+          title: Two guard clauses added in this window cannot fire — AudioKey.ok's Word check is a tautology and the AST guard's nil branch does not compile
+          detail: 'This is the 4th finding in family claimed-coverage-absent (BR-6, BR-23, BR-26). Earlier rounds fixed prose instances; this is the same rule in code. Do NOT fix these two sites — state the rule (every guard clause needs a witness input that makes it fire; write the witness or delete the clause) and sweep the clauses this window added. Instances: store/audio.go:63, where Slug never returns "" (Slug("") = "w-e3b0c4"), so ok() is effectively just Digest != "" — probed, an AudioKey with an empty Word files a readable hit under audio/w-e3b0c4/ that Forget("") cannot remove, reachable through the newly exported NewAudioKey/SetAudio surface though not from production. And deckwords_test.go:409, where arg.Name == "nil" is dead because nil is not assignable to the struct-typed deps parameter (verified: "cannot use nil as deps value"), so the package would not build and the test would never run.'
+          family: claimed-coverage-absent
+          round: 8
+        - id: BR-33
+          severity: Minor
+          title: newHTTPAudioSource2 is a rename wrapper around cdn.source() whose name reads as a second constructor
+          detail: fetch_test.go:295 defines newHTTPAudioSource2(c *fakeCDN) *httpAudioSource { return c.source() } beside the real newHTTPAudioSource. Inline the call.
+          family: two-statements-one-fact
+          round: 8
+      blocked: true
 ---
 
 # Gate ledger — tools#46 (boundary-review)
@@ -752,15 +828,46 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-28** [Minor] `persisted-field-unvalidated` AudioRecord.From is read back from a hand-editable file and printed as the record of which voice answered, with no check that it is one of the URLs asked for
   diskAudioCache.Fetch (cmd/define/audiodisk.go:88) returns rec.From straight from audio/<slug>/<digest>.yaml. speak passes it to reportVoice, whose spokeSource decides by membership in sourceCandidates() and whose own doc says the report "survives on a pipe and cannot be taken back — and a record has to be true". README.md:535 now explicitly invites editing that directory, and this same round added readCapped and the empty-payload predicate on exactly that reasoning — the payload was hardened and the provenance field beside it was not. A hand-edited From flips the fallback announcement in either direction: absent when it should fire, or fired when the source recording really did answer. ARCH-SECURE: an input crossing a process boundary is untrusted even when this program wrote it. Cheapest fix is one membership check where the record is read — if rec.From is not in urls, treat the entry as nothing cached rather than as evidence.
 
+## Round 8 — 2026-09-07T18:14:42-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-13 — not-addressed — Table fixed (AudioKey/AudioRecord, mergeRegions row added); the Test-surface paragraph at :216-219 still names a store/audio_test.go that does not exist, and :203/:449/:456/:827 still spell the types lowercase.
+- BR-17 — not-addressed — applyLang (command.go) still lists neither d.audio among its members nor among its "Deliberately NOT here" exclusions.
+- BR-18 — not-addressed — yaml.go:838 still reads the record with an unbounded os.ReadFile beside the capped blob at :843, and readCapped's doc still says "refusing" where io.LimitReader truncates. The blob cap IS pinned (yaml_test.go, "a blob larger than the cap is truncated") — that half of the finding was inaccurate.
+- BR-21 — addressed — Mutation-verified: replacing d with deps{} at play_loop.go:229 reddens TestEveryWriteWordsCallSitePassesAVocabulary by name; nil no longer compiles.
+- BR-22 — addressed — Mutation-verified separately at both layers; the store.Store interface doc now states the empty-payload refusal.
+- BR-23 — not-addressed — TestAPromptRegionCoversTheTextItClaims still loops promptRegions(q) only (play_loop_test.go:4276); the Done-when row still cites it.
+- BR-24 — not-addressed — maxAudioBytes and maxAudioBlobBytes still independent; news.go:22 makes it three statements of the same number.
+- BR-26 — not-addressed — Both clauses of the Done-when row are unchanged, as are Task 5 Step 4 and Verification row 6.
+- BR-27 — not-addressed — noAudioSource still declared at main_test.go:20 with zero instantiations; the three present-tense claims stand; no grep for the seam reversal and no "one grep per reversal" rule in lessons.md. A THIRD reversal is now visible in the same artifact — the plan's audioDir bullet still says "the per-language audio directory".
+- BR-28 — not-addressed — audiodisk.go:88 still returns rec.From unchecked against urls, and README.md:538 now claims persisted input is treated as untrusted.
+
+### Raised
+
+- **BR-29** [Important] `discovery-colour-scope` A meaning question now paints the word under test deck-green, which is the one word on screen where the discovery rule says it should not
+  surfaceOf("meaning") is surfaceProse and Choice.Prompt() is word + "\n\n" + options, so colourOutside runs over the headword line too. Probed at HEAD with a deck holding the headword the prompt writes "\n\x1b[1;32mephemeral\x1b[0m\n\n1  ...". New behaviour — the prompt was written through writeRendered with no colour before. TestChoiceOptionGlossesAreColoured cannot see it because its vocabulary omits the headword, and the operator's pty pass covered the cloze and reveal frames only. Either classify the headword line out of the colour pass or pin the decision with a deck containing the headword.
+- **BR-30** [Important] `runtime-artifact-undocumented` README's and the atlas's working-directory listings restate store.RuntimeDirs by hand with no guard, and README already omits usage/
+  This is the 4th finding in family runtime-artifact-undocumented (BR-8, BR-16, BR-27). Do NOT fix another instance. RuntimeDirs has four consumers; the two derived ones are guarded (TestGitignoreCoversRuntimeDirs, TestPerWordDirsCoverEveryRuntimeDir) and the two documentation ones are not. Measured prevalence: README.md contains no occurrence of "usage/" at all, so the listing is missing a runtime directory nobody noticed. The class fix is TestStoreLayoutDocsNameEveryRuntimeDir, mirroring TestStoreLayoutDocsNameEveryEventKind at doc_sync_test.go:622 and reusing its layoutBlockIn helper over both markers.
+- **BR-31** [Important] `plan-table-drift` The durable plan has no Revisions entry for close rounds 3-7, and its writeWords bullet states a signature the head commit removed
+  This is the 2nd finding in family plan-table-drift. The plan's last Revisions entry is "M1 boundary review, rounds 1 and 2"; five commits since then changed the design. plan:690 says writeWords "takes the vocabulary and the surface" — a1d339b removed that argument, in the commit that left the sentence standing. plan:257 still calls audioDir "the per-language audio directory", falsified by the flat-shelf reversal whose vocabulary BR-16's grep could not match. State the rule: a plan artifact's entity description is swept in the same commit that changes the entity's shape, by an APPENDED Revisions entry per AGENTS.md section 1, and each reversal earns its own grep. Enumeration for this round: the writeWords signature, the audioDir shelf, the empty-payload predicate's three layers, the two AST guards.
+- **BR-32** [Minor] `claimed-coverage-absent` Two guard clauses added in this window cannot fire — AudioKey.ok's Word check is a tautology and the AST guard's nil branch does not compile
+  This is the 4th finding in family claimed-coverage-absent (BR-6, BR-23, BR-26). Earlier rounds fixed prose instances; this is the same rule in code. Do NOT fix these two sites — state the rule (every guard clause needs a witness input that makes it fire; write the witness or delete the clause) and sweep the clauses this window added. Instances: store/audio.go:63, where Slug never returns "" (Slug("") = "w-e3b0c4"), so ok() is effectively just Digest != "" — probed, an AudioKey with an empty Word files a readable hit under audio/w-e3b0c4/ that Forget("") cannot remove, reachable through the newly exported NewAudioKey/SetAudio surface though not from production. And deckwords_test.go:409, where arg.Name == "nil" is dead because nil is not assignable to the struct-typed deps parameter (verified: "cannot use nil as deps value"), so the package would not build and the test would never run.
+- **BR-33** [Minor] `two-statements-one-fact` newHTTPAudioSource2 is a rename wrapper around cdn.source() whose name reads as a second constructor
+  fetch_test.go:295 defines newHTTPAudioSource2(c *fakeCDN) *httpAudioSource { return c.source() } beside the real newHTTPAudioSource. Inline the call.
+
 ## Open findings
 
 - **BR-13** [Minor] `plan-table-drift` The plan's entity tables drift from the code: audioKey/audioRecord vs AudioKey/AudioRecord, no store/audio_test.go, mergeRegions has no row
 - **BR-17** [Minor] `lang-switch-derivation` applyLang's enumeration of what a language switch re-derives still does not account for d.audio, which holds a store bound to the pre-switch language
 - **BR-18** [Minor] `unbounded-input-read` Only the blob was bounded — the record YAML beside it is still read with an unbounded os.ReadFile, readCapped truncates where its doc says it refuses, and no test pins the cap
-- **BR-21** [Important] `production-wiring-unpinned` Passing nil for the vocabulary at all three writeWords call sites leaves the whole suite green, so M2's production wiring is unpinned
-- **BR-22** [Important] `degenerate-payload-trusted` The memo serves a zero-byte 200 as a hit for the whole sitting, with a from URL reportVoice prints as the voice that answered
 - **BR-23** [Minor] `claimed-coverage-absent` The Done-when row names TestAPromptRegionCoversTheTextItClaims as exercising RegionWord, but that test can only see promptRegions
 - **BR-24** [Minor] `two-statements-one-fact` The 4MB audio ceiling is stated twice, in two packages, with nothing holding them equal
 - **BR-26** [Minor] `claimed-coverage-absent` The "every deck word is clickable" Done-when row now carries two false statements, one of them created by this round's own fix
 - **BR-27** [Minor] `runtime-artifact-undocumented` The seam reversal never got the grep the filing reversal got, and left a dead double plus three present-tense claims about it
 - **BR-28** [Minor] `persisted-field-unvalidated` AudioRecord.From is read back from a hand-editable file and printed as the record of which voice answered, with no check that it is one of the URLs asked for
+- **BR-29** [Important] `discovery-colour-scope` A meaning question now paints the word under test deck-green, which is the one word on screen where the discovery rule says it should not
+- **BR-30** [Important] `runtime-artifact-undocumented` README's and the atlas's working-directory listings restate store.RuntimeDirs by hand with no guard, and README already omits usage/
+- **BR-31** [Important] `plan-table-drift` The durable plan has no Revisions entry for close rounds 3-7, and its writeWords bullet states a signature the head commit removed
+- **BR-32** [Minor] `claimed-coverage-absent` Two guard clauses added in this window cannot fire — AudioKey.ok's Word check is a tautology and the AST guard's nil branch does not compile
+- **BR-33** [Minor] `two-statements-one-fact` newHTTPAudioSource2 is a rename wrapper around cdn.source() whose name reads as a second constructor

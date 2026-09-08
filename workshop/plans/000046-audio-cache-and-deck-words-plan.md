@@ -927,3 +927,41 @@ the change was about, sixty lines above the function that contradicted them.
 - Every degrade branch in `YAML.Audio` is driven: corrupt record, vanished blob,
   unwritable path, oversized blob (BR-6). Two of them previously carried a
   promise nothing checked.
+
+### 2026-09-07 — close rounds 3-7
+
+**Appended, and this time for rounds that had none.** Round 2 of M1 already
+made this point (BR-9) and the close gate had to make it again: five rounds of
+close review changed the design in ways the body above no longer describes.
+
+**The `writeWords` signature above is superseded.** It is documented as taking a
+`Vocabulary` and a colour flag; it takes the `deps` and the `options`, derives
+both, and additionally takes the SUBJECT — the word the text is asking about.
+Each change came from a finding:
+
+- **BR-21 — the vocabulary argument was removed** because a guard over an
+  argument can only check its source token. `nil` reddened the guard;
+  `vocabularyFor(d, opt)` did not, though that returns nil whenever colour is off
+  and would silently remove every click target on `--no-color`. A parameter with
+  one correct value is a parameter that will eventually be given another. When
+  `deps{}` slipped through in its place, the guard grew a clause requiring the
+  identifier the loop holds.
+- **BR-29 — the subject argument was added.** Colouring reached a meaning
+  question's headword, so the word under test was painted deck-green: "you have
+  looked this up before", told to a learner being asked whether they know it.
+  The rule is now stated once — **a question never marks its own subject as
+  known** — and the reveal is deliberately exempt, because there the word has
+  been shown and its sentence restored. The subject is held out of the COLOUR
+  pass only; its click target survives, since a learner may well want to hear
+  the word they are being asked about.
+- **BR-22 — the empty-payload predicate reached all three layers.** Fixed at the
+  store in round 4, the memo in round 5, and finally the fetch in round 6, where
+  an empty 200 had also been ABANDONING THE REMAINING CANDIDATES — so a word
+  whose recording sat one URL later played nothing at all. An empty body is now
+  exactly a 404: skip it, keep walking, and record a verdict with the usual TTL
+  if nothing answers.
+- **BR-30 — the store-layout blocks now DERIVE from `store.RuntimeDirs`.** Both
+  restated it by hand and the README had already fallen behind by one directory.
+  Fourth finding in the family `workshop/targets/derived-restatement.md` exists
+  for, and its rule is what was applied: derive wherever the fact is
+  machine-readable.

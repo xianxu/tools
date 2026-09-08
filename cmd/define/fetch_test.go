@@ -279,7 +279,7 @@ func TestAnEmptyBodyDoesNotStopTheCandidateWalk(t *testing.T) {
 		"/a.mp3": {},                 // a 200 with no body
 		"/b.mp3": []byte("ID3audio"), // the real recording, one candidate later
 	})
-	data, from, err := newHTTPAudioSource2(cdn).Fetch(t.Context(), cdn.urls("/a.mp3", "/b.mp3"))
+	data, from, err := cdn.source().Fetch(t.Context(), cdn.urls("/a.mp3", "/b.mp3"))
 	if err != nil {
 		t.Fatalf("the walk gave up at the empty body: %v", err)
 	}
@@ -290,7 +290,3 @@ func TestAnEmptyBodyDoesNotStopTheCandidateWalk(t *testing.T) {
 		t.Errorf("from = %q, want the candidate that actually answered", from)
 	}
 }
-
-// newHTTPAudioSource2 is the CDN's source, named apart so the row above reads as
-// a test of the HTTP layer rather than of the fake.
-func newHTTPAudioSource2(c *fakeCDN) *httpAudioSource { return c.source() }

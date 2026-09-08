@@ -180,7 +180,7 @@ func TestClozeOptionsAreClickableButNotColoured(t *testing.T) {
 	// The click half, through the write door a sitting actually uses.
 	rw := &recordingRegionWriter{}
 	prompt := "\nThe Times dismissed it as ___.\n\n1  keel\n2  mesa\n"
-	writeWords(rw, prompt, nil, deps{langDeps: langDeps{vocab: deckOf("keel", "mesa")}}, options{color: true}, surfaceOf("cloze"), "")
+	writeWords(rw, prompt, nil, deps{langDeps: langDeps{vocab: deckOf("keel", "mesa")}}, options{color: true}, surfaceOf("cloze"), "", "")
 	if len(rw.regions) != 2 {
 		t.Errorf("a cloze prompt offered %d click targets, want 2: %+v", len(rw.regions), rw.regions)
 	}
@@ -228,8 +228,8 @@ func TestClicksSurviveNoColour(t *testing.T) {
 	v := deckOf("keel")
 	_ = v
 	var withColour, without strings.Builder
-	writeWords(&withColour, "the keel", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceProse, "")
-	writeWords(&without, "the keel", nil, deps{langDeps: langDeps{vocab: v}}, options{color: false}, surfaceProse, "")
+	writeWords(&withColour, "the keel", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceProse, "", "")
+	writeWords(&without, "the keel", nil, deps{langDeps: langDeps{vocab: v}}, options{color: false}, surfaceProse, "", "")
 
 	if !strings.Contains(withColour.String(), knownOn) {
 		t.Error("colour on produced no highlight")
@@ -249,8 +249,8 @@ func TestADeckSurfaceIsClickableButUncoloured(t *testing.T) {
 	v := deckOf("keel", "mesa")
 	var out strings.Builder
 	rw := &recordingRegionWriter{}
-	writeWords(rw, "keel\nmesa", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceDeck, "")
-	writeWords(&out, "keel\nmesa", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceDeck, "")
+	writeWords(rw, "keel\nmesa", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceDeck, "", "")
+	writeWords(&out, "keel\nmesa", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceDeck, "", "")
 
 	if strings.Contains(out.String(), knownOn) {
 		t.Errorf("a deck surface was coloured: %q — every word there is a deck word, "+
@@ -293,7 +293,7 @@ func TestEveryDeckWordInASittingIsClickable(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rw := &recordingRegionWriter{}
-			writeWords(rw, tc.text, nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, tc.sf, "")
+			writeWords(rw, tc.text, nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, tc.sf, "", "")
 			if len(rw.regions) != tc.want {
 				t.Errorf("got %d click targets, want %d: %+v", len(rw.regions), tc.want, rw.regions)
 			}
@@ -307,7 +307,7 @@ func TestEveryDeckWordInASittingIsClickable(t *testing.T) {
 func TestChoiceOptionGlossesAreColoured(t *testing.T) {
 	var out strings.Builder
 	writeWords(&out, "\nsycophantic\n\n1  a part of a keel, in a boat\n",
-		nil, deps{langDeps: langDeps{vocab: deckOf("keel")}}, options{color: true}, surfaceOf("meaning"), "")
+		nil, deps{langDeps: langDeps{vocab: deckOf("keel")}}, options{color: true}, surfaceOf("meaning"), "", "")
 	if !strings.Contains(out.String(), knownOn+"keel") {
 		t.Errorf("a gloss was not coloured: %q", out.String())
 	}
@@ -322,7 +322,7 @@ func TestChoiceOptionGlossesAreColoured(t *testing.T) {
 // no colour — which is what reddens the day someone wires the footer through it.
 func TestBoardCellsCarryNoDeckColourEvenWhenTheyAreDeckWords(t *testing.T) {
 	var out strings.Builder
-	writeWords(&out, "0  keel   1  mesa\n", nil, deps{langDeps: langDeps{vocab: deckOf("keel", "mesa")}}, options{color: true}, surfaceOf("board"), "")
+	writeWords(&out, "0  keel   1  mesa\n", nil, deps{langDeps: langDeps{vocab: deckOf("keel", "mesa")}}, options{color: true}, surfaceOf("board"), "", "")
 	if strings.Contains(out.String(), knownOn) {
 		t.Errorf("a board's cells were coloured: %q — every cell is a deck word, "+
 			"so colour marks everything and distinguishes nothing", out.String())
@@ -343,7 +343,7 @@ func TestTheRenderedEntryIsNotRecoloured(t *testing.T) {
 	text := "\nThe keel shifts sharply.\n\n" + already + "\n"
 
 	var out strings.Builder
-	writeWords(&out, text, nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceProse, already)
+	writeWords(&out, text, nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceProse, "", already)
 	got := out.String()
 
 	// The render arrives byte-for-byte as Render produced it.
@@ -428,5 +428,60 @@ func TestEveryWriteWordsCallSitePassesAVocabulary(t *testing.T) {
 		t.Fatalf("found %d writeWords call sites, want at least 3 (the lookup entry, the "+
 			"sitting's prompt, the sitting's reveal) — the derivation is under-deriving "+
 			"and this guard would certify nothing", sites)
+	}
+}
+
+// A QUESTION NEVER MARKS ITS OWN SUBJECT AS KNOWN (#46 BR-29).
+//
+// A meaning question puts the headword on line 0 and asks which definition fits.
+// Painting it deck-green tells a learner "you have looked this up before" while
+// asking whether they know it — mild, but it is information the form withholds
+// on purpose, the same reason Blank hides a cloze's answer.
+//
+// TestChoiceOptionGlossesAreColoured could not see this: its deck omits the
+// headword, and the operator's pty pass covered the cloze and reveal frames.
+func TestAQuestionDoesNotColourTheWordItAsks(t *testing.T) {
+	// A deck that CONTAINS the headword, which is the fixture the sibling row
+	// lacked and the whole reason the bug was invisible.
+	d := deps{langDeps: langDeps{vocab: deckOf("ephemeral", "keel")}}
+	prompt := "\nephemeral\n\n1  lasting a very short time\n2  like a keel\n"
+
+	var out strings.Builder
+	writeWords(&out, prompt, nil, d, options{color: true}, surfaceProse, "ephemeral", "")
+	got := out.String()
+
+	if strings.Contains(got, knownOn+"ephemeral") {
+		t.Errorf("the word under test was painted deck-green: %q", got)
+	}
+	// AND THE REST STILL IS, so this cannot pass by colouring nothing.
+	if !strings.Contains(got, knownOn+"keel") {
+		t.Errorf("no other deck word was coloured, so this proves nothing: %q", got)
+	}
+	// AND IT IS STILL CLICKABLE. Holding a word out of the COLOUR pass must not
+	// take its click target: a learner may well want to hear the word they are
+	// being asked about.
+	rw := &recordingRegionWriter{}
+	writeWords(rw, prompt, nil, d, options{color: true}, surfaceProse, "ephemeral", "")
+	var found bool
+	for _, r := range rw.regions {
+		if r.Word == "ephemeral" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the word under test lost its click target: %+v", rw.regions)
+	}
+}
+
+// The REVEAL is deliberately not subject to that rule: the word has been shown
+// and its sentence restored, so marking it is information rather than an answer
+// to a question still being asked.
+func TestARevealStillMarksTheWordItRevealed(t *testing.T) {
+	d := deps{langDeps: langDeps{vocab: deckOf("ephemeral")}}
+	var out strings.Builder
+	writeWords(&out, "\nSnow on the coast is ephemeral.\n", nil, d,
+		options{color: true}, surfaceProse, "", "")
+	if !strings.Contains(out.String(), knownOn+"ephemeral") {
+		t.Errorf("the reveal held its own word out of the colour pass: %q", out.String())
 	}
 }

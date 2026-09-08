@@ -509,6 +509,11 @@ events/2026-08-21.yaml     append-only, one file per day (named in UTC)
                            broken: it carries options: — every word you were
                            shown — and no correct:, because it is not evidence
                            about you and moves nothing
+usage/sycophantic.yaml     the news cache: recent headlines using the word,
+                           and WHEN they were fetched. Per word and FLAT, so it
+                           is shared across languages — forgetting a word in one
+                           clears it for the other, which costs a refetch rather
+                           than lost work
 facts/en/sycophantic.yaml  a word's CEFR band and domain, written by
                            --harvest and never re-asked; per language, because
                            `red` is a different word in English and Spanish
