@@ -27,15 +27,26 @@ So, explicitly (ARCH-DRY):
 | figure | already exists | this issue |
 |---|---|---|
 | a word's box, max box, lapses | `schedule.Fold` | folds it, adds nothing |
-| whether a word is mastered | `schedule.Mastered` | calls it, does not re-decide |
+| whether a word is mastered | `schedule.Mastered` | calls it, does not re-decide — and its doc ALREADY names this issue as the second consumer |
 | a local calendar day | `store.StartOfDay` | uses it |
 | days between two instants | `store.DaysBetween` | uses it — this is the DST-correct one, and re-deriving it is how a streak breaks on the 25-hour day |
 | a window of "the last N days" | `historyWindow` | reuses it if `--stats` grows a window; MVP has none |
 
-**A second definition of "mastered" is the specific thing this plan refuses.**
-`MasteredBox` is 9 and `Mastered` reads `MaxBox`, not `Box`, so a lapsed word
-stays mastered. A stats screen that counted `Box >= 9` would disagree with the
-sitting's own display for exactly the words a learner would ask about.
+**A second definition of "mastered" is the specific thing this plan refuses**,
+and `Mastered`'s own doc comment says so in advance: *"Exported and defined once
+because two consumers need the same answer: `#6`'s `--play` decides what to stop
+highlighting and `#8`'s `--stats` reports how many words are known. Two
+conditions written separately would drift, and the drift would show as a stats
+screen disagreeing with the review queue."* This issue is that second consumer,
+and calling the function is the whole of its obligation.
+
+**What it actually says** (`p.Box >= MasteredBox`, box 9): a LAPSED word is not
+mastered, because `Box` falls on a wrong answer while `MaxBox` does not. The
+first draft of this plan asserted the opposite — that `Mastered` reads `MaxBox`,
+so a lapsed word stays mastered — and built a pin on it. Plan-quality caught it.
+Recorded rather than silently corrected, because the mistake is instructive: the
+DRY argument for calling the function is exactly that a second author's
+*recollection* of the rule is not the rule.
 
 ### Pure entities
 
@@ -97,9 +108,15 @@ promised.
   deck, fold, render, print.
   - **Injected into:** nothing; it is the shell. It mirrors `runReflect` and the
     `--history` path, which is what makes it reviewable at a glance.
-  - **No store, no problem.** `d.deck == nil` (no directory, or
-    `DEFINE_NO_CAPTURE`) prints the same sentence `--play` prints for the same
-    cause, rather than a screen of zeros that reads as "you have done nothing".
+  - **No store, no problem — through `noDeckMessage`, not a fourth string.**
+    `d.deck == nil` has TWO causes and they need different sentences:
+    `DEFINE_NO_CAPTURE` is set (nothing was opened on purpose) or there is no
+    deck in this directory. `noDeckMessage(opt.noCapture)` already distinguishes
+    them and is already shared by `--forget` and `/history`; its own comment
+    gives the reason — *"the same fact stated in two places is how the atlas
+    contradictions in `#4` started"*. `--play`'s hardcoded string does NOT make
+    that distinction, so copying it would tell a `DEFINE_NO_CAPTURE` user their
+    directory is empty. ARCH-DRY.
 
 **Test surface for integration points.** `store.Mem` through the existing
 `testDeps` rig — no new fake. The store is already behind a conformance-tested
@@ -113,6 +130,26 @@ deck is a few thousand words, so this is milliseconds and there is no paging,
 no incremental cache, and deliberately no stored counter. **If the log ever grows
 past what a single fold can carry, the fix is a window, not a counter** — a
 counter reintroduces the drift `#3` chose this shape to avoid.
+
+### ARCH-SECURE — the log is hand-editable input
+
+`events/` is plain YAML in a directory the README explicitly invites editing, and
+every figure here is folded from it. **A bad timestamp is the attack surface, and
+it is silent**: a zero `At` puts an event on year 1, which makes `activeDays`
+span two thousand years and the "longest streak" arithmetic meaningless; a
+far-future `At` breaks the current streak by leaving a gap nobody can close.
+
+So the fold VALIDATES rather than trusts:
+
+- an event whose `At` is zero is skipped — it is not a day;
+- an event dated after `now` is skipped, because a fold cannot be evidence about
+  the future, and this is the shape a clock-skewed or hand-edited row takes;
+- the figures degrade to "fewer events" rather than to a wrong number, which is
+  the same choice `sanitiseItem` and `readCapped` make one package over.
+
+The alternative — validating in the store — is wrong here: the store's job is to
+return what is written, and `#3`'s whole design is that the log is the record.
+The consumer decides what it can count.
 
 ### ARCH-ORDER — state and events
 
@@ -148,9 +185,12 @@ func TestKnownCountsTheDeckNotTheLog(t *testing.T)
 - [ ] **Step 3: Implement `Stats` + `Summarise` for `Known` and `Mastered` only.**
       `Mastered` calls `schedule.Mastered(prog[key])` — never `Box >= MasteredBox`.
 - [ ] **Step 4: Run it, watch it pass.**
-- [ ] **Step 5: Pin the mastery agreement.** A lapsed word (high `MaxBox`, low
-      `Box`) counts as mastered here exactly as the sitting displays it; reverting
-      to `Box >= MasteredBox` must redden a named row.
+- [ ] **Step 5: Pin the mastery AGREEMENT, which is what can actually drift.**
+      A lapsed word (high `MaxBox`, `Box` back below 9) is NOT mastered, here and
+      in the sitting alike. The pin is that both answers come from one function:
+      assert `Stats.Mastered` equals the count of `schedule.Mastered` over the
+      same progress map, so an inlined predicate — of any spelling, including a
+      correct one that later drifts — reddens.
 - [ ] **Step 6: Commit.**
 
 ### Task 2: active days and the two streaks
@@ -216,6 +256,13 @@ func TestAccuracyIsKeyedByTheFormTheLogRecords(t *testing.T)
 // not since the epoch — an average diluted by dormant months answers a question
 // nobody asked.
 func TestAddedPerDayIsOverTheActiveWindow(t *testing.T)
+
+// AND IT COUNTS FROM THE LOG, unlike Known — the same deck-vs-log choice, going
+// the other way, because the two questions differ. "How many words do I know" is
+// about the deck as it stands; "how fast am I adding them" is about what
+// HAPPENED, and a forgotten word was still a word added that day. Folding the
+// deck for this would rewrite the past every time --forget ran.
+func TestAddedPerDayCountsForgottenWordsToo(t *testing.T)
 ```
 
 - [ ] **Step 2-4: Red, implement, green.**
@@ -257,10 +304,22 @@ BR-17 forced: a hand-listed set of fields is half a guard.
 
 - [ ] **Step 1: Write the failing end-to-end test** through `run()` with a
       `store.Mem` holding a deck and a log.
-- [ ] **Step 2: Register `-stats`** beside `-reflect` and `-play`, and dispatch
-      it the same way.
-- [ ] **Step 3: The no-deck path** prints what `--play` prints for the same
-      cause, not zeros.
+- [ ] **Step 2: Register `-stats` as a MODE, which is three edits and a guard.**
+      `main.go:598`'s `modes` slice is the list AND the collision check —
+      `modeCollision`'s table test derives from it, so a mode added there is
+      covered by construction. Then the `fs.NArg() != 0` refusal beside
+      `-reflect`'s and `-play`'s, because `define -stats sycophantic` is two
+      commands on one line, which `#2` shipped the wrong way once.
+
+      **Pin the registration, not just the behaviour:** a test that `-stats` with
+      a word is refused, and one that `-stats -play` collides. Without them,
+      omitting the slice entry leaves a mode that silently coexists with every
+      other.
+- [ ] **Step 3: The no-deck path** goes through `noDeckMessage(opt.noCapture)`,
+      so the `DEFINE_NO_CAPTURE` cause and the no-directory cause say different
+      things. Pin both, and assert the sentence comes from the helper rather than
+      matching a literal — a test asserting the literal is a fourth statement of
+      the fact.
 - [ ] **Step 4: `/stats` in the REPL too**, if the command table makes it a row
       rather than a feature — check `command.go` and do it only if it is a row.
 - [ ] **Step 5: README and atlas.** The README's key table and command list are
