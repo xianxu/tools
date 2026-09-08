@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/xianxu/tools/cmd/define/schedule"
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // runStats prints one screen answering "is any of this working".
@@ -44,26 +45,41 @@ func runStats(ctx context.Context, d deps, opt options, out, errOut io.Writer) i
 		return 1
 	}
 
-	deck, err := d.deck.Deck()
+	return printStats(d.deck, d.clock, "--stats", out, errOut)
+}
+
+// printStats reads, folds and renders — the whole of the screen below the door.
+//
+// IT IS THE SHARED HALF, and it exists because the comment claiming the halves
+// were shared was FALSE. `runStats` and `runStatsCommand` each did their own
+// Deck(), Events(), clock read, Summarise and render loop: five duplicated
+// statements under a doc comment that said "ONE FOLD, ONE RENDERER, TWO ENTRY
+// POINTS… everything below that seam is shared". The boundary review measured it
+// (#8 BR-4). A comment asserting DRY is not DRY; this is.
+//
+// `who` names the caller in a diagnostic, because "define: --stats: …" and
+// "define: /stats: …" tell a reader which door they came through — the only
+// thing the two genuinely differ in besides where the deck comes from.
+func printStats(deckStore store.Store, clock store.Clock, who string, out, errOut io.Writer) int {
+	deck, err := deckStore.Deck()
 	if err != nil {
-		fmt.Fprintf(errOut, "define: could not read the deck: %v\n", err)
+		fmt.Fprintf(errOut, "define: %s: could not read the deck: %v\n", who, err)
 		return 1
 	}
 	// The WHOLE log: a streak is a fact about all of history, and #8's figures
 	// are not windowed. Events reads every day file regardless of `since`
 	// (history_cmd.go:100 records the same), so the zero time costs nothing extra.
-	events, err := d.deck.Events(time.Time{})
+	events, err := deckStore.Events(time.Time{})
 	if err != nil {
-		fmt.Fprintf(errOut, "define: could not read the log: %v\n", err)
+		fmt.Fprintf(errOut, "define: %s: could not read the log: %v\n", who, err)
 		return 1
 	}
-
-	// d.clock, never time.Now(): withStore fills it unconditionally
-	// (main.go:214), so a fallback here would be a SECOND source for the one
-	// thing every figure on this screen is measured against — and the one a test
-	// controls. A screen whose "today" disagrees with the sitting's is a screen
-	// whose streak disagrees.
-	now := d.clock.Now()
+	// The injected clock, never time.Now(): withStore fills it unconditionally
+	// (main.go:214) and commandCtx carries it (command.go:156), so a fallback
+	// would be a SECOND source for the one thing every figure is measured
+	// against — and the one a test controls. A screen whose "today" disagrees
+	// with the sitting's is a screen whose streak disagrees.
+	now := clock.Now()
 	for _, line := range renderStats(schedule.Summarise(events, deck, now), now) {
 		fmt.Fprintln(out, line)
 	}
@@ -187,10 +203,11 @@ func formLabel(form string) string {
 
 // runStatsCommand is `/stats`, and it is `--stats` with a different door.
 //
-// ONE FOLD, ONE RENDERER, TWO ENTRY POINTS. The flag and the command differ only
-// in where the deck and the clock come from — deps for one, commandCtx for the
-// other — so everything below that seam is shared and a change to the screen
-// cannot apply to only one of them. That is the property #48 will need for
+// ONE FOLD, ONE RENDERER, TWO ENTRY POINTS — through printStats, which is where
+// that claim became true. The flag and the command differ only in where the deck
+// and the clock come from (deps for one, commandCtx for the other) and in the
+// name a diagnostic carries; everything below that is one function, so a change
+// to the screen cannot apply to only one of them. That is the property #48 will need for
 // `/play`, arriving here first on the cheaper case.
 //
 // Adding a command is a row in `commands` plus this function; the dispatch loop
@@ -208,19 +225,5 @@ func runStatsCommand(c commandCtx, args []string) int {
 		fmt.Fprintln(c.stderr, noDeckMessage(c.noCapture))
 		return 1
 	}
-	deck, err := c.deck.Deck()
-	if err != nil {
-		fmt.Fprintf(c.stderr, "define: /stats: %v\n", err)
-		return 1
-	}
-	events, err := c.deck.Events(time.Time{})
-	if err != nil {
-		fmt.Fprintf(c.stderr, "define: /stats: %v\n", err)
-		return 1
-	}
-	now := c.clock.Now()
-	for _, line := range renderStats(schedule.Summarise(events, deck, now), now) {
-		fmt.Fprintln(c.stdout, line)
-	}
-	return 0
+	return printStats(c.deck, c.clock, "/stats", c.stdout, c.stderr)
 }

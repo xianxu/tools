@@ -3962,3 +3962,28 @@ sentence was checked**, and writing it forces the check.
 covered by construction". Neither is true, and the plan inherited the falsehood
 by reading the comment instead of the test. When a comment asserts a guard's
 extent, open the guard.
+
+**A guard that derives from the LIST it is checking cannot see a deletion.**
+`#8` fixed `TestModeCollision` to parse `run()`'s `modes` slice instead of
+hand-listing five names — and that was still not enough. The guard derives
+whatever is in the list, so deleting a row leaves it deriving one fewer and
+passing, while the mode goes on dispatching and colliding with nothing.
+
+**Derive from the OTHER side.** A mode is a flag `run()` returns on; the list is
+the claim about it. Read both and require them to agree, and neither side can
+hide what the other declares — the both-directions closure `#46` BR-9 arrived at
+by a different road. Mutation-check on a member the finding did NOT name, or you
+have pinned one instance again.
+
+**A comment asserting DRY is not DRY.** `runStats` and `runStatsCommand` each did
+their own read, fold and render — five duplicated statements under a doc comment
+reading "ONE FOLD, ONE RENDERER, TWO ENTRY POINTS… everything below that seam is
+shared". The sentence was aspirational and read as descriptive. When you write
+that a thing is shared, the next line should be the function it is shared
+through.
+
+**Keep a plan on the branch that implements it.** `#48`'s plan, committed onto
+`#8`'s branch, made `#8`'s suite red — the plan-vs-code guards correctly reported
+that it named entities and tests the window did not contain. Plans are checked
+against the code in their window, so a plan for other work is a plan that cannot
+pass.

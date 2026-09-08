@@ -79,7 +79,6 @@ DRY argument for calling the function is exactly that a second author's
 | `Stats` | `cmd/define/schedule/stats.go` | new |
 | `Summarise` | `cmd/define/schedule/stats.go` | new |
 | `FormAccuracy` | `cmd/define/schedule/stats.go` | new |
-| `activeDays` | `cmd/define/schedule/stats.go` | new |
 | `renderStats` | `cmd/define/stats.go` | new |
 
 - **`Stats`** — every figure the screen shows, and nothing else.
@@ -111,11 +110,18 @@ DRY argument for calling the function is exactly that a second author's
     evidence about the learner — the same reason `Fold` ignores the kind — so
     counting it would let bad material lower a learner's accuracy.
 
-- **`activeDays`** — the set of local calendar days carrying at least one event,
-  which both `ActiveDays` and the two streaks are read off.
+- **the day set** — the local calendar days carrying at least one event, which
+  `ActiveDays` and both streaks are read off.
   - **ONE traversal, three figures.** Current streak, longest streak and the
-    active-day count are three questions about one set; computing them
-    separately is three chances to disagree about what a day is.
+    active-day count are three questions about one set; computing them separately
+    is three chances to disagree about what a day is.
+  - **It did NOT become a named function.** The first draft of this table listed
+    `activeDays` as an entity; it shipped as a local `days` map inside
+    `Summarise` plus `streaks(days, now)`, because a function returning a set
+    that only one caller builds and only one caller reads is a seam with nothing
+    on either side of it. `TestPlanTablesNameEntitiesThatExist` caught the row —
+    a plan naming a function the code never declares reads as evidence that it
+    exists.
 
 **Test surface.** `schedule/stats_test.go`, colocated, no IO and no fake —
 `TestSchedulePurity` (`schedule/purity_test.go:17`) already enforces "no IO and
@@ -134,11 +140,17 @@ promised.
     closest sibling: same package, same shape, also a mode. Two writers because a
     diagnostic is not output — a `--stats` piped to a file must not have "could
     not read the log" in the middle of it.
-  - **EXIT CODES:** 0 when the screen printed, including on an empty deck (there
-    is nothing wrong with having done nothing yet); 1 when the log could not be
-    read, because the figures would then be silently low rather than absent, and
-    a wrong number is worse than a refusal. A nil deck is 0 with the explanatory
-    sentence — it is a statement about the directory, not a failure.
+  - **EXIT CODES:** 0 when the screen printed, including on an EMPTY deck (there
+    is nothing wrong with having done nothing yet); 1 when the deck or the log
+    could not be read, because the figures would then be silently low rather than
+    absent, and a wrong number is worse than a refusal.
+
+    **A NIL DECK IS ALSO 1, on stderr** — a correction. This plan first said 0
+    to stdout, "a statement about the directory, not a failure". Every sibling
+    disagrees: `--forget` (`main.go:1193`), `--harvest` (`harvest.go:111`),
+    `--reflect` (`reflect.go:340`) and `/history` (`history_cmd.go:220`) all
+    print `noDeckMessage` to stderr and return 1, unanimously. The case the
+    original argument was protecting is the EMPTY deck, which still exits 0.
   - **Injected into:** nothing; it is the shell. It mirrors `runReflect` and the
     `--history` path, which is what makes it reviewable at a glance.
   - **No store, no problem — through `noDeckMessage`, not a fourth string.**
@@ -168,7 +180,7 @@ counter reintroduces the drift `#3` chose this shape to avoid.
 
 `events/` is plain YAML in a directory the README explicitly invites editing, and
 every figure here is folded from it. **A bad timestamp is the attack surface, and
-it is silent**: a zero `At` puts an event on year 1, which makes `activeDays`
+it is silent**: a zero `At` puts an event on year 1, which makes the day set
 span two thousand years and the "longest streak" arithmetic meaningless; a
 far-future `At` breaks the current streak by leaving a gap nobody can close.
 
@@ -222,7 +234,7 @@ question as order.
 **Files:**
 - Create: `cmd/define/schedule/stats.go`, `cmd/define/schedule/stats_test.go`
 
-- [ ] **Step 1: Write the failing test for the asymmetry that defines the shape**
+- [x] **Step 1: Write the failing test for the asymmetry that defines the shape**
 
 ```go
 // WORDS KNOWN COMES FROM THE DECK, NOT THE LOG, and the two genuinely differ:
@@ -233,24 +245,24 @@ question as order.
 func TestKnownCountsTheDeckNotTheLog(t *testing.T)
 ```
 
-- [ ] **Step 2: Run it, watch it fail** (`Summarise` undefined).
-- [ ] **Step 3: Implement `Stats` + `Summarise` for `Known` and `Mastered` only.**
+- [x] **Step 2: Run it, watch it fail** (`Summarise` undefined).
+- [x] **Step 3: Implement `Stats` + `Summarise` for `Known` and `Mastered` only.**
       `Mastered` calls `schedule.Mastered(prog[key])` — never `Box >= MasteredBox`.
-- [ ] **Step 4: Run it, watch it pass.**
-- [ ] **Step 5: Pin the mastery AGREEMENT, which is what can actually drift.**
+- [x] **Step 4: Run it, watch it pass.**
+- [x] **Step 5: Pin the mastery AGREEMENT, which is what can actually drift.**
       A lapsed word (high `MaxBox`, `Box` back below 9) is NOT mastered, here and
       in the sitting alike. The pin is that both answers come from one function:
       assert `Stats.Mastered` equals the count of `schedule.Mastered` over the
       same progress map, so an inlined predicate — of any spelling, including a
       correct one that later drifts — reddens.
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ### Task 2: active days and the two streaks
 
 **Files:**
 - Modify: `cmd/define/schedule/stats.go`, `cmd/define/schedule/stats_test.go`
 
-- [ ] **Step 1: Write the failing tests — the calendar rows first**
+- [x] **Step 1: Write the failing tests — the calendar rows first**
 
 ```go
 // A STREAK IS A LOCAL CALENDAR QUESTION. StartOfDay and DaysBetween already
@@ -277,21 +289,21 @@ func TestStreaksAcrossDSTBoundaries(t *testing.T)
 func TestStreaksInFractionalOffsetZones(t *testing.T)
 ```
 
-- [ ] **Step 2: Run them, watch them fail.**
-- [ ] **Step 3: Implement `activeDays` + the two streaks** over `store.StartOfDay`
+- [x] **Step 2: Run them, watch them fail.**
+- [x] **Step 3: Implement the day set + the two streaks** over `store.StartOfDay`
       and `store.DaysBetween`.
-- [ ] **Step 4: Run them, watch them pass.**
-- [ ] **Step 5: Mutation sweep.** Replace `DaysBetween` with a
+- [x] **Step 4: Run them, watch them pass.**
+- [x] **Step 5: Mutation sweep.** Replace `DaysBetween` with a
       `Sub()/24h` computation and confirm the DST row reddens BY NAME. *A pin
       that cannot fail is not a pin*, and this is the row the Done-when names.
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ### Task 3: added-per-day and accuracy by form
 
 **Files:**
 - Modify: `cmd/define/schedule/stats.go`, `cmd/define/schedule/stats_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // A FLAGGED QUESTION IS NOT AN ATTEMPT. #12 records the option set and moves on
@@ -317,8 +329,8 @@ func TestAddedPerDayIsOverTheActiveWindow(t *testing.T)
 func TestAddedPerDayCountsForgottenWordsToo(t *testing.T)
 ```
 
-- [ ] **Step 2-4: Red, implement, green.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 2-4: Red, implement, green.**
+- [x] **Step 5: Commit.**
 
 ## Chunk 2: the screen
 
@@ -327,7 +339,7 @@ func TestAddedPerDayCountsForgottenWordsToo(t *testing.T)
 **Files:**
 - Create: `cmd/define/stats.go`, `cmd/define/stats_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // AN EMPTY DECK RENDERS SENSIBLY — a Done-when row, and the state every new
@@ -344,8 +356,8 @@ The second uses reflection over `Stats` — the same "derive the extent" move
 `TestEveryFormIsEnrolled` and `numRegionKinds` make, and the correction `#12`
 BR-17 forced: a hand-listed set of fields is half a guard.
 
-- [ ] **Step 2-4: Red, implement, green.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 2-4: Red, implement, green.**
+- [x] **Step 5: Commit.**
 
 ### Task 5: the flag and the shell
 
@@ -354,9 +366,9 @@ BR-17 forced: a hand-listed set of fields is half a guard.
 - Modify: `cmd/define/README.md`, `atlas/define.md`
 - Test: `cmd/define/stats_test.go`
 
-- [ ] **Step 1: Write the failing end-to-end test** through `run()` with a
+- [x] **Step 1: Write the failing end-to-end test** through `run()` with a
       `store.Mem` holding a deck and a log.
-- [ ] **Step 2: Register `-stats` as a MODE, which is three edits and a guard.**
+- [x] **Step 2: Register `-stats` as a MODE, which is three edits and a guard.**
       `main.go:598`'s `modes` slice is the list AND the collision check —
       `modeCollision`'s table test derives from it, so a mode added there is
       covered by construction. Then the `fs.NArg() != 0` refusal beside
@@ -368,7 +380,7 @@ BR-17 forced: a hand-listed set of fields is half a guard.
       omitting the slice entry leaves a mode that silently coexists with every
       other.
 
-- [ ] **Step 2b: Make `TestModeCollision` actually derive, because it does not.**
+- [x] **Step 2b: Make `TestModeCollision` actually derive, because it does not.**
       `main.go:596-597` claims *"modeCollision's table test derives from this"*
       and `harvest_test.go:622-626` claims *"a sixth mode added to run()'s slice
       is covered by construction"*. Both are false: the test hand-lists five
@@ -380,17 +392,17 @@ BR-17 forced: a hand-listed set of fields is half a guard.
       so a derivation that finds fewer than the code declares is loud rather than
       silent (`#12` BR-17). Then mutate: remove `-stats` from the source and
       confirm the guard names it.
-- [ ] **Step 3: The no-deck path** goes through `noDeckMessage(opt.noCapture)`,
+- [x] **Step 3: The no-deck path** goes through `noDeckMessage(opt.noCapture)`,
       so the `DEFINE_NO_CAPTURE` cause and the no-directory cause say different
       things. Pin both, and assert the sentence comes from the helper rather than
       matching a literal — a test asserting the literal is a fourth statement of
       the fact.
-- [ ] **Step 4: `/stats` in the REPL too**, if the command table makes it a row
+- [x] **Step 4: `/stats` in the REPL too**, if the command table makes it a row
       rather than a feature — check `command.go` and do it only if it is a row.
-- [ ] **Step 5: README and atlas.** The README's key table and command list are
+- [x] **Step 5: README and atlas.** The README's key table and command list are
       both guarded by derived tests; adding a command must satisfy them.
-- [ ] **Step 6: Run the whole suite, `go vet` under all three tag sets, gofmt.**
-- [ ] **Step 7: Commit, then `sdlc close --issue 8`.**
+- [x] **Step 6: Run the whole suite, `go vet` under all three tag sets, gofmt.**
+- [x] **Step 7: Commit, then `sdlc close --issue 8`.**
 
 ---
 
@@ -405,3 +417,36 @@ BR-17 forced: a hand-listed set of fields is half a guard.
 6. `TestEveryStatsFieldIsRendered` — a field with no line reddens.
 7. Manual, once: `--stats` in the smoke deck after a sitting, and in an empty
    directory. A screen is a thing a person reads.
+
+## Revisions
+
+### 2026-09-08 — the close review, round 1
+
+**BR-4 — the comment claiming DRY was not DRY.** `runStats` and
+`runStatsCommand` each did their own `Deck()`, `Events()`, clock read,
+`Summarise` and render loop, under a doc comment reading *"ONE FOLD, ONE
+RENDERER, TWO ENTRY POINTS… everything below that seam is shared"*. Five
+duplicated statements. `printStats` is where that sentence became true; the two
+doors now differ only in where the store comes from and in the name a diagnostic
+carries.
+
+**BR-1 — the mode guard derived the wrong extent.** `#8` fixed
+`TestModeCollision` to parse `run()`'s `modes` slice instead of hand-listing it,
+and that was still not enough: the guard derives whatever is IN the list, so
+deleting `{"-stats", *statsFlag}` left it deriving five modes and passing, while
+`-stats` went on dispatching and colliding with nothing.
+
+The extent that matters is the DISPATCH, not the list.
+`TestEveryDispatchedModeIsInTheCollisionList` reads both out of `main.go` — every
+`x := fs.Bool("name", …)` for the variable-to-name map, every `if *x { return
+run…() }` for what run() actually treats as a mode — and requires them to agree.
+Mutation-checked on `-stats` and on `-reflect`, so it is not specific to the
+mode that exposed it. This is the both-directions closure `#46` BR-9 arrived at:
+one side cannot hide what the other declares.
+
+**BR-2, BR-3 — this plan's own drift.** The entity table listed `activeDays`,
+which shipped as a local map plus `streaks(days, now)` rather than as a function;
+the exit-code paragraph still said a nil deck returns 0, which it no longer does;
+and unticked step boxes were suppressing `TestPlanTablesNameEntitiesThatExist` at
+the boundary. All three are the family `workshop/targets/derived-restatement.md`
+exists for, in the plan rather than in the code.

@@ -845,3 +845,108 @@ func declaredModes(t *testing.T) []mode {
 	}
 	return out
 }
+
+// EVERY MODE run() DISPATCHES IS IN THE COLLISION LIST (#8 BR-1).
+//
+// declaredModes reads the LIST, so it derives whatever is there — and removing a
+// row leaves it deriving one fewer, silently. The boundary review measured
+// exactly that: deleting `{"-stats", *statsFlag}` left the whole package green,
+// so the mode would still dispatch while colliding with nothing.
+//
+// The extent that matters is therefore not the list but the DISPATCH: a flag
+// run() returns on is a mode, whether or not anyone remembered to write it down.
+// This reads both out of main.go and requires them to agree, which is the same
+// both-directions closure #46 BR-9 arrived at — one side cannot hide what the
+// other declares.
+func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing main.go: %v", err)
+	}
+
+	// 1. Every `x := fs.Bool("name", …)` — the variable a flag is read through,
+	//    and the name a user types.
+	flagName := map[string]string{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		id, ok := as.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		call, ok := as.Rhs[0].(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Bool" {
+			return true
+		}
+		lit, ok := call.Args[0].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		name, err := strconv.Unquote(lit.Value)
+		if err == nil {
+			flagName[id.Name] = "-" + name
+		}
+		return true
+	})
+	if len(flagName) < 5 {
+		t.Fatalf("found %d bool flags; main.go declares far more, so this derivation "+
+			"is under-deriving and would certify a set nobody chose", len(flagName))
+	}
+
+	// 2. Every `if *x { return runY(…) }` — a flag run() RETURNS on is a mode.
+	dispatched := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		is, ok := n.(*ast.IfStmt)
+		if !ok || is.Cond == nil || is.Else != nil {
+			return true
+		}
+		star, ok := is.Cond.(*ast.StarExpr)
+		if !ok {
+			return true
+		}
+		id, ok := star.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		name, ok := flagName[id.Name]
+		if !ok {
+			return true
+		}
+		// The body must RETURN a call — that is what makes it a mode rather than
+		// a flag that merely adjusts behaviour.
+		for _, stmt := range is.Body.List {
+			ret, ok := stmt.(*ast.ReturnStmt)
+			if !ok || len(ret.Results) != 1 {
+				continue
+			}
+			if _, ok := ret.Results[0].(*ast.CallExpr); ok {
+				dispatched[name] = true
+			}
+		}
+		return true
+	})
+	if len(dispatched) < 3 {
+		t.Fatalf("found %d dispatched modes %v; run() returns on more than that, so "+
+			"this derivation is under-deriving", len(dispatched), dispatched)
+	}
+
+	listed := map[string]bool{}
+	for _, m := range declaredModes(t) {
+		listed[m.name] = true
+	}
+	for name := range dispatched {
+		if !listed[name] {
+			t.Errorf("run() returns on %s, so it is a MODE, but it is not in the "+
+				"collision list — it would coexist silently with every other mode, "+
+				"and `define %s -play` would honour one of them without saying so.",
+				name, name)
+		}
+	}
+}
