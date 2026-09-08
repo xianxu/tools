@@ -439,6 +439,62 @@ rounds:
           family: doc-claims-unbacked
           round: 6
       blocked: true
+    - "n": 7
+      timestamp: "2026-09-07T17:50:46-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: not-addressed
+          note: Entity-table names and the mergeRegions row are right, but the plan still cites `store/audio_test.go` at lines 217 and 421 and no such file exists.
+          round: 7
+        - id: BR-17
+          disposition: not-addressed
+          note: cmd/define/command.go is untouched by the window; applyLang's exclusion clause (command.go:397) still names only d.history and d.audio is in neither list.
+          round: 7
+        - id: BR-18
+          disposition: not-addressed
+          note: yaml.go:859 still reads the record with an unbounded os.ReadFile beside the capped blob at :871; readCapped truncates where its doc says it refuses, and yaml_test.go's own subtest is named "is truncated"; no single statement at the store boundary says which persisted reads are bounded.
+          round: 7
+        - id: BR-21
+          disposition: not-addressed
+          note: 'Mutation-verified at HEAD: `nil` at a call site now reddens the new guard, but swapping all three sites to `vocabularyFor(d, opt)` leaves the whole cmd/define suite green — the guard reads the argument''s source token, not the capability''s arrival from deps, and deckwords_test.go:268-269''s false prose is unchanged.'
+          round: 7
+        - id: BR-22
+          disposition: not-addressed
+          note: The memo layer is fixed and pinned, but httpAudioSource.Fetch (fetch.go:70) still returns a zero-byte 200 as success and stops the candidate walk there, and store.go:90-93 is still silent that a non-Missing SetAudio with empty data is refused — both named explicitly by the finding.
+          round: 7
+        - id: BR-23
+          disposition: not-addressed
+          note: The issue row at :275-277 is unchanged, and the same citation appears at plan:623 and plan:731 — where Task 5 Step 4 is ticked for an extension of TestAPromptRegionCoversTheTextItClaims that did not happen.
+          round: 7
+        - id: BR-24
+          disposition: not-addressed
+          note: maxAudioBytes (fetch.go:35) and maxAudioBlobBytes (yaml.go:892) are both unchanged; nothing holds them equal.
+          round: 7
+        - id: BR-25
+          disposition: addressed
+          note: deckwords.go:25-32 now says "the span's text AS WRITTEN, not the normalised deck key", which matches deckSpans assigning sp.text, and names why it is harmless.
+          round: 7
+      findings:
+        - id: BR-26
+          severity: Minor
+          title: The "every deck word is clickable" Done-when row now carries two false statements, one of them created by this round's own fix
+          detail: 'workshop/issues/000046-...md:279-285 says TestEveryDeckWordInASittingIsClickable "drives it through writeWords rather than through the rule, so it fails if a call site stops passing the vocabulary" — it passes a literal deckOf(...) and cannot — and then concedes "A new writeWords call site is covered by review, not by construction — carried to #30", which round 6''s TestEveryWriteWordsCallSitePassesAVocabulary made stale in the same commit that left the first clause standing. This is the 3rd finding in family claimed-coverage-absent (BR-6, BR-23 preceding it). Do NOT fix this row. State the rule and sweep the enumeration it implies: a row, a ticked plan step, or a test doc comment that names a guard must name the guard whose assertion would go red, verified by asking which assertion that is — and when a round ADDS a guard, the concessions that said it did not exist are part of the same commit''s sweep. The enumeration is the Done-when rows, the ticked plan steps (Task 5 Step 4 and Verification row 6 are both wrong for the same reason), and the doc comments on the tests this window added.'
+          family: claimed-coverage-absent
+          round: 7
+        - id: BR-27
+          severity: Minor
+          title: The seam reversal never got the grep the filing reversal got, and left a dead double plus three present-tense claims about it
+          detail: noAudioSource (cmd/define/main_test.go:20) is declared and instantiated nowhere in the package after deps.audio became *audioSeam. play_loop_test.go:64 states "playRig deliberately installs noAudioSource AND noAudio:true" when playRig (:41) does newAudioSeam(nil); play_loop_test.go:1444 calls it "the package's other double"; fetch.go:123 refers to "the tests that used to write noAudioSource{}" while the type itself was left behind. Separately, the plan's writeWords bullet says "NEW, beside writeRendered rather than replacing it. The plain door still serves callers with nothing to mark" — writeRendered has exactly one caller in the tree, writeWords itself. This is the 3rd finding in family runtime-artifact-undocumented (BR-8, BR-16). Do NOT patch these four sites. The rule is already in lessons.md for the FILING reversal — "write the grep before the fix, run it after" — and M1 contained a SECOND reversal (cachingAudioSource -> audioSeam) that never got one. Write the grep for the retired seam vocabulary, run it across cmd/, atlas/, README and the plan, and add "one grep per reversal, not one per issue" to the rule.
+          family: runtime-artifact-undocumented
+          round: 7
+        - id: BR-28
+          severity: Minor
+          title: AudioRecord.From is read back from a hand-editable file and printed as the record of which voice answered, with no check that it is one of the URLs asked for
+          detail: 'diskAudioCache.Fetch (cmd/define/audiodisk.go:88) returns rec.From straight from audio/<slug>/<digest>.yaml. speak passes it to reportVoice, whose spokeSource decides by membership in sourceCandidates() and whose own doc says the report "survives on a pipe and cannot be taken back — and a record has to be true". README.md:535 now explicitly invites editing that directory, and this same round added readCapped and the empty-payload predicate on exactly that reasoning — the payload was hardened and the provenance field beside it was not. A hand-edited From flips the fallback announcement in either direction: absent when it should fire, or fired when the source recording really did answer. ARCH-SECURE: an input crossing a process boundary is untrusted even when this program wrote it. Cheapest fix is one membership check where the record is read — if rec.From is not in urls, treat the entry as nothing cached rather than as evidence.'
+          family: persisted-field-unvalidated
+          round: 7
+      blocked: true
 ---
 
 # Gate ledger — tools#46 (boundary-review)
@@ -674,6 +730,28 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-25** [Minor] `doc-claims-unbacked` deckSpan.Word is documented as the deck key but holds the display text
   cmd/define/deckwords.go:26 says "Word is the deck key, which is what a click plays"; deckSpans assigns sp.text, so a sentence-initial or differently-spaced match carries the on-screen spelling. Harmless today because AudioCandidates lower-cases and store.Key normalises before filing, but the doc is a claim a caller would rely on.
 
+## Round 7 — 2026-09-07T17:50:46-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-13 — not-addressed — Entity-table names and the mergeRegions row are right, but the plan still cites `store/audio_test.go` at lines 217 and 421 and no such file exists.
+- BR-17 — not-addressed — cmd/define/command.go is untouched by the window; applyLang's exclusion clause (command.go:397) still names only d.history and d.audio is in neither list.
+- BR-18 — not-addressed — yaml.go:859 still reads the record with an unbounded os.ReadFile beside the capped blob at :871; readCapped truncates where its doc says it refuses, and yaml_test.go's own subtest is named "is truncated"; no single statement at the store boundary says which persisted reads are bounded.
+- BR-21 — not-addressed — Mutation-verified at HEAD: `nil` at a call site now reddens the new guard, but swapping all three sites to `vocabularyFor(d, opt)` leaves the whole cmd/define suite green — the guard reads the argument's source token, not the capability's arrival from deps, and deckwords_test.go:268-269's false prose is unchanged.
+- BR-22 — not-addressed — The memo layer is fixed and pinned, but httpAudioSource.Fetch (fetch.go:70) still returns a zero-byte 200 as success and stops the candidate walk there, and store.go:90-93 is still silent that a non-Missing SetAudio with empty data is refused — both named explicitly by the finding.
+- BR-23 — not-addressed — The issue row at :275-277 is unchanged, and the same citation appears at plan:623 and plan:731 — where Task 5 Step 4 is ticked for an extension of TestAPromptRegionCoversTheTextItClaims that did not happen.
+- BR-24 — not-addressed — maxAudioBytes (fetch.go:35) and maxAudioBlobBytes (yaml.go:892) are both unchanged; nothing holds them equal.
+- BR-25 — addressed — deckwords.go:25-32 now says "the span's text AS WRITTEN, not the normalised deck key", which matches deckSpans assigning sp.text, and names why it is harmless.
+
+### Raised
+
+- **BR-26** [Minor] `claimed-coverage-absent` The "every deck word is clickable" Done-when row now carries two false statements, one of them created by this round's own fix
+  workshop/issues/000046-...md:279-285 says TestEveryDeckWordInASittingIsClickable "drives it through writeWords rather than through the rule, so it fails if a call site stops passing the vocabulary" — it passes a literal deckOf(...) and cannot — and then concedes "A new writeWords call site is covered by review, not by construction — carried to #30", which round 6's TestEveryWriteWordsCallSitePassesAVocabulary made stale in the same commit that left the first clause standing. This is the 3rd finding in family claimed-coverage-absent (BR-6, BR-23 preceding it). Do NOT fix this row. State the rule and sweep the enumeration it implies: a row, a ticked plan step, or a test doc comment that names a guard must name the guard whose assertion would go red, verified by asking which assertion that is — and when a round ADDS a guard, the concessions that said it did not exist are part of the same commit's sweep. The enumeration is the Done-when rows, the ticked plan steps (Task 5 Step 4 and Verification row 6 are both wrong for the same reason), and the doc comments on the tests this window added.
+- **BR-27** [Minor] `runtime-artifact-undocumented` The seam reversal never got the grep the filing reversal got, and left a dead double plus three present-tense claims about it
+  noAudioSource (cmd/define/main_test.go:20) is declared and instantiated nowhere in the package after deps.audio became *audioSeam. play_loop_test.go:64 states "playRig deliberately installs noAudioSource AND noAudio:true" when playRig (:41) does newAudioSeam(nil); play_loop_test.go:1444 calls it "the package's other double"; fetch.go:123 refers to "the tests that used to write noAudioSource{}" while the type itself was left behind. Separately, the plan's writeWords bullet says "NEW, beside writeRendered rather than replacing it. The plain door still serves callers with nothing to mark" — writeRendered has exactly one caller in the tree, writeWords itself. This is the 3rd finding in family runtime-artifact-undocumented (BR-8, BR-16). Do NOT patch these four sites. The rule is already in lessons.md for the FILING reversal — "write the grep before the fix, run it after" — and M1 contained a SECOND reversal (cachingAudioSource -> audioSeam) that never got one. Write the grep for the retired seam vocabulary, run it across cmd/, atlas/, README and the plan, and add "one grep per reversal, not one per issue" to the rule.
+- **BR-28** [Minor] `persisted-field-unvalidated` AudioRecord.From is read back from a hand-editable file and printed as the record of which voice answered, with no check that it is one of the URLs asked for
+  diskAudioCache.Fetch (cmd/define/audiodisk.go:88) returns rec.From straight from audio/<slug>/<digest>.yaml. speak passes it to reportVoice, whose spokeSource decides by membership in sourceCandidates() and whose own doc says the report "survives on a pipe and cannot be taken back — and a record has to be true". README.md:535 now explicitly invites editing that directory, and this same round added readCapped and the empty-payload predicate on exactly that reasoning — the payload was hardened and the provenance field beside it was not. A hand-edited From flips the fallback announcement in either direction: absent when it should fire, or fired when the source recording really did answer. ARCH-SECURE: an input crossing a process boundary is untrusted even when this program wrote it. Cheapest fix is one membership check where the record is read — if rec.From is not in urls, treat the entry as nothing cached rather than as evidence.
+
 ## Open findings
 
 - **BR-13** [Minor] `plan-table-drift` The plan's entity tables drift from the code: audioKey/audioRecord vs AudioKey/AudioRecord, no store/audio_test.go, mergeRegions has no row
@@ -683,4 +761,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-22** [Important] `degenerate-payload-trusted` The memo serves a zero-byte 200 as a hit for the whole sitting, with a from URL reportVoice prints as the voice that answered
 - **BR-23** [Minor] `claimed-coverage-absent` The Done-when row names TestAPromptRegionCoversTheTextItClaims as exercising RegionWord, but that test can only see promptRegions
 - **BR-24** [Minor] `two-statements-one-fact` The 4MB audio ceiling is stated twice, in two packages, with nothing holding them equal
-- **BR-25** [Minor] `doc-claims-unbacked` deckSpan.Word is documented as the deck key but holds the display text
+- **BR-26** [Minor] `claimed-coverage-absent` The "every deck word is clickable" Done-when row now carries two false statements, one of them created by this round's own fix
+- **BR-27** [Minor] `runtime-artifact-undocumented` The seam reversal never got the grep the filing reversal got, and left a dead double plus three present-tense claims about it
+- **BR-28** [Minor] `persisted-field-unvalidated` AudioRecord.From is read back from a hand-editable file and printed as the record of which voice answered, with no check that it is one of the URLs asked for

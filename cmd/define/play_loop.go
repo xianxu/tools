@@ -226,8 +226,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// is every deck word in it. The SURFACE comes from the form, because
 			// this one site serves them all.
 			prompt := "\n" + q.Prompt() + "\n"
-			writeWords(stdout, prompt, promptRegions(q),
-				deckVocabulary(d), opt.color, surfaceOf(q.Form()), "")
+			writeWords(stdout, prompt, promptRegions(q), d, opt, surfaceOf(q.Form()), "")
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -476,7 +475,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					// its deck words are worth spotting even for a form whose
 					// prompt is the deck itself.
 					writeWords(stdout, reveal, held.marksIn(asked.Word(), reveal),
-						deckVocabulary(d), opt.color, surfaceProse, held.renderOf(asked.Word()))
+						d, opt, surfaceProse, held.renderOf(asked.Word()))
 				}
 				// THE PREDICATE, not a fifth hand-copy of `!opt.noAudio &&
 				// opt.times > 0` (T0). playAnnounced applies it itself, so being

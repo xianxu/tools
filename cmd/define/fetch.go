@@ -69,6 +69,17 @@ func (s *httpAudioSource) Fetch(ctx context.Context, urls []string) ([]byte, str
 			}
 			continue
 		}
+		if len(data) == 0 {
+			// A 200 WITH NO BODY IS NOT AN ANSWER, and stopping here was the
+			// root of it: every layer above cached what this returned, so the
+			// empty body became a permanent hit AND the remaining candidates —
+			// which may hold the real recording — were never tried.
+			//
+			// Guarding at the memo and at the store fixed what was REMEMBERED;
+			// this is what is FETCHED. The predicate belongs at every layer that
+			// decides "is this a recording", and this is the first of them.
+			continue
+		}
 		return data, u, nil
 	}
 	if firstErr != nil {

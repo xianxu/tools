@@ -90,6 +90,12 @@ type Store interface {
 	// SetAudio stores a recording, or a verdict that there is none. Passing nil
 	// data with rec.Missing records the verdict; the two are one call because
 	// they are one outcome of one fetch.
+	//
+	// A non-Missing call with EMPTY data is REFUSED, silently: an empty
+	// recording is neither a recording nor a verdict. Storing it would put a
+	// permanent, never-expiring hit of silence on disk (hits do not expire),
+	// and recording it as a verdict would suppress the re-ask for a month. The
+	// honest outcome is nothing at all, so the next run asks again.
 	SetAudio(k AudioKey, data []byte, rec AudioRecord) error
 	// Forget removes a word and everything it OWNS: the deck entry, the news
 	// cache, the harvested band and domain, the authored items, and every cached

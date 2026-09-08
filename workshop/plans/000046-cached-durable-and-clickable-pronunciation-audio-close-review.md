@@ -127,3 +127,131 @@ findings:
     detail: |
       cmd/define/deckwords.go:26 says "Word is the deck key, which is what a click plays"; deckSpans assigns sp.text, so a sentence-initial or differently-spaced match carries the on-screen spelling. Harmless today because AudioCandidates lower-cases and store.Key normalises before filing, but the doc is a claim a caller would rely on.
 ```
+
+---
+
+## Re-review — 2026-09-07T17:50:46-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 46 — cached, durable and clickable pronunciation audio |
+| repo | tools |
+| issue file | workshop/issues/000046-cached-durable-and-clickable-pronunciation-audio.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 3effb6462ee74c0e1d45f8b6b5a49de939b2531e..83bab010d5cdec5e5c9bac30d09e29cfeaa10c00 |
+| command | sdlc close --issue 46 |
+| reviewer | claude |
+| timestamp | 2026-09-07T17:50:46-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 7 of this gate. The window ships a durable per-voice audio cache under `audio/<slug>/<digest>` and one span walk feeding both colour and clicks; the suite is green at HEAD (`go test -count=1 ./...`, 9 packages), `go vet` clean under default/`pty`/`conformance`, `gofmt` clean. Round 6's two Importants are both materially better — the memo no longer serves a zero-byte 200 as a session-long hit, and nilling the vocabulary at a `writeWords` site now reddens a named test (I confirmed both by mutation). Neither is *closed*, though, and both fall short in the same way the findings predicted: BR-22 fixed the layer the finding pointed at (the memo) and left `httpAudioSource` still answering with an empty 200 — and stopping the candidate walk there — plus the `Store` interface doc still silent on the refusal it explicitly named; BR-21's guard reads the argument's *source token* rather than observing the capability arrive from `deps`, so swapping all three sites back to `vocabularyFor(d, opt)` — the exact regression the issue Log records as near-miss #2 — leaves the entire `cmd/define` suite green. Nothing here is a user-facing defect: production is wired correctly today and playback degrades safely. Everything remaining is pin quality and stale prose, which is why this is FIX-THEN-SHIP rather than a seventh blocking round.
+
+**1. Strengths**
+
+- `cd89212`+`83bab01`'s emptiness guards are pinned where only they can answer, and I re-verified it: `yaml_test.go:TestBothHalvesOfTheEmptinessGuardAreReached` reaches the write half through the filesystem (above `MkdirAll`, so no debris directory makes it pass for the wrong reason) and the read half through a hand-truncated blob. `fetch_test.go:TestAZeroByteResponseIsNotAHit` adds the third layer and also asserts the *non*-miss — that the next play re-asks — which is the half a lazier fix would have got wrong.
+- `deckSpans` (`cmd/define/deckwords.go:56`) is the right seam: `visibleIndex` + the existing `highlightSpans`, with `at` tracked against `highlightSpans`' documented "spans concatenate to the input exactly" invariant. Escape-awareness is structural, not remembered. `TestASpanWalkSkipsEscapeSequences` compares the coloured walk against the plain one, which cannot pass vacuously.
+- `mergeRegions` (`deckwords.go:97`) writes down `markClickable`'s previously unwritten one-cursor precondition and turns it into a checked property, with the precedence argument stated where it is enforced.
+- `store/audio.go` keying on the candidate list with `dir()`/`stem()` kept as a separate filing concern is the correct decomposition, and `storetest`'s `re`/`re-` row drives the exact pair that broke the superseded scheme — on both twins.
+- `TestWithStorePutsTheDiskCacheUnderTheMemo` (`audiodisk_test.go:169`) is the shape that actually works for wiring: it constructs no `diskAudioCache`, drives `withStore` from a real cwd twice, and asserts through the CDN's request recorder.
+
+**2. Critical findings**
+
+None.
+
+**3. Important findings** (both re-raised under their original ids, not as new)
+
+- **`cmd/define/deckwords_test.go:358` — BR-21's guard catches the token, not the capability.** Mutation-verified in a scratch worktree of HEAD: replacing `deckVocabulary(d)` with `nil` at `play_loop.go:230` reddens `TestEveryWriteWordsCallSitePassesAVocabulary` by name (good), but replacing it with `vocabularyFor(d, opt)` at all three sites (`play_loop.go:230`, `play_loop.go:479`, `main.go:881`) leaves `go test ./cmd/define/` **fully green** — 110s, no failures. That swap is not hypothetical: it is discovery #2 in the issue's own Log ("Clicks were about to depend on colour"), and under `-no-color` it silently removes every click target on every surface. The guard the finding asked for was *a test that observes the capability arriving from `deps`*; what shipped inspects `call.Args[3]` for the identifier `nil`, which is the "a token appears in a body" shape BR-1/PQ-11 rejected for the seam one milestone earlier. `TestClicksSurviveNoColour` cannot cover the gap — it passes a literal `v`. The related false prose BR-21 named (`deckwords_test.go:268-269`, "so it fails if a call site stops passing the vocabulary") is unchanged.
+- **`cmd/define/fetch.go:44` — BR-22's sweep stopped one layer above where the payload is first judged.** The memo now refuses an empty body, which closes the user-visible symptom. But `httpAudioSource.Fetch` still `return data, u, nil` for a zero-byte 200 (`fetch.go:70`), which BR-22 named first in its enumeration and which the round-6 review spelled out as "a 0-byte 200 is not an answer, so `httpAudioSource` continues to the next candidate". Consequence today: a word whose *first* candidate serves an empty 200 reports `ErrNoAudio` even when candidate 2 holds a real recording — the walk never gets there. And `cmd/define/store/store.go:90-93` still documents only the verdict form of `SetAudio` and is silent that a non-`Missing` call with empty data is refused, which BR-22 called out by line; a third `Store` implementation would not know the contract (`storetest` would catch it, the doc would not have told it). The predicate now exists at five sites instead of one.
+
+**4. Minor findings**
+
+- `workshop/issues/000046-…md:279-285` — the "every deck word is clickable" Done-when row now carries two false statements, one of them *created* by round 6: it says `TestEveryDeckWordInASittingIsClickable` "fails if a call site stops passing the vocabulary" (it passes a literal), and then concedes "A new `writeWords` call site is covered by review, not by construction — carried to `#30`", which the new AST guard has made stale. **3rd finding in family `claimed-coverage-absent`** — see the findings block for the rule and enumeration.
+- Stale restatements left by the *seam* reversal (the filing reversal got a grep; this one did not): `noAudioSource` (`main_test.go:20`) is declared and instantiated nowhere in the package; `play_loop_test.go:64` says "playRig deliberately installs `noAudioSource`" when `playRig` (`:41`) does `newAudioSeam(nil)`; `play_loop_test.go:1444` describes it as "the package's other double"; and the plan's `writeWords` bullet says "the plain door still serves callers with nothing to mark" while `writeRendered` has exactly one caller in the tree — `writeWords` itself. **3rd finding in family `runtime-artifact-undocumented`.**
+- `cmd/define/audiodisk.go:88` returns `rec.From` read back from `audio/<slug>/<digest>.yaml` — a file the README now explicitly invites editing — straight into `spokeSource`/`reportVoice`, which the code calls "a RECORD … it survives on a pipe and cannot be taken back". Nothing checks `From` is a member of the `urls` the caller just passed. ARCH-SECURE: the blob got a cap and a payload predicate in this same sweep; the provenance field beside it got neither.
+
+**5. Test coverage notes**
+
+`storetest`'s eight audio rows hold both twins to one contract and are the right home for round-trip, collision, TTL, `re`/`re-` and Forget. `yaml_test.go`'s degrade table drives all four damaged-file branches. What is still unpinned is at the two ends: nothing observes M2's capability reaching the write door *from production* (BR-21, mutation-confirmed above), and no test reaches `httpAudioSource`'s empty-200 branch at the layer where the candidate walk lives — `TestAZeroByteResponseIsNotAHit` uses a single candidate, so the "stops the walk" behaviour is invisible to it. Note also that `yaml_test.go`'s own subtest is named "a blob larger than the cap is **truncated**", which is BR-18's point stated by the test that closes its other half: `readCapped`'s doc says it refuses, and a 4MB-truncated mp3 is served as a hit.
+
+**6. Architectural notes**
+
+- **ARCH-DRY** — flag (Minor, BR-24 open): `maxAudioBytes` / `maxAudioBlobBytes`, one number in two packages with nothing holding them equal. Otherwise strong: one span walk with two consumers, `audioSeam.fetch` taking the resolved source as a parameter so `FetchFor` cannot spawn a second memo, `memVocabulary` still the only set.
+- **ARCH-PURE** — pass. `deckwords.go` is pure and unit-tested with no IO; the AST/source-reading tests are guards, not entity tests. IO sits in `diskAudioCache` and `YAML`, both injected.
+- **ARCH-PURPOSE** — flag. The shadow-sweep on the empty-payload class stops above `httpAudioSource` and the `Store` doc (BR-22); the class BR-21 named ("pinned by arrival from deps") was answered with a token check. Docs sweep is otherwise complete — `.gitignore` derives from `RuntimeDirs`, README and atlas both corrected.
+- **ARCH-MOCK** — pass, and good: `fakeCDN` at the wire with a request recorder, `diskRig` on a real temp directory, `failingStore.Audio` now has a call site, `storetest` runs both `Store` implementations through one suite. No live conformance check exists for the CDN, but that predates this window.
+- **ARCH-CONSTRAINTS** — pass. Eviction is a decision with a number, the verdict TTL is 30 days with the reason, `deckSpans` is once-per-write (never per keystroke) with the bound stated, `Load` is guarded so the per-write vocabulary is one map read.
+- **ARCH-SECURE** — flag. `Slug` keeps `RemoveAll` inside `audio/`, the blob is capped, the empty payload is refused. Remaining: BR-18's unbounded `os.ReadFile` on the record at `yaml.go:859` in the same function that caps the blob at `:871`, and the unvalidated `From` above.
+- **ARCH-ORDER** — pass. Blob-before-record, verdict-removes-blob, `writeBytesAtomic` on both, `Audio` treating a missing/empty blob as nothing cached. `audioSeam`'s mutex is released across `inner.Fetch`, which is correct: a duplicate concurrent fetch is idempotent, and the key is the candidate list.
+
+**7. Plan revision recommendations**
+
+- `workshop/plans/000046-audio-cache-and-deck-words-plan.md` — append a Revisions entry recording that **`store/audio_test.go` was never written** (still cited at plan lines 217 and 421); `AudioKey`/`AudioRecord` are held by `storetest`'s conformance rows and `yaml_test.go`, which is the better home because the properties are cross-implementation. `TestPlanCitesTestsThatExist` only checks backticked `Test*` names, so a cited test *file* is unguarded — worth extending it to backticked `*_test.go` paths.
+- Same file — append: **Task 5 Step 4 is ticked for work that did not happen.** `TestAPromptRegionCoversTheTextItClaims` (`play_loop_test.go:4270`) still walks `promptRegions(q)` only; the invariant for `RegionWord` is held by the separate `TestWordRegionsCoverTheTextTheyClaim`. Correct the step and the Verification row 6 to name the guard that actually goes red.
+- Same file — append: **the seam reversal's restatement sweep.** The filing reversal got a grep and a lessons.md rule; the `cachingAudioSource` → `audioSeam` reversal did not, and left `noAudioSource` dead plus two comments describing it as installed. Record the grep alongside the filing one.
+- Same file — correct the `writeWords` bullet: `writeRendered` no longer serves any caller but `writeWords`.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Entity-table names and the mergeRegions row are right, but the plan still cites `store/audio_test.go` at lines 217 and 421 and no such file exists.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      cmd/define/command.go is untouched by the window; applyLang's exclusion clause (command.go:397) still names only d.history and d.audio is in neither list.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      yaml.go:859 still reads the record with an unbounded os.ReadFile beside the capped blob at :871; readCapped truncates where its doc says it refuses, and yaml_test.go's own subtest is named "is truncated"; no single statement at the store boundary says which persisted reads are bounded.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      Mutation-verified at HEAD: `nil` at a call site now reddens the new guard, but swapping all three sites to `vocabularyFor(d, opt)` leaves the whole cmd/define suite green — the guard reads the argument's source token, not the capability's arrival from deps, and deckwords_test.go:268-269's false prose is unchanged.
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      The memo layer is fixed and pinned, but httpAudioSource.Fetch (fetch.go:70) still returns a zero-byte 200 as success and stops the candidate walk there, and store.go:90-93 is still silent that a non-Missing SetAudio with empty data is refused — both named explicitly by the finding.
+  - id: BR-23
+    disposition: not-addressed
+    note: |
+      The issue row at :275-277 is unchanged, and the same citation appears at plan:623 and plan:731 — where Task 5 Step 4 is ticked for an extension of TestAPromptRegionCoversTheTextItClaims that did not happen.
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      maxAudioBytes (fetch.go:35) and maxAudioBlobBytes (yaml.go:892) are both unchanged; nothing holds them equal.
+  - id: BR-25
+    disposition: addressed
+    note: |
+      deckwords.go:25-32 now says "the span's text AS WRITTEN, not the normalised deck key", which matches deckSpans assigning sp.text, and names why it is harmless.
+findings:
+  - id: new
+    severity: Minor
+    family: claimed-coverage-absent
+    title: |
+      The "every deck word is clickable" Done-when row now carries two false statements, one of them created by this round's own fix
+    detail: |
+      workshop/issues/000046-...md:279-285 says TestEveryDeckWordInASittingIsClickable "drives it through writeWords rather than through the rule, so it fails if a call site stops passing the vocabulary" — it passes a literal deckOf(...) and cannot — and then concedes "A new writeWords call site is covered by review, not by construction — carried to #30", which round 6's TestEveryWriteWordsCallSitePassesAVocabulary made stale in the same commit that left the first clause standing. This is the 3rd finding in family claimed-coverage-absent (BR-6, BR-23 preceding it). Do NOT fix this row. State the rule and sweep the enumeration it implies: a row, a ticked plan step, or a test doc comment that names a guard must name the guard whose assertion would go red, verified by asking which assertion that is — and when a round ADDS a guard, the concessions that said it did not exist are part of the same commit's sweep. The enumeration is the Done-when rows, the ticked plan steps (Task 5 Step 4 and Verification row 6 are both wrong for the same reason), and the doc comments on the tests this window added.
+  - id: new
+    severity: Minor
+    family: runtime-artifact-undocumented
+    title: |
+      The seam reversal never got the grep the filing reversal got, and left a dead double plus three present-tense claims about it
+    detail: |
+      noAudioSource (cmd/define/main_test.go:20) is declared and instantiated nowhere in the package after deps.audio became *audioSeam. play_loop_test.go:64 states "playRig deliberately installs noAudioSource AND noAudio:true" when playRig (:41) does newAudioSeam(nil); play_loop_test.go:1444 calls it "the package's other double"; fetch.go:123 refers to "the tests that used to write noAudioSource{}" while the type itself was left behind. Separately, the plan's writeWords bullet says "NEW, beside writeRendered rather than replacing it. The plain door still serves callers with nothing to mark" — writeRendered has exactly one caller in the tree, writeWords itself. This is the 3rd finding in family runtime-artifact-undocumented (BR-8, BR-16). Do NOT patch these four sites. The rule is already in lessons.md for the FILING reversal — "write the grep before the fix, run it after" — and M1 contained a SECOND reversal (cachingAudioSource -> audioSeam) that never got one. Write the grep for the retired seam vocabulary, run it across cmd/, atlas/, README and the plan, and add "one grep per reversal, not one per issue" to the rule.
+  - id: new
+    severity: Minor
+    family: persisted-field-unvalidated
+    title: |
+      AudioRecord.From is read back from a hand-editable file and printed as the record of which voice answered, with no check that it is one of the URLs asked for
+    detail: |
+      diskAudioCache.Fetch (cmd/define/audiodisk.go:88) returns rec.From straight from audio/<slug>/<digest>.yaml. speak passes it to reportVoice, whose spokeSource decides by membership in sourceCandidates() and whose own doc says the report "survives on a pipe and cannot be taken back — and a record has to be true". README.md:535 now explicitly invites editing that directory, and this same round added readCapped and the empty-payload predicate on exactly that reasoning — the payload was hardened and the provenance field beside it was not. A hand-edited From flips the fallback announcement in either direction: absent when it should fire, or fired when the source recording really did answer. ARCH-SECURE: an input crossing a process boundary is untrusted even when this program wrote it. Cheapest fix is one membership check where the record is read — if rec.From is not in urls, treat the entry as nothing cached rather than as evidence.
+```

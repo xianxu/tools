@@ -235,19 +235,22 @@ func TestTheVoiceReportNamesALanguageEvenWithAZeroVoice(t *testing.T) {
 	}
 }
 
-// A ZERO-BYTE 200 IS NOT A RECORDING, AT EVERY LAYER (#46 BR-22).
+// A ZERO-BYTE PAYLOAD IS NOT A RECORDING, AT EVERY LAYER (#46 BR-22).
 //
-// The store learned this in round 4 and the memo did not, which is the same
-// finding one layer up: httpAudioSource returns an empty body as SUCCESS, so the
-// seam cached silence for the whole sitting and handed back a `from` URL that
-// reportVoice prints as the voice that answered — a fabricated record, which is
-// the half that makes it more than a nuisance.
+// Three layers decide "is this a recording", and each has to answer the same
+// way — the finding named the class and I fixed one layer at a time across three
+// rounds. httpAudioSource skips an empty body and keeps walking (below); the
+// store refuses it at the write and the read; and this is the memo, which must
+// not hand back a hit for something no layer should have produced.
+//
+// Driven through a source that returns (empty, nil) DIRECTLY, because after the
+// walk fix the real HTTP layer no longer can — and a guard whose only reachable
+// input has been removed still has to hold for the next source that arrives.
 func TestAZeroByteResponseIsNotAHit(t *testing.T) {
-	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": {}})
-	seam := newAudioSeam(cdn.source())
-	urls := cdn.urls("/a.mp3")
+	src := emptyBodySource{}
+	seam := newAudioSeam(src)
 
-	data, from, err := seam.Fetch(t.Context(), urls)
+	data, from, err := seam.Fetch(t.Context(), []string{"https://cdn/a.mp3"})
 	if err == nil {
 		t.Errorf("an empty body was served as a hit: %d bytes, from %q — it plays as "+
 			"silence and reportVoice prints that URL as the voice that answered", len(data), from)
@@ -255,11 +258,39 @@ func TestAZeroByteResponseIsNotAHit(t *testing.T) {
 	if !errors.Is(err, ErrNoAudio) {
 		t.Errorf("err = %v, want ErrNoAudio", err)
 	}
-	// AND IT IS NOT REMEMBERED AS A MISS. A miss suppresses the re-ask; an empty
-	// body is a server hiccup, not "this word has no recording".
-	before := len(cdn.Requested())
-	seam.Fetch(t.Context(), urls)
-	if after := len(cdn.Requested()); after <= before {
-		t.Error("the empty response was cached as a permanent miss; the next play must re-ask")
+}
+
+// emptyBodySource is a source that "succeeds" with nothing, which is what a
+// zero-byte 200 used to look like to everything above the walk.
+type emptyBodySource struct{}
+
+func (emptyBodySource) Fetch(context.Context, []string) ([]byte, string, error) {
+	return nil, "https://cdn/a.mp3", nil
+}
+
+// AN EMPTY 200 DOES NOT STOP THE WALK (#46 BR-22, root).
+//
+// The layers above were taught not to REMEMBER an empty body; this is the layer
+// that FETCHES one. Returning it as the answer also abandoned the remaining
+// candidates — and the fallback order exists precisely because coverage is
+// partial, so the recording may well be in the next one.
+func TestAnEmptyBodyDoesNotStopTheCandidateWalk(t *testing.T) {
+	cdn := newFakeCDN(t, map[string][]byte{
+		"/a.mp3": {},                 // a 200 with no body
+		"/b.mp3": []byte("ID3audio"), // the real recording, one candidate later
+	})
+	data, from, err := newHTTPAudioSource2(cdn).Fetch(t.Context(), cdn.urls("/a.mp3", "/b.mp3"))
+	if err != nil {
+		t.Fatalf("the walk gave up at the empty body: %v", err)
+	}
+	if string(data) != "ID3audio" {
+		t.Errorf("got %q from %q, want the later candidate's recording", data, from)
+	}
+	if !strings.HasSuffix(from, "/b.mp3") {
+		t.Errorf("from = %q, want the candidate that actually answered", from)
 	}
 }
+
+// newHTTPAudioSource2 is the CDN's source, named apart so the row above reads as
+// a test of the HTTP layer rather than of the fake.
+func newHTTPAudioSource2(c *fakeCDN) *httpAudioSource { return c.source() }

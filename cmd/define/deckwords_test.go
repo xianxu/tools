@@ -10,6 +10,12 @@ import (
 	"testing"
 )
 
+// withDeck is deps carrying a vocabulary, which is what writeWords derives from.
+// One helper so no row builds the struct by hand and gets it subtly wrong.
+func withDeck(words ...string) deps {
+	return deps{langDeps: langDeps{vocab: deckOf(words...)}}
+}
+
 func deckOf(words ...string) Vocabulary {
 	v := &memVocabulary{}
 	for _, w := range words {
@@ -174,7 +180,7 @@ func TestClozeOptionsAreClickableButNotColoured(t *testing.T) {
 	// The click half, through the write door a sitting actually uses.
 	rw := &recordingRegionWriter{}
 	prompt := "\nThe Times dismissed it as ___.\n\n1  keel\n2  mesa\n"
-	writeWords(rw, prompt, nil, deckOf("keel", "mesa"), true, surfaceOf("cloze"), "")
+	writeWords(rw, prompt, nil, deps{langDeps: langDeps{vocab: deckOf("keel", "mesa")}}, options{color: true}, surfaceOf("cloze"), "")
 	if len(rw.regions) != 2 {
 		t.Errorf("a cloze prompt offered %d click targets, want 2: %+v", len(rw.regions), rw.regions)
 	}
@@ -220,9 +226,10 @@ func readSource(t *testing.T, name string) string {
 // every click target as well.
 func TestClicksSurviveNoColour(t *testing.T) {
 	v := deckOf("keel")
+	_ = v
 	var withColour, without strings.Builder
-	writeWords(&withColour, "the keel", nil, v, true, surfaceProse, "")
-	writeWords(&without, "the keel", nil, v, false, surfaceProse, "")
+	writeWords(&withColour, "the keel", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceProse, "")
+	writeWords(&without, "the keel", nil, deps{langDeps: langDeps{vocab: v}}, options{color: false}, surfaceProse, "")
 
 	if !strings.Contains(withColour.String(), knownOn) {
 		t.Error("colour on produced no highlight")
@@ -242,8 +249,8 @@ func TestADeckSurfaceIsClickableButUncoloured(t *testing.T) {
 	v := deckOf("keel", "mesa")
 	var out strings.Builder
 	rw := &recordingRegionWriter{}
-	writeWords(rw, "keel\nmesa", nil, v, true, surfaceDeck, "")
-	writeWords(&out, "keel\nmesa", nil, v, true, surfaceDeck, "")
+	writeWords(rw, "keel\nmesa", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceDeck, "")
+	writeWords(&out, "keel\nmesa", nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceDeck, "")
 
 	if strings.Contains(out.String(), knownOn) {
 		t.Errorf("a deck surface was coloured: %q — every word there is a deck word, "+
@@ -286,7 +293,7 @@ func TestEveryDeckWordInASittingIsClickable(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rw := &recordingRegionWriter{}
-			writeWords(rw, tc.text, nil, v, true, tc.sf, "")
+			writeWords(rw, tc.text, nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, tc.sf, "")
 			if len(rw.regions) != tc.want {
 				t.Errorf("got %d click targets, want %d: %+v", len(rw.regions), tc.want, rw.regions)
 			}
@@ -300,7 +307,7 @@ func TestEveryDeckWordInASittingIsClickable(t *testing.T) {
 func TestChoiceOptionGlossesAreColoured(t *testing.T) {
 	var out strings.Builder
 	writeWords(&out, "\nsycophantic\n\n1  a part of a keel, in a boat\n",
-		nil, deckOf("keel"), true, surfaceOf("meaning"), "")
+		nil, deps{langDeps: langDeps{vocab: deckOf("keel")}}, options{color: true}, surfaceOf("meaning"), "")
 	if !strings.Contains(out.String(), knownOn+"keel") {
 		t.Errorf("a gloss was not coloured: %q", out.String())
 	}
@@ -315,7 +322,7 @@ func TestChoiceOptionGlossesAreColoured(t *testing.T) {
 // no colour — which is what reddens the day someone wires the footer through it.
 func TestBoardCellsCarryNoDeckColourEvenWhenTheyAreDeckWords(t *testing.T) {
 	var out strings.Builder
-	writeWords(&out, "0  keel   1  mesa\n", nil, deckOf("keel", "mesa"), true, surfaceOf("board"), "")
+	writeWords(&out, "0  keel   1  mesa\n", nil, deps{langDeps: langDeps{vocab: deckOf("keel", "mesa")}}, options{color: true}, surfaceOf("board"), "")
 	if strings.Contains(out.String(), knownOn) {
 		t.Errorf("a board's cells were coloured: %q — every cell is a deck word, "+
 			"so colour marks everything and distinguishes nothing", out.String())
@@ -336,7 +343,7 @@ func TestTheRenderedEntryIsNotRecoloured(t *testing.T) {
 	text := "\nThe keel shifts sharply.\n\n" + already + "\n"
 
 	var out strings.Builder
-	writeWords(&out, text, nil, v, true, surfaceProse, already)
+	writeWords(&out, text, nil, deps{langDeps: langDeps{vocab: v}}, options{color: true}, surfaceProse, already)
 	got := out.String()
 
 	// The render arrives byte-for-byte as Render produced it.
@@ -389,12 +396,29 @@ func TestEveryWriteWordsCallSitePassesAVocabulary(t *testing.T) {
 					return true
 				}
 				sites++
-				// Argument 3 is the Vocabulary. A bare `nil` there is a site that
-				// marks nothing — no colour, and no click targets either.
-				if lit, ok := call.Args[3].(*ast.Ident); ok && lit.Name == "nil" {
-					t.Errorf("%s: writeWords is called with a nil vocabulary, so no deck "+
-						"word at that site is clickable or coloured. Pass deckVocabulary(d).",
-						fset.Position(call.Pos()))
+				// Argument 3 is the DEPS the loop is holding, and it must be a
+				// plain identifier — the `d` that reached the function. Anything
+				// else is a site building its own, which is how a site ends up
+				// marking nothing.
+				//
+				// Why this shape: the first version took a `Vocabulary` argument
+				// and this guard checked its SOURCE TOKEN, so `nil` reddened it
+				// while `vocabularyFor(d, opt)` did not — even though that returns
+				// nil whenever colour is off and would silently remove every click
+				// target on `--no-color`. Removing the argument fixed that, and
+				// then `deps{}` slipped through in its place. A composite literal
+				// here is the same mistake wearing the new type.
+				switch arg := call.Args[3].(type) {
+				case *ast.Ident:
+					if arg.Name == "nil" {
+						t.Errorf("%s: writeWords is called with nil deps, so no deck word "+
+							"at that site is clickable or coloured.", fset.Position(call.Pos()))
+					}
+				default:
+					t.Errorf("%s: writeWords is passed a constructed deps (%T) rather than "+
+						"the one the loop holds, so its vocabulary is whatever that literal "+
+						"carries — which is how a site comes to mark nothing.",
+						fset.Position(call.Pos()), arg)
 				}
 				return true
 			})

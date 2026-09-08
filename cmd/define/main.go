@@ -878,7 +878,7 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	// them — with its own per-region base styles, which is why `already` is the
 	// whole output and this pass adds no colour of its own — but until #46 a
 	// click only reached the headword and the ORIGIN languages.
-	writeWords(stdout, rendered, regions, deckVocabulary(d), opt.color, surfaceProse, rendered)
+	writeWords(stdout, rendered, regions, d, opt, surfaceProse, rendered)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: opt.playsAudio(), entry: text}
 }
@@ -914,10 +914,17 @@ func writeRendered(w io.Writer, text string, rs []Region) {
 // alternative is what this replaces, two independent walks covering different
 // surfaces.
 //
-// COLOUR AND CLICKS ARE INDEPENDENT. `colour` is the session's setting and `sf`
-// is the text's nature; a click needs neither. `--no-color` must not silently
-// remove every click target, which is what taking the vocabulary from
-// `vocabularyFor` alone would have done.
+// IT DERIVES THE VOCABULARY ITSELF rather than taking one, and that is the fix
+// for a class rather than a style choice. The first version took a `Vocabulary`
+// argument, and the guard over the call sites could only check the ARGUMENT'S
+// SOURCE TOKEN — so passing `nil` reddened it while passing `vocabularyFor(d,
+// opt)` did not, even though that returns nil whenever colour is off and would
+// silently remove every click target on `--no-color`. A parameter with one
+// correct value is a parameter that will eventually be given another.
+//
+// COLOUR AND CLICKS STAY INDEPENDENT, which is why `opt.color` gates only the
+// highlight and never the regions: a click is per-word and costs nothing when it
+// is everywhere; colour is a field the eye reads at once.
 //
 // `already` is the byte range of text that `Render` produced and has therefore
 // ALREADY COLOURED. It is located rather than assumed — a form's reveal embeds a
@@ -925,9 +932,10 @@ func writeRendered(w io.Writer, text string, rs []Region) {
 // part-of-speech labels, the example style) that a flat pass here could not
 // reproduce, because ANSI does not nest. Regions are still produced across the
 // whole text; only the colour pass stops at that boundary.
-func writeWords(w io.Writer, text string, rs []Region, v Vocabulary, colour bool, sf surface, already string) {
+func writeWords(w io.Writer, text string, rs []Region, d deps, opt options, sf surface, already string) {
+	v := deckVocabulary(d)
 	rs = mergeRegions(rs, wordRegions(text, v))
-	if v != nil && colour && sf.admitsColour() {
+	if v != nil && opt.color && sf.admitsColour() {
 		text = colourOutside(text, already, v)
 	}
 	writeRendered(w, text, rs)

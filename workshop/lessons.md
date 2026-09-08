@@ -3899,3 +3899,24 @@ I pinned that instance and shipped M2 with the identical hole: nilling the
 vocabulary at all three `writeWords` sites left the WHOLE suite green, because
 every M2 test built its own call. Both are now derived from the AST, so a fourth
 site is checked the moment it exists.
+
+**A guard over an ARGUMENT can only check the token, so remove the argument.**
+`#46`'s write door took a `Vocabulary`, and the guard over its call sites read
+the argument's source text: passing `nil` reddened it, passing
+`vocabularyFor(d, opt)` did not — even though that returns nil whenever colour is
+off, which is the exact coupling the code had just been fixed to avoid. Two
+plausible spellings, one correct, and the guard could not tell them apart.
+
+The fix is the `audioSeam` move again: **a parameter with one correct value is a
+parameter that will eventually be given another.** `writeWords` takes the `deps`
+and derives the vocabulary itself. Then `nil` does not compile — and when
+`deps{}` slipped through in its place, the guard grew one clause: the argument
+must be the identifier the loop holds, never a constructed literal.
+
+**A predicate belongs at EVERY layer that decides the same thing.** "An empty
+payload is not a recording" was fixed at the store (round 4), then at the memo
+(round 5), then finally at the fetch (round 6) — where it turned out an empty 200
+had also been ABANDONING THE REMAINING CANDIDATES, so a word whose recording sat
+one URL later played nothing. Three rounds, one predicate, because each time I
+fixed the layer the finding pointed at. Grep for every place that decides the
+thing and fix them together.

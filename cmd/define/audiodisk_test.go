@@ -197,28 +197,42 @@ func TestWithStorePutsTheDiskCacheUnderTheMemo(t *testing.T) {
 	}
 }
 
-// AN EMPTY 200 IS RE-ASKED NEXT RUN (#46 BR round 4).
+// AN EMPTY 200 IS A VERDICT, NOT A HIT (#46 BR-22).
 //
-// httpAudioSource returns a zero-byte 200 as SUCCESS, so nothing upstream calls
-// it an error. Stored, it would be a permanent never-expiring hit of silence —
-// the outcome the missing-blob branch exists to prevent, arriving by the one
-// path that branch could not see.
-func TestAnEmptyResponseIsNotCachedAsAHit(t *testing.T) {
+// THE DESIGN DECISION, stated because it changed during the review: a 200 with
+// no body means "this candidate carries no recording", which is exactly what a
+// 404 means, so it is treated identically — httpAudioSource skips it and keeps
+// walking, and a list where every candidate answers that way ends as ErrNoAudio.
+//
+// What must NOT happen is a HIT: an empty recording plays as silence, reads as
+// "this word has no audio", and never expires, so the word would be unplayable
+// from this directory until --forget. A verdict is the honest outcome and it
+// carries the thirty-day TTL like any other, so the word is re-asked monthly.
+func TestAnEmptyResponseIsAVerdictNotAHit(t *testing.T) {
 	r := newDiskRig(t, map[string][]byte{"/a.mp3": {}}) // a 200 with no body
 	urls := r.cdn.urls("/a.mp3")
 
-	first, _, err := r.seam(t).FetchFor(t.Context(), "keel", urls)
-	if err == nil && len(first) == 0 {
-		// Whether the seam reports this as a hit or an error is the layer's
-		// business; what must not happen is that it is REMEMBERED.
-		t.Log("the empty body came back as a zero-byte success")
+	data, _, err := r.seam(t).FetchFor(t.Context(), "keel", urls)
+	if !errors.Is(err, ErrNoAudio) {
+		t.Fatalf("first run: %d bytes, err %v — want ErrNoAudio", len(data), err)
 	}
+	// SECOND RUN: the verdict is believed, so no request — the same saving a 404
+	// gets, and the TTL is what stops it being permanent.
 	before := len(r.cdn.Requested())
-	if _, _, err := r.seam(t).FetchFor(t.Context(), "keel", urls); err != nil && before == 0 {
+	if _, _, err := r.seam(t).FetchFor(t.Context(), "keel", urls); !errors.Is(err, ErrNoAudio) {
 		t.Fatalf("second run: %v", err)
 	}
-	if after := len(r.cdn.Requested()); after <= before {
-		t.Errorf("the second run made no request (%d then %d) — an empty recording "+
-			"was cached as a permanent hit, and hits never expire", before, after)
+	if after := len(r.cdn.Requested()); after != before {
+		t.Errorf("the verdict was not recorded: %d requests then %d", before, after)
+	}
+	// AND NOTHING WAS STORED AS A RECORDING. A record with Missing:false and no
+	// bytes is the shape that would be served as silence forever.
+	st := store.NewYAML(r.dir, store.DefaultLang, io.Discard)
+	got, rec, err := st.Audio(store.NewAudioKey("keel", urls))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 || (!rec.At.IsZero() && !rec.Missing) {
+		t.Errorf("an empty body was stored as a recording: %d bytes, %+v", len(got), rec)
 	}
 }
