@@ -52,8 +52,8 @@ So, explicitly (ARCH-DRY):
 |---|---|---|
 | a word's box and high-water mark | `schedule.Fold` → `Progress{Box, MaxBox, LastReviewed}` (`progress.go:52-63`) | folds it, adds nothing. There is no lapse COUNT to reuse; an earlier draft credited `Fold` with one |
 | whether a word is mastered | `schedule.Mastered` (`progress.go:130`) | calls it, does not re-decide — its doc already names this issue as the second consumer |
-| a local calendar day | `store.StartOfDay` (`clock.go:41`) | uses it |
-| days between two instants | `store.DaysBetween` (`clock.go:46`) | uses it — b's location defines the calendar, which is the correction a `Sub()/24h` fold does not have |
+| a local calendar day | `store.StartOfDay` (`clock.go:41`) | **NOT used in the end** — see the 2026-09-08 revision: it returns an INSTANT, and where DST moves at local midnight that instant does not exist. `civilDay` keys by date instead |
+| days between two instants | `store.DaysBetween` (`clock.go:46`) | **its RULE is used, not the function** — "b's location defines the calendar" is applied where the keys are built; the walk itself is `civilDay.add` |
 | a window of "the last N days" | `historyWindow` (`history_cmd.go:37`) | reuses it if `--stats` grows a window; MVP has none |
 
 **A second definition of "mastered" is the specific thing this plan refuses**,
@@ -79,6 +79,11 @@ DRY argument for calling the function is exactly that a second author's
 | `Stats` | `cmd/define/schedule/stats.go` | new |
 | `Summarise` | `cmd/define/schedule/stats.go` | new |
 | `FormAccuracy` | `cmd/define/schedule/stats.go` | new |
+| `civilDay` | `cmd/define/schedule/stats.go` | new |
+| `countable` / `countableEvents` | `cmd/define/schedule/stats.go` | new |
+| `streaks` | `cmd/define/schedule/stats.go` | new |
+| `printStats` | `cmd/define/stats.go` | new |
+| `runStatsCommand` | `cmd/define/stats.go` | new |
 | `renderStats` | `cmd/define/stats.go` | new |
 
 - **`Stats`** — every figure the screen shows, and nothing else.
@@ -290,11 +295,11 @@ func TestStreaksInFractionalOffsetZones(t *testing.T)
 ```
 
 - [x] **Step 2: Run them, watch them fail.**
-- [x] **Step 3: Implement the day set + the two streaks** over `store.StartOfDay`
-      and `store.DaysBetween`.
+- [x] **Step 3: Implement the day set + the two streaks.** Over `civilDay` in
+      the end, not `store.StartOfDay` — the revision below records why.
 - [x] **Step 4: Run them, watch them pass.**
-- [x] **Step 5: Mutation sweep.** Replace `DaysBetween` with a
-      `Sub()/24h` computation and confirm the DST row reddens BY NAME. *A pin
+- [x] **Step 5: Mutation sweep.** Restore the `StartOfDay`-derived key and
+      confirm the midnight-DST row reddens BY NAME. *A pin
       that cannot fail is not a pin*, and this is the row the Done-when names.
 - [x] **Step 6: Commit.**
 
@@ -450,3 +455,21 @@ the exit-code paragraph still said a nil deck returns 0, which it no longer does
 and unticked step boxes were suppressing `TestPlanTablesNameEntitiesThatExist` at
 the boundary. All three are the family `workshop/targets/derived-restatement.md`
 exists for, in the plan rather than in the code.
+
+### 2026-09-08 — `StartOfDay` and `DaysBetween` are NOT called
+
+**Reason.** The close review (BR-2, third pass) found this plan still claiming
+both functions are used. They were, in the first implementation; `fee2e1a`
+removed the last call site and the rows above went false.
+
+**Delta.** The day set is keyed by `civilDay` — a bare year/month/day — because
+`StartOfDay` returns an INSTANT and an instant can fail to exist. Where a DST
+transition happens at local midnight, `time.Date` normalises 00:00 backwards:
+Havana's `StartOfDay(2026-03-08)` is `2026-03-07T23:00`, a key on the previous
+day's date, so any run through that night read as broken. `DaysBetween`'s RULE —
+"b's location defines the calendar" — is still what decides whose calendar this
+is, applied where the keys are built; the walk is `civilDay.add`, which does its
+arithmetic at noon UTC where no clock has ever moved.
+
+The entity table also gained the five rows it was missing: `civilDay`,
+`countable`/`countableEvents`, `streaks`, `printStats` and `runStatsCommand`.

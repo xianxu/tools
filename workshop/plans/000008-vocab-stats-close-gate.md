@@ -206,6 +206,82 @@ rounds:
           family: artifact-deleted-to-satisfy-guard
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-08T14:52:48-07:00"
+      agent: claude
+      dispose:
+        - id: BR-2
+          disposition: not-addressed
+          note: activeDays row and exit code fixed; plan:55-56, Task 2 Steps 3/5 and the :268 comment still claim StartOfDay/DaysBetween are called — fee2e1a removed the last call site, so both rows are now false — and civilDay/countable/streaks/printStats/runStatsCommand are in no entity row.
+          round: 4
+        - id: BR-5
+          disposition: not-addressed
+          note: README:407 still "3 January"; re-rendered all nine sample lines against the renderer's format strings at HEAD — eight are byte-identical, the date is "Jan 3".
+          round: 4
+        - id: BR-6
+          disposition: not-addressed
+          note: Fold(events) at stats.go:85 is still unfiltered, the countable doc still claims the fold validates without naming the exception, and nothing pins it.
+          round: 4
+        - id: BR-7
+          disposition: not-addressed
+          note: README:521 still hand-lists the six modes; no doc_sync_test.go guard reuses declaredModes, which now exists and is free to call.
+          round: 4
+        - id: BR-8
+          disposition: not-addressed
+          note: runStats still takes an unused ctx at stats.go:37, with no `_ context.Context` and no line saying it mirrors runReflect deliberately.
+          round: 4
+        - id: BR-9
+          disposition: addressed
+          note: 'civilDay keys the day set at stats.go:260. Mutation-verified: restoring 15b94c3''s stats.go reddens TestStreaksSurviveAMidnightDSTTransition in Havana, Santiago and Beirut (2/3, want 3/3).'
+          round: 4
+        - id: BR-10
+          disposition: not-addressed
+          note: Accuracy is still keyed by the raw Form string with neutralisation only at formLabel (stats.go:190).
+          round: 4
+        - id: BR-11
+          disposition: addressed
+          note: 'Mutation-verified twice: deleting {"-forget", forgetting} reddens the dispatched-not-listed branch by name, and hiding the `if forgetting {` shape from the parser reddens the count branch (5 found vs 6 declared). Both floors now derive from the other side.'
+          round: 4
+        - id: BR-12
+          disposition: addressed
+          note: Issue 48's Plan section now explains the plan lands with its own branch and cites BR-12; the cited guards exist at repo_guard_test.go:1306/:1271 and do walk every plan. The deleted content stays recoverable at c208cf9, an ancestor of HEAD.
+          round: 4
+      findings:
+        - id: BR-13
+          severity: Important
+          title: atlas/define.md records the time.Time keying premise that fee2e1a replaced, and the target's own sweep checklist was not run for that window
+          detail: |-
+            This is the 2nd finding in family docs-restate-unverified-output, so the deliverable is
+            the class rather than the site. The rule is already written down and was not applied:
+            workshop/targets/derived-restatement.md carries a sweep checklist for every close, and
+            fee2e1a skipped the "atlas/ — surface, flow, terminology, and the premises it records",
+            "the plan — a ## Revisions entry", and "the doc comment on every symbol the diff
+            reshaped" rows. atlas/define.md:2643 says the day map "is keyed in the LEARNER's zone,
+            because time.Time equality includes the location pointer" — stats.go:132 keys by
+            civilDayOf(), a struct of three ints in which the location pointer cannot participate
+            in equality at all, and civilDay appears nowhere in atlas/, the plan or the README.
+            Measured prevalence for this one window: six sites — atlas premise, README date (BR-5),
+            plan rows 55-56, plan Task 2 Steps 3/5, no plan Revisions entry, five new pure symbols
+            in no entity row. Fix the sweep, not the sentence; and note that issue 8's frontmatter
+            carries no `target: derived-restatement` reference despite four findings in the family.
+          family: docs-restate-unverified-output
+          round: 4
+        - id: BR-14
+          severity: Minor
+          title: formLabel is a byte-for-byte copy of store.oneLine under a comment asserting the equivalence, with nothing pinning it
+          detail: |-
+            This is the 2nd finding in family duplicated-read-path, so state the rule rather than
+            patching the site: when a comment says a behaviour is shared with X, the next line
+            should be the call to X. cmd/define/stats.go:190-202 reproduces store/item.go:200-208
+            exactly (unicode.IsControl && !unicode.IsSpace, then strings.Fields/Join) and its doc
+            comment says "exactly as store's oneLine drops them". oneLine is unexported, so a
+            hardening of the neutralisation rule — the ARCH-SECURE rule for hand-edited text
+            reaching a terminal, per 12 BR-15 — would harden one copy and silently leave the other.
+            Prevalence measured at 2: grep unicode.IsControl finds exactly these two copies of the
+            idiom. Export it from store, or pin the equivalence with a shared table.
+          family: duplicated-read-path
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#8 (boundary-review)
@@ -328,6 +404,47 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   a #48 branch via `git show c208cf9:workshop/plans/000048-play-from-the-loop-plan.md`,
   or fix the issue pointer and move the gate ledger with it.
 
+## Round 4 — 2026-09-08T14:52:48-07:00 (claude) — passed
+
+### Disposed
+
+- BR-2 — not-addressed — activeDays row and exit code fixed; plan:55-56, Task 2 Steps 3/5 and the :268 comment still claim StartOfDay/DaysBetween are called — fee2e1a removed the last call site, so both rows are now false — and civilDay/countable/streaks/printStats/runStatsCommand are in no entity row.
+- BR-5 — not-addressed — README:407 still "3 January"; re-rendered all nine sample lines against the renderer's format strings at HEAD — eight are byte-identical, the date is "Jan 3".
+- BR-6 — not-addressed — Fold(events) at stats.go:85 is still unfiltered, the countable doc still claims the fold validates without naming the exception, and nothing pins it.
+- BR-7 — not-addressed — README:521 still hand-lists the six modes; no doc_sync_test.go guard reuses declaredModes, which now exists and is free to call.
+- BR-8 — not-addressed — runStats still takes an unused ctx at stats.go:37, with no `_ context.Context` and no line saying it mirrors runReflect deliberately.
+- BR-9 — addressed — civilDay keys the day set at stats.go:260. Mutation-verified: restoring 15b94c3's stats.go reddens TestStreaksSurviveAMidnightDSTTransition in Havana, Santiago and Beirut (2/3, want 3/3).
+- BR-10 — not-addressed — Accuracy is still keyed by the raw Form string with neutralisation only at formLabel (stats.go:190).
+- BR-11 — addressed — Mutation-verified twice: deleting {"-forget", forgetting} reddens the dispatched-not-listed branch by name, and hiding the `if forgetting {` shape from the parser reddens the count branch (5 found vs 6 declared). Both floors now derive from the other side.
+- BR-12 — addressed — Issue 48's Plan section now explains the plan lands with its own branch and cites BR-12; the cited guards exist at repo_guard_test.go:1306/:1271 and do walk every plan. The deleted content stays recoverable at c208cf9, an ancestor of HEAD.
+
+### Raised
+
+- **BR-13** [Important] `docs-restate-unverified-output` atlas/define.md records the time.Time keying premise that fee2e1a replaced, and the target's own sweep checklist was not run for that window
+  This is the 2nd finding in family docs-restate-unverified-output, so the deliverable is
+  the class rather than the site. The rule is already written down and was not applied:
+  workshop/targets/derived-restatement.md carries a sweep checklist for every close, and
+  fee2e1a skipped the "atlas/ — surface, flow, terminology, and the premises it records",
+  "the plan — a ## Revisions entry", and "the doc comment on every symbol the diff
+  reshaped" rows. atlas/define.md:2643 says the day map "is keyed in the LEARNER's zone,
+  because time.Time equality includes the location pointer" — stats.go:132 keys by
+  civilDayOf(), a struct of three ints in which the location pointer cannot participate
+  in equality at all, and civilDay appears nowhere in atlas/, the plan or the README.
+  Measured prevalence for this one window: six sites — atlas premise, README date (BR-5),
+  plan rows 55-56, plan Task 2 Steps 3/5, no plan Revisions entry, five new pure symbols
+  in no entity row. Fix the sweep, not the sentence; and note that issue 8's frontmatter
+  carries no `target: derived-restatement` reference despite four findings in the family.
+- **BR-14** [Minor] `duplicated-read-path` formLabel is a byte-for-byte copy of store.oneLine under a comment asserting the equivalence, with nothing pinning it
+  This is the 2nd finding in family duplicated-read-path, so state the rule rather than
+  patching the site: when a comment says a behaviour is shared with X, the next line
+  should be the call to X. cmd/define/stats.go:190-202 reproduces store/item.go:200-208
+  exactly (unicode.IsControl && !unicode.IsSpace, then strings.Fields/Join) and its doc
+  comment says "exactly as store's oneLine drops them". oneLine is unexported, so a
+  hardening of the neutralisation rule — the ARCH-SECURE rule for hand-edited text
+  reaching a terminal, per 12 BR-15 — would harden one copy and silently leave the other.
+  Prevalence measured at 2: grep unicode.IsControl finds exactly these two copies of the
+  idiom. Export it from store, or pin the equivalence with a shared table.
+
 ## Open findings
 
 - **BR-2** [Important] `plan-table-drift` Plan names an entity the code never declares and states the wrong nil-deck exit code
@@ -335,7 +452,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-6** [Minor] `untrusted-persisted-input` Fold runs on unfiltered events while every other figure goes through countable
 - **BR-7** [Minor] `hand-maintained-extent` README's mode list is a hand-maintained restatement of run()'s modes slice
 - **BR-8** [Minor] `unused-parameter` runStats takes a context.Context it never uses
-- **BR-9** [Critical] `local-calendar-arithmetic` streaks breaks a run across any DST transition that occurs at local midnight
 - **BR-10** [Minor] `untrusted-persisted-input` formLabel sanitises at render, so two distinct form keys can print as identical rows
-- **BR-11** [Important] `hand-maintained-extent` The dispatch derivation covers five of six modes and calibrates against three hand-typed floors
-- **BR-12** [Important] `artifact-deleted-to-satisfy-guard` The closing commit deleted issue 48's durable plan, leaving a working issue pointing at a file no branch holds
+- **BR-13** [Important] `docs-restate-unverified-output` atlas/define.md records the time.Time keying premise that fee2e1a replaced, and the target's own sweep checklist was not run for that window
+- **BR-14** [Minor] `duplicated-read-path` formLabel is a byte-for-byte copy of store.oneLine under a comment asserting the equivalence, with nothing pinning it

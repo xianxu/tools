@@ -404,7 +404,7 @@ of question.
   active days      23
   streak           5 days (longest 12)
   words/day        3.7
-  since            3 January
+  since            Jan 3
 
   cloze             78%  (14 of 18)
   meaning           91%  (31 of 34)
@@ -518,8 +518,9 @@ scale is right.
 and exits `1`. If the model becomes unavailable mid-run, everything already
 banded is saved and only the harvesting stops.
 
-**One mode at a time.** `-harvest`, `--play`, `--reflect`, `--stats`, `-forget`
-and `--llm-check` are modes, and asking for two on one line is a usage error (exit
+**One mode at a time.** A mode is a flag that makes `define` do one whole job and
+exit — reviewing, harvesting, reflecting, reporting figures, forgetting a word,
+checking the model configuration. Asking for two on one line and asking for two on one line is a usage error (exit
 `2`) rather than a guess at which you meant. Previously whichever dispatched
 first silently won.
 

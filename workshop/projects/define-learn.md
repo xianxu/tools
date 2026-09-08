@@ -250,7 +250,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
 - [x] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
 - [x] authored practice items — a CEFR band and a domain per word, cached forever and assigned once; two closed vocabularies in the store, the dictionary answering the domain where it can [tools#10 M1]
 - [x] authored practice items — stems the model writes offline; distractors SELECTED at the learner's band or one below and vetoed. **STOP HERE and read a real batch** [tools#10 M2]
-- [ ] `--stats` — all derived from the event log [tools#8]
+- [x] `--stats` — all derived from the event log [tools#8]
 - [ ] `/play` — a sitting from inside the loop, returning to it [tools#48]
 - [x] spaced repetition rework — one unbounded ladder, `floor(1.6**box)`, no ceiling [tools#39]
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]

@@ -82,6 +82,14 @@ func (f FormAccuracy) Rate() float64 {
 // The issue's Done-when asks for a fake clock; this is stronger, and the issue
 // records the deviation.
 func Summarise(events []store.ReviewEvent, deck []store.Word, now time.Time) Stats {
+	// ONE FILTER, EVERY FIGURE. Fold ran on the RAW slice while the loop below
+	// ran on countable's survivors, so a hand-edited future timestamp was
+	// excluded from the streak and included in the box — the mastered count and
+	// the active days disagreeing about which events are real (#8 BR-6).
+	//
+	// Filtering once, here, is also the only place that can: countable needs
+	// `now`, which Fold has no business knowing.
+	events = countableEvents(events, now)
 	prog := Fold(events)
 	s := Stats{Accuracy: map[string]FormAccuracy{}}
 
@@ -109,10 +117,9 @@ func Summarise(events []store.ReviewEvent, deck []store.Word, now time.Time) Sta
 	seen := map[string]bool{}
 	var added int
 	for _, e := range events {
-		at, ok := countable(e, now)
-		if !ok {
-			continue
-		}
+		// No filter here: countableEvents already ran, so every event in this
+		// slice is one every figure agrees is real.
+		//
 		// IN now's LOCATION FIRST, then as a DATE. Both halves are load-bearing
 		// and each fixes a different bug.
 		//
@@ -129,12 +136,12 @@ func Summarise(events []store.ReviewEvent, deck []store.Word, now time.Time) Sta
 		// (2026-09-06) and Beirut (2026-03-29) do the same. A run spanning such a
 		// date then reads as broken, which is the streak silently lying about the
 		// learner. A civil date cannot fail to exist.
-		day := civilDayOf(at.In(now.Location()))
+		day := civilDayOf(e.At.In(now.Location()))
 		days[day] = true
 		// FirstDay/LastDay stay INSTANTS because relativeDay renders them, and
 		// they are built from the event rather than from the date so the zone a
 		// reader sees is the learner's.
-		atLocal := at.In(now.Location())
+		atLocal := e.At.In(now.Location())
 		if s.FirstDay.IsZero() || atLocal.Before(s.FirstDay) {
 			s.FirstDay = atLocal
 		}
@@ -183,11 +190,20 @@ func Summarise(events []store.ReviewEvent, deck []store.Word, now time.Time) Sta
 // Skipped rather than clamped: a clamped event is a fabricated fact, and the
 // figures degrade to "fewer events" rather than to a wrong number — the same
 // choice sanitiseItem and readCapped make one package over (ARCH-SECURE).
-func countable(e store.ReviewEvent, now time.Time) (time.Time, bool) {
-	if e.At.IsZero() || e.At.After(now) {
-		return time.Time{}, false
+func countable(e store.ReviewEvent, now time.Time) bool {
+	return !e.At.IsZero() && !e.At.After(now)
+}
+
+// countableEvents is the filter applied ONCE, so every figure folds the same
+// events — the boxes as well as the days.
+func countableEvents(events []store.ReviewEvent, now time.Time) []store.ReviewEvent {
+	out := make([]store.ReviewEvent, 0, len(events))
+	for _, e := range events {
+		if countable(e, now) {
+			out = append(out, e)
+		}
 	}
-	return e.At, true
+	return out
 }
 
 // streaks walks the active days and returns the current and longest runs.

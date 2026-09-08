@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"sort"
@@ -34,7 +33,7 @@ import (
 // argument was protecting is the EMPTY deck, which still exits 0 with a
 // sentence; a nil one means DEFINE_NO_CAPTURE or no directory at all, and a
 // script that asked for figures and got none should know.
-func runStats(ctx context.Context, d deps, opt options, out, errOut io.Writer) int {
+func runStats(d deps, opt options, out, errOut io.Writer) int {
 	if d.deck == nil {
 		// noDeckMessage, not a fourth copy of the sentence: the two causes need
 		// different words (DEFINE_NO_CAPTURE opened nothing on purpose; an
@@ -155,22 +154,35 @@ func plural(n int, word string) string {
 // SORTED BY NAME, so the screen is stable between runs: map order would reshuffle
 // the rows every time and make a learner think something had changed.
 func accuracyLines(s schedule.Stats) []string {
-	forms := make([]string, 0, len(s.Accuracy))
+	// KEYED BY THE LABEL, not by the raw form. formLabel neutralises, so two
+	// distinct keys can print identically — "meaning" and "meaning\x1b[2J" both
+	// render as `meaning` — and grouping after the render is what stops the
+	// screen showing the same row twice with different numbers (#8 BR-10).
+	byLabel := map[string]schedule.FormAccuracy{}
 	for f, a := range s.Accuracy {
-		if a.Attempts > 0 {
-			forms = append(forms, f)
+		if a.Attempts == 0 {
+			continue
 		}
+		l := formLabel(f)
+		acc := byLabel[l]
+		acc.Attempts += a.Attempts
+		acc.Correct += a.Correct
+		byLabel[l] = acc
 	}
-	if len(forms) == 0 {
+	if len(byLabel) == 0 {
 		return nil
 	}
-	sort.Strings(forms)
+	labels := make([]string, 0, len(byLabel))
+	for l := range byLabel {
+		labels = append(labels, l)
+	}
+	sort.Strings(labels)
 
-	out := make([]string, 0, len(forms))
-	for _, f := range forms {
-		a := s.Accuracy[f]
+	out := make([]string, 0, len(labels))
+	for _, l := range labels {
+		a := byLabel[l]
 		out = append(out, fmt.Sprintf("  %-16s %3.0f%%  (%d of %d)",
-			formLabel(f), a.Rate()*100, a.Correct, a.Attempts))
+			l, a.Rate()*100, a.Correct, a.Attempts))
 	}
 	return out
 }

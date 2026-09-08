@@ -442,3 +442,38 @@ func TestTheMidnightZonesReallyLackAMidnight(t *testing.T) {
 		}
 	}
 }
+
+// ONE FILTER, EVERY FIGURE (#8 BR-6).
+//
+// Fold ran on the RAW slice while the day/accuracy loop ran on countable's
+// survivors, so a hand-edited future timestamp was excluded from the streak and
+// INCLUDED in the box — the mastered count and the active days disagreeing about
+// which events are real. The log is hand-editable, so that disagreement is
+// reachable rather than theoretical.
+func TestEveryFigureFoldsTheSameEvents(t *testing.T) {
+	now := at(nyc, 2026, time.June, 10, 12)
+	deck := deckOf("keel")
+
+	// Enough correct answers to master a word, all dated AFTER now — which the
+	// filter rejects, so none of them may reach the boxes either.
+	var future []store.ReviewEvent
+	for i := 0; i < 15; i++ {
+		future = append(future, reviewed("keel", "meaning", true, at(nyc, 2026, time.December, 1+i, 9)))
+	}
+	got := schedule.Summarise(future, deck, now)
+
+	if got.ActiveDays != 0 {
+		t.Errorf("ActiveDays = %d, want 0 — future events are not days", got.ActiveDays)
+	}
+	if got.Mastered != 0 {
+		t.Errorf("Mastered = %d, want 0 — the boxes folded events the days rejected, "+
+			"so the two halves of this screen disagree about which events are real",
+			got.Mastered)
+	}
+	// And a zero timestamp likewise reaches neither.
+	zero := []store.ReviewEvent{{Word: "keel", Kind: store.EventReviewed, Correct: true, Form: "meaning"}}
+	if g := schedule.Summarise(zero, deck, now); g.Mastered != 0 || g.ActiveDays != 0 {
+		t.Errorf("a dateless event reached a figure: mastered=%d activeDays=%d",
+			g.Mastered, g.ActiveDays)
+	}
+}

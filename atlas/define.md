@@ -2639,8 +2639,16 @@ with no row there draws an underline that does nothing, which
   that day. **Mastery is `schedule.Mastered`'s answer**, never a box comparison
   written twice — its own doc names this as the second consumer. And **`now` is a
   parameter rather than an injected clock**, so every timezone and DST case is a
-  table row; the day map is keyed in the LEARNER's zone, because `time.Time`
-  equality includes the location pointer and a log routinely holds mixed offsets.
+  table row.
+
+  **The day set is keyed by a DATE (`civilDay`), not by an instant**, and both
+  bugs behind that are worth keeping: a `time.Time` key carries the `*Location`
+  pointer, so one calendar day written in two offsets made two keys; and an
+  instant can fail to EXIST — where DST moves at local midnight (Havana
+  2026-03-08, Santiago 2026-09-06, Beirut 2026-03-29) `time.Date` normalises
+  00:00 into the previous day, so the key landed on its neighbour's date and a
+  run through that night read as broken. New York's transitions are at 02:00 and
+  hide this completely.
 
 - **`RegionWord` — a deck word, wherever it is written (`#46`).** The registry's
   third kind, and the first produced for a PROMPT rather than for a rendered

@@ -732,7 +732,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// Beside --reflect for the same reason (#17 D5): --stats needs the deck and
 	// the clock, both of which withStore built above.
 	if *statsFlag {
-		return runStats(ctx, d, opt, stdout, stderr)
+		return runStats(d, opt, stdout, stderr)
 	}
 	// Beside --reflect and --forget rather than beside --llm-check: --harvest
 	// needs the deck, the dictionary and the clock, so it belongs after

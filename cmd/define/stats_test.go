@@ -174,7 +174,7 @@ func TestStatsWithNoDeckExplainsWhichCause(t *testing.T) {
 			var out, errb bytes.Buffer
 			d := testDeps(t)
 			d.deck = nil
-			code := runStats(t.Context(), d, options{noCapture: tc.noCapture}, &out, &errb)
+			code := runStats(d, options{noCapture: tc.noCapture}, &out, &errb)
 			if code != 1 {
 				t.Errorf("exit = %d, want 1 — every sibling (--forget, --harvest, --reflect, "+
 					"/history) returns 1 for a nil deck", code)
@@ -195,7 +195,7 @@ func TestStatsSendsFailuresToStderrAndExitsNonZero(t *testing.T) {
 	var out, errb bytes.Buffer
 	d := testDeps(t)
 	d.deck = failingStore{}
-	code := runStats(t.Context(), d, options{}, &out, &errb)
+	code := runStats(d, options{}, &out, &errb)
 
 	if code != 1 {
 		t.Errorf("exit = %d, want 1 — silently low figures are worse than a refusal", code)
@@ -288,7 +288,7 @@ func TestSlashStatsAndTheFlagPrintTheSameScreen(t *testing.T) {
 	var viaFlag, flagErr bytes.Buffer
 	d := testDeps(t)
 	d.deck, d.clock = st, clk
-	if code := runStats(t.Context(), d, options{}, &viaFlag, &flagErr); code != 0 {
+	if code := runStats(d, options{}, &viaFlag, &flagErr); code != 0 {
 		t.Fatalf("--stats exit %d: %s", code, flagErr.String())
 	}
 

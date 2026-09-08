@@ -4010,3 +4010,16 @@ date a reader would name.
 repo root, scanning Havana/Santiago/Beirut for exactly this — swept as debris
 without asking what it was for. The review found the bug an hour later. **Before
 deleting your own scratch work, read what question it was asking.**
+
+**One filter, every figure.** `#8`'s fold rejected hand-edited timestamps for the
+day set and the accuracy rows, and ran `Fold` on the RAW slice — so a future
+event was excluded from the streak and included in the mastery box. Two halves of
+one screen disagreeing about which events are real, on a log the README invites
+editing. **When a fold validates its input, it validates it ONCE, before anything
+reads it** — not at each reader, where the readers drift.
+
+**Sanitising at render can merge two rows or split one.** `formLabel` neutralised
+a form name for display while the accuracy map was still keyed by the raw string,
+so `meaning` and `meaning\x1b[2J` printed as two identical-looking rows with
+different numbers. Group by what the reader SEES, after the transform, or the
+screen contradicts itself.

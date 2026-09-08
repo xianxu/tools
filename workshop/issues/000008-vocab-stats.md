@@ -1,12 +1,13 @@
 ---
 id: 000008
-status: working
+status: codecomplete
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
-updated: 2026-09-07
+updated: 2026-09-08
 estimate_hours: 3.71
 started: 2026-09-07T19:04:15-07:00
+actual_hours: 2.98
 ---
 
 # define --stats: deck, streak and mastery statistics
@@ -102,6 +103,8 @@ force a redundant milestone-close on atomic work).
 
 ## Log
 
+
+- 2026-09-08: closed — define --stats and /stats ship. Every figure folded from the append-only log by schedule.Summarise (pure; now is a parameter) and rendered by renderStats, through printStats — the ONE read-fold-render both doors call. ROUND 2 CRITICAL, BR-9: streaks broke across any DST transition at LOCAL MIDNIGHT. The day set was keyed by StartOfDay time.Time, and where clocks move at midnight that midnight is not a real instant — time.Date normalises it, so Havana StartOfDay(2026-03-08) returns 2026-03-07T23:00, a key on the previous day date, and a run through that night read as broken. New York hides it entirely (transitions at 02:00), so every DST test written there passed on the wrong implementation. The key is now civilDay, three integers, with arithmetic at noon UTC where no clock has ever moved; TestStreaksSurviveAMidnightDSTTransition covers Havana 2026-03-08, Santiago 2026-09-06 and Beirut 2026-03-29, found by PROBING tzdata rather than by recall, and TestTheMidnightZonesReallyLackAMidnight asserts the premise so the row cannot pass for the wrong reason. Mutation-verified: restoring the StartOfDay-derived key reddens Havana with ActiveDays 2 and CurrentStreak 1. BR-11: the dispatch derivation covered five of six modes and its hand-typed floor of five certified exactly that gap — -forget dispatches through isSet(fs, "forget"), a shape the parse did not know. It reads that shape now and the two derivations are each other floor rather than typed constants; swept on -forget, -stats and -llm-check, each reddening by name. BR-12: #48 issue no longer claims a durable plan no branch holds, and records WHY (a plan is checked against the code in its window by guards that walk every plan in the tree). BR-2: the plan entity table, the nil-deck exit code and the unticked steps are corrected with a Revisions entry. Round 1: BR-4, printStats is where "everything below that seam is shared" became true — the comment said it over five duplicated statements; BR-1, the mode guard derived from the LIST it was checking, so deleting a row left it deriving one fewer and passing while the mode still dispatched. Done-when 1: Known/Mastered from the DECK and AddedPerDay from the LOG, pinned by TestKnownCountsTheDeckNotTheLog; mastery asserted by AGREEMENT with the queue via schedule.Mastered. Done-when 2: streaks across both New York DST boundaries, three midnight-transition zones, and fractional offsets (+05:30, +05:45); now is a PARAMETER rather than a fake clock, recorded as a deviation; TestDaysAreCountedInTheLearnersZone pins the location-pointer bug found by re-reading. Done-when 3: TestStatsOnAnEmptyDeckSaysSoRatherThanPrintingZeros. ARCH-SECURE: zero and future timestamps SKIPPED not clamped; formLabel drops control runes, this being the first path putting ReviewEvent.Form on a terminal. A flagged question is not an attempt. TestEveryStatsFieldIsRendered derives the extent by reflection. TestSlashStatsAndTheFlagPrintTheSameScreen asserts byte-identical output from both doors. The nil-deck path returns stderr+1, matching four unanimous siblings. Hand-run against the operator real vocab directory and the smoke deck. go test -count=1 ./... green; go vet clean under default, pty and conformance; gofmt clean.; review verdict: FIX-THEN-SHIP
 ### 2026-08-20
 
 Created as part of the `define-learn` project.

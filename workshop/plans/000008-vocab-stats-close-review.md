@@ -465,3 +465,153 @@ findings:
       a #48 branch via `git show c208cf9:workshop/plans/000048-play-from-the-loop-plan.md`,
       or fix the issue pointer and move the gate ledger with it.
 ```
+
+---
+
+## Re-review — 2026-09-08T14:52:48-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 8 — define --stats: deck, streak and mastery statistics |
+| repo | tools |
+| issue file | workshop/issues/000008-vocab-stats.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 6cc7513b4ee056108f6900d482d73e0fee5def7b..fee2e1a06c1bc432c745622bd96e36b6bb780d91 |
+| command | sdlc close --issue 8 |
+| reviewer | claude |
+| timestamp | 2026-09-08T14:52:48-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The two findings this round disposed as `addressed` — BR-9 (the local-midnight DST bug) and BR-11 (the mode-dispatch derivation) — are genuinely fixed, and I verified both by mutation rather than by reading the commit message: reverting `stats.go` to `15b94c3` reddens `TestStreaksSurviveAMidnightDSTTransition` in all three zones (2/3 streak vs 3), deleting `{"-forget", forgetting}` from `main.go` reddens `TestEveryDispatchedModeIsInTheCollisionList` by name, and hiding a dispatch shape from the parser reddens the count branch — so both directions of the new closure are reachable, not decorative. The shipped code is correct: the fold is pure and mechanically enforced (`TestSchedulePurity`), the deck-vs-log asymmetry is right and pinned, `Mastered` is called rather than re-derived, and `gofmt`/`go vet` under all three tag sets are clean with the whole `cmd/define` suite green. What blocks SHIP is not the code but the artifacts around it: `fee2e1a` changed the day-key mechanism and swept none of the prose that describes it, so `atlas/define.md` now records a premise (`time.Time` equality, location pointer) that the code no longer uses, and the plan's ARCH-DRY table and Task 2 steps still claim `store.StartOfDay`/`DaysBetween` are called when neither is. Both are cheap edits; neither is a code change.
+
+## 1. Strengths
+
+- **`civilDay` is the right fix, not the one the finding sketched.** BR-9 offered "wrap every stepped value in `store.StartOfDay`"; `cmd/define/schedule/stats.go:260` correctly rejected that (it collapses Havana's Mar 8 key onto Mar 7) and made the invalid state unrepresentable instead — three integers, `==`-comparable, arithmetic at noon UTC where no clock has ever moved (`:278`). That is ARCH-SECURE's "parse into a typed value" applied to a calendar.
+- **The DST fixture asserts its own premise.** `TestTheMidnightZonesReallyLackAMidnight` (`stats_test.go:427`) checks that Havana/Santiago/Beirut actually lack a local midnight on those dates, so the row above it cannot pass for the wrong reason. Finding the zones by probing tzdata rather than by recall is the discipline the plan's own citation rule asks for.
+- **BR-11's fix states the rule instead of patching the site.** `harvest_test.go:965-990`: the two derivations are each other's floor (`len(dispatched) < len(listed)`, plus `dispatched ⊄ listed`), and the `isSet(fs, "x")` reader takes the flag name from the *call* rather than guessing from the variable's spelling. The hand-typed `< 3` and `< 5` floors that certified the gap are gone from the closure.
+- **`printStats` (`cmd/define/stats.go:63`) made BR-4's comment true.** Both doors (`:48`, `:228`) now differ only in where the store comes from and the name in a diagnostic, and `TestSlashStatsAndTheFlagPrintTheSameScreen` asserts byte-identical output.
+- **`TestEveryStatsFieldIsRendered` fails closed on a new field** (`stats_test.go:90`) — a `Stats` field with no expectation errors rather than being silently skipped, and `LastDay`'s omission is a named decision.
+
+## 2. Critical findings
+
+None. BR-9 was the only Critical and it is fixed and mutation-verified.
+
+## 3. Important findings
+
+**`atlas/define.md:2643` records a keying mechanism the code abandoned in the same window** — Important, family `docs-restate-unverified-output`, **2nd in that family**. The atlas says the day map "is keyed in the LEARNER's zone, because `time.Time` equality includes the location pointer"; `stats.go:132` keys by `civilDayOf(...)`, a struct of three ints, in which the location pointer cannot participate in equality at all. `civilDay` — new terminology with a non-obvious rationale — appears nowhere in `atlas/`, the plan, or the README.
+
+Per the escalation rule, the deliverable is the class, not the site. **The rule already exists in this repo, written down and unapplied:** `workshop/targets/derived-restatement.md` carries a sweep checklist to be run at *every* close, and `fee2e1a` skipped three of its rows — "`atlas/` — surface, flow, terminology, and the premises it records", "the plan — a `## Revisions` entry, never an overwrite", and "the doc comment on every symbol the diff reshaped". Measured enumeration for this window: atlas premise stale (1); README date wrong (BR-5); plan ARCH-DRY rows 55–56 and Task 2 Steps 3/5 stale, all ticked (BR-2); no plan `## Revisions` entry for the redesign; five new pure symbols in no entity row. **Six sites, one skipped checklist.** Also worth noting: `#8`'s issue frontmatter carries no `target: derived-restatement` reference despite four findings in the family — the target cannot defend an issue that does not point at it.
+
+**BR-2 remains open and widened** (see dispositions). `fee2e1a` removed the last two `store.StartOfDay`/`DaysBetween` call sites from the fold, so the plan's two ARCH-DRY rows are now both false rather than one.
+
+## 4. Minor findings
+
+- `cmd/define/stats.go:190` — `formLabel` is a byte-for-byte copy of `store.oneLine` (`store/item.go:200`), under a comment asserting the equivalence with nothing pinning it. Family `duplicated-read-path`, **2nd in that family** — the rule is BR-4's: when a comment says a behaviour is shared, the next line should be the function it is shared through. Prevalence 2 (measured: `grep unicode.IsControl` finds exactly these two copies of the `IsControl && !IsSpace` + `Fields`/`Join` idiom).
+- BR-5, BR-6, BR-7, BR-8, BR-10 all still stand unchanged; see dispositions.
+
+## 5. Test coverage notes
+
+Coverage is strong and the pins are real, not restatements of the implementation — I confirmed three of them redden under mutation. Two residual gaps, both already open: nothing pins that `Fold` runs on *unfiltered* events (BR-6), so the "the fold validates rather than trusts" doc comment is unguarded at its one exception; and nothing pins `formLabel ≡ store.oneLine`. The whole-suite claim in Task 5 Step 6 checks out: `go test ./cmd/define/...` green, `gofmt -l` clean, `go vet` clean under default, `pty` and `conformance`.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY** — flag (`formLabel`/`oneLine`); otherwise strong (`Mastered` called not re-derived, `printStats` consolidated, `noDeckMessage` reused rather than copied).
+- **ARCH-PURE** — pass. `Summarise`/`renderStats` are pure with `now` as a parameter, and `TestSchedulePurity` enforces "no IO, no hidden clock" mechanically rather than by promise.
+- **ARCH-PURPOSE** — flag, as above: the code fulfils the issue, the shadow-sweep of its documentation does not.
+- **ARCH-MOCK** — pass. No new external dependency; `store.Mem` sits behind the existing conformance-tested seam.
+- **ARCH-CONSTRAINTS** — pass. O(events + deck), envelope declared, no counter and no cache; `/stats` re-reads the whole log per invocation, which is user-initiated and bounded.
+- **ARCH-SECURE** — pass with the two open Minors. `countable` skips zero/future `At` (pinned both ways), `formLabel` neutralises control runes (pinned). Residual: raw `Form` as an `Accuracy` map key (BR-10), `Fold` on unfiltered events (BR-6).
+- **ARCH-ORDER** — pass. `Summarise` carries no state between calls, and the plan writes the `N/A` as a claim with reasons rather than a bare marker. `streaks`' unbounded `for` terminates on a finite `days` map; worth one sentence saying so.
+- **For `#48`:** `TestEveryDispatchedModeIsInTheCollisionList` still cannot see a mode wired through a shape neither AST reader recognises — both derivations would miss it identically. That is inherent to AST derivation, but `/play`'s dispatch should stay in one of the two known shapes, or the guard needs a third reader.
+- **The highest-leverage next guard:** `TestPlanTablesNameEntitiesThatExist` checks that named entities exist, never that existing entities are named — so a *missing* row is invisible. The both-directions closure `#8` just built for modes is the same move: read the new symbols out of a file a plan's table names and require each to appear in some row. That would have caught five of this round's six sites mechanically.
+
+## 7. Plan revision recommendations
+
+Append one `## Revisions` entry dated 2026-09-08 (do not overwrite the round-1 entry) covering:
+
+1. **The day set is keyed by a civil DATE, not by `store.StartOfDay`'s `time.Time`.** Rows at `workshop/plans/000008-vocab-stats-plan.md:55-56` claim the code "uses" `store.StartOfDay` and `store.DaysBetween`; it calls neither. Rewrite both rows to what shipped: `DaysBetween`'s *rule* (b's location defines the calendar) is applied where the keys are built, and the instant-based helpers are deliberately not called because an instant can fail to exist.
+2. **Task 2 Step 3 (`:293-294`) and Step 5 (`:296`) are ticked over a design that no longer exists** — "implement over `store.StartOfDay` and `store.DaysBetween`", "replace `DaysBetween` with a `Sub()/24h` computation". Restate the mutation sweep that actually pins the row (revert to instant keys → `TestStreaksSurviveAMidnightDSTTransition` reddens in three zones). Same for the test-name comment at `:268`.
+3. **Add the missing entity rows or say why the table is partial.** `civilDay`, `civilDayOf`, `countable`, `streaks` (`schedule/stats.go`) and `printStats`, `streakPhrase`, `accuracyLines`, `formLabel` (`cmd/define/stats.go`) are in no row, and `runStatsCommand` is in no Integration row. The plan's own note at `:119` explains why the day set did not become a named function — but `streaks` and `civilDay` *are* named functions, so that paragraph now argues the opposite of what shipped.
+
+```findings
+dispose:
+  - id: BR-2
+    disposition: not-addressed
+    note: |
+      activeDays row and exit code fixed; plan:55-56, Task 2 Steps 3/5 and the :268 comment still claim StartOfDay/DaysBetween are called — fee2e1a removed the last call site, so both rows are now false — and civilDay/countable/streaks/printStats/runStatsCommand are in no entity row.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      README:407 still "3 January"; re-rendered all nine sample lines against the renderer's format strings at HEAD — eight are byte-identical, the date is "Jan 3".
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      Fold(events) at stats.go:85 is still unfiltered, the countable doc still claims the fold validates without naming the exception, and nothing pins it.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      README:521 still hand-lists the six modes; no doc_sync_test.go guard reuses declaredModes, which now exists and is free to call.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      runStats still takes an unused ctx at stats.go:37, with no `_ context.Context` and no line saying it mirrors runReflect deliberately.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      civilDay keys the day set at stats.go:260. Mutation-verified: restoring 15b94c3's stats.go reddens TestStreaksSurviveAMidnightDSTTransition in Havana, Santiago and Beirut (2/3, want 3/3).
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      Accuracy is still keyed by the raw Form string with neutralisation only at formLabel (stats.go:190).
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Mutation-verified twice: deleting {"-forget", forgetting} reddens the dispatched-not-listed branch by name, and hiding the `if forgetting {` shape from the parser reddens the count branch (5 found vs 6 declared). Both floors now derive from the other side.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Issue 48's Plan section now explains the plan lands with its own branch and cites BR-12; the cited guards exist at repo_guard_test.go:1306/:1271 and do walk every plan. The deleted content stays recoverable at c208cf9, an ancestor of HEAD.
+findings:
+  - id: new
+    severity: Important
+    family: docs-restate-unverified-output
+    title: |
+      atlas/define.md records the time.Time keying premise that fee2e1a replaced, and the target's own sweep checklist was not run for that window
+    detail: |
+      This is the 2nd finding in family docs-restate-unverified-output, so the deliverable is
+      the class rather than the site. The rule is already written down and was not applied:
+      workshop/targets/derived-restatement.md carries a sweep checklist for every close, and
+      fee2e1a skipped the "atlas/ — surface, flow, terminology, and the premises it records",
+      "the plan — a ## Revisions entry", and "the doc comment on every symbol the diff
+      reshaped" rows. atlas/define.md:2643 says the day map "is keyed in the LEARNER's zone,
+      because time.Time equality includes the location pointer" — stats.go:132 keys by
+      civilDayOf(), a struct of three ints in which the location pointer cannot participate
+      in equality at all, and civilDay appears nowhere in atlas/, the plan or the README.
+      Measured prevalence for this one window: six sites — atlas premise, README date (BR-5),
+      plan rows 55-56, plan Task 2 Steps 3/5, no plan Revisions entry, five new pure symbols
+      in no entity row. Fix the sweep, not the sentence; and note that issue 8's frontmatter
+      carries no `target: derived-restatement` reference despite four findings in the family.
+  - id: new
+    severity: Minor
+    family: duplicated-read-path
+    title: |
+      formLabel is a byte-for-byte copy of store.oneLine under a comment asserting the equivalence, with nothing pinning it
+    detail: |
+      This is the 2nd finding in family duplicated-read-path, so state the rule rather than
+      patching the site: when a comment says a behaviour is shared with X, the next line
+      should be the call to X. cmd/define/stats.go:190-202 reproduces store/item.go:200-208
+      exactly (unicode.IsControl && !unicode.IsSpace, then strings.Fields/Join) and its doc
+      comment says "exactly as store's oneLine drops them". oneLine is unexported, so a
+      hardening of the neutralisation rule — the ARCH-SECURE rule for hand-edited text
+      reaching a terminal, per 12 BR-15 — would harden one copy and silently leave the other.
+      Prevalence measured at 2: grep unicode.IsControl finds exactly these two copies of the
+      idiom. Export it from store, or pin the equivalence with a shared table.
+```
