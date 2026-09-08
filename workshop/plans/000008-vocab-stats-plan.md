@@ -274,7 +274,7 @@ func TestStreaksAcrossDSTBoundaries(t *testing.T)
 
 // A timezone whose offset is not a whole hour, because a fold using Duration
 // arithmetic passes every whole-hour test and fails here.
-func TestStreaksInAHalfHourOffsetZone(t *testing.T)
+func TestStreaksInFractionalOffsetZones(t *testing.T)
 ```
 
 - [ ] **Step 2: Run them, watch them fail.**
@@ -398,7 +398,7 @@ BR-17 forced: a hand-listed set of fields is half a guard.
 
 1. `go test ./...`, `go vet` under default, `pty` and `conformance` tags, `gofmt -l` clean.
 2. `TestKnownCountsTheDeckNotTheLog` — the asymmetry that shapes the signature.
-3. `TestStreaksAcrossDSTBoundaries` + `TestStreaksInAHalfHourOffsetZone` — the
+3. `TestStreaksAcrossDSTBoundaries` + `TestStreaksInFractionalOffsetZones` — the
    Done-when's timezone row, mutation-swept against a Duration implementation.
 4. `TestAFlaggedQuestionIsNotAnAttempt` — bad material cannot lower a score.
 5. `TestStatsOnAnEmptyDeckSaysSoRatherThanPrintingZeros` — the Done-when's empty row.

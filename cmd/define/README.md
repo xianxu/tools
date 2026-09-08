@@ -391,6 +391,37 @@ follow-up like `give me two more examples` resolves against the answer before it
 Nothing is remembered between runs except the files, which means a fresh process
 answers as well as a long-running one and you can read the context with `cat`.
 
+## Is any of this working
+
+**`define --stats`** answers that in one screen: how many words you hold, how
+many have stopped needing attention, how many days you have actually used it,
+your current streak, how fast you are adding words, and how you do on each kind
+of question.
+
+```
+  words            41
+  mastered         17
+  active days      23
+  streak           5 days (longest 12)
+  words/day        3.7
+  since            3 January
+
+  cloze             78%  (14 of 18)
+  meaning           91%  (31 of 34)
+```
+
+**Every figure is folded out of the event log when you ask** — nothing is stored
+and nothing is counted twice, which is the second reason that log is
+append-only. A number that is merely wrong looks exactly like a number that is
+right, so there is no counter here to drift.
+
+Two things the figures deliberately do NOT do. **A question you flagged as broken
+is not an attempt** — bad material cannot lower your accuracy. And **your streak
+does not require today**: it counts back from the last day you missed, so
+reviewing yesterday and reading this at breakfast leaves it intact.
+
+An empty deck says so rather than printing a screen of zeroes.
+
 ## The learner model
 
 **`define --reflect` writes down who it thinks you are.** It reads your deck and
@@ -487,8 +518,8 @@ scale is right.
 and exits `1`. If the model becomes unavailable mid-run, everything already
 banded is saved and only the harvesting stops.
 
-**One mode at a time.** `-harvest`, `--play`, `--reflect`, `-forget` and
-`--llm-check` are modes, and asking for two on one line is a usage error (exit
+**One mode at a time.** `-harvest`, `--play`, `--reflect`, `--stats`, `-forget`
+and `--llm-check` are modes, and asking for two on one line is a usage error (exit
 `2`) rather than a guess at which you meant. Previously whichever dispatched
 first silently won.
 

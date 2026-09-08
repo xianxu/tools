@@ -2626,6 +2626,21 @@ with no row there draws an underline that does nothing, which
   narrow: a question never marks its own SUBJECT (that would answer it), and
   clicks are not subject to the rule at all, since a click costs nothing when it
   is everywhere while colour degrades.
+- **`--stats` is a FOLD, not a set of counters (`#8`).** `schedule.Summarise`
+  takes the log, the deck and `now`, and returns every figure the screen shows;
+  `renderStats` turns that into lines. Nothing is stored, which is `#3`'s second
+  reason for an append-only log.
+
+  Three decisions carry the design. **The deck and the log answer different
+  questions**: `Known`/`Mastered` come from the deck, because `--forget` leaves
+  events behind and a log-only count would report deleted words, while
+  `AddedPerDay` comes from the log, because a forgotten word was still added
+  that day. **Mastery is `schedule.Mastered`'s answer**, never a box comparison
+  written twice — its own doc names this as the second consumer. And **`now` is a
+  parameter rather than an injected clock**, so every timezone and DST case is a
+  table row; the day map is keyed in the LEARNER's zone, because `time.Time`
+  equality includes the location pointer and a log routinely holds mixed offsets.
+
 - **`RegionWord` — a deck word, wherever it is written (`#46`).** The registry's
   third kind, and the first produced for a PROMPT rather than for a rendered
   entry. It is distinct from `RegionHeadword` by provenance, not behaviour: a

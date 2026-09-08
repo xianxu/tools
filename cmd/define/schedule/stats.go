@@ -29,6 +29,12 @@ type Stats struct {
 	CurrentStreak int
 	// LongestStreak is the longest run of consecutive active days ever.
 	LongestStreak int
+	// Added is how many words the log records being looked up for the first
+	// time. It exists so the renderer can tell "none recorded" from "genuinely
+	// slow" — a deck whose words arrived before the log did, or was seeded by
+	// hand, has words but no adds, and a rate of 0.0 beside a deck of 41 reads
+	// as a bug rather than as the absence it is.
+	Added int
 	// AddedPerDay is words added per active day — over the window the learner
 	// has actually been using this, not since the epoch. An average diluted by
 	// dormant months answers a question nobody asked.
@@ -145,6 +151,7 @@ func Summarise(events []store.ReviewEvent, deck []store.Word, now time.Time) Sta
 		}
 	}
 
+	s.Added = added
 	s.ActiveDays = len(days)
 	s.CurrentStreak, s.LongestStreak = streaks(days, now)
 	if s.ActiveDays > 0 {

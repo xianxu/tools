@@ -444,6 +444,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// help text is printed before any language is resolved.
 	reflect := fs.Bool("reflect", false, "read the deck and write the learner model")
 	playFlag := fs.Bool("play", false, "review the words due today")
+	statsFlag := fs.Bool("stats", false, "show deck, streak and accuracy figures")
 	harvest := fs.Bool("harvest", false, "band the deck ahead of time: a CEFR level and a domain per word")
 	harvestLimitFlag := fs.Int("limit", 0, "model calls one --harvest run may make, across banding and authoring (0 = the default cap)")
 	agreementFlag := fs.Int("agreement", 0, "measure banding STABILITY over N assignments and write nothing (0 with the flag set = the default rounds)")
@@ -605,6 +606,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		{"-play", *playFlag},
 		{"-reflect", *reflect},
 		{"-harvest", *harvest},
+		{"-stats", *statsFlag},
 	}
 	if a, b, clash := modeCollision(modes); clash {
 		// Two modes on one line is two commands on one line, exactly as -forget
@@ -659,6 +661,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// A mode plus a word is two commands on one line, and silently honouring
 		// one of them is how -raw came to mean two things in #2.
 		fmt.Fprintln(stderr, "define: --reflect reads the deck; do not also pass a word")
+		return 2
+	case *statsFlag && fs.NArg() != 0:
+		// Same rule as --reflect and --play: a mode plus a word is two commands
+		// on one line. --stats reads everything and takes no subject, so a word
+		// beside it can only be a misread intent.
+		fmt.Fprintln(stderr, "define: --stats reads the whole log; do not also pass a word")
 		return 2
 	case *playFlag && fs.NArg() != 0:
 		// Same rule, and --play needed it MORE than --reflect does: it writes
@@ -720,6 +728,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	}
 	if *reflect {
 		return runReflect(ctx, d, opt, stdout, stderr)
+	}
+	// Beside --reflect for the same reason (#17 D5): --stats needs the deck and
+	// the clock, both of which withStore built above.
+	if *statsFlag {
+		return runStats(ctx, d, opt, stdout, stderr)
 	}
 	// Beside --reflect and --forget rather than beside --llm-check: --harvest
 	// needs the deck, the dictionary and the clock, so it belongs after
