@@ -602,6 +602,9 @@ type liveScreen struct {
 	// or a farewell newline written after restore would draw a frame onto the
 	// NORMAL screen, over whatever the user was looking at before define ran.
 	stopped bool
+	// suspended is set while ANOTHER screen owns the terminal — see suspend.
+	// Separate from stopped because it is reversible and stopped is not.
+	suspended bool
 	// painted is when the last frame went out, and pending says a write has
 	// happened since. Together they THROTTLE the repaint (#30 M1.4/BR-16): the
 	// ask path writes once per streamed delta, and a frame per delta is a
@@ -851,6 +854,60 @@ func (l *liveScreen) Stop() {
 	l.stopped = true
 }
 
+// suspend stops this screen PAINTING without ending its life, so another screen
+// can own the terminal for a while (#48's /play).
+//
+// Stop is not this. Stop is terminal — it flushes what the throttle held, kills
+// the timer and refuses forever — which is right for a session that is over and
+// wrong for one that is waiting. A sitting entered from the REPL needs the
+// editor's screen to go quiet and then come back with its buffer and viewport
+// intact.
+//
+// IT DOES NOT FLUSH. The pending frame belongs to THIS screen, and painting it
+// now would put the editor's last line on top of the sitting's first. `pending`
+// is kept so resume can paint it.
+//
+// The timer is disarmed as HYGIENE, not as the guard — and the distinction is
+// worth writing down because the first version of this comment claimed the
+// opposite. A timer that fires while suspended calls flush, which calls repaint,
+// which returns at the gate above; the mutation sweep proved it, by removing
+// this block and watching nothing redden. What it buys is a wakeup not taken and
+// a timer not left pointing at a screen nobody is painting — real, small, and
+// not the reason the frame stays off the terminal.
+//
+// Idempotent, so a caller cannot suspend twice and resume once.
+func (l *liveScreen) suspend() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.suspended {
+		return
+	}
+	l.suspended = true
+	if l.timer != nil {
+		l.timer.Stop()
+		l.timer = nil
+	}
+}
+
+// resume gives the terminal back to this screen and paints immediately.
+//
+// UNCONDITIONALLY, not `if pending`: whatever ran while this screen was quiet has
+// overwritten every cell, so the last frame is no longer on screen whether or not
+// this screen thinks it has changes. That is the clause that distinguishes resume
+// from clearing a flag, and a test without it passes on a Stop in disguise.
+//
+// A resize that arrived meanwhile is already in rows/cols — the loop sets them —
+// so this paints at the new shape rather than the old one.
+func (l *liveScreen) resume() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.suspended {
+		return
+	}
+	l.suspended = false
+	l.repaint()
+}
+
 // Transcript is the buffer, for printing back into the normal buffer on exit.
 func (l *liveScreen) Transcript() string {
 	l.mu.Lock()
@@ -859,7 +916,10 @@ func (l *liveScreen) Transcript() string {
 }
 
 func (l *liveScreen) repaint() {
-	if l.stopped || l.tty == nil {
+	// ONE PLACE decides whether a frame may go out, and both flags live here.
+	// repaint is the only thing that writes to the tty, so a second gate
+	// elsewhere would be a second answer to "may I paint" (#48).
+	if l.stopped || l.suspended || l.tty == nil {
 		return
 	}
 	l.s.Paint(l.tty, l.rows, l.cols, l.prompt, l.footer)
