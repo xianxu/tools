@@ -97,6 +97,14 @@ func (failingStore) SetWordFacts(string, store.WordFacts) error { return errFail
 func (failingStore) Items(string) ([]store.Item, error)         { return nil, errFail }
 func (failingStore) SetItems(string, []store.Item) error        { return errFail }
 
+// A store that fails EVERY read, audio included — so the "playback survives an
+// unusable cache" property is driven against a store that errors rather than one
+// that is merely absent.
+func (failingStore) Audio(store.AudioKey) ([]byte, store.AudioRecord, error) {
+	return nil, store.AudioRecord{}, errFail
+}
+func (failingStore) SetAudio(store.AudioKey, []byte, store.AudioRecord) error { return errFail }
+
 var errFail = &failErr{}
 
 type failErr struct{}

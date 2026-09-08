@@ -201,7 +201,7 @@ test can. As a board closes it leaves one line naming the words you marked no.
 | `1`–`4` | multiple choice: pick the definition, or on a cloze pick the word |
 | `?` | on a cloze: bad question — records it with the options you were shown, and moves on without marking you wrong |
 | `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
-| click | board: mark that word. Anywhere else in a sitting, a click plays the word rather than answering |
+| click | board: mark that word. Anywhere else, a click plays the word — the headword, a language named in the ORIGIN, or any word already in your deck, wherever it appears |
 | Tab | board: cycle what a mark means — yes, no, then drop |
 | Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
 | space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
@@ -320,6 +320,24 @@ looked up in this session turns green the moment you next see it.
 Definition headwords and labels stay their own colour; the highlight marks
 vocabulary in prose, which is where noticing a word you know actually tells you
 something.
+
+**Green is for prose, and it stops where the text IS your deck.** A cloze
+question offers four words all drawn from your deck, so colouring them would mark
+everything and tell you nothing; the same is true of a board, where every cell is
+a word you are learning. Those stay plain. A multiple-choice question's options
+are definitions — prose — so a word you know shows up there, which is usually the
+most useful thing on the screen.
+
+**And the word you are being asked about is never green**, whichever form asks
+it. Marking it would tell you "you have looked this up before" while asking
+whether you know it — which is the answer, not a hint. Once the answer is on
+screen the rule lifts: the reveal marks it like any other word you know.
+
+**Clicking is not subject to that rule.** Every deck word is clickable wherever
+it appears, coloured or not, and plays its own recording — including a cloze's
+four options, which are the words you most want to hear before choosing between
+them. Turning colour off with `-no-color` does not take the click targets with
+it.
 
 ### Completion
 
@@ -496,9 +514,23 @@ events/2026-08-21.yaml     append-only, one file per day (named in UTC)
                            broken: it carries options: — every word you were
                            shown — and no correct:, because it is not evidence
                            about you and moves nothing
+usage/sycophantic.yaml     the news cache: recent headlines using the word,
+                           and WHEN they were fetched. Per word and FLAT, so it
+                           is shared across languages — forgetting a word in one
+                           clears it for the other, which costs a refetch rather
+                           than lost work
 facts/en/sycophantic.yaml  a word's CEFR band and domain, written by
                            --harvest and never re-asked; per language, because
                            `red` is a different word in English and Spanish
+audio/sycophantic/51f6….mp3 the recorded pronunciation, kept so a replay
+                           costs no network — and a `.yaml` beside it naming
+                           the URL that answered. A DIRECTORY per word, one
+                           file per voice inside it. Flat, not per language:
+                           the filename's digest already says which voice a
+                           recording is for, so a language shelf would be a
+                           second answer to the same question. A word the CDN
+                           has no recording for gets a record saying so,
+                           believed for thirty days
 items/en/sycophantic.yaml  practice items authored ahead of time by
                            --harvest, per language: a sentence with its answer
                            and the words vetoed to sit beside it. This is what
@@ -509,6 +541,17 @@ user-model.en.md           written by --reflect, read to pitch answers; one per
                            deck. Its ## Corrections section is yours and is
                            never rewritten
 ```
+
+**Look at any of it, and edit it if you like.** Everything above is plain YAML
+beside one plain-text file and the cached recordings — no database, no index to
+keep in step. Deleting a word's file forgets it; correcting a band in `facts/`
+is read back on the next sitting; the `## Corrections` section of the learner
+model is yours and is never rewritten.
+
+The program treats what it reads back as UNTRUSTED, which is what makes that
+safe rather than merely possible: a hand-edited file cannot forge a row in a
+grid, an escape sequence in a stem cannot reach the terminal, and a recording
+truncated to nothing is re-fetched instead of played as silence.
 
 ## Languages
 

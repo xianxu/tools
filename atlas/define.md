@@ -610,7 +610,14 @@ words/<lang>/<slug>.yaml one file per word, under its language
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
                          kinds: looked-up, asked, reviewed, flagged
 usage/<slug>.yaml        the news cache — per word and FLAT, so it is shared
-                         across languages (see Forget's two axes)
+                         across languages (see Forget's three axes)
+audio/<slug>/<digest>.mp3  a cached recording, with a <digest>.yaml record
+                         beside it naming the URL that answered. Per word, FLAT,
+                         and MANY (#46): the digest over the candidate list is
+                         what distinguishes one voice from another, so the shelf
+                         carries no language, and a word owns a DIRECTORY so
+                         Forget removes a tree by exact name. The first BINARY
+                         artifact in a working directory
 facts/<lang>/<slug>.yaml a word's CEFR band and domain (#10)
 items/<lang>/<slug>.yaml authored practice items (#10), what a cloze is built from
 lang.txt                 the directory's language (#23)
@@ -1761,9 +1768,21 @@ Return during playback is echoed by the driver, moves the cursor down, and the
 post-playback erase then clears the echoed line instead of the indicator —
 stranding `♫ playing N×` on screen. So "the view never scrolls" holds for a user
 who waits, not unconditionally. Raw mode removes the assumption entirely by not
-echoing at all, which is `#14`'s job. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
-*inside* `repl`, so the production and test wiring are the same line and
-`fakeCDN.Requested()` is the assertion.
+echoing at all, which is `#14`'s job. Replay costs no network, and after `#46`
+that is a property of the TYPE rather than of a habit: `deps.audio` is a
+`*audioSeam` — the source and its memo as one value, a pointer so every copy of
+`deps` shares it. There is no unwrapped source to hold, so no loop can forget to
+wrap one, which is what `runPlay` had been doing since it was written.
+`fakeCDN.Requested()` is still the assertion.
+
+Beneath it sits `diskAudioCache`, which puts the recording in the working
+directory: memo → disk → network, so a repeat within a sitting never touches the
+filesystem and a repeat across sittings never touches the network. A recording is
+keyed by the CANDIDATE LIST, not the word — `-locale gb` and `-locale us` are
+different recordings — and filed under the word so `Forget` takes every voice of
+it. A word with no recording is asked once and the verdict expires after thirty
+days, because the CDN gains recordings and the rare words a learner most wants
+are the likeliest to gain one.
 
 `main` wraps the context in `signal.NotifyContext`, which changed the one-shot
 path too: Ctrl-C during playback now cancels `afplay` through
@@ -2581,6 +2600,40 @@ with no row there draws an underline that does nothing, which
 `TestEveryRegionKindIsActionable` catches by deriving its loop from
 `numRegionKinds`.
 
+- **One span walk feeds both the colour and the click (`#46` M2).** Three layers,
+  and the boundaries are the point. The MATCHER (`wordRuns` + `highlightSpans`)
+  answers "which byte ranges of this text are deck words", longest phrase
+  winning, with no ANSI and no coordinates — the only layer that would travel to
+  another program, and the one this milestone deliberately did not touch. The
+  LOCATOR (`deckSpans`) answers where those ranges are ON SCREEN, running the
+  matcher over `visibleIndex`'s plain text and mapping back through the column
+  table, so it works on text `Render` has already coloured. The CONSUMERS are a
+  loop each. Before this, colour and clicks were found by two separate walks
+  covering different surfaces, which is why colour reached a rendered entry and
+  clicks reached its headword and neither reached a form's own option lines.
+- **`writeWords` is the one door**, and `writePrompt` is the one caller that
+  derives everything from a question. Both exist because the same failure kept
+  recurring: a guarantee proved at a seam and unproven at the site obliged to
+  obey it. `writeWords` takes the `deps` rather than a vocabulary (a guard over
+  an argument can only check its source token, and `vocabularyFor` — colour-
+  conditioned — was a plausible wrong value); `writePrompt` takes the question
+  rather than four values derived from it.
+- **Colour is a property of the SURFACE, not a flag on a form.** It marks a deck
+  word inside PROSE, where finding one is a discovery; where the text IS the deck
+  — a cloze's four options, a board's cells — it marks everything and
+  distinguishes nothing. `surfaceOf` switches on `Form()`, and its extent is
+  `docSyncForms`, so a new form cannot arrive unclassified. Two exceptions, both
+  narrow: a question never marks its own SUBJECT (that would answer it), and
+  clicks are not subject to the rule at all, since a click costs nothing when it
+  is everywhere while colour degrades.
+- **`RegionWord` — a deck word, wherever it is written (`#46`).** The registry's
+  third kind, and the first produced for a PROMPT rather than for a rendered
+  entry. It is distinct from `RegionHeadword` by provenance, not behaviour: a
+  headword region carries the entry's lookup key, which can differ from the text
+  under it (`define jalapeno` renders `jalapeño`), where a deck word is matched
+  and played by its own text. Its spans come from `deckSpans`, which is the same
+  walk that decides colour — one producer, two consumers, so a click and a
+  highlight cannot disagree about where a word is.
 - **A prompt region is issued only when its claim is TRUE (`promptRegions`).**
   This was once "the prompt word is line 1, column 0", justified by "both forms
   put the headword on their first line" — a premise `#12`'s cloze broke, which

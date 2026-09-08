@@ -20,8 +20,11 @@ import (
 // driven end-to-end by fakes (ARCH-PURE): main() supplies the real ones, tests
 // supply recorders.
 type deps struct {
-	dict   Dictionary
-	audio  AudioSource
+	dict Dictionary
+	// audio is the seam AND its memo. A *audioSeam rather than an AudioSource so
+	// there is no unwrapped source to hold: the type is what guarantees a caller
+	// cannot reach the network twice for one key, however it obtained its deps.
+	audio  *audioSeam
 	player Player
 	// history is the durable word history. Constructed at the boundary so the
 	// loop takes a seam rather than deciding where state lives. NOT in langDeps:
@@ -95,7 +98,7 @@ type deps struct {
 func realDeps() deps {
 	return deps{
 		newDict:         systemDictionary, // dict itself is language-dependent, built in run()
-		audio:           newHTTPAudioSource(),
+		audio:           newAudioSeam(newHTTPAudioSource()),
 		player:          afplayPlayer{},
 		newStore:        openStore,
 		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },
@@ -172,6 +175,19 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	}
 	if d.deck == nil {
 		d.deck = sd.deck
+	}
+	// THE DISK LAYER GOES BENEATH THE MEMO, here, because here is where the
+	// store first exists. Layering: memo → disk → network, so a repeat within a
+	// sitting never touches the filesystem and a repeat across sittings never
+	// touches the network.
+	//
+	// Rebuilt rather than mutated in place: the seam is shared by every copy of
+	// deps, and installing the disk layer into the running memo would leave
+	// entries fetched before the store opened un-filed.
+	if d.deck != nil && d.audio != nil && d.audio.inner != nil {
+		if _, already := d.audio.inner.(*diskAudioCache); !already {
+			d.audio = newAudioSeam(newDiskAudioCache(d.deck, d.audio.inner))
+		}
 	}
 	// nil is the ONE representation of "nothing to highlight" — no second
 	// empty-set stand-in. highlightSpans is where that nil is interpreted; the
@@ -858,7 +874,13 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	rendered, regions := Render(ParseEntry(text), RenderOpts{
 		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt), Word: word,
 	})
-	writeRendered(stdout, rendered, regions)
+	// EVERY DECK WORD IN THE DEFINITION IS CLICKABLE TOO. Render already coloured
+	// them — with its own per-region base styles, which is why `already` is the
+	// whole output and this pass adds no colour of its own — but until #46 a
+	// click only reached the headword and the ORIGIN languages.
+	// No subject: a lookup ANSWERS about its word rather than asking, and
+	// Render has already coloured the entry anyway.
+	writeWords(stdout, rendered, regions, d, opt, surfaceProse, "", rendered)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: opt.playsAudio(), entry: text}
 }
@@ -884,6 +906,64 @@ func writeRendered(w io.Writer, text string, rs []Region) {
 		return
 	}
 	fmt.Fprint(w, text)
+}
+
+// writeWords is writeRendered with the DECK WALK applied: every deck word in the
+// text becomes clickable, and — where the surface admits it — coloured.
+//
+// THE ONE DOOR, so a click and a highlight cannot disagree about where a word is.
+// Both derive from `deckSpans` over the same string at the same moment; the
+// alternative is what this replaces, two independent walks covering different
+// surfaces.
+//
+// IT DERIVES THE VOCABULARY ITSELF rather than taking one, and that is the fix
+// for a class rather than a style choice. The first version took a `Vocabulary`
+// argument, and the guard over the call sites could only check the ARGUMENT'S
+// SOURCE TOKEN — so passing `nil` reddened it while passing `vocabularyFor(d,
+// opt)` did not, even though that returns nil whenever colour is off and would
+// silently remove every click target on `--no-color`. A parameter with one
+// correct value is a parameter that will eventually be given another.
+//
+// COLOUR AND CLICKS STAY INDEPENDENT, which is why `opt.color` gates only the
+// highlight and never the regions: a click is per-word and costs nothing when it
+// is everywhere; colour is a field the eye reads at once.
+//
+// `already` is the byte range of text that `Render` produced and has therefore
+// ALREADY COLOURED. It is located rather than assumed — a form's reveal embeds a
+// rendered entry, and Render colours with a per-region BASE style (amber
+// part-of-speech labels, the example style) that a flat pass here could not
+// reproduce, because ANSI does not nest. Regions are still produced across the
+// whole text; only the colour pass stops at that boundary.
+func writeWords(w io.Writer, text string, rs []Region, d deps, opt options, sf surface, subject, already string) {
+	// The SUBJECT is held out of the colour pass but not out of the click map: a
+	// learner may still want to hear the word they are being asked about.
+	v := deckVocabulary(d)
+	rs = mergeRegions(rs, wordRegions(text, v))
+	if v != nil && opt.color && sf.admitsColour() {
+		text = colourOutside(text, already, withoutWord(v, subject))
+	}
+	writeRendered(w, text, rs)
+}
+
+// colourOutside highlights the deck words in text, skipping a span that is
+// already highlighted.
+//
+// Located with strings.Index, the way marksIn locates the same render: a formula
+// for "where does the entry start" would be a second copy of a form's layout,
+// which is exactly what #12 BR-14 was about.
+func colourOutside(text, already string, v Vocabulary) string {
+	if already == "" {
+		return highlightRegion(text, v, knownOn, "")
+	}
+	at := strings.Index(text, already)
+	if at < 0 {
+		// The render is not in what is being written. Colour nothing rather than
+		// colouring an entry twice: nested ANSI is the failure that renders fine
+		// and reads wrong.
+		return text
+	}
+	return highlightRegion(text[:at], v, knownOn, "") + already +
+		highlightRegion(text[at+len(already):], v, knownOn, "")
 }
 
 // defaultIndicator is the ephemeral form on a terminal, the record form on a pipe.
@@ -1056,7 +1136,7 @@ func utteranceFor(word, entry string, pron store.Lang, opt options) utterance {
 // what lets the caller report which voice was heard from what actually happened
 // rather than from what was requested (#29).
 func speak(ctx context.Context, d deps, u utterance, n int) (from string, err error) {
-	data, from, err := d.audio.Fetch(ctx, u.Candidates())
+	data, from, err := d.audio.FetchFor(ctx, u.Word, u.Candidates())
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", u.Word, err)
 	}

@@ -70,13 +70,13 @@ handed the wrong thing.
 |------|----------|--------|
 | `deckSpan` | `cmd/define/deckwords.go` | new |
 | `deckSpans` | `cmd/define/deckwords.go` | new |
+| `mergeRegions` | `cmd/define/deckwords.go` | new |
 | `wordRegions` | `cmd/define/deckwords.go` | new |
 | `RegionWord` | `cmd/define/render.go` | new |
 | `surface` | `cmd/define/deckwords.go` | new |
-| `audioKey` | `cmd/define/store/audio.go` | new |
-| `audioRecord` | `cmd/define/store/audio.go` | new |
+| `AudioKey` | `cmd/define/store/audio.go` | new |
+| `AudioRecord` | `cmd/define/store/audio.go` | new |
 | `perWordDir` | `cmd/define/store/yaml.go` | modified |
-| `RenderOpts` | `cmd/define/render.go` | modified |
 
 - **`deckSpan`** — one deck word located in RENDERED text: `{Line, Col, Width,
   Word, Text}`. Coordinates are display cells and line indices, the units
@@ -138,7 +138,7 @@ handed the wrong thing.
     `TestEveryFormIsEnrolled`'s AST walk already guarantees a new form cannot
     arrive unclassified.
 
-- **`audioKey`** — the identity of one cached recording, and **it is the SEAM's
+- **`AudioKey`** — the identity of one cached recording, and **it is the SEAM's
   key, not the word** (PQ-1).
   - **THE FINDING THAT RESHAPED M1.** The first draft keyed on
     `audio/<lang>/<slug>`, justified by "AudioCandidates keys on the voice's Lang
@@ -160,7 +160,7 @@ handed the wrong thing.
     actually built, never by parsing the URL". A key rebuilt from `voice` fields
     would be a second, driftable statement of what identifies a recording.
 
-- **`audioRecord`** — what is stored beside the bytes: `from`, the day, and
+- **`AudioRecord`** — what is stored beside the bytes: `from`, the day, and
   whether the verdict was "no recording".
   - **`from` IS LOAD-BEARING AND THE FIRST DRAFT DROPPED IT** (PQ-1). `Fetch`
     returns `([]byte, from string, error)`, and `from` is not decoration:
@@ -204,11 +204,14 @@ handed the wrong thing.
   shape, which this bullet deliberately does not restate. `Forget` globs the
   word's prefix and removes the set.
 
-- **`RenderOpts`** *(modified)* — no field changes; `Vocab` STAYS. `Render` keeps
-  colouring the entry itself, because it colours with a per-region BASE style
-  (amber part-of-speech labels, the `p.ex` example style) and ANSI does not nest
-  — a flat pass at the write door cannot reproduce those resume rules. What
-  changes is that the write door now colours the text OUTSIDE the render.
+**`RenderOpts` is UNCHANGED, and that is a decision rather than an omission.**
+`Render` keeps colouring the entry itself, because it colours with a per-region
+BASE style (amber part-of-speech labels, the `p.ex` example style) and ANSI does
+not nest — a flat pass at the write door cannot reproduce those resume rules. So
+the write door colours the text OUTSIDE the render instead, locating the boundary
+rather than assuming it. The first draft listed this type as `modified`, which
+`TestPlanTableStatusMatchesTheChangeWindow` correctly called work that did not
+happen.
 
 **Test surface.** Every entity above is PURE and gets a colocated unit test that
 runs with no IO and no fake: `deckwords_test.go`, `store/audio_test.go`. The one
@@ -220,15 +223,15 @@ exception is `perWordDir`, whose test is the existing
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `diskAudioCache` | `cmd/define/audiodisk.go` | new | the working directory |
-| `cachingAudioSource` | `cmd/define/fetch.go` | modified | an `AudioSource` |
+| `audioSeam` | `cmd/define/fetch.go` | new | an `AudioSource`, with its memo |
 | `audioDir` | `cmd/define/store/yaml.go` | new | the filesystem |
-| `writeRendered` | `cmd/define/main.go` | modified | stdout + the click map |
+| `writeWords` | `cmd/define/main.go` | new | stdout + the click map |
 
 - **`diskAudioCache`** — an `AudioSource` decorator that reads and writes
   recordings under the store's directory.
   - **Injected into:** nothing pure; it is the outermost decorator on
     `deps.audio`, so every existing consumer is unchanged.
-  - **A DECORATOR, LIKE ITS SIBLING.** `cachingAudioSource`'s doc comment records
+  - **A DECORATOR, LIKE ITS SIBLING.** The memo's own doc comment records
     why the memo is a decorator rather than a map inside the REPL loop: "the
     existing `fakeCDN` request recorder is the assertion that a replay costs no
     second request — no bespoke test scaffolding". That argument carries over
@@ -239,20 +242,26 @@ exception is `perWordDir`, whose test is the existing
     dictionary it sits beside. Recorded as a number rather than omitted, so the
     decision is reviewable.
 
-- **`cachingAudioSource`** *(modified)* — unchanged behaviour; what changes is
-  that it is constructed ONCE.
-  - **THE BUG IS THAT WRAPPING IS REMEMBERED.** `repl.go:257` and
-    `replraw.go:264` each wrap; `runPlay` does not, so the one loop that replays
-    the same handful of words is the one with no cache. Fixing `runPlay` fixes
-    the site; making the source impossible to obtain unwrapped fixes the class.
-  - **Injected into:** `deps.audio`, in `realDeps()`.
+- **`audioSeam`** — the source and its memo as one value, replacing the
+  decorator this issue removed.
+  - **THE BUG WAS THAT WRAPPING WAS REMEMBERED.** `replLines` and `runEditor`
+    each wrapped; `runPlay` did not, so the one loop that replays the same
+    handful of words was the one with no cache. Fixing `runPlay` fixes the site.
+    Making the source impossible to obtain unwrapped fixes the class — and four
+    plan-gate rounds established that no predicate over functions can do it.
+  - **Injected into:** `deps.audio`, whose TYPE is now `*audioSeam`. A pointer,
+    so every by-value copy of `deps` shares one memo.
 
 - **`audioDir`** — the per-language audio directory, appended to `RuntimeDirs`
   AT THE TAIL (the file's own positional-index rule).
 
-- **`writeRendered`** *(modified)* — the one door for text that reaches the
-  sitting's scrollback, so it is where the span walk lands. It gains the
-  vocabulary and the surface.
+- **`writeWords`** — the one door for text that reaches the sitting's scrollback
+  with the deck walk applied. It takes the vocabulary and the surface.
+  - **NEW, beside `writeRendered` rather than replacing it.** The plain door
+    still serves callers with nothing to mark, and keeping them separate means
+    the walk is opted into at a site rather than imposed on every write — which
+    is what let the lookup path keep `Render`'s own per-region colouring
+    untouched.
 
 **Test surface for integration points.** `fakeCDN` (existing, wire-level) plus a
 real `t.TempDir()` store. No function-call mocks: a request recorder is what
@@ -302,7 +311,7 @@ uncached source: `#2` I-1 again, which PQ-3 already rejected once.
 `run()`'s callees, `replRaw`, and then "~8 functions" — which the gate measured
 and found three times larger. The fourth is the decisive one: it was made while
 ARGUING that the predicate should be generous, and still got the size wrong. Step
-4 would have written `d.audio = newCachingAudioSource(d.audio)` into most of
+4 would have written the wrap line into most of
 those functions, which never read `d.audio` at all (`vocabularyFor`, `clozeAsk`, `todaysQuestions`,
 `newCommandCtx`, `playRegion`, `submitLine`, …), contradicting this plan's own
 Architecture line — *one construction site* — and leaving a guard that checks a
@@ -338,7 +347,7 @@ type audioSeam struct {
 }
 ```
 
-- [ ] **Step 1: Change the field's TYPE, and let the compiler find the sites**
+- [x] **Step 1: Change the field's TYPE, and let the compiler find the sites**
 
 `deps.audio` becomes `*audioSeam`. Build the package and the tests: every site
 that assigns an `AudioSource` is now a compile error, and that list is the
@@ -349,18 +358,18 @@ Expected: errors at `realDeps` and at every test literal. **Do not count them in
 prose.** Paste the compiler's list into the Log; a number written by hand here
 would be the fifth wrong statement of this set.
 
-- [ ] **Step 2: Give tests one door.** `newAudioSeam(src AudioSource) *audioSeam`,
+- [x] **Step 2: Give tests one door.** `newAudioSeam(src AudioSource) *audioSeam`,
       and a test helper for the silent source that `noAudioSource{}` served.
       Mechanical, and the churn is the price of the class: it is paid once, by the
       compiler, instead of every time someone adds an entry point.
 
-- [ ] **Step 3: Delete the wraps.** `repl.go:257` and `replraw.go:264` go, along
-      with `cachingAudioSource` as a decorator — its memo logic moves into
+- [x] **Step 3: Delete the wraps.** `repl.go:257` and `replraw.go:264` go, along
+      with the decorator itself — its memo logic moves into
       `audioSeam` unchanged, including the hits/misses split and the
       `ErrNoAudio`-vs-`ErrFetchFailed` taxonomy, which is the single source of
       what "permanent" means and is not re-decided here.
 
-- [ ] **Step 4: The property, now stated where it is TRUE by construction**
+- [x] **Step 4: The property, now stated where it is TRUE by construction**
 
 ```go
 // There is no unwrapped source to hold. This asserts the shape rather than a
@@ -369,21 +378,37 @@ would be the fifth wrong statement of this set.
 func TestASecondFetchOfOneKeyDoesNotReachTheSource(t *testing.T)
 ```
 
-- [ ] **Step 5: The regression that started M1, at the loop that had it**
+- [x] **Step 5: The regression that started M1, at the loop that had it**
 
 `runPlay` needed no wrap line and never will. Pin the behaviour anyway, because
 the behaviour is what the learner meets and the type is only how it is
 guaranteed.
 
-- [ ] **Step 6: The behavioural pin, at the loop, through the CDN recorder**
+- [x] **Step 6: The behavioural pins — the memo, and the WIRING**
 
 ```go
-// The regression itself, stated where a learner would meet it: a sitting that
-// shows the same word twice fetches it once.
-func TestASittingFetchesARecordingOnce(t *testing.T) { /* fakeCDN + runPlay, two questions on one word */ }
+// One word costs one fetch, however often it is played.
+func TestOneWordCostsOneFetchHoweverOftenItIsPlayed(t *testing.T)
+
+// And something USES it: build deps the way a loop does, run withStore, and
+// require a fetch to reach the disk. The boundary review found that deleting the
+// whole production wiring left the suite green, because every disk test built
+// the layering by hand.
+func TestWithStorePutsTheDiskCacheUnderTheMemo(t *testing.T)
 ```
 
-- [ ] **Step 7: Commit**
+**NOT a test at the loop.** The obvious name would put "a sitting" in it, and it
+would be the wrong test: with `deps.audio` a `*audioSeam` there is no wrap line
+in `runPlay` to forget, so the loop-specific failure mode no longer exists. What
+can still regress is the wiring, and that is what the second row pins.
+
+`runPlay` itself is also awkward to drive — `isTerminal(stdout)` is a real
+syscall with no seam, so the entry point refuses before it reaches a question.
+**`playSession` one level down IS drivable in-process**, so "a sitting cannot be
+tested" would be too broad a claim; what is true is that the thing this row would
+have pinned is no longer a thing that can break.
+
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A && git commit -m "#46 M1: the loop that replays words is the one that never cached them"
@@ -392,7 +417,8 @@ git add -A && git commit -m "#46 M1: the loop that replays words is the one that
 ### Task 2: A durable home for the recording and the verdict
 
 **Files:**
-- Create: `cmd/define/store/audio.go`, `cmd/define/store/audio_test.go`
+- Create: `cmd/define/store/audio.go` (its rows live in `storetest`, which holds
+  both twins — a `store/audio_test.go` would test one)
 - Modify: `cmd/define/store/yaml.go` (`RuntimeDirs`, `audioDir`, `perWordDirs`)
 - Modify: `cmd/define/store/store.go` (the `Store` interface both twins satisfy)
 - Modify: `cmd/define/store/mem.go` (the in-memory twin)
@@ -402,7 +428,7 @@ git add -A && git commit -m "#46 M1: the loop that replays words is the one that
   file list exists to make visible:** `RuntimeDirs` has four consumers, and the
   first draft named two.
 
-- [ ] **Step 1: Append to `RuntimeDirs` and watch the classification guard fail**
+- [x] **Step 1: Append to `RuntimeDirs` and watch the classification guard fail**
 
 ```go
 var RuntimeDirs = []string{"words", "events", "usage", "facts", "items", "audio"}
@@ -415,7 +441,7 @@ is what makes `Forget` take a word's recordings with it rather than leaving them
 for someone to notice (`#10`'s BR-45, where a forgotten word kept the facts and
 items that made it worth forgetting).
 
-- [ ] **Step 2: Classify it, on BOTH axes**
+- [x] **Step 2: Classify it, on BOTH axes**
 
 `{path: y.audioDir(), scoped: true}` — per-word, and language-scoped **the way
 its siblings are**: `audioDir()` scopes on the STORE's language (`y.lang`,
@@ -424,7 +450,7 @@ identity — the identity is `audioKey`, and the first draft's justification her
 ("AudioCandidates keys on the voice's Lang and Locale") was the false sentence
 PQ-1 quoted. Do not restate the key in this step; it is defined once, above.
 
-- [ ] **Step 3: Teach `perWordDir` that a word can own SEVERAL files**
+- [x] **Step 3: Teach `perWordDir` that a word can own SEVERAL files**
 
 One word has one file per voice, plus a blob beside each record — the shape
 `audioKey`/`audioRecord` define and that nothing else in this plan restates.
@@ -432,11 +458,11 @@ One word has one file per voice, plus a blob beside each record — the shape
 everything the word owns. Pin it: forget a word holding two voices' recordings
 AND a stale verdict, and nothing of it survives.
 
-- [ ] **Step 4: The KEY, derived from the seam rather than from the word**
+- [x] **Step 4: The KEY, derived from the seam rather than from the word**
 
 The filename is `<slug>--<digest>` where the digest is over the candidate list
 `Fetch` is actually given — `strings.Join(urls, "\n")`, the very string
-`cachingAudioSource` keys its memo on. Two things fall out and both are the
+the seam keys its memo on. Two things fall out and both are the
 point: `-locale gb` and `-locale us` are different files rather than one wrong
 one, and `Forget` still globs `<slug>--*` because the word is what the file is
 filed under.
@@ -445,7 +471,7 @@ Pin the collision directly, because it is the Critical this task exists to
 avoid: two utterances for the SAME word with different voices must not read each
 other's bytes.
 
-- [ ] **Step 5: The record, carrying `from`, with the TTL as a named constant**
+- [x] **Step 5: The record, carrying `from`, with the TTL as a named constant**
 
 ```go
 // audioVerdictTTL is how long "the CDN has no recording for this" is believed.
@@ -458,7 +484,7 @@ other's bytes.
 const audioVerdictTTL = 30 * 24 * time.Hour
 ```
 
-- [ ] **Step 6: ARCH-ORDER — what happens when the process dies mid-write**
+- [x] **Step 6: ARCH-ORDER — what happens when the process dies mid-write**
 
 M1 is the first DURABLE state this issue adds, and the first BINARY artifact the
 working directory holds, so the ordering is named rather than left to be
@@ -478,13 +504,13 @@ discovered:
 - **not applicable, and why:** no cancellation path (a `Fetch` that returns is
   done), and no ordering between words (each key is independent).
 
-- [ ] **Step 7: Conformance rows in `storetest`, so Mem and YAML are both held**
+- [x] **Step 7: Conformance rows in `storetest`, so Mem and YAML are both held**
 
 Rows: a recording round-trips WITH its `from`; two voices of one word do not
 collide; a verdict round-trips with its date; a verdict older than the TTL reads
 as absent; `Forget` takes every file a word owns, hit and verdict together.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ### Task 3: The disk decorator
 
@@ -492,7 +518,7 @@ as absent; `Forget` takes every file a word owns, hit and verdict together.
 - Create: `cmd/define/audiodisk.go`, `cmd/define/audiodisk_test.go`
 - Modify: `cmd/define/main.go` (wrap when a store exists)
 
-- [ ] **Step 1: Write the failing test, against the real fake CDN and a real temp dir**
+- [x] **Step 1: Write the failing test, against the real fake CDN and a real temp dir**
 
 ```go
 // THE POINT OF THE WHOLE MILESTONE: a second PROCESS pays nothing.
@@ -504,11 +530,11 @@ func TestASecondRunReusesTheRecordingOnDisk(t *testing.T) {
 	// applied where the store is known; the memo is applied at the entry point.
 	// Wiring the test the other way round would make "the line tests exercise is
 	// the line production runs" false in the very task that argues for it.
-	first := newCachingAudioSource(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
+	first := newAudioSeam(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
 	mustFetch(t, first, "sycophantic")
 	// A NEW decorator over a NEW memo — everything in memory is gone, exactly as
 	// it is between two runs of the binary.
-	second := newCachingAudioSource(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
+	second := newAudioSeam(newDiskAudioCache(openStoreIn(t, dir), cdn.source()))
 	mustFetch(t, second, "sycophantic")
 	if got := cdn.requests(); got != 1 {
 		t.Errorf("the CDN saw %d requests across two processes; want 1", got)
@@ -516,20 +542,20 @@ func TestASecondRunReusesTheRecordingOnDisk(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it, watch it fail** (`newDiskAudioCache` undefined).
-- [ ] **Step 3: Implement the decorator.** Read-through on `Fetch`; write the
+- [x] **Step 2: Run it, watch it fail** (`newDiskAudioCache` undefined).
+- [x] **Step 3: Implement the decorator.** Read-through on `Fetch`; write the
       bytes on a hit; write a dated verdict on `ErrNoAudio`; leave
       `ErrFetchFailed` alone, because a transient outage must not be recorded as
-      a permanent absence — the taxonomy `cachingAudioSource` already documents
+      a permanent absence — the taxonomy `fetch.go` already documents
       is the single source of that distinction and this derives from it.
-- [ ] **Step 4: The verdict half of the same test** — an unrecorded word costs
+- [x] **Step 4: The verdict half of the same test** — an unrecorded word costs
       four candidate requests once, and zero on the second process.
-- [ ] **Step 5: Degrade, never fail.** An unwritable directory, a corrupt file, a
+- [x] **Step 5: Degrade, never fail.** An unwritable directory, a corrupt file, a
       store that could not open: the recording still plays, from the network.
       Pin each — a cache that can break playback is worse than no cache.
-- [ ] **Step 6: `--forget` end to end.** Forget a word whose recording is on
+- [x] **Step 6: `--forget` end to end.** Forget a word whose recording is on
       disk; the file is gone.
-- [ ] **Step 7: Commit, then `sdlc milestone-close --issue 46 --milestone M1`.**
+- [x] **Step 7: Commit, then `sdlc milestone-close --issue 46 --milestone M1`.**
 
 ---
 
@@ -540,7 +566,7 @@ func TestASecondRunReusesTheRecordingOnDisk(t *testing.T) {
 **Files:**
 - Create: `cmd/define/deckwords.go`, `cmd/define/deckwords_test.go`
 
-- [ ] **Step 1: Write the failing tests.** The rows that matter are the ones a
+- [x] **Step 1: Write the failing tests.** The rows that matter are the ones a
       naive implementation gets wrong:
 
 ```go
@@ -564,16 +590,16 @@ func TestSpansAreLocatedOnTheirOwnLine(t *testing.T)
 func TestOnlyDeckWordsAreSpanned(t *testing.T)
 ```
 
-- [ ] **Step 2: Run them, watch them fail.**
-- [ ] **Step 3: Implement.** Per line: `plain, cols := visibleIndex(line)`, run
+- [x] **Step 2: Run them, watch them fail.**
+- [x] **Step 3: Implement.** Per line: `plain, cols := visibleIndex(line)`, run
       the EXISTING `highlightSpans(plain, v)`, map each `known` span's byte range
       through `cols`. No new tokeniser, no change to `highlightSpans` — it stays
       the one producer and this is the coordinate layer over it.
-- [ ] **Step 4: Run them, watch them pass.**
-- [ ] **Step 5: Mutation sweep.** Revert the escape-awareness (walk the raw line)
+- [x] **Step 4: Run them, watch them pass.**
+- [x] **Step 5: Mutation sweep.** Revert the escape-awareness (walk the raw line)
       and confirm `TestASpanWalkSkipsEscapeSequences` reddens by name. *A pin
       that cannot fail is not a pin.*
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ### Task 5: `RegionWord`, and the invariant it must satisfy
 
@@ -583,23 +609,23 @@ func TestOnlyDeckWordsAreSpanned(t *testing.T)
 - Modify: `atlas/define.md`
 - Test: `cmd/define/editorloop_test.go`, `cmd/define/deckwords_test.go`
 
-- [ ] **Step 1: Declare the kind above `numRegionKinds`** and run the suite
+- [x] **Step 1: Declare the kind above `numRegionKinds`** and run the suite
       WITHOUT touching anything else.
       Expected: `TestEveryRegionKindIsActionable`,
       `TestEveryRegionKindIsNamed` and `TestAtlasDescribesEveryRegionKind` all
       fail, unedited. That is the registry working — the kind is exercised the
       moment it is declared.
-- [ ] **Step 2: Add the `playRegion` row.** A `RegionWord` plays `r.Word` in the
+- [x] **Step 2: Add the `playRegion` row.** A `RegionWord` plays `r.Word` in the
       session's voice — the same resolution `RegionHeadword` gets, because they
       offer the same action.
-- [ ] **Step 3: Name it and describe it in the atlas.**
-- [ ] **Step 4: Hold it to `#12`'s BR-14 invariant.** Extend
+- [x] **Step 3: Name it and describe it in the atlas.**
+- [x] **Step 4: Hold it to `#12`'s BR-14 invariant.** Extend
       `TestAPromptRegionCoversTheTextItClaims` to every region the write door
       produces, not just the prompt's, and run it over coloured text — this is
       the first kind whose regions are computed on a string that already carries
       escapes, which is exactly where "the region covers what it claims" is
       easiest to get wrong.
-- [ ] **Step 5: Write `markClickable`'s precondition down, and check it (PQ-2).**
+- [x] **Step 5: Write `markClickable`'s precondition down, and check it (PQ-2).**
 
 ```go
 // TWO PRODUCERS, ONE LINE. markClickable sorts by Col and walks ONE cursor left
@@ -618,11 +644,11 @@ Enforce it in `mergeRegions`, with the existing region winning: a
 `RegionHeadword` carries the entry's lookup key, which is more specific than a
 text match (`define jalapeno` renders `jalapeño`).
 
-- [ ] **Step 6: Mutation-sweep it** — append an overlapping region by hand and
+- [x] **Step 6: Mutation-sweep it** — append an overlapping region by hand and
       confirm the property test reddens, and that a later region on that line
       loses its underline in the golden. The second half is what makes the
       finding's *consequence* visible rather than just its cause.
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ### Task 6: The write door applies both
 
@@ -630,7 +656,7 @@ text match (`define jalapeno` renders `jalapeño`).
 - Modify: `cmd/define/main.go` (`writeRendered`), `cmd/define/play_loop.go`
 - Test: `cmd/define/play_loop_test.go`
 
-- [ ] **Step 1: Write the failing tests, one per surface.**
+- [x] **Step 1: Write the failing tests, one per surface.**
 
 ```go
 // Every word the learner is learning is clickable, wherever it is written.
@@ -656,30 +682,30 @@ func TestBoardCellsCarryNoDeckColourEvenWhenTheyAreDeckWords(t *testing.T)
 func TestTheRenderedEntryIsNotRecoloured(t *testing.T)
 ```
 
-- [ ] **Step 2: Run them, watch them fail.**
-- [ ] **Step 3: Give `writeRendered` the vocabulary and the surface.** It appends
+- [x] **Step 2: Run them, watch them fail.**
+- [x] **Step 3: Give `writeRendered` the vocabulary and the surface.** It appends
       `wordRegions(text, v)` to the regions it was given, and colours the text
       OUTSIDE any embedded render — the range `marksIn` already locates, so the
       boundary is found rather than assumed.
-- [ ] **Step 4: Derive the surface from the FORM, not the call site (PQ-4).**
+- [x] **Step 4: Derive the surface from the FORM, not the call site (PQ-4).**
       There is ONE prompt write site serving both `Choice` and `Cloze`, so the
       site cannot tell them apart. `surfaceOf(q)` switches on `q.Form()` — the
       NAME, a string; never a type switch on a concrete form, which `#6`'s
       Done-when forbids.
-- [ ] **Step 5: Hang the classification on the extent that is already derived.**
+- [x] **Step 5: Hang the classification on the extent that is already derived.**
       `TestEveryFormHasASurface` walks `docSyncForms`, whose completeness
       `TestEveryFormIsEnrolled` already guarantees by parsing `play/*.go`. So a
       new form cannot arrive unclassified, and no second list is created. Assert
       the guard fires: adding a form with no classification must redden it.
       *A hand-maintained extent is half a guard* — `#12` BR-17.
-- [ ] **Step 6: Run the whole suite, plus `go vet` under all three tag sets.**
-- [ ] **Step 7: Mutation sweep** — turn the surface rule off and confirm the
+- [x] **Step 6: Run the whole suite, plus `go vet` under all three tag sets.**
+- [x] **Step 7: Mutation sweep** — turn the surface rule off and confirm the
       cloze row reddens; drop `wordRegions` and confirm the clickability row
       reddens.
-- [ ] **Step 8: Update `README.md` and `atlas/define.md`.** The key table and the
+- [x] **Step 8: Update `README.md` and `atlas/define.md`.** The key table and the
       click sentence both describe what a click does; the derived guards from
       `#12` will hold them to it.
-- [ ] **Step 9: State M2's operating envelope (ARCH-CONSTRAINTS).** M1 carries
+- [x] **Step 9: State M2's operating envelope (ARCH-CONSTRAINTS).** M1 carries
       one and M2 did not. `deckSpans` runs **once per write** — per question, per
       reveal, per lookup — never per keystroke: the sitting redraws from a buffer
       and the REPL's input line uses the streaming `highlightSpans` path it
@@ -687,7 +713,7 @@ func TestTheRenderedEntryIsNotRecoloured(t *testing.T)
       walked once against a deck of at most a few thousand keys via a map lookup
       per token. That is the bound; if a future surface wants this per keystroke,
       that is a different design and should be a finding, not a silent regression.
-- [ ] **Step 10: Commit, then `sdlc close --issue 46`.**
+- [x] **Step 10: Commit, then `sdlc close --issue 46`.**
 
 ---
 
@@ -697,7 +723,8 @@ Automated, and each row names the thing it would catch:
 
 1. `go test ./...`, `go vet ./...` under default, `pty` and `conformance` tags,
    `gofmt -l` clean.
-2. `TestASittingFetchesARecordingOnce` — the M1 regression at the loop.
+2. `TestOneWordCostsOneFetchHoweverOftenItIsPlayed` and
+   `TestWithStorePutsTheDiskCacheUnderTheMemo` — the memo, and that something uses it.
 3. `TestASecondRunReusesTheRecordingOnDisk` — two processes, one request.
 4. `TestPerWordDirsCoverEveryRuntimeDir` — `Forget` takes the audio.
 5. `TestASpanWalkSkipsEscapeSequences` — the design's load-bearing row.
@@ -779,7 +806,7 @@ would reproduce PQ-3's failure one level down (`askroute_test.go:31` calls
 `replLines`).
 
 **So the fix is not a better enumeration but an operation that does not need
-one.** `newCachingAudioSource` becomes idempotent, over-application becomes a
+one.** The wrap becomes idempotent, over-application becomes a
 no-op, and the guard is then free to over-derive: every function taking a `deps`,
 an `io.Reader` and writers must wrap. A false positive costs a type assertion. An
 enumeration that cannot be wrong beats one that is exactly right and
@@ -820,7 +847,7 @@ would have produced a fourth answer, not a right one.
 **Delta.** The predicate widens to every function taking a `deps` and an
 `options`, which needs no judgement about what a loop is; idempotence makes that
 generosity free. And the guard now **checks itself**: the enclosing functions of
-every non-test `newCachingAudioSource` call must be a subset of its own
+every non-test wrap call must be a subset of its own
 membership, so a wrap site the predicate cannot see is reported as a failure of
 the guard. The sweep exercises both mechanisms rather than both directions of
 one, and step (c) deliberately re-narrows the predicate to prove the blind-spot
@@ -859,3 +886,82 @@ production's.
 The cost is mechanical churn across the test literals, paid once by the compiler.
 The plan now carries no prose statement of the set's membership or size, which is
 the rule the finding actually asked for.
+
+### 2026-09-07 — M1 boundary review, rounds 1 and 2
+
+**Appended rather than edited in place, which round 2 (BR-9) had to say twice.**
+Round 1's fixes were made by editing the body — and one of them was a blind
+symbol substitution that left five passages ungrammatical and introduced a fresh
+break at Task 1 Step 3. AGENTS.md §1 says revisions are APPENDED; the reason is
+exactly this, that an in-place edit of a document nobody re-reads is how a
+sentence stops being English without anyone noticing.
+
+**Round 1: 3 Critical, 6 Important, 5 Minor.** The Criticals: the entity table
+called `RenderOpts` modified when `writeWords` was added beside `writeRendered`
+instead; deleting the entire production wiring of `diskAudioCache` from
+`withStore` left the suite green, because every disk test built the layering by
+hand; and a `/lang` switch stranded recordings on the previous language's shelf
+while `--forget` reported success.
+
+**Round 2: the filing scheme reversed, and the reversal itself drifted.** BR-10
+found that `<slug>--<digest>` rested on a false claim — a slug CAN contain `--`
+(`re-` slugs to `re--ddf427`), so forgetting `re` took a different word's
+recordings. The shipped layout is `audio/<slug>/<digest>.{mp3,yaml}`, removed by
+`RemoveAll` on an exact directory name. **Then BR-16 found ten restatements of
+the superseded scheme left behind**, two of them doc comments on the very field
+the change was about, sixty lines above the function that contradicted them.
+
+**Delta to this plan**, all of it recorded here rather than rewritten above:
+
+- `audio/` is FLAT, not per-language (BR-2). A shelf would be a second statement
+  of which voice a recording is for, and the digest already is the first.
+- A word owns a DIRECTORY, not a filename prefix (BR-10). Any separator has to
+  be reasoned about against `Slug`'s alphabet, and that reasoning is what was
+  wrong; a directory name admits no ambiguity.
+- `perWordDir` carries THREE axes. Each was added by a bug the previous set could
+  not see, which is now the type's doc comment.
+- The blob read is capped at 4MB, mirroring the network path — the directory is
+  documented as hand-editable, so its contents are untrusted input.
+- A verdict REMOVES the recording it supersedes, pinned through the filesystem
+  because asserting through `Audio` cannot see the stale file (BR-12).
+- Every degrade branch in `YAML.Audio` is driven: corrupt record, vanished blob,
+  unwritable path, oversized blob (BR-6). Two of them previously carried a
+  promise nothing checked.
+
+### 2026-09-07 — close rounds 3-7
+
+**Appended, and this time for rounds that had none.** Round 2 of M1 already
+made this point (BR-9) and the close gate had to make it again: five rounds of
+close review changed the design in ways the body above no longer describes.
+
+**The `writeWords` signature above is superseded.** It is documented as taking a
+`Vocabulary` and a colour flag; it takes the `deps` and the `options`, derives
+both, and additionally takes the SUBJECT — the word the text is asking about.
+Each change came from a finding:
+
+- **BR-21 — the vocabulary argument was removed** because a guard over an
+  argument can only check its source token. `nil` reddened the guard;
+  `vocabularyFor(d, opt)` did not, though that returns nil whenever colour is off
+  and would silently remove every click target on `--no-color`. A parameter with
+  one correct value is a parameter that will eventually be given another. When
+  `deps{}` slipped through in its place, the guard grew a clause requiring the
+  identifier the loop holds.
+- **BR-29 — the subject argument was added.** Colouring reached a meaning
+  question's headword, so the word under test was painted deck-green: "you have
+  looked this up before", told to a learner being asked whether they know it.
+  The rule is now stated once — **a question never marks its own subject as
+  known** — and the reveal is deliberately exempt, because there the word has
+  been shown and its sentence restored. The subject is held out of the COLOUR
+  pass only; its click target survives, since a learner may well want to hear
+  the word they are being asked about.
+- **BR-22 — the empty-payload predicate reached all three layers.** Fixed at the
+  store in round 4, the memo in round 5, and finally the fetch in round 6, where
+  an empty 200 had also been ABANDONING THE REMAINING CANDIDATES — so a word
+  whose recording sat one URL later played nothing at all. An empty body is now
+  exactly a 404: skip it, keep walking, and record a verdict with the usual TTL
+  if nothing answers.
+- **BR-30 — the store-layout blocks now DERIVE from `store.RuntimeDirs`.** Both
+  restated it by hand and the README had already fallen behind by one directory.
+  Fourth finding in the family `workshop/targets/derived-restatement.md` exists
+  for, and its rule is what was applied: derive wherever the fact is
+  machine-readable.

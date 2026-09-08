@@ -248,6 +248,19 @@ const (
 	RegionHeadword RegionKind = iota
 	// RegionOriginLang — play the word in the language its ORIGIN names.
 	RegionOriginLang
+	// RegionWord — a word from the learner's DECK, wherever it is written.
+	//
+	// Distinct from RegionHeadword although the action is the same, and the
+	// difference is provenance rather than behaviour. A headword region carries
+	// the entry's LOOKUP KEY, which can differ from the text beneath it: `define
+	// jalapeno` renders `jalapeño`, and Word is what gets played. A deck word in
+	// prose is matched by its own text and played by its own text.
+	//
+	// It is also the first kind whose regions are produced for a PROMPT rather
+	// than for a rendered entry, and the first computed over text that already
+	// carries escapes — which is why deckSpans is escape-aware and why #12's
+	// BR-14 guard now runs over coloured text.
+	RegionWord
 	// numRegionKinds is NOT a kind: it is the registry's extent, so every guard
 	// DERIVES the set rather than restating it. A test that loops to
 	// RegionOriginLang by name is a second copy of "these are all the kinds",
@@ -268,6 +281,8 @@ func (k RegionKind) String() string {
 		return "headword"
 	case RegionOriginLang:
 		return "ORIGIN language"
+	case RegionWord:
+		return "deck word"
 	}
 	return fmt.Sprintf("RegionKind(%d)", int(k))
 }
@@ -285,6 +300,8 @@ func (k RegionKind) identifier() string {
 		return "RegionHeadword"
 	case RegionOriginLang:
 		return "RegionOriginLang"
+	case RegionWord:
+		return "RegionWord"
 	}
 	return fmt.Sprintf("RegionKind(%d)", int(k))
 }

@@ -189,7 +189,25 @@ func warnTo(w io.Writer, format string, args ...any) {
 // inject there is nothing to show, and reading the whole deck for it would be IO
 // for a disabled feature.
 func vocabularyFor(d deps, opt options) Vocabulary {
-	if d.vocab == nil || !opt.color {
+	if !opt.color {
+		return nil
+	}
+	return deckVocabulary(d)
+}
+
+// deckVocabulary is the same set WITHOUT the colour condition.
+//
+// #46 split these because a second consumer arrived that has nothing to do with
+// style: a deck word is CLICKABLE whether or not it is coloured. Tying the two
+// together — which vocabularyFor does, correctly, for its own caller — would
+// have made `--no-color` silently remove every click target as well, a coupling
+// no one would look for.
+//
+// The comment above still holds for colour: reading the deck to inject a style
+// nobody will see is IO for a disabled feature. Reading it to build a click map
+// is not, because the clicks still work.
+func deckVocabulary(d deps) Vocabulary {
+	if d.vocab == nil {
 		return nil
 	}
 	d.vocab.Load()

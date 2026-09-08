@@ -252,9 +252,6 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 		// behaviour for a caller that supplied no cancellation.
 		interrupts = &interrupter{}
 	}
-	// Wrapped HERE rather than in the caller, so the line the tests exercise is
-	// the line production runs — #2's I-1 lesson, applied to both loops.
-	d.audio = newCachingAudioSource(d.audio)
 	lines, errc := scanLines(stdin)
 	// Exiting 0 at EOF is right for a human at a prompt — a typo is not a failed
 	// session. It is wrong for `echo word | define`, which README presents as

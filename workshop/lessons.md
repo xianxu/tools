@@ -3779,3 +3779,169 @@ the table.
 **And check the doc comment on the CALLER.** The commonest stale restatement is a
 comment on code the diff did not touch, which is exactly the set `git diff` will
 never show you.
+
+**A mutation that does not COMPILE is not a passing mutation.** Sweeping `#46`'s
+audio key, I replaced the digest input and grepped the output for the assertion
+text. Nothing matched, so it read as "the test did not catch this" — but the
+package had failed to BUILD (the mutation orphaned an import), so no test ran at
+all. The two outcomes look identical through a narrow grep and mean opposite
+things.
+
+Two rules from it: **grep the sweep's output for `build failed` and `FAIL`, not
+just for the assertion's own words**; and **write the mutation so it still
+compiles** — key on `word + strings.Join(urls[:0], "")` rather than deleting the
+argument — so the run is a real one. Also `go test` serves CACHED results: a
+sweep needs `-count=1` or it may report the pre-mutation verdict.
+
+**A capability asked for by type assertion must be asserted at COMPILE TIME.**
+`#46`'s disk cache is reached through `wordFiler`, an optional-capability
+interface the seam asks for with `if wf, ok := inner.(wordFiler); ok`. The first
+`forWord` returned `*diskAudioCache` instead of `AudioSource` — a signature Go
+accepts everywhere except as an implementation of that interface. So the
+assertion never matched, every fetch bypassed the disk, and **the cache did
+nothing at all** while compiling and running cleanly.
+
+One line prevents the whole family: `var _ wordFiler = (*diskAudioCache)(nil)`.
+Write it beside every type that exists to satisfy an optional interface — the
+failure mode is silence, and silence is what a type assertion returns when a
+signature drifts.
+
+**Three fixture-cannot-reach-the-branch failures in one issue.** `#46`'s
+`re`/`re-` collision needed the FORGOTTEN word's slug plus the separator to be a
+prefix of the neighbour's; my fixture forgot `red`, which never globs `re--`, so
+the mutation passed and the bug would have shipped. Before that, a
+`many`-axis probe took its file NAMES from the declaration it was testing —
+self-fulfilling, green under mutation. Before that, a test named for a loop
+never entered the loop.
+
+The pattern is one question, asked too late: **"what exact input reaches the
+line I am claiming to pin?"** Write the mutation first, watch it redden, and if
+it does not, suspect the fixture before the code.
+
+**And a probe whose shape comes from the thing under test proves nothing.** If
+the declaration says `many` and the probe therefore plants prefixed files, both
+branches agree with themselves. What knows the naming convention is the code that
+WRITES it — so the pin belongs in a conformance row driving the real API, not in
+a guard planting files it invented.
+
+**A guard that reads prose cannot tell a citation from a reminiscence.** The
+plan-cites-tests guard fired on "the obvious name is `TestFoo`" in a paragraph
+explaining why that test was NOT written. Backticks are the guard's whole signal,
+so historical mentions have to drop them — cheaper than teaching the guard about
+tense.
+
+**A design reversal is not landed until the greppable enumeration is swept in
+the same commit.** `#46` reversed how audio is filed — flat `<slug>--<digest>`
+files removed by prefix, to a directory per word removed by exact name — and
+swept it through every code PATH while leaving ten restatements of the old
+scheme, two of them doc comments on the field the change was about, sixty lines
+above the function that now contradicted them.
+
+The procedure, and it is cheap: **write the grep before the fix, run it after.**
+Here it was one line —
+
+    grep -rn 'slug>--\|prefix glob\|globs its prefix\|BOTH axes\|TWO axes' \
+        --include='*.go' --include='*.md' cmd/ atlas/ workshop/plans/
+
+— and it named every site including the ones in the plan and the README. The
+derived consumer (`.gitignore`, from `RuntimeDirs`) was right without being
+touched; **every hand-maintained one was wrong.** That asymmetry is the whole
+argument of `workshop/targets/derived-restatement.md`, and this is the third
+time one issue paid for it.
+
+**Historical mentions are fine and are not the target.** A comment saying "the
+first version globbed `<slug>--` and that was false" is the reason the current
+code looks as it does. What the grep is hunting is a sentence in the PRESENT
+tense describing behaviour that no longer exists.
+
+**Edit a plan by APPENDING a Revisions entry, never in place.** Round 1's
+in-place fixes included a blind symbol substitution that left five passages
+ungrammatical and broke a sixth; nobody re-reads a document they edited with a
+regex, which is exactly why AGENTS.md §1 says append.
+
+**Defence in depth is not two pins; it is one property nothing can distinguish.**
+`#46` guarded "an empty recording is not a hit" at BOTH the write and the read.
+Correct — a hand-truncated file reaches the read without passing the write — but
+the conformance row could not tell them apart, because refusing either produces
+"nothing cached". Dropping EITHER guard left the suite green.
+
+Two rules. **Sweep every guard separately**, not the property they jointly
+produce. And **reach each one where only it can answer**: the write half asserts
+through the FILESYSTEM (through the API the read half answers identically), the
+read half plants a truncated file the write half never saw.
+
+**And check what runs BEFORE the refusal.** The write guard sat below `MkdirAll`,
+so an empty write still created the directory — debris, and enough to make the
+filesystem assertion pass for the wrong reason. A refusal belongs above
+everything it is refusing to do.
+
+**Fix the class the finding names, not the input that exposed it.** The
+missing-blob branch guarded on the READ ERRORING. A blob truncated to zero bytes
+is a legal read of nothing, so it sailed past and was served as a permanent,
+never-expiring hit of silence — the exact outcome that branch existed to prevent.
+The predicate belonged on the PAYLOAD ("this cannot be a recording"), not on how
+the read failed.
+
+**"Fix the class" means every LAYER, not just the one the finding pointed at.**
+`#46` round 4 said an empty payload cannot be a recording; I fixed the store at
+both ends and left the memo one layer up doing exactly what the finding
+described — serving a zero-byte 200 as a hit for the whole sitting, with a `from`
+URL that `reportVoice` prints as the voice that answered. Round 5 found it there.
+
+When a finding names a predicate ("this cannot be a recording"), grep for every
+place that decides the same thing and fix them together. The finding names one
+site because that is where it was probed, not because that is where the class
+ends.
+
+**And a wiring guard for one milestone is a wiring guard for the next.** M1's
+BR-3 found that deleting the disk cache's production wiring left the suite green.
+I pinned that instance and shipped M2 with the identical hole: nilling the
+vocabulary at all three `writeWords` sites left the WHOLE suite green, because
+every M2 test built its own call. Both are now derived from the AST, so a fourth
+site is checked the moment it exists.
+
+**A guard over an ARGUMENT can only check the token, so remove the argument.**
+`#46`'s write door took a `Vocabulary`, and the guard over its call sites read
+the argument's source text: passing `nil` reddened it, passing
+`vocabularyFor(d, opt)` did not — even though that returns nil whenever colour is
+off, which is the exact coupling the code had just been fixed to avoid. Two
+plausible spellings, one correct, and the guard could not tell them apart.
+
+The fix is the `audioSeam` move again: **a parameter with one correct value is a
+parameter that will eventually be given another.** `writeWords` takes the `deps`
+and derives the vocabulary itself. Then `nil` does not compile — and when
+`deps{}` slipped through in its place, the guard grew one clause: the argument
+must be the identifier the loop holds, never a constructed literal.
+
+**A predicate belongs at EVERY layer that decides the same thing.** "An empty
+payload is not a recording" was fixed at the store (round 4), then at the memo
+(round 5), then finally at the fetch (round 6) — where it turned out an empty 200
+had also been ABANDONING THE REMAINING CANDIDATES, so a word whose recording sat
+one URL later played nothing. Three rounds, one predicate, because each time I
+fixed the layer the finding pointed at. Grep for every place that decides the
+thing and fix them together.
+
+**A guarantee proved AT THE DOOR is unproven at the site obliged to obey it.**
+Three times in one issue: the disk cache's wiring (BR-3), the vocabulary reaching
+the write door (BR-21), and then the subject argument the BR-21 fix itself added
+(BR-34) — each time the door was well tested and dropping the value at the single
+call site passed the whole suite.
+
+The escalation is the useful part. First fix: pin the instance. Second: derive
+the call sites and check the argument — which could only check its SOURCE TOKEN,
+so a plausible-but-wrong spelling passed. Third, and the one that holds: **give
+the function the thing the values are derived FROM.** `writePrompt(w, q, d, opt)`
+derives the text, the regions, the surface and the subject from one `q`, so
+there is nothing to pass wrongly and nothing for a guard to check.
+
+**Watch for two adjacent bare strings behind five arguments.** `subject` and
+`already` were both `string` and neighbours; swapping them compiles and silently
+re-colours the embedded render. That shape is a bug waiting for a hurried edit,
+and it is a reason to collapse parameters rather than to add a guard.
+
+**And when your own new test fails, suspect the assertion first.** My path-safety
+row demanded a traversing WORD be refused. It should not be: `Slug` launders any
+key into exactly one safe path element and `Forget` computes the same slug, so the
+file is both safe and reachable. `Digest` needed a predicate because it has no
+such laundering. Refusing the word would have broken real deck entries for a rule
+that does not apply to them.

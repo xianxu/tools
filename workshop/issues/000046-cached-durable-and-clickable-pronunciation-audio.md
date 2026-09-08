@@ -1,12 +1,13 @@
 ---
 id: 000046
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-07
 updated: 2026-09-07
-estimate_hours: 5.29
+estimate_hours: 7.02
 started: 2026-09-07T12:42:34-07:00
+actual_hours: 5.91
 ---
 
 # cached, durable and clickable pronunciation audio
@@ -161,7 +162,7 @@ blocks use the same primitives on the same codebase.
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
-item: issue-spec               design=0.45 impl=0.08
+item: issue-spec               design=0.60 impl=0.10
 item: cross-cutting-refactor   design=0.06 impl=0.24
 item: smaller-go-module        design=0.02 impl=0.12
 item: greenfield-go-module     design=0.06 impl=0.28
@@ -169,17 +170,22 @@ item: cross-cutting-refactor   design=0.04 impl=0.20
 item: smaller-go-module        design=0.02 impl=0.14
 item: greenfield-go-module     design=0.05 impl=0.24
 item: smaller-go-module        design=0.02 impl=0.12
+item: milestone-review         design=0.0  impl=0.45
 item: milestone-review         design=0.0  impl=0.60
 item: greenfield-go-module     design=0.06 impl=0.28
 item: smaller-go-module        design=0.03 impl=0.14
-item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.04 impl=0.14
 item: smaller-go-module        design=0.03 impl=0.14
 item: cross-cutting-refactor   design=0.05 impl=0.24
 item: atlas-docs               design=0.03 impl=0.06
 item: smaller-go-module        design=0.0  impl=0.20
+item: smaller-go-module        design=0.0  impl=0.20
+item: smaller-go-module        design=0.0  impl=0.20
+item: ux-rename-iteration      design=0.0  impl=0.20
+item: milestone-review         design=0.0  impl=0.60
 item: milestone-review         design=0.0  impl=0.85
 design-buffer: 0.15
-total: 5.29
+total: 7.02
 ```
 
 **What each row is**, in plan order, so the derivation is checkable rather than
@@ -187,7 +193,7 @@ asserted:
 
 | row | the work |
 |---|---|
-| `issue-spec` 0.45/0.08 | the design carrier: the Spec, an operator scope widening mid-plan, and FOUR plan-quality rounds. Above `#12`'s 0.35 and below `#10`'s 0.50 — the rounds were expensive (three of them were one finding, re-answered) but the Spec itself was short, and the widening made the design simpler rather than larger. |
+| `issue-spec` 0.60/0.10 | the design carrier: the Spec, an operator scope widening mid-plan, and FOUR plan-quality rounds. **Above** `#10`'s 0.50 — 4 rounds against its 2, an 861-line plan against its 693, and a widening neither neighbour had. |
 | `cross-cutting-refactor` 0.06/0.24 | `deps.audio` becomes `*audioSeam`. Mechanical but wide: the compiler names every construction site, including the test literals. |
 | `smaller-go-module` 0.02/0.12 | the memo logic relocated into `audioSeam` — existing code, existing tests, new home. |
 | `greenfield-go-module` 0.06/0.28 | `store/audio.go`: `audioKey`'s digest, `audioRecord`, the TTL. |
@@ -195,57 +201,85 @@ asserted:
 | `smaller-go-module` 0.02/0.14 | the `storetest` conformance rows, so `Mem` and YAML are both held. |
 | `greenfield-go-module` 0.05/0.24 | `diskAudioCache`. |
 | `smaller-go-module` 0.02/0.12 | the degrade-never-fail paths and the `--forget` end-to-end. |
-| `milestone-review` 0.0/0.60 | M1's boundary. Below M2's, because M1 changes one seam and M2 changes what every write site does. |
+| `milestone-review` 0.0/0.45 + 0.0/0.60 | **M1's boundary, priced as run + remediation** — the house convention `#12` and `#42` set, which the first draft misread as one row per boundary. Below the close's pair, because M1 changes one seam where M2 changes what every write site does. |
 | `greenfield-go-module` 0.06/0.28 | `deckSpans` — the coordinate layer, and the escape-awareness that is the design's load-bearing row. |
 | `smaller-go-module` 0.03/0.14 | `RegionWord`: the kind, `playRegion`'s row, `String`/`identifier`, the atlas. |
-| `greenfield-go-module` 0.05/0.24 | `mergeRegions` and the disjointness property — `markClickable`'s unwritten precondition, written down. |
+| `smaller-go-module` 0.04/0.14 | `mergeRegions` and the disjointness property. A sort-and-drop helper plus one property test — `#12`'s `Flagging` shape, not `diskAudioCache`'s; the first draft priced it as greenfield. |
 | `smaller-go-module` 0.03/0.14 | `surface`/`surfaceOf` and `TestEveryFormHasASurface`. |
 | `cross-cutting-refactor` 0.05/0.24 | the write door: three call sites, and colouring outside the embedded render. |
 | `atlas-docs` 0.03/0.06 | README's key table and click sentence; the atlas. |
-| `smaller-go-module` 0.0/0.20 | the mutation sweeps both milestones commit to. |
-| `milestone-review` 0.0/0.85 | the close review. `#12` booked 0.85 here and spent four rounds; this issue's plan gate already took four, which is evidence about the issue rather than about the plan. |
+| three × `smaller-go-module` 0.0/0.20 | **three DISTINCT mutation sweeps**, not one: revert `deckSpans`' escape-awareness; append an overlapping region and confirm the golden loses an underline; turn the surface rule off. `#12` booked 0.20 for a single sweep. |
+| `ux-rename-iteration` 0.0/0.20 | **the pty hand-run.** M2 is entirely about what a person SEES — colour on or off, which words are click targets — and this issue was born from exactly such a sitting. Both neighbours added this row on review; `#12`'s deviation 3 records that pricing it at nothing is the omission `#10` had already made. |
+| `milestone-review` 0.0/0.60 + 0.0/0.85 | the close boundary, run + remediation. This is `#12`'s pair for one boundary, which is the right comparable for M2's. |
 
-**Reconciliation.** Σdesign = 0.97, Σimpl = 4.17.
-0.97 × 1.15 + 4.17 × 1.0 = **5.29**.
+**Reconciliation.** Σdesign = 1.11, Σimpl = 5.74.
+1.11 × 1.15 + 5.74 × 1.0 = **7.02**.
 
-**Read against the neighbours:** `#12` estimated 4.54 and measured 3.70; `#10`
-estimated 7.94 and measured 12.77. This sits between them, which matches the
-shape — two milestones like `#10`, but M1 is mostly a type change the compiler
-drives and M2 is one new pure function plus wiring, where `#10` was five
-greenfield modules and a live model loop.
+**Trailing ledger read**, which is better evidence than a bracket between two
+neighbours. This repo's rows: `#42` 0.36, `#44` 0.47, `#10` 0.62, `#12` 1.23 —
+median ≈ 0.55, which at 7.02 would predict roughly 13h actual. **That gap is not
+a reason to inflate the primitives.** Per the model's own unit note it is the
+within-session parallelism and overlap that `#117`'s ledger exists to instrument,
+and multiplying the rows to meet it would destroy the only signal the ledger
+carries. The estimate is the derivation; the ratio is the measurement; the two
+are supposed to differ and be recorded.
+
+**Deviations from the neighbours, named rather than absorbed:**
+
+1. **`issue-spec` above `#10`'s**, where both neighbours' rows sat at or below
+   0.50. Four plan-quality rounds, three of them re-answering ONE finding, plus a
+   mid-plan scope widening. This row is partly retrospective — the rounds are in
+   `git log` — so it is checkable rather than predicted.
+2. **Two `milestone-review` PAIRS**, one per boundary. The first draft booked one
+   row per boundary and cited `#12`'s 0.85 as a single-boundary comparable; 0.85
+   was `#12`'s remediation half, with 0.60 for the run.
+3. **Three sweep rows.** The plan commits to three distinct mutation sweeps and
+   the first draft priced them as one.
 
 ## Done when
 
-- [ ] Every loop that can play audio goes through the cache, and a guard names
-      that set rather than a person remembering it — `runPlay` is the one that
-      does not today, and fixing only `runPlay` leaves the next loop free to
-      repeat it.
-- [ ] A recording fetched in one sitting is not fetched again in the next: the
+- [x] No loop can play audio through an uncached source. **Reworded 2026-09-07:
+      the row asked for "a guard that names that set", and four plan-gate rounds
+      established that no such set is derivable — every predicate over functions
+      caught dispatchers or missed a wrap site. The shipped design makes the
+      question unaskable instead: `deps.audio` is a `*audioSeam`, so there is no
+      unwrapped source to hold and the compiler enumerates the construction
+      sites.** Ticking the row as written would have claimed a guard that does
+      not exist and should not.
+- [x] A recording fetched in one sitting is not fetched again in the next: the
       bytes are on disk, in the directory `define` was started from.
-- [ ] A word the CDN has no recording for is asked for ONCE, not four candidate
+- [x] A word the CDN has no recording for is asked for ONCE, not four candidate
       URLs per replay per day. Pinned through the existing `fakeCDN` request
       recorder, which is what makes "no second request" assertable without new
       scaffolding.
-- [ ] `Forget` takes a word's recordings with it, and
-      `TestPerWordDirsCoverEveryRuntimeDir` is what says so — the new directory
-      is classified on both axes, not just declared.
-- [ ] A cloze's option words are clickable and each plays its own word.
-- [ ] Every deck word is clickable wherever it is written — a guard walks the
-      surfaces rather than a person listing them, so a new write site is covered
-      by construction.
-- [ ] Colour and clicks come from ONE span walk, not two producers that can
+- [x] `Forget` takes a word's recordings with it, on every voice and from every
+      language. **Reworded 2026-09-07: "both axes" is now THREE** — the boundary
+      review added `many` (a word owns several files here) after finding that a
+      declared axis nothing checks is decoration, and found two bugs the axes
+      caught: a language shelf that stranded recordings across `/lang`, and a
+      `<slug>--` prefix glob that took `re-`'s recordings when forgetting `re`.
+- [x] A cloze's option words are clickable and each plays its own word.
+- [x] Every deck word is clickable wherever it is written, on every surface the
+      write door serves — `TestEveryDeckWordInASittingIsClickable` drives it
+      through `writeWords` rather than through the rule, so it fails if a call
+      site stops passing the vocabulary. **The row asked for a guard over write
+      SITES and that is NOT what shipped:** the derived guard is over FORMS
+      (`TestEveryFormHasASurface`, hung on `docSyncForms`). A new `writeWords`
+      call site is covered by review, not by construction — carried to `#30`'s
+      region work rather than claimed here.
+- [x] Colour and clicks come from ONE span walk, not two producers that can
       disagree about where a word is.
-- [ ] Colour is off exactly where the text IS the deck (cloze options, board
+- [x] Colour is off exactly where the text IS the deck (cloze options, board
       cells) and on everywhere else, and the guard states that as the rule
       rather than naming the two surfaces.
-- [ ] The new region kind is a ROW, not a special case: `numRegionKinds` picks
+- [x] The new region kind is a ROW, not a special case: `numRegionKinds` picks
       it up, `TestEveryRegionKindIsActionable`, `TestAtlasDescribesEveryRegionKind`
       and `TestAPromptRegionCoversTheTextItClaims` all exercise it without being
       edited to know about it.
-- [ ] No region claims text it does not cover — the `#12` BR-14 invariant holds
+- [x] No region claims text it does not cover — the `#12` BR-14 invariant holds
       for the new kind, which is the one that puts regions on a PROMPT for the
       first time, and holds on text that is ALREADY coloured.
-- [ ] A span walk over text carrying ANSI never lands a region inside an escape
+- [x] A span walk over text carrying ANSI never lands a region inside an escape
       sequence, and never nests colour.
 
 ## Plan
@@ -256,14 +290,58 @@ and closing them separately would buy a redundant review (AGENTS.md §3).
 
 Durable design: `workshop/plans/000046-audio-cache-and-deck-words-plan.md`.
 
-- [ ] M1 — the cache reaches every loop that plays audio, and survives the
+- [x] M1 — the cache reaches every loop that plays audio, and survives the
       process. `fetch.go`, a new `RuntimeDirs` entry, `perWordDirs`, `Forget`.
-- [ ] M2 — one span walk feeds both colour and clicks, and every surface goes
+- [x] M2 — one span walk feeds both colour and clicks, and every surface goes
       through it. A third `RegionKind`, the first regions ever produced for a
       PROMPT, and the discovery rule that turns colour off where the text is
       the deck.
 
 ## Log
+
+### 2026-09-07 — built through both milestones, then smoke-tested
+- 2026-09-07: closed — M2 ships. One span walk feeds both colour and clicks: deckSpans runs the EXISTING highlightSpans over visibleIndex-plain text and maps back through the column table, so it works on text Render has already coloured (TestASpanWalkSkipsEscapeSequences, mutation-verified). Round 7 fixes: BR-29 was a PRODUCT bug — colour reached a meaning question headword, painting the word under test deck-green, which tells a learner "you have looked this up before" while asking whether they know it. The rule is now stated once (a question never marks its own subject as known), the reveal is deliberately exempt because there the word has been shown and its sentence restored, and the click target survives since a learner may want to hear the word being asked about; TestAQuestionDoesNotColourTheWordItAsks pins all three and the mutation reproduces the green headword. It was invisible because the sibling row deck omits the headword — the third fixture-cannot-reach-the-branch failure this issue, now in lessons.md. BR-30: both store-layout blocks restated RuntimeDirs by hand and the README had fallen behind (usage/ absent); TestStoreLayoutDocsNameEveryRuntimeDir derives them, mutation-verified, the same move that kept .gitignore correct through every round while hand-maintained copies drifted. BR-31: the plan carries an appended Revisions entry for close rounds 3-7 recording the writeWords signature changes and why each finding caused one. Earlier rounds: BR-21 removed the vocabulary argument because a guard over an argument can only check its source token (nil reddened it, vocabularyFor(d,opt) did not, though that returns nil whenever colour is off) — writeWords derives from deps now and the guard requires the identifier the loop holds; BR-22 carried the empty-payload predicate to all three layers that decide it, ending at the fetch where an empty 200 had also been abandoning the remaining candidates so a word whose recording sat one URL later played nothing. Other M2 pins: TestEveryDeckWordInASittingIsClickable; TestWordRegionsCoverTheTextTheyClaim holds #12 BR-14 on coloured text; TestALinesRegionsAreDisjointAndAscending writes down markClickable one-cursor precondition; TestTheRenderedEntryIsNotRecoloured proves colour never nests and cannot pass by colouring nothing. Colour is a property of the SURFACE via surfaceOf on Form() over the docSyncForms extent. RegionWord is a ROW: declaring it reddened three registry guards unedited. OPERATOR SMOKE TEST PASSED; confirmed over a pty that the cloze frame carries four underlined options and NO knownOn escape, and the reveal frame does carry knownOn in the gloss. go test -count=1 ./... green; go vet clean under default, pty and conformance; gofmt clean. SCOPE NOTE: one Done-when row was REWORDED rather than ticked — the guard naming the set of loops, because no such set is derivable and the type replaced the question.; review verdict: FIX-THEN-SHIP
+- 2026-09-07: closed M1 — M1 ships after two REWORK rounds (round 3 did not run — the reviewer failed to authenticate, OAuth expiry, not a finding). The memo IS the seam: deps.audio is a *audioSeam, so runPlay needed no wrap line and the compiler enumerated the construction sites. Pinned: TestOneWordCostsOneFetchHoweverOftenItIsPlayed (the memo) and TestWithStorePutsTheDiskCacheUnderTheMemo (the WIRING — round 1 found deleting the whole withStore block left the suite green; deleting it now reddens by name). Durable: TestASecondRunReusesTheRecordingOnDisk (two fresh seams over one directory = one CDN request, and from survives so spokeSource/reportVoice stay true), stale-verdict re-ask, outage-not-recorded, PlaybackSurvivesAnUnusableCache driven against failingStore. Round 2 fixes: audio/ is FLAT (a language shelf stranded recordings across /lang while --forget reported success, pinned by TestForgetTakesARecordingFetchedInAnotherLanguage); a word owns a DIRECTORY not a filename prefix (the <slug>--<digest> scheme rested on the false claim that a slug cannot contain "--" — re- slugs to re--ddf427, so forgetting re took its recordings; storetest drives that exact pair on both twins and the prefix scheme reddens it); perWordDir carries THREE axes, each added by a bug the previous set could not see; the blob read is capped at 4MB like the network path; a verdict REMOVES the recording it supersedes, pinned through the FILESYSTEM because asserting through Audio cannot see the stale file (mutation-verified: reverting the removal reddens it by name). TestAudioDegradesOnEveryDamagedFile drives all four branches the "degrades, never fails" promise names — corrupt record, vanished blob, unwritable path, oversized blob — two of which previously carried a promise nothing checked. BR-16 swept: the filing reversal had left ten restatements of the superseded scheme; the grep that finds them is now in lessons.md with the rule to write it before the fix, and the derived consumer (.gitignore from RuntimeDirs) was right untouched while every hand-maintained one was wrong. Plan revised by APPENDED Revisions entry per AGENTS.md §1, all 45 step checkboxes ticked, entity table names match the code. go test -count=1 ./... green; go vet clean under default, pty and conformance; gofmt clean. ACTUAL OMITTED DELIBERATELY: M1 and M2 both landed before any boundary review (the operator asked for a runnable sitting first), so this window is not separable and sdlc actual has no sub-range flag; hand-splitting would be the guessed value the gate exists to prevent. The issue close measures and adopts the real figure.; review verdict: FIX-THEN-SHIP
+
+**Both milestones landed before any boundary review**, because the operator asked
+for a runnable sitting ("go ahead till I can smoke test"). So M1's boundary
+review sees M2's diff as well. Recorded rather than hidden: the review is wider
+than the milestone, and the close's delta is correspondingly small.
+
+**The manual verification the plan commits to (steps 8-10) is done, by the
+operator, on a generated deck** — `scratchpad/smoke`, ten words and five authored
+cloze items written THROUGH the store package rather than by hand, with the word
+list chosen so the definitions cross-reference each other (`sycophantic`'s NOAD
+gloss reads "behaving in an *obsequious* way", and `obsequious` is in the deck).
+Verdict: **passed**.
+
+Independently confirmed over a pty before handing it over, which is what makes
+the two halves of the operator's rule checkable rather than asserted:
+
+- the cloze frame carries **four underlined option words and no `knownOn`
+  escape anywhere in it** — clickable, uncoloured;
+- the reveal frame **does** carry `knownOn`, on a deck word inside the gloss.
+
+**Three things changed during implementation, all recorded in the plan's
+Revisions or below:**
+
+1. **The disk cache did nothing at all in its first version, silently.**
+   `forWord` returned `*diskAudioCache` where `wordFiler` wanted `AudioSource` —
+   a signature Go accepts everywhere except as an implementation of that
+   interface. The assertion never matched, every fetch bypassed the disk, and it
+   compiled and ran cleanly. Only the request-count assertions caught it. A
+   `var _ wordFiler = (*diskAudioCache)(nil)` now stands beside it, and
+   `lessons.md` carries the rule: the failure mode of an optional-capability
+   interface is SILENCE.
+2. **Clicks were about to depend on colour.** `vocabularyFor` returns nil when
+   colour is off — correct for its own caller, since loading the deck to inject
+   an invisible style is IO for a disabled feature. Taking the click vocabulary
+   from the same place would have made `-no-color` silently remove every click
+   target. Split into `deckVocabulary`, pinned by
+   `TestClicksSurviveNoColour`.
+3. **The lookup path was wired too**, not only the sitting. "All places" includes
+   `define <word>`, where a click previously reached only the headword and the
+   ORIGIN languages.
 
 ### 2026-09-07 — filed
 

@@ -637,6 +637,250 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("a recording round-trips with the URL that answered", func(t *testing.T) {
+		// `from` is not decoration: spokeSource decides by MEMBERSHIP in the
+		// source candidate list and reportVoice prints a RECORD from it. A cache
+		// hit that cannot say which URL answered makes that record silent or
+		// false, so the artifact is bytes AND provenance.
+		s := newStore(t)
+		k := store.NewAudioKey("sycophantic", []string{"https://cdn/a.mp3", "https://cdn/b.mp3"})
+		want := store.AudioRecord{From: "https://cdn/b.mp3", At: day(1)}
+		if err := s.SetAudio(k, []byte("ID3audio"), want); err != nil {
+			t.Fatalf("SetAudio: %v", err)
+		}
+		data, got, err := s.Audio(k)
+		if err != nil {
+			t.Fatalf("Audio: %v", err)
+		}
+		if string(data) != "ID3audio" {
+			t.Errorf("bytes = %q, want %q", data, "ID3audio")
+		}
+		if got.From != want.From {
+			t.Errorf("From = %q, want %q — the record cannot say which URL answered", got.From, want.From)
+		}
+		if got.Missing {
+			t.Error("a stored recording read back as missing")
+		}
+	})
+
+	t.Run("two voices of one word do not collide", func(t *testing.T) {
+		// THE CRITICAL THE KEY EXISTS FOR (#46 PQ-1). A key over the word alone
+		// would make `-locale gb` and `-locale us` one entry, and the cache would
+		// serve the wrong recording — worse than no cache.
+		s := newStore(t)
+		gb := store.NewAudioKey("red", []string{"https://cdn/red_en_gb_1.mp3"})
+		us := store.NewAudioKey("red", []string{"https://cdn/red_en_us_1.mp3"})
+		if gb == us {
+			t.Fatal("two voices of one word produced the same key")
+		}
+		if err := s.SetAudio(gb, []byte("GB"), store.AudioRecord{From: "gb", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetAudio(us, []byte("US"), store.AudioRecord{From: "us", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			k    store.AudioKey
+			want string
+		}{{gb, "GB"}, {us, "US"}} {
+			data, _, err := s.Audio(tc.k)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != tc.want {
+				t.Errorf("got %q, want %q — one voice served another's recording", data, tc.want)
+			}
+		}
+	})
+
+	t.Run("a verdict round-trips and expires", func(t *testing.T) {
+		// A miss is PERMANENT in memory and DATED on disk, because the CDN gains
+		// recordings over time and the rare words a learner most wants are the
+		// likeliest to gain one. A verdict believed forever is a word that can
+		// never start working.
+		s := newStore(t)
+		k := store.NewAudioKey("quokka", []string{"https://cdn/quokka.mp3"})
+		at := day(1)
+		if err := s.SetAudio(k, nil, store.AudioRecord{At: at, Missing: true}); err != nil {
+			t.Fatalf("SetAudio: %v", err)
+		}
+		data, rec, err := s.Audio(k)
+		if err != nil {
+			t.Fatalf("Audio: %v", err)
+		}
+		if !rec.Missing || len(data) != 0 {
+			t.Errorf("verdict read back as data: missing=%v bytes=%d", rec.Missing, len(data))
+		}
+		if !rec.Fresh(at.Add(time.Hour)) {
+			t.Error("a verdict reached an hour later was already stale")
+		}
+		if rec.Fresh(at.Add(store.AudioVerdictTTL + time.Hour)) {
+			t.Error("a verdict past its TTL is still believed; the word can never start working")
+		}
+		// A HIT never expires: the key is the candidate list, so a changed URL is
+		// a different key rather than a stale one.
+		hit := store.AudioRecord{From: "u", At: at}
+		if !hit.Fresh(at.Add(10 * store.AudioVerdictTTL)) {
+			t.Error("a stored recording expired; bytes that answered once are still the right bytes")
+		}
+	})
+
+	t.Run("forget takes every recording a word owns", func(t *testing.T) {
+		// #10's BR-45, one directory over: a forgotten word that keeps its
+		// material is the one thing forgetting could not do. Two voices AND a
+		// verdict, because a word is not reachable here by a single delete.
+		s := newStore(t)
+		if err := s.Upsert(store.Word{Text: "red"}); err != nil {
+			t.Fatal(err)
+		}
+		keys := []store.AudioKey{
+			store.NewAudioKey("red", []string{"https://cdn/red_en_gb_1.mp3"}),
+			store.NewAudioKey("red", []string{"https://cdn/red_en_us_1.mp3"}),
+		}
+		for _, k := range keys {
+			if err := s.SetAudio(k, []byte("x"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stale := store.NewAudioKey("red", []string{"https://cdn/red_fr_fr_1.mp3"})
+		if err := s.SetAudio(stale, nil, store.AudioRecord{At: day(1), Missing: true}); err != nil {
+			t.Fatal(err)
+		}
+		// TWO NEIGHBOURS FORGETTING MUST NOT REACH.
+		//
+		// `redact` is the easy one: a glob on the bare slug would take it.
+		//
+		// `re-` is the one that caught the first design out. It SLUGS to
+		// `re--ddf427`, so a scheme filing recordings as `<slug>--<digest>` and
+		// globbing `<slug>--` would have had forgetting `re` take `re-`'s
+		// recordings — the claim "a slug cannot contain --" was simply false.
+		// A directory per word has no such ambiguity.
+		hyphen := store.NewAudioKey("re-", []string{"https://cdn/re-_en_us_1.mp3"})
+		if err := s.SetAudio(hyphen, []byte("hyphen"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		keep := store.NewAudioKey("redact", []string{"https://cdn/redact_en_us_1.mp3"})
+		if err := s.SetAudio(keep, []byte("keep"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := s.Forget("red"); err != nil {
+			t.Fatalf("Forget: %v", err)
+		}
+		for _, k := range append(keys, stale) {
+			data, rec, err := s.Audio(k)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data) != 0 || rec.At != (time.Time{}) {
+				t.Errorf("%v survived Forget — the word kept the material that made it worth forgetting", k)
+			}
+		}
+		for _, tc := range []struct {
+			k    store.AudioKey
+			want string
+			word string
+		}{{keep, "keep", "redact"}, {hyphen, "hyphen", "re-"}} {
+			data, _, err := s.Audio(tc.k)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != tc.want {
+				t.Errorf("forgetting %q took %q's recording too", "red", tc.word)
+			}
+		}
+	})
+
+	t.Run("forgetting a word does not reach a word whose SLUG starts with it", func(t *testing.T) {
+		// THE FIXTURE HAS TO REACH THE BRANCH. A `red`/`redact` pair does not:
+		// the collision needs the forgotten word's slug plus the separator to be
+		// a PREFIX of the neighbour's slug, and `redact` does not start with
+		// `red--`.
+		//
+		// `re` and `re-` do. `re-` slugs to `re--ddf427`, so a scheme filing
+		// recordings as `<slug>--<digest>` and globbing `<slug>--` has forgetting
+		// `re` take `re-`'s recordings. The first design made exactly that claim
+		// — "a slug cannot contain --" — and it is false.
+		s := newStore(t)
+		if err := s.Upsert(store.Word{Text: "re"}); err != nil {
+			t.Fatal(err)
+		}
+		mine := store.NewAudioKey("re", []string{"https://cdn/re_en_us_1.mp3"})
+		theirs := store.NewAudioKey("re-", []string{"https://cdn/re-_en_us_1.mp3"})
+		if err := s.SetAudio(mine, []byte("MINE"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetAudio(theirs, []byte("THEIRS"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Forget("re"); err != nil {
+			t.Fatalf("Forget: %v", err)
+		}
+		if data, _, _ := s.Audio(mine); len(data) != 0 {
+			t.Error(`forgetting "re" left its own recording`)
+		}
+		data, _, err := s.Audio(theirs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "THEIRS" {
+			t.Errorf(`forgetting "re" took "re-"'s recording — its slug is %q, `+
+				`which starts with "re" plus a separator`, store.Slug(store.Key("re-")))
+		}
+	})
+
+	t.Run("an empty recording is not a hit, in either direction", func(t *testing.T) {
+		// AN EMPTY 200 IS A SUCCESS to httpAudioSource, so nothing upstream calls
+		// it an error — and a hit never expires by design, so storing one would
+		// make the word unplayable from this directory until --forget.
+		//
+		// Both directions, because the guard has to hold at the write AND the
+		// read: a file hand-truncated to zero bytes reaches the read path without
+		// ever passing the write one, and this directory is documented as
+		// inspectable and editable.
+		s := newStore(t)
+		k := store.NewAudioKey("keel", []string{"https://cdn/keel.mp3"})
+		if err := s.SetAudio(k, nil, store.AudioRecord{From: "https://cdn/keel.mp3", At: day(1)}); err != nil {
+			t.Fatalf("SetAudio: %v", err)
+		}
+		data, rec, err := s.Audio(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 0 || !rec.At.IsZero() {
+			t.Errorf("an empty recording was stored as a hit: %d bytes, %+v — it never "+
+				"expires, so the word could never play again", len(data), rec)
+		}
+		// AND IT IS NOT A VERDICT EITHER. Recording "no audio here" would suppress
+		// the re-ask for thirty days; the honest outcome is nothing at all.
+		if rec.Missing {
+			t.Error("an empty 200 was recorded as a verdict; the next run must re-ask")
+		}
+	})
+
+	t.Run("a verdict replaces the recording it supersedes", func(t *testing.T) {
+		// Skipping the blob write would leave a stale .mp3 beside a record saying
+		// there is none. Audio reads the record first, so those bytes become
+		// unreachable debris that Forget still has to carry — and a later reader
+		// of the directory, which the README invites, sees a file the program
+		// says does not exist.
+		s := newStore(t)
+		k := store.NewAudioKey("keel", []string{"https://cdn/keel.mp3"})
+		if err := s.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: day(1)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetAudio(k, nil, store.AudioRecord{At: day(2), Missing: true}); err != nil {
+			t.Fatal(err)
+		}
+		data, rec, err := s.Audio(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !rec.Missing || len(data) != 0 {
+			t.Errorf("the verdict did not replace the recording: missing=%v bytes=%d", rec.Missing, len(data))
+		}
+	})
+
 	t.Run("word fact keys are normalised the way word keys are", func(t *testing.T) {
 		s := newStore(t)
 		if err := s.SetWordFacts("Hot  Dog", store.WordFacts{Band: store.A2, Domain: store.DomainGeneral, At: day(1)}); err != nil {

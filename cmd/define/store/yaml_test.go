@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -721,6 +722,23 @@ func TestPerWordDirsCoverEveryRuntimeDir(t *testing.T) {
 			t.Errorf("%q declares scoped=%v but builds the path %q; a per-word verb is scoped "+
 				"the same way the surface it touches is", name, d.Scoped, rel)
 		}
+		// THE THIRD AXIS (#46) is pinned BEHAVIOURALLY, not here, and the
+		// distinction is worth stating because the obvious test is a trap.
+		//
+		// `many` says a word owns a whole SUBDIRECTORY here, so Forget removes a
+		// tree rather than a name. The obvious guard — plant files and see
+		// what Forget takes — is SELF-FULFILLING: the planted names have to come
+		// from somewhere, and taking them from the declaration under test makes
+		// the assertion true by construction. Flipping audio's `many` to false
+		// then leaves it green, which I confirmed by running it.
+		//
+		// What knows the naming convention is the code that WRITES it. So the pin
+		// is storetest's "forget takes every recording a word owns", which goes
+		// through SetAudio and Audio: flipping `many` reddens it by name, on both
+		// twins. This guard's job is the classification's COMPLETENESS, and the
+		// third axis reaches it by being reported at all — a helper that dropped
+		// it would fail to compile here.
+		_ = d.Many
 	}
 
 	for _, d := range store.RuntimeDirs {
@@ -735,4 +753,217 @@ func TestPerWordDirsCoverEveryRuntimeDir(t *testing.T) {
 				"history beside events/ and say why.", d)
 		}
 	}
+}
+
+// A LANGUAGE SWITCH MUST NOT STRAND A RECORDING (#46 BR-2).
+//
+// The first version scoped audio/ per language, like facts/ and items/. So a
+// recording fetched while the session was English landed under audio/en, `/lang
+// es` made it unreachable, and `--forget` cleared audio/es, reported success and
+// left the file on disk — #10's BR-45 exactly, one directory further on.
+//
+// Flat is also the HONEST shape rather than merely the safe one: a language
+// shelf would be a second statement of which voice a recording is for, and
+// AudioKey's digest over the candidate list already carries voice and locale.
+//
+// Mem cannot reproduce a language switch — it has no shelves — so this lives
+// here rather than in storetest.
+func TestForgetTakesARecordingFetchedInAnotherLanguage(t *testing.T) {
+	dir := t.TempDir()
+	en := store.NewYAML(dir, store.Lang("en"), nil)
+	if err := en.Upsert(store.Word{Text: "red"}); err != nil {
+		t.Fatal(err)
+	}
+	k := store.NewAudioKey("red", []string{"https://cdn/red_en_us_1.mp3"})
+	if err := en.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The session switches language, exactly as /lang does.
+	es := store.NewYAML(dir, store.Lang("es"), nil)
+	if _, err := es.Forget("red"); err != nil {
+		t.Fatalf("Forget: %v", err)
+	}
+	data, _, err := en.Audio(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != 0 {
+		t.Error("forgetting in another language left the recording on disk, " +
+			"and reported success — the word kept the material that made it worth forgetting")
+	}
+}
+
+// EVERY DEGRADE BRANCH IN YAML.Audio IS DRIVEN (#46 BR-6).
+//
+// Its doc comment promises "degrades, never fails" and lists the ways: a missing
+// file, a corrupt record, an unreadable blob. Only the first was reached by any
+// test, so two branches carried a promise nothing checked — and a cache that can
+// break playback is worse than no cache, which is the whole reason the promise is
+// there.
+//
+// Mem cannot produce a corrupt file or a vanished blob, so this lives here.
+func TestAudioDegradesOnEveryDamagedFile(t *testing.T) {
+	k := store.NewAudioKey("sycophantic", []string{"https://cdn/a.mp3"})
+
+	t.Run("a corrupt record reads as nothing cached", func(t *testing.T) {
+		dir := t.TempDir()
+		y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		if err := y.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		rec := filepath.Join(dir, "audio", store.Slug("sycophantic"), k.DigestForTest()+".yaml")
+		if err := os.WriteFile(rec, []byte("\x00not: [yaml"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		data, got, err := y.Audio(k)
+		if err != nil {
+			t.Errorf("a corrupt record returned an error rather than degrading: %v", err)
+		}
+		if len(data) != 0 || !got.At.IsZero() {
+			t.Errorf("a corrupt record was believed: %d bytes, %+v", len(data), got)
+		}
+	})
+
+	t.Run("a record whose blob is gone is not a hit", func(t *testing.T) {
+		// The nastiest of the three: reporting the record alone would serve an
+		// EMPTY recording, which plays as silence and reads as "this word has no
+		// audio" — a lie the caller cannot detect.
+		dir := t.TempDir()
+		y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		if err := y.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		blob := filepath.Join(dir, "audio", store.Slug("sycophantic"), k.DigestForTest()+".mp3")
+		if err := os.Remove(blob); err != nil {
+			t.Fatal(err)
+		}
+		data, got, err := y.Audio(k)
+		if err != nil {
+			t.Errorf("a missing blob returned an error rather than degrading: %v", err)
+		}
+		if len(data) != 0 || !got.At.IsZero() {
+			t.Errorf("a record with no blob read as a hit: %d bytes, %+v — that serves silence "+
+				"and reads as 'no recording exists'", len(data), got)
+		}
+	})
+
+	t.Run("an unwritable directory does not fail the write path", func(t *testing.T) {
+		// SetAudio's caller swallows errors on purpose (a failed write costs a
+		// refetch), but the store must not panic or corrupt on the way.
+		dir := t.TempDir()
+		y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		blocked := filepath.Join(dir, "audio")
+		if err := os.WriteFile(blocked, []byte("not a directory"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := y.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err == nil {
+			t.Error("writing under a file-where-a-directory-should-be reported success")
+		}
+		// And a read of the same is still "nothing cached" rather than an error.
+		if _, _, err := y.Audio(k); err != nil {
+			t.Errorf("reading an unusable audio path returned an error: %v", err)
+		}
+	})
+
+	t.Run("a blob larger than the cap is truncated, not swallowed whole", func(t *testing.T) {
+		dir := t.TempDir()
+		y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		if err := y.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		blob := filepath.Join(dir, "audio", store.Slug("sycophantic"), k.DigestForTest()+".mp3")
+		if err := os.WriteFile(blob, make([]byte, (4<<20)+4096), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		data, _, err := y.Audio(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) > 4<<20 {
+			t.Errorf("read %d bytes past the %d cap — the directory is hand-editable, so its "+
+				"contents are untrusted input", len(data), 4<<20)
+		}
+	})
+}
+
+// A VERDICT REMOVES THE FILE, not just the answer (#46 BR-12).
+//
+// The conformance row for this asserts through Audio — which reads the record
+// first and reports "missing" regardless of what is beside it. So reverting the
+// blob removal left the whole store package green: the stale .mp3 was
+// unreachable debris that Forget still had to carry, and a person browsing the
+// directory (which the README invites) would see a file the program says does
+// not exist.
+//
+// Asserting through the FILESYSTEM is the only way to see it, which is why this
+// is here and not in storetest: Mem has no files to leave behind.
+func TestAVerdictDeletesTheRecordingItSupersedes(t *testing.T) {
+	dir := t.TempDir()
+	y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+	k := store.NewAudioKey("keel", []string{"https://cdn/keel.mp3"})
+
+	if err := y.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	blob := filepath.Join(dir, "audio", store.Slug("keel"), k.DigestForTest()+".mp3")
+	if _, err := os.Stat(blob); err != nil {
+		t.Fatalf("the recording was never written, so this proves nothing: %v", err)
+	}
+
+	if err := y.SetAudio(k, nil, store.AudioRecord{At: time.Now(), Missing: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(blob); !os.IsNotExist(err) {
+		t.Errorf("%s survived the verdict that supersedes it (%v) — unreachable bytes "+
+			"that Forget still carries and a reader still sees", blob, err)
+	}
+}
+
+// EACH HALF OF THE EMPTINESS GUARD IS REACHED SEPARATELY (#46).
+//
+// storetest's row cannot distinguish them: refusing the write and refusing the
+// read each produce "nothing cached" on their own, so dropping either left the
+// suite green. Defence in depth is right here — a hand-truncated file reaches the
+// read path without ever passing the write one — but "right" and "pinned" are
+// different claims, and the mutation sweep is what tells them apart.
+func TestBothHalvesOfTheEmptinessGuardAreReached(t *testing.T) {
+	k := store.NewAudioKey("keel", []string{"https://cdn/keel.mp3"})
+
+	t.Run("the write refuses, so no file appears", func(t *testing.T) {
+		dir := t.TempDir()
+		y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		if err := y.SetAudio(k, nil, store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		// THROUGH THE FILESYSTEM, because through Audio the read-side guard would
+		// answer identically and this would prove nothing.
+		if _, err := os.Stat(filepath.Join(dir, "audio", store.Slug("keel"))); !os.IsNotExist(err) {
+			t.Errorf("an empty recording put files on disk (%v) — a permanent, "+
+				"never-expiring hit of silence", err)
+		}
+	})
+
+	t.Run("the read refuses a blob truncated by hand", func(t *testing.T) {
+		// The path the write guard cannot cover: a real recording is stored, then
+		// the file is emptied outside the program. The README documents this
+		// directory as inspectable and editable, so this is invited input.
+		dir := t.TempDir()
+		y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		if err := y.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		blob := filepath.Join(dir, "audio", store.Slug("keel"), k.DigestForTest()+".mp3")
+		if err := os.WriteFile(blob, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		data, rec, err := y.Audio(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 0 || !rec.At.IsZero() {
+			t.Errorf("a truncated recording read back as a hit: %d bytes, %+v — it plays "+
+				"as silence and reads as 'this word has no audio'", len(data), rec)
+		}
+	})
 }

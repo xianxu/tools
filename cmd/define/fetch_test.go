@@ -79,11 +79,11 @@ func TestFetchContextCancellationReachesTheCaller(t *testing.T) {
 	}
 }
 
-// --- cachingAudioSource ------------------------------------------------------
+// --- audioSeam ---------------------------------------------------------------
 
-func TestCachingAudioSourceServesRepeatsFromMemory(t *testing.T) {
+func TestAudioSeamServesRepeatsFromMemory(t *testing.T) {
 	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("ID3audio")})
-	src := newCachingAudioSource(cdn.source())
+	src := newAudioSeam(cdn.source())
 	urls := cdn.urls("/a.mp3")
 
 	first, _, err := src.Fetch(t.Context(), urls)
@@ -102,9 +102,9 @@ func TestCachingAudioSourceServesRepeatsFromMemory(t *testing.T) {
 	}
 }
 
-func TestCachingAudioSourceDistinguishesWords(t *testing.T) {
+func TestAudioSeamDistinguishesWords(t *testing.T) {
 	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("A"), "/b.mp3": []byte("B")})
-	src := newCachingAudioSource(cdn.source())
+	src := newAudioSeam(cdn.source())
 
 	src.Fetch(t.Context(), cdn.urls("/a.mp3"))
 	src.Fetch(t.Context(), cdn.urls("/b.mp3"))
@@ -116,10 +116,10 @@ func TestCachingAudioSourceDistinguishesWords(t *testing.T) {
 // A TRANSPORT failure is transient and must stay retryable — unlike ErrNoAudio,
 // which is permanent and is cached (see the test below). A 404 is not a
 // transport failure, so this closes the server to produce a real one.
-func TestCachingAudioSourceDoesNotCacheTransportFailures(t *testing.T) {
+func TestAudioSeamDoesNotCacheTransportFailures(t *testing.T) {
 	cdn := newFakeCDN(t, nil)
 	urls := cdn.urls("/a.mp3")
-	src := newCachingAudioSource(cdn.source())
+	src := newAudioSeam(cdn.source())
 	cdn.Close()
 
 	for i := 0; i < 2; i++ {
@@ -137,9 +137,9 @@ func TestCachingAudioSourceDoesNotCacheTransportFailures(t *testing.T) {
 
 // "No recording exists" is permanent, unlike a transport failure. Replaying a
 // word with no audio must not re-issue all four candidate requests every time.
-func TestCachingAudioSourceCachesErrNoAudio(t *testing.T) {
+func TestAudioSeamCachesErrNoAudio(t *testing.T) {
 	cdn := newFakeCDN(t, nil) // every candidate 404s → ErrNoAudio
-	src := newCachingAudioSource(cdn.source())
+	src := newAudioSeam(cdn.source())
 	urls := cdn.urls("/a.mp3", "/b.mp3")
 
 	if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrNoAudio) {
@@ -232,5 +232,61 @@ func TestTheVoiceReportNamesALanguageEvenWithAZeroVoice(t *testing.T) {
 	reportVoice(&b, u, "https://example.invalid/not-a-source.mp3")
 	if got := b.String(); !strings.Contains(got, "played the en one") {
 		t.Errorf("report = %q, want it to name a language rather than a blank", got)
+	}
+}
+
+// A ZERO-BYTE PAYLOAD IS NOT A RECORDING, AT EVERY LAYER (#46 BR-22).
+//
+// Three layers decide "is this a recording", and each has to answer the same
+// way — the finding named the class and I fixed one layer at a time across three
+// rounds. httpAudioSource skips an empty body and keeps walking (below); the
+// store refuses it at the write and the read; and this is the memo, which must
+// not hand back a hit for something no layer should have produced.
+//
+// Driven through a source that returns (empty, nil) DIRECTLY, because after the
+// walk fix the real HTTP layer no longer can — and a guard whose only reachable
+// input has been removed still has to hold for the next source that arrives.
+func TestAZeroByteResponseIsNotAHit(t *testing.T) {
+	src := emptyBodySource{}
+	seam := newAudioSeam(src)
+
+	data, from, err := seam.Fetch(t.Context(), []string{"https://cdn/a.mp3"})
+	if err == nil {
+		t.Errorf("an empty body was served as a hit: %d bytes, from %q — it plays as "+
+			"silence and reportVoice prints that URL as the voice that answered", len(data), from)
+	}
+	if !errors.Is(err, ErrNoAudio) {
+		t.Errorf("err = %v, want ErrNoAudio", err)
+	}
+}
+
+// emptyBodySource is a source that "succeeds" with nothing, which is what a
+// zero-byte 200 used to look like to everything above the walk.
+type emptyBodySource struct{}
+
+func (emptyBodySource) Fetch(context.Context, []string) ([]byte, string, error) {
+	return nil, "https://cdn/a.mp3", nil
+}
+
+// AN EMPTY 200 DOES NOT STOP THE WALK (#46 BR-22, root).
+//
+// The layers above were taught not to REMEMBER an empty body; this is the layer
+// that FETCHES one. Returning it as the answer also abandoned the remaining
+// candidates — and the fallback order exists precisely because coverage is
+// partial, so the recording may well be in the next one.
+func TestAnEmptyBodyDoesNotStopTheCandidateWalk(t *testing.T) {
+	cdn := newFakeCDN(t, map[string][]byte{
+		"/a.mp3": {},                 // a 200 with no body
+		"/b.mp3": []byte("ID3audio"), // the real recording, one candidate later
+	})
+	data, from, err := cdn.source().Fetch(t.Context(), cdn.urls("/a.mp3", "/b.mp3"))
+	if err != nil {
+		t.Fatalf("the walk gave up at the empty body: %v", err)
+	}
+	if string(data) != "ID3audio" {
+		t.Errorf("got %q from %q, want the later candidate's recording", data, from)
+	}
+	if !strings.HasSuffix(from, "/b.mp3") {
+		t.Errorf("from = %q, want the candidate that actually answered", from)
 	}
 }

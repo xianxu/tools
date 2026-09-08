@@ -38,7 +38,7 @@ func playRig(t *testing.T, words ...string) (deps, options, *store.Mem) {
 	// fakePlayer, because playAnnounced shells out to afplay(1) and a real player
 	// in a test is a real process.
 	d.player = &fakePlayer{}
-	d.audio = noAudioSource{}
+	d.audio = newAudioSeam(nil)
 	// COLOUR AND TTY ON, which is the only configuration a sitting can be in:
 	// `--play` refuses unless `opt.tty`, and `tty` and `color` are the identical
 	// expression at the flag parse (main.go). A rig whose defaults are
@@ -73,7 +73,7 @@ func playRig(t *testing.T, words ...string) (deps, options, *store.Mem) {
 func audible(d *deps, opt *options) *fakePlayer {
 	fp := &fakePlayer{}
 	d.player = fp
-	d.audio = okAudio{}
+	d.audio = newAudioSeam(okAudio{})
 	opt.noAudio = false
 	return fp
 }
@@ -1867,7 +1867,7 @@ func TestSittingWithNoModelAndNoNetwork(t *testing.T) {
 		panic("form 2.3 read the environment for a credential")
 	}
 	// And no audio source at all, so nothing can reach the CDN either.
-	d.audio = noAudioSource{}
+	d.audio = newAudioSeam(nil)
 
 	qs, held := questionsFor(t, d, opt)
 	if len(qs) == 0 {
@@ -4311,5 +4311,46 @@ func TestAClozePromptOffersNoHeadwordToClick(t *testing.T) {
 	rs := promptRegions(ch)
 	if len(rs) != 1 || rs[0].Kind != RegionHeadword || rs[0].Word != "ephemeral" {
 		t.Errorf("the headword click was lost for the form that does lead with one: %v", rs)
+	}
+}
+
+// ONE WORD COSTS ONE FETCH, however often it is played (#46).
+//
+// NAMED FOR WHAT IT ASSERTS. It was called TestASittingFetchesARecordingOnce and
+// the boundary review pointed out that it never calls runPlay — the M1
+// regression was "runPlay forgot to wrap the source", and a test that does not
+// enter runPlay cannot pin that.
+//
+// The right response turned out not to be a loop-level test, because the failure
+// mode NO LONGER EXISTS: with deps.audio a *audioSeam there is no wrap line in
+// runPlay to forget, and `isTerminal(stdout)` is a real syscall with no seam, so
+// a sitting cannot be driven in-process anyway. What can still regress is the
+// WIRING — TestWithStorePutsTheDiskCacheUnderTheMemo, which the same review
+// found unpinned — and the memo itself, which is this.
+//
+// Asserted through the CDN's own request recorder rather than by inspecting the
+// seam: what matters is that no second request leaves the process.
+func TestOneWordCostsOneFetchHoweverOftenItIsPlayed(t *testing.T) {
+	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("ID3audio")})
+	seam := newAudioSeam(cdn.source())
+	urls := cdn.urls("/a.mp3")
+
+	// Two plays of one word, the shape a sitting has: ask, reveal, replay.
+	for i := 0; i < 3; i++ {
+		if _, _, err := seam.Fetch(t.Context(), urls); err != nil {
+			t.Fatalf("play %d: %v", i, err)
+		}
+	}
+	if got := cdn.Requested(); len(got) != 1 {
+		t.Errorf("one word cost %d requests, want 1: %v", len(got), got)
+	}
+
+	// AND THE SEAM IS NOT SOMETHING A CALLER CAN OPT OUT OF. deps.audio is a
+	// *audioSeam, so there is no unwrapped source to hold — which is why this
+	// test needs no assertion about runPlay remembering to wrap.
+	var d deps
+	if _, ok := any(d.audio).(*audioSeam); !ok {
+		t.Errorf("deps.audio is %T; a field that can hold a bare AudioSource is a "+
+			"field some loop will hold one in", d.audio)
 	}
 }
