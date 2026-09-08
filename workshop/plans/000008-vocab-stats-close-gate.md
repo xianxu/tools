@@ -125,6 +125,87 @@ rounds:
           family: untrusted-persisted-input
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-08T00:21:13-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'Mutation-verified on a scratch clone at HEAD: deleting -stats reddens harvest_test.go:946 by name, and so does deleting -reflect.'
+          round: 3
+        - id: BR-2
+          disposition: not-addressed
+          note: activeDays row and exit code fixed; plan:56 and Task 2 Steps 3/5 still claim store.DaysBetween is used, and countable/streaks/printStats are in no row.
+          round: 3
+        - id: BR-3
+          disposition: addressed
+          note: Every step is ticked, so TestPlanTablesNameEntitiesThatExist now runs; it just cannot reach the ARCH-DRY row that keeps BR-2 open.
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: printStats at stats.go:63; both doors call it (:48, :228). No test reddens on revert — inherent to a de-duplication fix, verified structurally.
+          round: 3
+        - id: BR-5
+          disposition: not-addressed
+          note: README:407 still "3 January"; re-rendered the README's exact values at HEAD — every other line byte-identical, that one is "Jan 3".
+          round: 3
+        - id: BR-6
+          disposition: not-addressed
+          note: Fold(events) at stats.go:85 is still unfiltered, the doc comment still claims validation without naming the exception, nothing pins it.
+          round: 3
+        - id: BR-7
+          disposition: not-addressed
+          note: README:521 still hand-lists the six modes; no doc_sync_test.go guard reuses declaredModes.
+          round: 3
+        - id: BR-8
+          disposition: not-addressed
+          note: runStats still takes an unused ctx at stats.go:37 with no `_ context.Context` and no line saying why.
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: 'Reproduced at HEAD in three zones. Note the finding''s first fix sketch is wrong: StartOfDay-wrapping collapses Havana''s Mar 8 key onto Mar 7. Civil-date/UTC-day-index keying is the only correct option.'
+          round: 3
+        - id: BR-10
+          disposition: not-addressed
+          note: Accuracy is still keyed by the raw Form string with neutralisation only at formLabel (stats.go:190).
+          round: 3
+      findings:
+        - id: BR-11
+          severity: Important
+          title: The dispatch derivation covers five of six modes and calibrates against three hand-typed floors
+          detail: |-
+            This is the 3rd finding in family hand-maintained-extent; BR-1 was fixed as an
+            instance, so state the rule rather than patching this site. The rule: a derivation
+            must fail closed against the count the OTHER side declares, never against a
+            hand-typed floor. declaredModes still says `len(names) < 5` while run() declares six
+            (harvest_test.go:837); the new guard says `len(flagName) < 5` and
+            `len(dispatched) < 3`. -forget dispatches via `if forgetting {` rather than
+            `if *boolFlag {`, so the parser cannot see it, and the floor of 3 is far below 6 so
+            the under-derivation never trips. Mutation-verified: deleting
+            `{"-forget", forgetting}` from main.go:605 leaves
+            TestEveryDispatchedModeIsInTheCollisionList green — only the hand-listed
+            TestRunRefusesTwoModes catches it, which is the mechanism BR-1 called insufficient.
+            Prevalence: 5 of 6 modes derived, 3 of 3 floors hand-typed.
+          family: hand-maintained-extent
+          round: 3
+        - id: BR-12
+          severity: Important
+          title: The closing commit deleted issue 48's durable plan, leaving a working issue pointing at a file no branch holds
+          detail: |-
+            15b94c3 deleted workshop/plans/000048-play-from-the-loop-plan.md, added by c208cf9 on
+            this same branch, to make the plan-vs-code guards pass on #8's window.
+            workshop/issues/000048-play-a-sitting-without-leaving-the-loop.md:89 still reads
+            "Durable design: workshop/plans/000048-play-from-the-loop-plan.md" and the issue is
+            status working; the same commit ADDED
+            workshop/plans/000048-play-a-sitting-without-leaving-the-loop-plan-gate.md, which now
+            ledgers a plan present on no branch tip (git log --all shows the file only in
+            c208cf9). repo_guard_test.go:775-782 already records the rule one notch down: a guard
+            worked around by mangling its input is worse than the false positive. Restore it onto
+            a #48 branch via `git show c208cf9:workshop/plans/000048-play-from-the-loop-plan.md`,
+            or fix the issue pointer and move the gate ledger with it.
+          family: artifact-deleted-to-satisfy-guard
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#8 (boundary-review)
@@ -204,15 +285,57 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   that read the same. Neutralising is right; collapsing at the key or disambiguating the
   label would keep the screen honest about what the log actually holds.
 
+## Round 3 — 2026-09-08T00:21:13-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Mutation-verified on a scratch clone at HEAD: deleting -stats reddens harvest_test.go:946 by name, and so does deleting -reflect.
+- BR-2 — not-addressed — activeDays row and exit code fixed; plan:56 and Task 2 Steps 3/5 still claim store.DaysBetween is used, and countable/streaks/printStats are in no row.
+- BR-3 — addressed — Every step is ticked, so TestPlanTablesNameEntitiesThatExist now runs; it just cannot reach the ARCH-DRY row that keeps BR-2 open.
+- BR-4 — addressed — printStats at stats.go:63; both doors call it (:48, :228). No test reddens on revert — inherent to a de-duplication fix, verified structurally.
+- BR-5 — not-addressed — README:407 still "3 January"; re-rendered the README's exact values at HEAD — every other line byte-identical, that one is "Jan 3".
+- BR-6 — not-addressed — Fold(events) at stats.go:85 is still unfiltered, the doc comment still claims validation without naming the exception, nothing pins it.
+- BR-7 — not-addressed — README:521 still hand-lists the six modes; no doc_sync_test.go guard reuses declaredModes.
+- BR-8 — not-addressed — runStats still takes an unused ctx at stats.go:37 with no `_ context.Context` and no line saying why.
+- BR-9 — not-addressed — Reproduced at HEAD in three zones. Note the finding's first fix sketch is wrong: StartOfDay-wrapping collapses Havana's Mar 8 key onto Mar 7. Civil-date/UTC-day-index keying is the only correct option.
+- BR-10 — not-addressed — Accuracy is still keyed by the raw Form string with neutralisation only at formLabel (stats.go:190).
+
+### Raised
+
+- **BR-11** [Important] `hand-maintained-extent` The dispatch derivation covers five of six modes and calibrates against three hand-typed floors
+  This is the 3rd finding in family hand-maintained-extent; BR-1 was fixed as an
+  instance, so state the rule rather than patching this site. The rule: a derivation
+  must fail closed against the count the OTHER side declares, never against a
+  hand-typed floor. declaredModes still says `len(names) < 5` while run() declares six
+  (harvest_test.go:837); the new guard says `len(flagName) < 5` and
+  `len(dispatched) < 3`. -forget dispatches via `if forgetting {` rather than
+  `if *boolFlag {`, so the parser cannot see it, and the floor of 3 is far below 6 so
+  the under-derivation never trips. Mutation-verified: deleting
+  `{"-forget", forgetting}` from main.go:605 leaves
+  TestEveryDispatchedModeIsInTheCollisionList green — only the hand-listed
+  TestRunRefusesTwoModes catches it, which is the mechanism BR-1 called insufficient.
+  Prevalence: 5 of 6 modes derived, 3 of 3 floors hand-typed.
+- **BR-12** [Important] `artifact-deleted-to-satisfy-guard` The closing commit deleted issue 48's durable plan, leaving a working issue pointing at a file no branch holds
+  15b94c3 deleted workshop/plans/000048-play-from-the-loop-plan.md, added by c208cf9 on
+  this same branch, to make the plan-vs-code guards pass on #8's window.
+  workshop/issues/000048-play-a-sitting-without-leaving-the-loop.md:89 still reads
+  "Durable design: workshop/plans/000048-play-from-the-loop-plan.md" and the issue is
+  status working; the same commit ADDED
+  workshop/plans/000048-play-a-sitting-without-leaving-the-loop-plan-gate.md, which now
+  ledgers a plan present on no branch tip (git log --all shows the file only in
+  c208cf9). repo_guard_test.go:775-782 already records the rule one notch down: a guard
+  worked around by mangling its input is worse than the false positive. Restore it onto
+  a #48 branch via `git show c208cf9:workshop/plans/000048-play-from-the-loop-plan.md`,
+  or fix the issue pointer and move the gate ledger with it.
+
 ## Open findings
 
-- **BR-1** [Important] `hand-maintained-extent` Removing -stats from run()'s modes slice leaves the whole cmd/define suite green
 - **BR-2** [Important] `plan-table-drift` Plan names an entity the code never declares and states the wrong nil-deck exit code
-- **BR-3** [Important] `plan-table-drift` Unticked plan steps suppress TestPlanTablesNameEntitiesThatExist at the boundary
-- **BR-4** [Important] `duplicated-read-path` runStats and runStatsCommand duplicate the deck/log/clock read the comment says is shared
 - **BR-5** [Minor] `docs-restate-unverified-output` README's sample screen prints "3 January"; the code prints "Jan 3"
 - **BR-6** [Minor] `untrusted-persisted-input` Fold runs on unfiltered events while every other figure goes through countable
 - **BR-7** [Minor] `hand-maintained-extent` README's mode list is a hand-maintained restatement of run()'s modes slice
 - **BR-8** [Minor] `unused-parameter` runStats takes a context.Context it never uses
 - **BR-9** [Critical] `local-calendar-arithmetic` streaks breaks a run across any DST transition that occurs at local midnight
 - **BR-10** [Minor] `untrusted-persisted-input` formLabel sanitises at render, so two distinct form keys can print as identical rows
+- **BR-11** [Important] `hand-maintained-extent` The dispatch derivation covers five of six modes and calibrates against three hand-typed floors
+- **BR-12** [Important] `artifact-deleted-to-satisfy-guard` The closing commit deleted issue 48's durable plan, leaving a working issue pointing at a file no branch holds

@@ -15,6 +15,12 @@ var (
 	nyc       = mustLoad("America/New_York")
 	kolkata   = mustLoad("Asia/Kolkata")
 	kathmandu = mustLoad("Asia/Kathmandu") // +05:45, the quarter-hour case
+	// Zones whose DST transition happens at LOCAL MIDNIGHT, where 00:00 does not
+	// exist on the transition day. Measured, not assumed — a probe over 2026
+	// found exactly these three (see TestStreaksSurviveAMidnightDSTTransition).
+	havana   = mustLoad("America/Havana")   // 2026-03-08
+	santiago = mustLoad("America/Santiago") // 2026-09-06
+	beirut   = mustLoad("Asia/Beirut")      // 2026-03-29
 )
 
 func mustLoad(name string) *time.Location {
@@ -364,5 +370,75 @@ func TestSummariseOnNothing(t *testing.T) {
 	}
 	if !got.FirstDay.IsZero() || !got.LastDay.IsZero() {
 		t.Errorf("FirstDay/LastDay = %v/%v, want the zero time", got.FirstDay, got.LastDay)
+	}
+}
+
+// A DST TRANSITION AT LOCAL MIDNIGHT MUST NOT BREAK A RUN (#8 BR-9).
+//
+// The day set was keyed by store.StartOfDay's time.Time. Where the clocks move
+// at midnight, that midnight IS NOT A REAL INSTANT — time.Date normalises it,
+// and StartOfDay(2026-03-08) in Havana returns 2026-03-07T23:00, a key sitting
+// on the PREVIOUS day's date. Walking back a day from the 9th then missed the
+// 8th and the streak read as broken.
+//
+// New York hides this: its transitions are at 02:00, so every local midnight
+// exists and every row above passes on a wrong implementation. These three zones
+// were found by probing 2026 rather than recalled.
+func TestStreaksSurviveAMidnightDSTTransition(t *testing.T) {
+	for _, tc := range []struct {
+		loc *time.Location
+		y   int
+		m   time.Month
+		d   int // the transition day
+	}{
+		{havana, 2026, time.March, 8},
+		{santiago, 2026, time.September, 6},
+		{beirut, 2026, time.March, 29},
+	} {
+		t.Run(tc.loc.String(), func(t *testing.T) {
+			// Three consecutive days spanning the transition, at an hour that
+			// exists in every zone on every one of them.
+			var events []store.ReviewEvent
+			for _, off := range []int{-1, 0, 1} {
+				day := time.Date(tc.y, tc.m, tc.d+off, 12, 0, 0, 0, tc.loc)
+				events = append(events, reviewed("a", "meaning", true, day))
+			}
+			now := time.Date(tc.y, tc.m, tc.d+1, 20, 0, 0, 0, tc.loc)
+
+			got := schedule.Summarise(events, nil, now)
+			if got.ActiveDays != 3 {
+				t.Errorf("ActiveDays = %d, want 3 — the transition day is one day", got.ActiveDays)
+			}
+			if got.CurrentStreak != 3 {
+				t.Errorf("CurrentStreak = %d, want 3 — a run through a midnight "+
+					"transition is not broken; local midnight simply does not exist that night",
+					got.CurrentStreak)
+			}
+			if got.LongestStreak != 3 {
+				t.Errorf("LongestStreak = %d, want 3", got.LongestStreak)
+			}
+		})
+	}
+}
+
+// AND THE PREMISE IS CHECKED, so the row above cannot pass for the wrong reason:
+// these zones really do lack a local midnight on those dates, which is what
+// makes them the fixture.
+func TestTheMidnightZonesReallyLackAMidnight(t *testing.T) {
+	for _, tc := range []struct {
+		loc *time.Location
+		y   int
+		m   time.Month
+		d   int
+	}{
+		{havana, 2026, time.March, 8},
+		{santiago, 2026, time.September, 6},
+		{beirut, 2026, time.March, 29},
+	} {
+		midnight := time.Date(tc.y, tc.m, tc.d, 0, 0, 0, 0, tc.loc)
+		if midnight.Hour() == 0 && midnight.Day() == tc.d {
+			t.Errorf("%s %d-%02d-%02d HAS a local midnight, so it does not exercise "+
+				"the bug this fixture exists for", tc.loc, tc.y, tc.m, tc.d)
+		}
 	}
 }

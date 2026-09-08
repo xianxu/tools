@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -882,7 +883,10 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Bool" {
+		if !ok {
+			return true
+		}
+		if sel.Sel.Name != "Bool" {
 			return true
 		}
 		lit, ok := call.Args[0].(*ast.BasicLit)
@@ -895,10 +899,39 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 		}
 		return true
 	})
-	if len(flagName) < 5 {
-		t.Fatalf("found %d bool flags; main.go declares far more, so this derivation "+
-			"is under-deriving and would certify a set nobody chose", len(flagName))
-	}
+	// A mode can also be a bool LOCAL that names its flag directly —
+	// `forgetting := isSet(fs, "forget")`. That is one of the six, and the first
+	// version of this guard missed it (#8 BR-11): it found five, and its
+	// hand-typed floor of five certified exactly the gap it existed to catch.
+	//
+	// Read from the CALL rather than from the variable's name: `isSet(fs, "x")`
+	// says which flag it is, so nothing here has to guess from spelling.
+	ast.Inspect(file, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		id, ok := as.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		call, ok := as.Rhs[0].(*ast.CallExpr)
+		if !ok || len(call.Args) != 2 {
+			return true
+		}
+		fn, ok := call.Fun.(*ast.Ident)
+		if !ok || fn.Name != "isSet" {
+			return true
+		}
+		lit, ok := call.Args[1].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		if name, err := strconv.Unquote(lit.Value); err == nil {
+			flagName[id.Name] = "-" + name
+		}
+		return true
+	})
 
 	// 2. Every `if *x { return runY(…) }` — a flag run() RETURNS on is a mode.
 	dispatched := map[string]bool{}
@@ -907,12 +940,18 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 		if !ok || is.Cond == nil || is.Else != nil {
 			return true
 		}
-		star, ok := is.Cond.(*ast.StarExpr)
-		if !ok {
-			return true
+		// TWO SHAPES, because run() has two. A bool flag is read through a
+		// pointer (`if *playFlag {`); a bool LOCAL derived from a string flag is
+		// read directly (`if forgetting {`). Recognising only the first is what
+		// left -forget uncovered (#8 BR-11).
+		var id *ast.Ident
+		switch cond := is.Cond.(type) {
+		case *ast.StarExpr:
+			id, _ = cond.X.(*ast.Ident)
+		case *ast.Ident:
+			id = cond
 		}
-		id, ok := star.X.(*ast.Ident)
-		if !ok {
+		if id == nil {
 			return true
 		}
 		name, ok := flagName[id.Name]
@@ -932,14 +971,24 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 		}
 		return true
 	})
-	if len(dispatched) < 3 {
-		t.Fatalf("found %d dispatched modes %v; run() returns on more than that, so "+
-			"this derivation is under-deriving", len(dispatched), dispatched)
-	}
-
 	listed := map[string]bool{}
 	for _, m := range declaredModes(t) {
 		listed[m.name] = true
+	}
+	// THE FLOORS DERIVE FROM EACH OTHER, not from typed numbers. The first
+	// version calibrated against three hand-written constants (#8 BR-11), and
+	// one of them — "at least five dispatched modes" — was exactly the count a
+	// derivation missing `-forget` produced, so the floor certified the gap it
+	// was meant to catch.
+	//
+	// The two sides are independent readings of one fact, so each is the other's
+	// floor: fewer dispatches than the list declares means this parse missed a
+	// shape, and that is a failure OF THIS GUARD rather than of the code.
+	if len(dispatched) < len(listed) {
+		t.Errorf("the dispatch parse found %d modes %v but the collision list declares "+
+			"%d %v — this guard is missing a dispatch SHAPE (a mode wired some way it "+
+			"does not recognise), so it would certify a set nobody chose.",
+			len(dispatched), keysOfBool(dispatched), len(listed), keysOfBool(listed))
 	}
 	for name := range dispatched {
 		if !listed[name] {
@@ -949,4 +998,14 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 				name, name)
 		}
 	}
+}
+
+// keysOfBool is a stable listing for a diagnostic.
+func keysOfBool(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

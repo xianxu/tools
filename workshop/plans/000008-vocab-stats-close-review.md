@@ -310,3 +310,158 @@ findings:
       that read the same. Neutralising is right; collapsing at the key or disambiguating the
       label would keep the screen honest about what the log actually holds.
 ```
+
+---
+
+## Re-review — 2026-09-08T00:21:13-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 8 — define --stats: deck, streak and mastery statistics |
+| repo | tools |
+| issue file | workshop/issues/000008-vocab-stats.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 6cc7513b4ee056108f6900d482d73e0fee5def7b..15b94c39397ab5654396d07487fa6ea4663371bf |
+| command | sdlc close --issue 8 |
+| reviewer | claude |
+| timestamp | 2026-09-08T00:21:13-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The round-1 findings that were claimed fixed genuinely are — `TestEveryDispatchedModeIsInTheCollisionList` fails on mutation of both `-stats` and `-reflect`, and `printStats` really does collapse the five duplicated statements the DRY comment was lying about. But the round-2 Critical is untouched: I reproduced BR-9 against the committed `Summarise` at HEAD (America/Havana 2026-03-08, Asia/Beirut 2026-03-29, America/Santiago 2026-09-06 each return `CurrentStreak=2, LongestStreak=2` where 3/3 is correct), and the Done-when row "streak arithmetic verified across timezone boundaries" is ticked over it. Six of the ten prior findings are still open, one of them Critical, so this blocks. Two new findings: the dispatch derivation that fixed BR-1 covers five of six modes — `-forget` is structurally invisible to it (mutation-verified) — and this window's closing commit deleted `workshop/plans/000048-play-from-the-loop-plan.md` while issue #48 (status `working`) still points at it and its gate ledger survives beside it.
+
+## 1. Strengths
+
+- **`TestEveryDispatchedModeIsInTheCollisionList` (`cmd/define/harvest_test.go:851`) is the right shape of fix.** Deriving the extent from the *dispatch* rather than from the list it is checking is the both-directions closure the finding asked for, and it is mutation-checked on a member the finding did not name. Verified: deleting `{"-stats", *statsFlag}` → `harvest_test.go:946` names `-stats`; deleting `{"-reflect", *reflect}` → names `-reflect`.
+- **`printStats` (`cmd/define/stats.go:63`)** made a false comment true. Both doors now differ only in where the store comes from and in the `who` string; the previous "everything below that seam is shared" was five copies.
+- **`Summarise`'s deck-vs-log asymmetry (`cmd/define/schedule/stats.go:88-100`) is genuinely the right call and well-pinned.** `TestKnownCountsTheDeckNotTheLog` asserts both halves in one fixture, and `TestMasteredAgreesWithTheScheduleFunction:106` includes a fixture-reaches-the-branch assertion so it cannot be comparing two zeros.
+- **`TestEveryStatsFieldIsRendered` (`cmd/define/stats_test.go:45`)** derives the field set by reflection with a loud `default:` branch, and names `LastDay` as a decision rather than an oversight.
+- Suite is green at HEAD (`go test ./cmd/define/...`, 110s), `gofmt` clean, `go vet` clean under default / `pty` / `conformance`.
+
+## 2. Critical findings
+
+**BR-9 (still open) — `cmd/define/schedule/stats.go:203-236`.** Reproduced at HEAD, not merely re-read. One correction to the finding's own fix sketch, which matters: **wrapping the stepped values in `store.StartOfDay` does not work.** In Havana, `StartOfDay(Mar 8 12:00)` returns `2026-03-07T23:00:00-05:00` — a key whose calendar date is Mar 7 — and `StartOfDay` of *that* returns `2026-03-07T00:00:00-05:00`, i.e. Mar 8's key collapses onto Mar 7's and `ActiveDays` drops to 2. Only the second option is correct: key the day set by a civil date (`struct{y int; m time.Month; d int}`) or by `dayIndex`'s UTC day number, which is the encoding `store.DaysBetween` already uses and which makes both this and the `*Location`-pointer hazard unrepresentable. Add a midnight-transition row to `TestStreaksAcrossDSTBoundaries` (the table covers only New York, whose transition is 02:00) and confirm it reddens first.
+
+## 3. Important findings
+
+**New — `cmd/define/harvest_test.go:851-947`, family `hand-maintained-extent`.** This is the 3rd finding in family `hand-maintained-extent`. BR-1 was fixed as an instance, so per the escalation: do not fix this instance — the rule is what needs fixing. The rule: *a derivation must fail closed against the count the other side declares, never against a hand-typed floor.* Three hand-typed floors survive the fix — `declaredModes` still says `len(names) < 5` while `run()` declares six (`harvest_test.go:837`), the new guard says `len(flagName) < 5` and `len(dispatched) < 3`. `-forget` dispatches through `if forgetting {` rather than `if *boolFlag {`, so the dispatch parser cannot see it at all, and the floor of 3 is far below 6 so the under-derivation never trips. Mutation-verified: deleting `{"-forget", forgetting}` from `main.go:605` leaves `TestEveryDispatchedModeIsInTheCollisionList` **green** — only the hand-listed `TestRunRefusesTwoModes` catches it, which is precisely the mechanism BR-1 said was insufficient. Measured prevalence: 5 of 6 modes covered, 3 of 3 floors hand-typed.
+
+**New — `workshop/plans/`, family `artifact-deleted-to-satisfy-guard`.** `15b94c3` deleted `workshop/plans/000048-play-from-the-loop-plan.md`, added in `c208cf9` on this same branch. `workshop/issues/000048-...md:89` still reads *"Durable design: `workshop/plans/000048-play-from-the-loop-plan.md`"* and the issue is `status: working`; `workshop/plans/000048-play-a-sitting-without-leaving-the-loop-plan-gate.md` was *added* by the same commit and now ledgers a plan that exists on no branch tip (`git log --all` shows the file only in `c208cf9`). `workshop/lessons.md` records the reasoning as "keep a plan on the branch that implements it" — that is right, but the move was a deletion, not a move. `repo_guard_test.go:775-782` already warns about this exact rule one notch down ("a guard training authors to obfuscate their own citations, which is worse than the false positive"). Fix: restore the file onto a `#48` branch (`git show c208cf9:workshop/plans/000048-play-from-the-loop-plan.md`) before #8's close, or fix the issue pointer and move the gate ledger with it — do not leave the tree with a `working` issue citing a file no branch holds.
+
+**BR-2 (still open, partial).** The `activeDays` row and the exit-code paragraph are fixed. What remains: `workshop/plans/000008-vocab-stats-plan.md:56` still claims the issue *"uses"* `store.DaysBetween`, and Task 2 Step 3 (`:294`) and Step 5's mutation sweep (`:296`) still say so, all ticked `[x]` — while `cmd/define/schedule/stats.go:194` states in as many words *"It does not call store.DaysBetween"*. A ticked mutation sweep that is unperformable as written is worse than an unticked one. Also still true: `countable`, `streaks` and the new `printStats` appear in no table row. `TestPlanTablesNameEntitiesThatExist` cannot reach any of these — its row regex requires the second cell to *begin* with a backticked `*.go` path, and the ARCH-DRY table's second cell begins with `` `store.DaysBetween` ``.
+
+**BR-5, BR-6, BR-7, BR-8, BR-10 (still open).** Re-verified individually; details in the dispositions below.
+
+## 4. Minor findings
+
+- `cmd/define/README.md:407` still prints `since  3 January`; re-rendered the README's exact `Stats` values against HEAD's `renderStats` — every other line is byte-identical, that one is `since  Jan 3`.
+- `store.StartOfDay` is documented and pinned as idempotent (`store/clock_test.go:85`), and is not: `StartOfDay(StartOfDay(t)) != StartOfDay(t)` for Havana 2026-03-08. Outside this window (unchanged file), so not a finding against this diff — but it is BR-9's root, and the pin uses a single zone whose transition is at 02:00.
+
+## 5. Test coverage notes
+
+- The DST table (`schedule/stats_test.go:168`) covers only `America/New_York`, whose transition is 02:00, and the fractional-offset table uses two non-DST zones. No test exercises a zone whose transition is *at local midnight* — which is exactly the class BR-9 lives in, and why a Done-when row claiming timezone verification is ticked over a reproducible bug.
+- BR-4's fix has no test that reddens on revert. That is inherent to a de-duplication finding (`TestSlashStatsAndTheFlagPrintTheSameScreen` passes with the duplication too, since the copies produced identical output), so I'm disposing it addressed on structural verification — both entry points call `printStats` at `stats.go:48` and `:228` — rather than on a failing test. Worth knowing that this one is unguarded against re-divergence if a `--days` window lands in one door.
+- No end-to-end test drives `-stats` through `run()` against a genuinely empty deck; the Done-when's empty-deck row is pinned at the `renderStats` unit only.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY** — flag (BR-2 remainder, and the new `hand-maintained-extent` rule). Pass on the code: `printStats` and the `schedule.Mastered` / `store.Key` reuse are correct.
+- **ARCH-PURE** — pass. `Summarise` and `renderStats` are pure with `now` as a parameter; `TestSchedulePurity` (`schedule/purity_test.go:17`) enforces the boundary mechanically rather than by promise, and `printStats` is the only thing touching IO.
+- **ARCH-PURPOSE** — flag. The Done-when row "streak arithmetic verified across timezone boundaries" is ticked while a reproducible timezone bug ships; the *class* is DST-at-midnight, of which the shipped table tests the easy subset (02:00 transitions).
+- **ARCH-MOCK** — pass. No new external dependency; `store.Mem` through the existing conformance-tested seam, `testDeps` unchanged.
+- **ARCH-CONSTRAINTS** — pass. `O(events + deck)` with the counter explicitly refused; the `Events(time.Time{})` whole-log read matches `/history`'s existing cost on the same interactive path.
+- **ARCH-SECURE** — flag (BR-6, BR-10, both open). The class rule worth writing down rather than patching site by site: **persisted event fields are normalised at the store's read boundary, not at each consumer's draw call.** `sanitiseItem` (`store/item.go:160`) already does exactly this for `Item.Form` — its own comment says Form "was the one persisted vocabulary in this store that did not" parse. `ReviewEvent.Form` is the same vocabulary, written by `Outcome.Form`, and is neither parsed nor neutralised at the seam — so `#8` became the first consumer that had to remember, and remembered at render time (`formLabel`, `stats.go:190`), leaving the map still keyed by the raw string. Same shape as `Fold(events)` running unfiltered while every other figure goes through `countable`. One fix at the store seam retires all three.
+- **ARCH-ORDER** — pass. `Summarise` carries no state between events; the plan writes the `N/A` as a claim with a reason rather than a bare marker, and the chronological-order dependency is cited to `store/store.go:18` and checked against both implementations.
+
+## 7. Plan revision recommendations
+
+- `workshop/plans/000008-vocab-stats-plan.md` — a `## Revisions` entry: **"`streaks` does not call `store.DaysBetween`."** Correct the ARCH-DRY table row at `:56` from "uses it" to "deliberately does not — the fold needs *is the previous day present*, a map lookup, not *how many days between*", rewrite Task 2 Step 3 (`:294`) to name what was actually implemented, and either restate Step 5's mutation sweep against something the code performs or untick it. A ticked step describing an unperformable mutation is the ledger's own `plan-table-drift` family reporting that the enumeration was never written.
+- Same entry: add `countable`, `streaks` and `printStats` to the Core-concepts / Integration-points tables with their true statuses, and note that the entity-table guard's row regex cannot reach a cell that does not *begin* with a backticked `.go` path — which is why BR-2 survived a round with the guard active.
+- `workshop/issues/000008-vocab-stats.md` — untick "Streak arithmetic verified across timezone boundaries and gaps with a fake clock" until BR-9 is fixed and a midnight-transition row is red-first.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Mutation-verified on a scratch clone at HEAD: deleting -stats reddens harvest_test.go:946 by name, and so does deleting -reflect.
+  - id: BR-2
+    disposition: not-addressed
+    note: |
+      activeDays row and exit code fixed; plan:56 and Task 2 Steps 3/5 still claim store.DaysBetween is used, and countable/streaks/printStats are in no row.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Every step is ticked, so TestPlanTablesNameEntitiesThatExist now runs; it just cannot reach the ARCH-DRY row that keeps BR-2 open.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      printStats at stats.go:63; both doors call it (:48, :228). No test reddens on revert — inherent to a de-duplication fix, verified structurally.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      README:407 still "3 January"; re-rendered the README's exact values at HEAD — every other line byte-identical, that one is "Jan 3".
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      Fold(events) at stats.go:85 is still unfiltered, the doc comment still claims validation without naming the exception, nothing pins it.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      README:521 still hand-lists the six modes; no doc_sync_test.go guard reuses declaredModes.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      runStats still takes an unused ctx at stats.go:37 with no `_ context.Context` and no line saying why.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Reproduced at HEAD in three zones. Note the finding's first fix sketch is wrong: StartOfDay-wrapping collapses Havana's Mar 8 key onto Mar 7. Civil-date/UTC-day-index keying is the only correct option.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      Accuracy is still keyed by the raw Form string with neutralisation only at formLabel (stats.go:190).
+findings:
+  - id: new
+    severity: Important
+    family: hand-maintained-extent
+    title: |
+      The dispatch derivation covers five of six modes and calibrates against three hand-typed floors
+    detail: |
+      This is the 3rd finding in family hand-maintained-extent; BR-1 was fixed as an
+      instance, so state the rule rather than patching this site. The rule: a derivation
+      must fail closed against the count the OTHER side declares, never against a
+      hand-typed floor. declaredModes still says `len(names) < 5` while run() declares six
+      (harvest_test.go:837); the new guard says `len(flagName) < 5` and
+      `len(dispatched) < 3`. -forget dispatches via `if forgetting {` rather than
+      `if *boolFlag {`, so the parser cannot see it, and the floor of 3 is far below 6 so
+      the under-derivation never trips. Mutation-verified: deleting
+      `{"-forget", forgetting}` from main.go:605 leaves
+      TestEveryDispatchedModeIsInTheCollisionList green — only the hand-listed
+      TestRunRefusesTwoModes catches it, which is the mechanism BR-1 called insufficient.
+      Prevalence: 5 of 6 modes derived, 3 of 3 floors hand-typed.
+  - id: new
+    severity: Important
+    family: artifact-deleted-to-satisfy-guard
+    title: |
+      The closing commit deleted issue 48's durable plan, leaving a working issue pointing at a file no branch holds
+    detail: |
+      15b94c3 deleted workshop/plans/000048-play-from-the-loop-plan.md, added by c208cf9 on
+      this same branch, to make the plan-vs-code guards pass on #8's window.
+      workshop/issues/000048-play-a-sitting-without-leaving-the-loop.md:89 still reads
+      "Durable design: workshop/plans/000048-play-from-the-loop-plan.md" and the issue is
+      status working; the same commit ADDED
+      workshop/plans/000048-play-a-sitting-without-leaving-the-loop-plan-gate.md, which now
+      ledgers a plan present on no branch tip (git log --all shows the file only in
+      c208cf9). repo_guard_test.go:775-782 already records the rule one notch down: a guard
+      worked around by mangling its input is worse than the false positive. Restore it onto
+      a #48 branch via `git show c208cf9:workshop/plans/000048-play-from-the-loop-plan.md`,
+      or fix the issue pointer and move the gate ledger with it.
+```

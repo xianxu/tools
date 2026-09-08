@@ -96,7 +96,7 @@ func Summarise(events []store.ReviewEvent, deck []store.Word, now time.Time) Sta
 		}
 	}
 
-	days := map[time.Time]bool{}
+	days := map[civilDay]bool{}
 	// seen is the words the log has already introduced, so "added" counts a word
 	// ONCE. This walks the events rather than asking Fold, because Progress
 	// carries no first-seen instant (Box, MaxBox, LastReviewed — progress.go:52)
@@ -113,24 +113,33 @@ func Summarise(events []store.ReviewEvent, deck []store.Word, now time.Time) Sta
 		if !ok {
 			continue
 		}
-		// IN now's LOCATION FIRST, and this is load-bearing rather than tidy.
-		// The map is keyed by time.Time, whose equality includes the *Location
-		// POINTER — so an event that came back with a fixed +01:00 zone and a
-		// `now` in time.Local would produce two different keys for one calendar
-		// day, and the streak would miss days the learner actually used.
+		// IN now's LOCATION FIRST, then as a DATE. Both halves are load-bearing
+		// and each fixes a different bug.
 		//
-		// It is also the right ANSWER, not merely the working one:
-		// store.DaysBetween's doc settles whose calendar this is — "b's location
-		// defines the calendar… the caller's question is always how many days
-		// have passed for the LEARNER, and the learner is wherever now is"
-		// (clock.go:46). This applies the same rule at the same seam.
-		day := store.StartOfDay(at.In(now.Location()))
+		// The location, because store.DaysBetween's doc settles whose calendar
+		// this is — "b's location defines the calendar… the caller's question is
+		// always how many days have passed for the LEARNER, and the learner is
+		// wherever now is" (clock.go:46).
+		//
+		// The DATE, because an instant can fail to exist. This was keyed by
+		// store.StartOfDay's time.Time, and in a zone whose DST transition
+		// happens at LOCAL MIDNIGHT that midnight is not a real instant:
+		// time.Date normalises it, and in Havana StartOfDay(2026-03-08) returns
+		// 2026-03-07T23:00 — a key on the PREVIOUS DAY'S date. Santiago
+		// (2026-09-06) and Beirut (2026-03-29) do the same. A run spanning such a
+		// date then reads as broken, which is the streak silently lying about the
+		// learner. A civil date cannot fail to exist.
+		day := civilDayOf(at.In(now.Location()))
 		days[day] = true
-		if s.FirstDay.IsZero() || day.Before(s.FirstDay) {
-			s.FirstDay = day
+		// FirstDay/LastDay stay INSTANTS because relativeDay renders them, and
+		// they are built from the event rather than from the date so the zone a
+		// reader sees is the learner's.
+		atLocal := at.In(now.Location())
+		if s.FirstDay.IsZero() || atLocal.Before(s.FirstDay) {
+			s.FirstDay = atLocal
 		}
-		if day.After(s.LastDay) {
-			s.LastDay = day
+		if atLocal.After(s.LastDay) {
+			s.LastDay = atLocal
 		}
 		switch e.Kind {
 		case store.EventLookedUp:
@@ -200,19 +209,19 @@ func countable(e store.ReviewEvent, now time.Time) (time.Time, bool) {
 // TODAY IS NOT REQUIRED for the current streak. A learner who reviewed yesterday
 // still has it; the streak breaks when a day is MISSED, not when a day has not
 // yet been used.
-func streaks(days map[time.Time]bool, now time.Time) (current, longest int) {
+func streaks(days map[civilDay]bool, now time.Time) (current, longest int) {
 	if len(days) == 0 {
 		return 0, 0
 	}
-	today := store.StartOfDay(now)
+	today := civilDayOf(now)
 
 	// The current run walks back from today, allowing today itself to be empty.
-	for d := today; ; d = d.AddDate(0, 0, -1) {
+	for d := today; ; d = d.add(-1) {
 		if days[d] {
 			current++
 			continue
 		}
-		if d.Equal(today) {
+		if d == today {
 			// Today unused is not a break — yet.
 			continue
 		}
@@ -222,11 +231,11 @@ func streaks(days map[time.Time]bool, now time.Time) (current, longest int) {
 	// The longest run is over the days themselves, so it needs no ordering: for
 	// each day that STARTS a run (its predecessor is absent), walk forward.
 	for d := range days {
-		if days[d.AddDate(0, 0, -1)] {
+		if days[d.add(-1)] {
 			continue
 		}
 		n := 0
-		for c := d; days[c]; c = c.AddDate(0, 0, 1) {
+		for c := d; days[c]; c = c.add(1) {
 			n++
 		}
 		if n > longest {
@@ -234,4 +243,39 @@ func streaks(days map[time.Time]bool, now time.Time) (current, longest int) {
 		}
 	}
 	return current, longest
+}
+
+// civilDay is a calendar date — no instant, no zone, no offset.
+//
+// THE KEY MUST BE A DATE, NOT A MOMENT. Keying the day set by time.Time was
+// wrong twice: its equality includes the *Location pointer, so one calendar day
+// written in two offsets made two keys; and worse, an instant can fail to
+// EXIST. Where a DST transition happens at local midnight — Havana 2026-03-08,
+// Santiago 2026-09-06, Beirut 2026-03-29 — there is no 00:00, and time.Date
+// normalises it into the previous day, so the day's key landed on its
+// neighbour's date and any run through it read as broken.
+//
+// A date has neither problem: it is three integers, comparable by ==, and
+// 2026-03-08 exists in every zone whatever its clocks did that night.
+type civilDay struct {
+	year  int
+	month time.Month
+	day   int
+}
+
+func civilDayOf(t time.Time) civilDay {
+	y, m, d := t.Date()
+	return civilDay{year: y, month: m, day: d}
+}
+
+// add moves by whole calendar days.
+//
+// The arithmetic runs at NOON UTC deliberately. AddDate on a real zone can land
+// in a gap or a fold; at noon in a zone that has neither, "the day before" is
+// always the date a reader would name, and the result is converted straight back
+// to a date. This is calendar arithmetic, so it is done in the one place where
+// no clock has ever been moved.
+func (c civilDay) add(days int) civilDay {
+	t := time.Date(c.year, c.month, c.day, 12, 0, 0, 0, time.UTC).AddDate(0, 0, days)
+	return civilDayOf(t)
 }

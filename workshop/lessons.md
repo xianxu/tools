@@ -3987,3 +3987,26 @@ through.
 that it named entities and tests the window did not contain. Plans are checked
 against the code in their window, so a plan for other work is a plan that cannot
 pass.
+
+**A calendar day is a DATE, never an instant — an instant can fail to exist.**
+`#8` keyed its day set by `StartOfDay`'s `time.Time`, which was careful about
+zones and still wrong: where a DST transition happens at LOCAL MIDNIGHT, 00:00 is
+not a real moment, and `time.Date` normalises it. In Havana,
+`StartOfDay(2026-03-08)` returns **2026-03-07T23:00** — a key sitting on the
+previous day's date — so any streak through that night read as broken.
+
+New York hides it completely: its transitions are at 02:00, so every local
+midnight exists and a wrong implementation passes every test written there. The
+fixture has to be a zone that actually has the property — Havana 2026-03-08,
+Santiago 2026-09-06, Beirut 2026-03-29, found by PROBING the tzdata rather than
+by recall — and the test should assert the premise too, or it can pass for the
+wrong reason.
+
+**Do calendar arithmetic where no clock has ever moved.** `civilDay.add` converts
+to noon UTC, adds days, and converts back. "The day before" is then always the
+date a reader would name.
+
+**And I deleted the probe that was investigating this.** A stray `main.go` at the
+repo root, scanning Havana/Santiago/Beirut for exactly this — swept as debris
+without asking what it was for. The review found the bug an hour later. **Before
+deleting your own scratch work, read what question it was asking.**
