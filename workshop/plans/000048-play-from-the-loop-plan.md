@@ -145,10 +145,21 @@ not the table row it first looked like.
   - **The sibling is `replayInPlace`** (`replraw.go:506`), and the name is
     deliberate: same position in the loop, same "on the terminal we already
     hold" contract.
-  - **It builds the questions and the console, then calls `playSession`.**
-    `runPlay`'s body above that call is guards + `enterRaw` + console; here the
-    guards are the loop's already, the terminal is held, and only the console
-    differs — `newConsole(ctx, d, sess, stdout, newPinnedScreen)`.
+  - **It does NOT call `newConsole`** (PQ-8). `newConsole` acquires three things
+    a borrower must not take, and the first revision's row called it anyway while
+    the prose above described the opposite:
+
+    | `newConsole` does | why a borrower must not |
+    |---|---|
+    | `finish: onceHandBack(live, sess, stdout)` (`replraw.go:85`) | restores the SHARED session and prints the transcript to a cooked terminal — the precondition PQ-1 is about |
+    | `watchResize(ctx, …)` (`replraw.go:72`) | a SECOND SIGWINCH goroutine over one terminal, outliving the sitting |
+    | `sess.enterMouse()` (`replraw.go:67`) | already reported; asking twice is a second acquisition of a thing already held |
+
+    So `newSitting` assembles the `console` struct directly — a new pinned screen
+    over the same tty, the REPL's own `resizes` channel BORROWED, and the
+    three-line `finish` above. `enterAlt` is not called either: the loop is
+    already in the alternate screen, and idempotence is a safety net rather than
+    a reason to ask.
   - **Injected into:** nothing. It is the performing half.
 
 **Test surface.**
@@ -176,15 +187,25 @@ not the table row it first looked like.
 - **A sitting that ends with no questions** — `todaysQuestions` can return none
   (nothing due). The command must say so at the prompt rather than flashing a
   screen; `--play` already has that sentence (`emptyQueueReason`, `play_loop.go:1422`, printed at `play_loop.go:920`).
-- **CONCURRENCY IS NOT N/A, and the first draft said it was** (PQ-4). Each
-  `liveScreen` carries a throttled painter (`time.AfterFunc` → `flush`,
-  `screen.go:719`), and the loop watches SIGWINCH. So while a sitting runs there
-  are two screens over one terminal, one of which can paint from a timer without
-  the loop asking. The REPL's screen is SUSPENDED for the duration — its timer
-  disarmed, its pending paint flushed first — and resumed after, buffer and
-  viewport intact.
-- **A resize DURING a sitting** goes to the sitting's screen, and the suspended
-  one takes the new size on resume rather than repainting at the old one.
+- **CONCURRENCY IS NOT N/A, and the first draft said it was** (PQ-4). Two
+  independent asynchronous things exist per console, and a sitting must add
+  exactly one of them:
+
+  **The painter.** Each `liveScreen` carries a throttled `time.AfterFunc` →
+  `flush` (`screen.go:719`) that paints without the loop asking. During a sitting
+  there are two screens over one terminal, so the REPL's is SUSPENDED — timer
+  disarmed, `pending` preserved, not flushed (flushing would put the REPL's frame
+  on top of the sitting's) — and resumed after, buffer and viewport intact.
+
+  **The resize watcher.** `newConsole` starts one goroutine per console
+  (`watchResize`, `replraw.go:72`). A sitting must NOT start a second: two
+  watchers on one SIGWINCH means the shape is delivered to two channels and the
+  suspended screen acts on it. The sitting BORROWS the REPL's `resizes` channel,
+  so there is exactly one watcher for the process's life, owned by `replRaw`.
+
+  A resize during a sitting therefore arrives on that one channel, is read by the
+  sitting's loop, and resizes the sitting's screen; the suspended screen takes the
+  new shape on `resume`, which repaints unconditionally anyway.
 - **EXTENT — who is still running when `sittingInPlace` returns.** Nothing of the
   sitting's: its screen is stopped (timer disarmed, no goroutine outlives the
   call) and its console is dropped. The REPL's screen is resumed and its timer

@@ -140,6 +140,63 @@ rounds:
           family: refusal-enumeration-incomplete
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-08T15:24:59-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: The sitting's finish is now its own two lines and the summary lands in the REPL's buffer; the ownership question is answered in prose, though the sittingInPlace row still contradicts it (see the new finding).
+          round: 3
+        - id: PQ-4
+          disposition: not-addressed
+          note: The extent enumeration omits the sitting's own watchResize goroutine, and which ctx the sitting's console gets is still unwritten.
+          round: 3
+        - id: PQ-5
+          disposition: addressed
+          note: Spec, test and the resume-brings-the-frame-back clause are all present; the tagged state is implied rather than named, which is not worth a block.
+          round: 3
+        - id: PQ-6
+          disposition: addressed
+          note: The Done-when row now states the truth — atlas/define.md is the derived surface, the README's prose is swept.
+          round: 3
+        - id: PQ-7
+          disposition: not-addressed
+          note: 'Minor, carried: the rule for who owns the no-deck sentence is still unstated and play_loop.go:30 still hand-rolls it.'
+          round: 3
+      findings:
+        - id: PQ-8
+          severity: Important
+          title: the sittingInPlace row still builds the console with newConsole, which re-installs the restoring finish and a second SIGWINCH watcher
+          detail: |-
+            This is the 3rd finding in family terminal-ownership-unstated, so the ask is the
+            rule, not the row. The rule: newConsole builds a console for a terminal its caller
+            OWNS, and ownership - not the screen constructor - is the axis a borrowed console
+            differs on, so it belongs as a parameter of the one builder exactly as newScreen
+            already is. A borrowed console differs in three places and no others: finish (stop
+            this screen and write its transcript into the REPL's screen; no sess.restore, no
+            write to the real stdout), resizes (the REPL's own channel, or a watcher on a ctx
+            cancelled when the sitting returns), and enterAlt/enterMouse (already entered,
+            idempotent at rawterm.go:147-150). As written, "only the console differs -
+            newConsole(ctx, d, sess, stdout, newPinnedScreen)" contradicts both "three things"
+            #1 and #2, gives back finish = onceHandBack (replraw.go:85) which playSession's
+            over() calls on every exit path (play_loop.go:242), and leaves sittingInPlace with
+            no stated way to reach a console at all - its signature carries no con and
+            runEditor has no rawSession.
+          family: terminal-ownership-unstated
+          round: 3
+        - id: PQ-9
+          severity: Minor
+          title: Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
+          detail: |-
+            This is the 2nd finding in family hand-swept-surface-unnamed, so the rule rather
+            than the instance: a prose surface no test derives is named - file and section - in
+            the step that sweeps it, which is this repo's own stated convention at
+            doc_sync_test.go:376-380. Here that is the per-command paragraphs at
+            cmd/define/README.md:724-760, where /stats, /history and /pron each have one.
+          family: hand-swept-surface-unnamed
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#48 (plan-quality)
@@ -239,10 +296,43 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   into the helper in the same round, or state that noDeckMessage owns the cause
   and a caller may append its own consequence, and make both entry points obey it.
 
+## Round 3 — 2026-09-08T15:24:59-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — addressed — The sitting's finish is now its own two lines and the summary lands in the REPL's buffer; the ownership question is answered in prose, though the sittingInPlace row still contradicts it (see the new finding).
+- PQ-4 — not-addressed — The extent enumeration omits the sitting's own watchResize goroutine, and which ctx the sitting's console gets is still unwritten.
+- PQ-5 — addressed — Spec, test and the resume-brings-the-frame-back clause are all present; the tagged state is implied rather than named, which is not worth a block.
+- PQ-6 — addressed — The Done-when row now states the truth — atlas/define.md is the derived surface, the README's prose is swept.
+- PQ-7 — not-addressed — Minor, carried: the rule for who owns the no-deck sentence is still unstated and play_loop.go:30 still hand-rolls it.
+
+### Raised
+
+- **PQ-8** [Important] `terminal-ownership-unstated` the sittingInPlace row still builds the console with newConsole, which re-installs the restoring finish and a second SIGWINCH watcher
+  This is the 3rd finding in family terminal-ownership-unstated, so the ask is the
+  rule, not the row. The rule: newConsole builds a console for a terminal its caller
+  OWNS, and ownership - not the screen constructor - is the axis a borrowed console
+  differs on, so it belongs as a parameter of the one builder exactly as newScreen
+  already is. A borrowed console differs in three places and no others: finish (stop
+  this screen and write its transcript into the REPL's screen; no sess.restore, no
+  write to the real stdout), resizes (the REPL's own channel, or a watcher on a ctx
+  cancelled when the sitting returns), and enterAlt/enterMouse (already entered,
+  idempotent at rawterm.go:147-150). As written, "only the console differs -
+  newConsole(ctx, d, sess, stdout, newPinnedScreen)" contradicts both "three things"
+  #1 and #2, gives back finish = onceHandBack (replraw.go:85) which playSession's
+  over() calls on every exit path (play_loop.go:242), and leaves sittingInPlace with
+  no stated way to reach a console at all - its signature carries no con and
+  runEditor has no rawSession.
+- **PQ-9** [Minor] `hand-swept-surface-unnamed` Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
+  This is the 2nd finding in family hand-swept-surface-unnamed, so the rule rather
+  than the instance: a prose surface no test derives is named - file and section - in
+  the step that sweeps it, which is this repo's own stated convention at
+  doc_sync_test.go:376-380. Here that is the per-command paragraphs at
+  cmd/define/README.md:724-760, where /stats, /history and /pron each have one.
+
 ## Open findings
 
-- **PQ-1** [Critical] `terminal-ownership-unstated` newConsole's finish restores the shared rawSession, so a sitting started from the loop hands the terminal back mid-REPL
 - **PQ-4** [Important] `unstated-goroutine-extent` the ARCH-ORDER "no concurrency" N/A is wrong — newConsole starts a resize watcher and each screen carries a paint timer
-- **PQ-5** [Important] `new-seam-untested` liveScreen suspend/resume is the plan's one new capability and it has no named test, no strategy line, and no state model
-- **PQ-6** [Important] `hand-swept-surface-unnamed` the Done-when README row rests on a false claim about existing guards, and Step 8 names no section
 - **PQ-7** [Minor] `refusal-enumeration-incomplete` the two entry points would print different sentences for the same nil deck
+- **PQ-8** [Important] `terminal-ownership-unstated` the sittingInPlace row still builds the console with newConsole, which re-installs the restoring finish and a second SIGWINCH watcher
+- **PQ-9** [Minor] `hand-swept-surface-unnamed` Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
