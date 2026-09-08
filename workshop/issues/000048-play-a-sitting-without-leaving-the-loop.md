@@ -1,11 +1,12 @@
 ---
 id: 000048
-status: open
+status: working
 deps: ["tools#6"]
 github_issue:
 created: 2026-09-07
 updated: 2026-09-07
 estimate_hours:
+started: 2026-09-07T23:50:42-07:00
 ---
 
 # /play: a sitting without leaving the loop
@@ -85,7 +86,13 @@ that a fourth path through terminal setup gets written instead.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Durable design: `workshop/plans/000048-play-from-the-loop-plan.md`.
+
+Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
+
+- [ ] The command — /play records the intent, refuses where it cannot run.
+- [ ] The sitting — sittingInPlace on the terminal the loop already holds, with
+      Ctrl-C scoped through interrupter.Set.
 
 ## Log
 
