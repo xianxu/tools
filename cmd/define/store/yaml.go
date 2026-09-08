@@ -824,8 +824,9 @@ func removeWordTree(dir, slug string) error {
 //
 // The network path caps at maxAudioBytes because "anything far larger is not a
 // pronunciation"; a file on disk deserves the same ceiling and did not have one.
-// The directory is documented as inspectable and hand-editable, so its contents
-// are untrusted input like any other (ARCH-SECURE).
+// README.md's "Look at any of it, and edit it if you like" invites hand-editing
+// and states the consequence this enforces: what is read back is untrusted input
+// like any other (ARCH-SECURE).
 func readCapped(path string, max int64) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -868,10 +869,17 @@ func (y *YAML) Audio(k AudioKey) ([]byte, AudioRecord, error) {
 		return nil, f.Record, nil
 	}
 	data, err := readCapped(filepath.Join(y.audioDir(), k.dir(), k.stem()+audioBlobExt), maxAudioBlobBytes)
-	if err != nil {
-		// A record naming a blob that is gone is not a hit. Reporting the record
-		// alone would serve an EMPTY recording, which plays as silence and reads
-		// as "this word has no audio" — a lie the caller cannot detect.
+	if err != nil || len(data) == 0 {
+		// A record whose blob is GONE OR EMPTY is not a hit, and the second half
+		// is the one the first fix missed. Reporting the record alone would serve
+		// an EMPTY recording, which plays as silence and reads as "this word has
+		// no audio" — a lie the caller cannot detect. And a hit never expires by
+		// design, so the word could never play again from this directory.
+		//
+		// THE PREDICATE IS ABOUT THE PAYLOAD, not about how the read failed. A
+		// truncated file is a legal read of nothing, and this directory is
+		// documented as hand-editable; guarding on the error alone answered the
+		// instance rather than the class.
 		return nil, AudioRecord{}, nil
 	}
 	return data, f.Record, nil
@@ -884,8 +892,8 @@ func (y *YAML) Audio(k AudioKey) ([]byte, AudioRecord, error) {
 const maxAudioBlobBytes = 4 << 20
 
 // audioBlobExt is what the bytes are called. The CDN serves mp3 and the
-// extension is for a human browsing the directory, which the README documents as
-// an invited workflow — nothing reads it back by extension.
+// extension is for a human browsing the directory — README.md's "Look at any of
+// it, and edit it if you like" — and nothing reads it back by extension.
 const audioBlobExt = ".mp3"
 
 // SetAudio stores a recording, or the verdict that there is none.
@@ -899,6 +907,18 @@ const audioBlobExt = ".mp3"
 // the `.tmp-*` shadow RuntimeFiles already covers.
 func (y *YAML) SetAudio(k AudioKey, data []byte, rec AudioRecord) error {
 	if !k.ok() {
+		return nil
+	}
+	if !rec.Missing && len(data) == 0 {
+		// REFUSED BEFORE ANYTHING IS CREATED. An empty 200 is a success to
+		// httpAudioSource, so nothing upstream calls this an error — and storing
+		// it would put a permanent, never-expiring hit of nothing on disk.
+		// Neither a recording nor a verdict: writing nothing is the honest
+		// outcome, and the next run re-asks.
+		//
+		// ABOVE MkdirAll, not below. Refusing after it left an empty directory
+		// behind — debris that Forget still has to carry, and enough to make a
+		// filesystem assertion pass for the wrong reason.
 		return nil
 	}
 	dir := filepath.Join(y.audioDir(), k.dir())

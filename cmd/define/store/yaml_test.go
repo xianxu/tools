@@ -919,3 +919,51 @@ func TestAVerdictDeletesTheRecordingItSupersedes(t *testing.T) {
 			"that Forget still carries and a reader still sees", blob, err)
 	}
 }
+
+// EACH HALF OF THE EMPTINESS GUARD IS REACHED SEPARATELY (#46).
+//
+// storetest's row cannot distinguish them: refusing the write and refusing the
+// read each produce "nothing cached" on their own, so dropping either left the
+// suite green. Defence in depth is right here — a hand-truncated file reaches the
+// read path without ever passing the write one — but "right" and "pinned" are
+// different claims, and the mutation sweep is what tells them apart.
+func TestBothHalvesOfTheEmptinessGuardAreReached(t *testing.T) {
+	k := store.NewAudioKey("keel", []string{"https://cdn/keel.mp3"})
+
+	t.Run("the write refuses, so no file appears", func(t *testing.T) {
+		dir := t.TempDir()
+		y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		if err := y.SetAudio(k, nil, store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		// THROUGH THE FILESYSTEM, because through Audio the read-side guard would
+		// answer identically and this would prove nothing.
+		if _, err := os.Stat(filepath.Join(dir, "audio", store.Slug("keel"))); !os.IsNotExist(err) {
+			t.Errorf("an empty recording put files on disk (%v) — a permanent, "+
+				"never-expiring hit of silence", err)
+		}
+	})
+
+	t.Run("the read refuses a blob truncated by hand", func(t *testing.T) {
+		// The path the write guard cannot cover: a real recording is stored, then
+		// the file is emptied outside the program. The README documents this
+		// directory as inspectable and editable, so this is invited input.
+		dir := t.TempDir()
+		y := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		if err := y.SetAudio(k, []byte("ID3"), store.AudioRecord{From: "u", At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		blob := filepath.Join(dir, "audio", store.Slug("keel"), k.DigestForTest()+".mp3")
+		if err := os.WriteFile(blob, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		data, rec, err := y.Audio(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 0 || !rec.At.IsZero() {
+			t.Errorf("a truncated recording read back as a hit: %d bytes, %+v — it plays "+
+				"as silence and reads as 'this word has no audio'", len(data), rec)
+		}
+	})
+}

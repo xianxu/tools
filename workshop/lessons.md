@@ -3858,3 +3858,26 @@ tense describing behaviour that no longer exists.
 in-place fixes included a blind symbol substitution that left five passages
 ungrammatical and broke a sixth; nobody re-reads a document they edited with a
 regex, which is exactly why AGENTS.md §1 says append.
+
+**Defence in depth is not two pins; it is one property nothing can distinguish.**
+`#46` guarded "an empty recording is not a hit" at BOTH the write and the read.
+Correct — a hand-truncated file reaches the read without passing the write — but
+the conformance row could not tell them apart, because refusing either produces
+"nothing cached". Dropping EITHER guard left the suite green.
+
+Two rules. **Sweep every guard separately**, not the property they jointly
+produce. And **reach each one where only it can answer**: the write half asserts
+through the FILESYSTEM (through the API the read half answers identically), the
+read half plants a truncated file the write half never saw.
+
+**And check what runs BEFORE the refusal.** The write guard sat below `MkdirAll`,
+so an empty write still created the directory — debris, and enough to make the
+filesystem assertion pass for the wrong reason. A refusal belongs above
+everything it is refusing to do.
+
+**Fix the class the finding names, not the input that exposed it.** The
+missing-blob branch guarded on the READ ERRORING. A blob truncated to zero bytes
+is a legal read of nothing, so it sailed past and was served as a permanent,
+never-expiring hit of silence — the exact outcome that branch existed to prevent.
+The predicate belonged on the PAYLOAD ("this cannot be a recording"), not on how
+the read failed.

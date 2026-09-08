@@ -196,3 +196,29 @@ func TestWithStorePutsTheDiskCacheUnderTheMemo(t *testing.T) {
 			"sitting re-fetches and the milestone does nothing.", len(got), got)
 	}
 }
+
+// AN EMPTY 200 IS RE-ASKED NEXT RUN (#46 BR round 4).
+//
+// httpAudioSource returns a zero-byte 200 as SUCCESS, so nothing upstream calls
+// it an error. Stored, it would be a permanent never-expiring hit of silence —
+// the outcome the missing-blob branch exists to prevent, arriving by the one
+// path that branch could not see.
+func TestAnEmptyResponseIsNotCachedAsAHit(t *testing.T) {
+	r := newDiskRig(t, map[string][]byte{"/a.mp3": {}}) // a 200 with no body
+	urls := r.cdn.urls("/a.mp3")
+
+	first, _, err := r.seam(t).FetchFor(t.Context(), "keel", urls)
+	if err == nil && len(first) == 0 {
+		// Whether the seam reports this as a hit or an error is the layer's
+		// business; what must not happen is that it is REMEMBERED.
+		t.Log("the empty body came back as a zero-byte success")
+	}
+	before := len(r.cdn.Requested())
+	if _, _, err := r.seam(t).FetchFor(t.Context(), "keel", urls); err != nil && before == 0 {
+		t.Fatalf("second run: %v", err)
+	}
+	if after := len(r.cdn.Requested()); after <= before {
+		t.Errorf("the second run made no request (%d then %d) — an empty recording "+
+			"was cached as a permanent hit, and hits never expire", before, after)
+	}
+}

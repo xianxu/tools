@@ -532,6 +532,17 @@ user-model.en.md           written by --reflect, read to pitch answers; one per
                            never rewritten
 ```
 
+**Look at any of it, and edit it if you like.** Everything above is plain YAML
+beside one plain-text file and the cached recordings — no database, no index to
+keep in step. Deleting a word's file forgets it; correcting a band in `facts/`
+is read back on the next sitting; the `## Corrections` section of the learner
+model is yours and is never rewritten.
+
+The program treats what it reads back as UNTRUSTED, which is what makes that
+safe rather than merely possible: a hand-edited file cannot forge a row in a
+grid, an escape sequence in a stem cannot reach the terminal, and a recording
+truncated to nothing is re-fetched instead of played as silence.
+
 ## Languages
 
 **One language at a time.** `/lang` says which one, `/lang es` switches, and the

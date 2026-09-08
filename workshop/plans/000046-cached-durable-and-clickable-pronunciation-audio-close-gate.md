@@ -296,6 +296,89 @@ rounds:
           round: 3
       boundary: M1
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-07T16:42:38-07:00"
+      agent: claude
+      boundary: M1
+      blocked: true
+      protocol_error: no valid findings block
+    - "n": 5
+      timestamp: "2026-09-07T17:01:41-07:00"
+      agent: claude
+      dispose:
+        - id: BR-6
+          disposition: addressed
+          note: All four degrade branches mutation-verified red-without-the-fix; failingStore now has a real call site at audiodisk_test.go:152.
+          round: 5
+        - id: BR-9
+          disposition: addressed
+          note: A Revisions entry was appended for this round; the substitution artifacts and the "go, along / along with" break are gone (grep clean).
+          round: 5
+        - id: BR-12
+          disposition: addressed
+          note: 'Mutation-verified: reverting os.Remove(blob) reddens TestAVerdictDeletesTheRecordingItSupersedes by name.'
+          round: 5
+        - id: BR-13
+          disposition: not-addressed
+          note: mergeRegions, AudioKey/AudioRecord and Task 2's Create list are fixed; plan lines 217, 232, 255 and 346 still drift from the code.
+          round: 5
+        - id: BR-15
+          disposition: addressed
+          note: 45 of 45 plan checkboxes ticked, none left unchecked.
+          round: 5
+        - id: BR-16
+          disposition: not-addressed
+          note: Code paths, README, atlas and the lessons rule all landed; the prescribed grep is line-oriented and misses three wrapped restatements.
+          round: 5
+        - id: BR-17
+          disposition: not-addressed
+          note: cmd/define/command.go is not in this window at all; d.audio is still in neither applyLang's enumeration nor its exclusion clause.
+          round: 5
+        - id: BR-18
+          disposition: not-addressed
+          note: The cap is now pinned (mutation-verified), but the sibling record read is still unbounded and the boundary-level statement was not written.
+          round: 5
+      findings:
+        - id: BR-19
+          severity: Important
+          title: An empty recording is written to disk and served as a permanent, never-expiring hit — the outcome the new missing-blob branch exists to prevent
+          detail: |-
+            YAML.Audio (cmd/define/store/yaml.go:870-877) guards the missing-blob case on readCapped
+            returning an ERROR; a blob that reads back as zero bytes returns empty data with the full
+            record and nil, and diskAudioCache.Fetch (cmd/define/audiodisk.go:80-84) serves it as a
+            hit. Hits never expire by design (store/audio.go:95-97), so the word can never play again
+            from that directory until --forget. Two reachable inputs: a hand-truncated .mp3 (the code
+            twice calls this directory untrusted, hand-editable input) and a 200 with an empty body,
+            which httpAudioSource.Fetch (cmd/define/fetch.go:64-72) returns as success and SetAudio
+            (yaml.go:917) stores without an emptiness guard. Probe against the production layering:
+            first run 0 bytes err=nil, second run 0 bytes err=nil, one CDN request ever, record on
+            disk with Missing:false. This is drift from Audio's own contract ("every way this can go
+            wrong reads as nothing cached") and from the sibling branch eight lines above, which
+            calls exactly this "an EMPTY recording ... a lie the caller cannot detect". The fix
+            answered the instance (readCapped errored) and not the class (the payload cannot be a
+            recording): treat !rec.Missing and len(data)==0 as nothing-cached in BOTH twins, refuse
+            the write in SetAudio, and add a storetest row plus one audiodisk row so an empty 200 is
+            re-asked next run. ARCH-SECURE: the failure path substitutes a fabricated value that
+            reportVoice then prints as the URL that answered.
+          family: degenerate-payload-trusted
+          round: 5
+        - id: BR-20
+          severity: Minor
+          title: Two comments justify the 4MB cap and the .mp3 extension by citing a README passage that does not exist
+          detail: |-
+            readCapped says "The directory is documented as inspectable and hand-editable"
+            (cmd/define/store/yaml.go:826-827) and audioBlobExt says "for a human browsing the
+            directory, which the README documents as an invited workflow" (yaml.go:886-887).
+            cmd/define/README.md describes what define writes and never invites inspection or
+            editing; grepping it for hand-edit/editable/inspect/browse returns nothing. The claim is
+            load-bearing — it is the entire ARCH-SECURE argument for bounding the read. The rule: a
+            comment that justifies a decision by citing another document must be checkable against
+            it. Either state it once in the README and cite that, or drop the citation and keep the
+            cap on its own merits.
+          family: unsourced-cross-reference
+          round: 5
+      boundary: M1
+      blocked: false
 ---
 
 # Gate ledger — tools#46 (boundary-review)
@@ -459,13 +542,59 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   persisted reads are bounded and why the rest (words/, facts/, items/) are not — a per-site
   fix is what left the sibling in place here.
 
+## Round 4 — 2026-09-07T16:42:38-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
+
+## Round 5 — 2026-09-07T17:01:41-07:00 (claude) — passed
+
+### Disposed
+
+- BR-6 — addressed — All four degrade branches mutation-verified red-without-the-fix; failingStore now has a real call site at audiodisk_test.go:152.
+- BR-9 — addressed — A Revisions entry was appended for this round; the substitution artifacts and the "go, along / along with" break are gone (grep clean).
+- BR-12 — addressed — Mutation-verified: reverting os.Remove(blob) reddens TestAVerdictDeletesTheRecordingItSupersedes by name.
+- BR-13 — not-addressed — mergeRegions, AudioKey/AudioRecord and Task 2's Create list are fixed; plan lines 217, 232, 255 and 346 still drift from the code.
+- BR-15 — addressed — 45 of 45 plan checkboxes ticked, none left unchecked.
+- BR-16 — not-addressed — Code paths, README, atlas and the lessons rule all landed; the prescribed grep is line-oriented and misses three wrapped restatements.
+- BR-17 — not-addressed — cmd/define/command.go is not in this window at all; d.audio is still in neither applyLang's enumeration nor its exclusion clause.
+- BR-18 — not-addressed — The cap is now pinned (mutation-verified), but the sibling record read is still unbounded and the boundary-level statement was not written.
+
+### Raised
+
+- **BR-19** [Important] `degenerate-payload-trusted` An empty recording is written to disk and served as a permanent, never-expiring hit — the outcome the new missing-blob branch exists to prevent
+  YAML.Audio (cmd/define/store/yaml.go:870-877) guards the missing-blob case on readCapped
+  returning an ERROR; a blob that reads back as zero bytes returns empty data with the full
+  record and nil, and diskAudioCache.Fetch (cmd/define/audiodisk.go:80-84) serves it as a
+  hit. Hits never expire by design (store/audio.go:95-97), so the word can never play again
+  from that directory until --forget. Two reachable inputs: a hand-truncated .mp3 (the code
+  twice calls this directory untrusted, hand-editable input) and a 200 with an empty body,
+  which httpAudioSource.Fetch (cmd/define/fetch.go:64-72) returns as success and SetAudio
+  (yaml.go:917) stores without an emptiness guard. Probe against the production layering:
+  first run 0 bytes err=nil, second run 0 bytes err=nil, one CDN request ever, record on
+  disk with Missing:false. This is drift from Audio's own contract ("every way this can go
+  wrong reads as nothing cached") and from the sibling branch eight lines above, which
+  calls exactly this "an EMPTY recording ... a lie the caller cannot detect". The fix
+  answered the instance (readCapped errored) and not the class (the payload cannot be a
+  recording): treat !rec.Missing and len(data)==0 as nothing-cached in BOTH twins, refuse
+  the write in SetAudio, and add a storetest row plus one audiodisk row so an empty 200 is
+  re-asked next run. ARCH-SECURE: the failure path substitutes a fabricated value that
+  reportVoice then prints as the URL that answered.
+- **BR-20** [Minor] `unsourced-cross-reference` Two comments justify the 4MB cap and the .mp3 extension by citing a README passage that does not exist
+  readCapped says "The directory is documented as inspectable and hand-editable"
+  (cmd/define/store/yaml.go:826-827) and audioBlobExt says "for a human browsing the
+  directory, which the README documents as an invited workflow" (yaml.go:886-887).
+  cmd/define/README.md describes what define writes and never invites inspection or
+  editing; grepping it for hand-edit/editable/inspect/browse returns nothing. The claim is
+  load-bearing — it is the entire ARCH-SECURE argument for bounding the read. The rule: a
+  comment that justifies a decision by citing another document must be checkable against
+  it. Either state it once in the README and cite that, or drop the citation and keep the
+  cap on its own merits.
+
 ## Open findings
 
-- **BR-6** [Important] `claimed-coverage-absent` The degrade-never-fail rows are half-delivered and failingStore.Audio claims coverage with zero call sites
-- **BR-9** [Important] `revision-overwritten` The plan's historical Revisions prose was overwritten by a blind symbol substitution and no longer reads as English
-- **BR-12** [Minor] `stale-blob-on-verdict` SetAudio with Missing set skips the blob write but does not remove an existing .mp3
 - **BR-13** [Minor] `plan-table-drift` The plan's entity tables drift from the code: audioKey/audioRecord vs AudioKey/AudioRecord, no store/audio_test.go, mergeRegions has no row
-- **BR-15** [Minor] `tracking-in-two-places` The plan file has zero ticked steps while the issue's Plan ticks M1
 - **BR-16** [Important] `runtime-artifact-undocumented` The audio filing reversal was swept through the code paths and left ten restatements of the superseded scheme, two of them doc comments on the field it changed
 - **BR-17** [Minor] `lang-switch-derivation` applyLang's enumeration of what a language switch re-derives still does not account for d.audio, which holds a store bound to the pre-switch language
 - **BR-18** [Minor] `unbounded-input-read` Only the blob was bounded — the record YAML beside it is still read with an unbounded os.ReadFile, readCapped truncates where its doc says it refuses, and no test pins the cap
+- **BR-19** [Important] `degenerate-payload-trusted` An empty recording is written to disk and served as a permanent, never-expiring hit — the outcome the new missing-blob branch exists to prevent
+- **BR-20** [Minor] `unsourced-cross-reference` Two comments justify the 4MB cap and the .mp3 extension by citing a README passage that does not exist

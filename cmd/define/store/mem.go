@@ -205,7 +205,10 @@ func (m *Mem) Audio(k AudioKey) ([]byte, AudioRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a, ok := m.audio[k]
-	if !ok {
+	// A hit with no bytes is not a hit — the same predicate YAML applies, here
+	// because storetest holds both twins to it and a fake that disagreed would be
+	// the gap the suite exists to close.
+	if !ok || (!a.rec.Missing && len(a.data) == 0) {
 		return nil, AudioRecord{}, nil
 	}
 	return append([]byte(nil), a.data...), a.rec, nil
@@ -213,6 +216,11 @@ func (m *Mem) Audio(k AudioKey) ([]byte, AudioRecord, error) {
 
 func (m *Mem) SetAudio(k AudioKey, data []byte, rec AudioRecord) error {
 	if !k.ok() {
+		return nil
+	}
+	if !rec.Missing && len(data) == 0 {
+		// Refused at the write, as YAML refuses it: an empty recording is neither
+		// a recording nor a verdict.
 		return nil
 	}
 	m.mu.Lock()

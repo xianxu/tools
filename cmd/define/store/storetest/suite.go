@@ -829,6 +829,35 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("an empty recording is not a hit, in either direction", func(t *testing.T) {
+		// AN EMPTY 200 IS A SUCCESS to httpAudioSource, so nothing upstream calls
+		// it an error — and a hit never expires by design, so storing one would
+		// make the word unplayable from this directory until --forget.
+		//
+		// Both directions, because the guard has to hold at the write AND the
+		// read: a file hand-truncated to zero bytes reaches the read path without
+		// ever passing the write one, and this directory is documented as
+		// inspectable and editable.
+		s := newStore(t)
+		k := store.NewAudioKey("keel", []string{"https://cdn/keel.mp3"})
+		if err := s.SetAudio(k, nil, store.AudioRecord{From: "https://cdn/keel.mp3", At: day(1)}); err != nil {
+			t.Fatalf("SetAudio: %v", err)
+		}
+		data, rec, err := s.Audio(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 0 || !rec.At.IsZero() {
+			t.Errorf("an empty recording was stored as a hit: %d bytes, %+v — it never "+
+				"expires, so the word could never play again", len(data), rec)
+		}
+		// AND IT IS NOT A VERDICT EITHER. Recording "no audio here" would suppress
+		// the re-ask for thirty days; the honest outcome is nothing at all.
+		if rec.Missing {
+			t.Error("an empty 200 was recorded as a verdict; the next run must re-ask")
+		}
+	})
+
 	t.Run("a verdict replaces the recording it supersedes", func(t *testing.T) {
 		// Skipping the blob write would leave a stale .mp3 beside a record saying
 		// there is none. Audio reads the record first, so those bytes become

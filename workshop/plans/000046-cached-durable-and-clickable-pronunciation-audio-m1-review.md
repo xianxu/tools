@@ -450,3 +450,188 @@ findings:
       persisted reads are bounded and why the rest (words/, facts/, items/) are not — a per-site
       fix is what left the sibling in place here.
 ```
+
+---
+
+## Re-review — 2026-09-07T16:42:38-07:00 (unknown)
+
+| field | value |
+|-------|-------|
+| issue | 46 — cached, durable and clickable pronunciation audio |
+| repo | tools |
+| issue file | workshop/issues/000046-cached-durable-and-clickable-pronunciation-audio.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 3effb6462ee74c0e1d45f8b6b5a49de939b2531e..26f0b9b8a00b497b44bcd9a5bf4a901c0fb31af1 |
+| command | sdlc milestone-close --issue 46 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-09-07T16:42:38-07:00 |
+| verdict | unknown |
+
+## Review
+
+Failed to authenticate: OAuth session expired and could not be refreshed
+
+---
+
+## Re-review — 2026-09-07T17:01:41-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 46 — cached, durable and clickable pronunciation audio |
+| repo | tools |
+| issue file | workshop/issues/000046-cached-durable-and-clickable-pronunciation-audio.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 3effb6462ee74c0e1d45f8b6b5a49de939b2531e..26f0b9b8a00b497b44bcd9a5bf4a901c0fb31af1 |
+| command | sdlc milestone-close --issue 46 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-09-07T17:01:41-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The three fixes this round *claims* are real and I verified each by reverting it in a scratch clone rather than by reading the commit message: reverting `os.Remove(blob)` reddens `TestAVerdictDeletesTheRecordingItSupersedes` (BR-12); making the corrupt-record branch return an error, making a record-with-no-blob read as a hit, and swapping `readCapped` back to `os.ReadFile` each redden their own subtest of `TestAudioDegradesOnEveryDamagedFile` (BR-6, and the cap clause of BR-18); deleting the `withStore` block still reddens `TestWithStorePutsTheDiskCacheUnderTheMemo`. The suite is green at HEAD (`go test ./...`, plus `-tags conformance` on `cmd/define/...`), `gofmt -l` and `go vet ./...` (both tag sets) clean, and 45 of 45 plan checkboxes are now ticked (BR-15). What does not survive scrutiny is the sweep BR-16 asked for: the rule was written into `lessons.md` but the enumeration it prescribes is a **line-oriented grep**, and this codebase wraps comments at ~80 columns, so it structurally cannot see a restatement that spans a line break — three present-tense restatements of the superseded filing scheme are still in the tree, two of them in the store package the sweep was about, one of them thirty lines above the doc comment that contradicts it in the same file. Separately, one new Important: an empty recording is written to disk and served as a permanent, never-expiring hit, which is the exact outcome the diff's own new missing-blob branch calls "a lie the caller cannot detect" — fixed at the instance (`readCapped` errored) rather than at the class (`len(data) == 0`). Nothing here blocks; all of it is cheap.
+
+## 1. Strengths
+
+- **The degrade rows are pinned at the layer that can actually produce the damage** (`cmd/define/store/yaml_test.go:797-921`). Corrupt record, vanished blob, unwritable path and oversized blob are driven against a real `t.TempDir()`, with `DigestForTest` added for the one thing a test needs and nothing more. All four mutation-verified red-without-the-fix.
+- **`TestAVerdictDeletesTheRecordingItSupersedes` asserts through the filesystem, and says why** (`yaml_test.go:889-897`). The comment names the reason the previous pin could not fail — `Audio` reads the record first, so it cannot see the orphan — which is worth more than the assertion.
+- **`perWordDir`'s type doc is now the argument, not the label** (`cmd/define/store/yaml.go:731-742`). Each of the three axes is introduced by the bug the previous set could not see. That is the shape a classification should carry.
+- **`removeWordTree`'s doc keeps the false claim as history rather than deleting it** (`yaml.go:806-812`). "The fix is not a rarer separator, because any separator has to be reasoned about against `Slug`'s alphabet and that reasoning is what was wrong" is the class-level answer; the `re`/`re-` conformance fixture plants a case that actually reaches the branch.
+- **`lessons.md:3833-3860` distinguishes historical mentions from present-tense drift explicitly.** That distinction is what makes the rule usable rather than a grep that fires on every comment explaining why the code looks as it does — and it is the sentence that identifies the residual sites below as real.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — an empty recording is cached durably and served as a permanent hit, which is the failure the sibling branch was written to prevent.** `YAML.Audio` (`cmd/define/store/yaml.go:870-877`) guards the missing-blob case on `readCapped` returning an *error*; a blob that reads back as zero bytes returns `data=[]`, the full record, and `nil`. `diskAudioCache.Fetch` (`cmd/define/audiodisk.go:80-84`) then treats it as a hit, and by design a hit never expires ("bytes that answered once are still the right bytes" — `store/audio.go:95-97`), so the word can never play again from that directory until `--forget`. Two reachable inputs: a hand-truncated `.mp3` (the code twice calls this directory untrusted, hand-editable input), and a `200` with an empty body — `httpAudioSource.Fetch` (`cmd/define/fetch.go:64-72`) returns `data, u, nil` on any 200 regardless of length, and `SetAudio` has no emptiness guard (`yaml.go:917`). Probe against the production layering:
+
+```
+first run:  0 bytes, err=<nil>
+second run: 0 bytes, from="http://127.0.0.1:.../a.mp3" err=<nil>
+requests:   [/a.mp3]                     ← one request, ever
+store says: 0 bytes, rec={From:… At:… Missing:false}
+```
+
+This is behaviour drift from the method's own stated contract — `Audio`'s doc says "every way this can go wrong … reads as 'nothing cached'", and the branch eight lines above calls exactly this outcome "an EMPTY recording, which plays as silence and reads as 'this word has no audio' — a lie the caller cannot detect". The fix answered the instance (`readCapped` errored) and not the class (the payload cannot be a recording). **Fix sketch:** treat `!rec.Missing && len(data) == 0` as "nothing cached" in both twins (`YAML.Audio`, `Mem.Audio`), and refuse the write in `SetAudio` rather than storing it; add a `storetest` row so both twins are held, and one `audiodisk_test.go` row proving a 200-with-empty-body is re-asked next run. ARCH-SECURE: the failure path currently substitutes a fabricated value that downstream reads as evidence — `reportVoice` prints a record naming the URL that "answered".
+
+**BR-16 (still open) — the sweep landed but its enumeration cannot see wrapped comments, and three present-tense restatements survive.** See the disposition below; the fix is to the grep and the lesson, not to the three sites.
+
+**BR-17, BR-18, BR-13 (still open)** — see dispositions.
+
+## 4. Minor findings
+
+- Two comments justify a decision by citing the README for something it does not say: `readCapped`'s "The directory is documented as inspectable and hand-editable" (`yaml.go:826-827`) and `audioBlobExt`'s "which the README documents as an invited workflow" (`yaml.go:886-887`). `cmd/define/README.md` describes what `define` writes; it never invites inspection or editing. The claim is load-bearing — it is the whole ARCH-SECURE argument for the 4MB cap — so either say it once in the README and cite that, or drop the citation and keep the cap on its own merits.
+- `diskAudioCache.keyFor` gates on `k.Word != ""` (`audiodisk.go:109`) where the store gates on `AudioKey.ok()`. Harmless today (`Slug` never returns `""`), but it is a second, weaker statement of one predicate across a package boundary — ARCH-DRY.
+- Plan Task 3 Step 6 ("`--forget` end to end … the file is gone") is ticked, but the delivered pin is at the store (`TestForgetTakesARecordingFetchedInAnotherLanguage`, `storetest`), not through `run()`/`forgetWord`. The store-level coverage is the substantive half and I would not spend a test on the thin caller — but the step should say where it landed.
+- `atlas/define.md:613` inserts `audio/` between `usage/` and `facts/`; `RuntimeDirs` order puts it last. Cosmetic, but the block reads as the tail-append rule it documents.
+
+## 5. Test coverage notes
+
+The store layer is now held where it matters and the pins fail for the right reasons — I confirmed four of them by mutation, and each error message named the actual consequence rather than the assertion. The remaining gap is the one N1 names and it is the same shape the issue's `## Log` already records twice (the `wordFiler` signature, the production wiring): **a guard written against the error path of an operation rather than against the validity of its result.** `TestAudioDegradesOnEveryDamagedFile` covers *damaged* files thoroughly and does not cover a file that reads back cleanly as nothing. One `storetest` row (`an empty recording is not a hit`) closes it on both twins.
+
+Two smaller notes carried forward and still true: `TestEveryFormHasASurface` (`deckwords_test.go:152-159`) greps `deckwords.go` for `"<form>"`, so a form name appearing anywhere in the file — including a comment — satisfies it, and the Task 6 Step 5 mutation proving it reddens for an unclassified form is still not recorded. And nothing drives two clicks on one word through `playSession` to assert one request; `playSession` *is* drivable in-process (`runPlay` is not), so that pin is available if the close boundary wants it.
+
+## 6. Architecture
+
+- **ARCH-DRY — flag (BR-16, BR-13).** One span walk feeds colour and clicks; `vocabularyFor`/`deckVocabulary` is the right split and `deckSpans` correctly refuses to teach `highlightSpans` about ANSI. The flag is the one on-disk fact restated in five hand-maintained places, three of them still wrong.
+- **ARCH-PURE — pass.** `AudioKey`, `AudioRecord`, `deckSpans`, `wordRegions`, `mergeRegions`, `surfaceOf` are pure and tested with no IO; `readCapped`, `diskAudioCache` and `YAML` hold the filesystem. No "pure" entity needs a mock to run.
+- **ARCH-PURPOSE — flag (N1, BR-16).** The milestone's purpose is delivered: a recording survives the process, an unrecorded word is asked once, `Forget` takes every voice from every language. Both flags are the instance-vs-class rule — the missing-blob guard fixed the error path and not the payload, and the reversal sweep fixed the sites the finding listed while the enumeration that would have found the rest cannot see them.
+- **ARCH-MOCK — pass.** `fakeCDN` at the wire plus a real `t.TempDir()` store, and `TestWithStorePutsTheDiskCacheUnderTheMemo` constructs no `diskAudioCache` at all — mutation-verified this round: deleting the `withStore` block reddens it with the right message. Production flow and test flow share the boundary, which is the condition this principle sets.
+- **ARCH-CONSTRAINTS — pass.** No eviction, decided with a number rather than omitted; the disk read is capped at 4MB and the cap is now pinned; `writeWords` runs per question, not per keystroke.
+- **ARCH-SECURE — flag (N1, BR-18).** `removeWordTree` is safe by construction (`Slug` yields exactly one path element, and `RemoveAll` takes an exact name). The blob read is bounded and its degrade path is now driven. What is not held: an empty payload is trusted as evidence, and the record `.yaml` beside the capped blob is still read with an unbounded `os.ReadFile` in the same function.
+- **ARCH-ORDER — pass.** Process death mid-write (blob before record), two processes in one directory, and the `/lang` event are all answered — the last by removing the state that made ordering matter, which is the stronger answer. `forWord` returns a copy, so no shared mutable state escapes the seam; the memo's lock is held only around the map, which is correct for a synchronous fetch path (and `#45`'s async playback is the change that would need this revisited).
+
+**For the close boundary:** the M2 Done-when "every deck word is clickable wherever it is written" is ticked with body text saying the guard it asked for is *not* what shipped and is carried to `#30`. That is honest, but a ticked row whose own text says it was not delivered is what the close's plan-check gate exists to catch — settle the row's wording before `sdlc close` rather than at it.
+
+## 7. Plan revision recommendations
+
+Append **one** further `## Revisions` entry to `workshop/plans/000046-audio-cache-and-deck-words-plan.md` (do not edit the body again in place beyond the four factual corrections below):
+
+- **Four residual drifts in the body**, which the round-2 entry was supposed to supersede and does not reach: line 217 still names `store/audio_test.go` as the colocated test surface (never created); line 232 still calls `diskAudioCache` "the outermost decorator" (the memo is outermost, and `deps.audio` is no longer a decorator chain); line 255 still calls `audioDir` "the per-language audio directory" (it is FLAT); line 346's `audioSeam` sketch declares `misses map[string]missRecord` where the code has `map[string]struct{}`.
+- **The reversal sweep's enumeration is line-oriented and this codebase wraps comments** — record the corrected form (fold line breaks and comment markers before matching) and note the three sites it recovers, so `lessons.md`'s rule is usable next time rather than merely written.
+- **An empty payload is not a hit** — add it to Task 2's record/blob contract, beside the missing-blob rule it belongs with, and to Task 2 Step 7's `storetest` row list.
+- **Task 3 Step 6 landed at the store, not end to end** — say so, with the reason (`forgetWord` is a thin caller of `Store.Forget`, which is where the removal lives).
+
+```findings
+dispose:
+  - id: BR-6
+    disposition: addressed
+    note: |
+      All four degrade branches mutation-verified red-without-the-fix; failingStore now has a real call site at audiodisk_test.go:152.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      A Revisions entry was appended for this round; the substitution artifacts and the "go, along / along with" break are gone (grep clean).
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Mutation-verified: reverting os.Remove(blob) reddens TestAVerdictDeletesTheRecordingItSupersedes by name.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      mergeRegions, AudioKey/AudioRecord and Task 2's Create list are fixed; plan lines 217, 232, 255 and 346 still drift from the code.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      45 of 45 plan checkboxes ticked, none left unchecked.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Code paths, README, atlas and the lessons rule all landed; the prescribed grep is line-oriented and misses three wrapped restatements.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      cmd/define/command.go is not in this window at all; d.audio is still in neither applyLang's enumeration nor its exclusion clause.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      The cap is now pinned (mutation-verified), but the sibling record read is still unbounded and the boundary-level statement was not written.
+findings:
+  - id: new
+    severity: Important
+    family: degenerate-payload-trusted
+    title: |
+      An empty recording is written to disk and served as a permanent, never-expiring hit — the outcome the new missing-blob branch exists to prevent
+    detail: |
+      YAML.Audio (cmd/define/store/yaml.go:870-877) guards the missing-blob case on readCapped
+      returning an ERROR; a blob that reads back as zero bytes returns empty data with the full
+      record and nil, and diskAudioCache.Fetch (cmd/define/audiodisk.go:80-84) serves it as a
+      hit. Hits never expire by design (store/audio.go:95-97), so the word can never play again
+      from that directory until --forget. Two reachable inputs: a hand-truncated .mp3 (the code
+      twice calls this directory untrusted, hand-editable input) and a 200 with an empty body,
+      which httpAudioSource.Fetch (cmd/define/fetch.go:64-72) returns as success and SetAudio
+      (yaml.go:917) stores without an emptiness guard. Probe against the production layering:
+      first run 0 bytes err=nil, second run 0 bytes err=nil, one CDN request ever, record on
+      disk with Missing:false. This is drift from Audio's own contract ("every way this can go
+      wrong reads as nothing cached") and from the sibling branch eight lines above, which
+      calls exactly this "an EMPTY recording ... a lie the caller cannot detect". The fix
+      answered the instance (readCapped errored) and not the class (the payload cannot be a
+      recording): treat !rec.Missing and len(data)==0 as nothing-cached in BOTH twins, refuse
+      the write in SetAudio, and add a storetest row plus one audiodisk row so an empty 200 is
+      re-asked next run. ARCH-SECURE: the failure path substitutes a fabricated value that
+      reportVoice then prints as the URL that answered.
+  - id: new
+    severity: Minor
+    family: unsourced-cross-reference
+    title: |
+      Two comments justify the 4MB cap and the .mp3 extension by citing a README passage that does not exist
+    detail: |
+      readCapped says "The directory is documented as inspectable and hand-editable"
+      (cmd/define/store/yaml.go:826-827) and audioBlobExt says "for a human browsing the
+      directory, which the README documents as an invited workflow" (yaml.go:886-887).
+      cmd/define/README.md describes what define writes and never invites inspection or
+      editing; grepping it for hand-edit/editable/inspect/browse returns nothing. The claim is
+      load-bearing — it is the entire ARCH-SECURE argument for bounding the read. The rule: a
+      comment that justifies a decision by citing another document must be checkable against
+      it. Either state it once in the README and cite that, or drop the citation and keep the
+      cap on its own merits.
+```
