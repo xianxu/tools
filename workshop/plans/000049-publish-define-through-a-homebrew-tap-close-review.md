@@ -187,3 +187,79 @@ findings:
       Confirmed no t.Parallel in cmd/define today. One line of comment records
       the dependency for whoever adds the first parallel test.
 ```
+
+---
+
+## Re-review — 2026-09-09T14:13:14-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 49 — publish define through a homebrew tap |
+| repo | tools |
+| issue file | workshop/issues/000049-publish-define-through-a-homebrew-tap.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 12aacfb887f7c58401aa0fa5b164b8ef00973ea0..512c7065a0fc1746fdc3d17c5b5f77f7a7ee3ed1 |
+| command | sdlc close --issue 49 |
+| reviewer | claude |
+| timestamp | 2026-09-09T14:13:14-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 1's Critical is genuinely fixed and I mutation-verified every claim rather than reading the commit messages: dropping `{"-version", *versionFlag}` from `modes` now reddens `TestEveryDispatchedModeIsInTheCollisionList` with *"run() returns on -version, so it is a MODE"* (it passed before the parse was widened), deleting the two new switch arms reddens `TestModesAboveTheSwitchRefuseAWord`, and renaming `version` → `buildVersion` leaves both unit tests green while `TestLdflagsStampReachesTheBinary` is the only thing that fails — exactly the boundary BR-2 said was missing. `go test ./cmd/define/` is green (109s) and `go test -tags conformance -run Ldflags` passes. Nothing here blocks at the gate, but four things want a decision before the close is recorded: the tag the formula installs (`v0.1.0` = `7380263`) **predates** the Critical fix, so `brew install` today still ships the swallowing `--version`; the mode×word half of the collision family is still hand-enumerated after three rounds; the new conformance guard sits behind a build tag no gate runs; and the `.pyc` side-quest used the exact remedy its own guard's error message says does not work.
+
+### 1. Strengths
+
+- **The guard fix is the class, not the site.** `harvest_test.go:993-1013` widens the dispatch parse from `return <call>` to any single-valued `return` inside a bare-flag `if`. I checked the over-match claim independently: `dispatched` and `listed` are both 7 today, and the only non-mode bool flags (`raw`, `no-color`, `no-audio`) never appear as `if *x { return … }` in `run()`. The claim in the comment holds.
+- **BR-4 was swept as an enumeration, not patched at the named site.** Both `--version` and `--llm-check` moved *below* the argument-count switch rather than growing a bespoke word check, so the switch every other mode is judged by now judges them (`main.go:670-684`). That is the right shape.
+- **`TestLdflagsStampReachesTheBinary` is a real conformance test.** It shells the actual toolchain with the actual `-X main.version=` flag and reads the answer off the built binary, and its `stampedVersion = "v9.9.9-conformance"` deliberately avoids becoming a third place the release number lives. I verified against the installed formula: `Formula/define.rb` passes `-X main.version=v#{version}` — the flag string matches, and the formula's own `test do` asserts the stamp off the binary.
+- **The skip is routed.** `conformance.SkipOrFail` rather than a bare `t.Skip`, and I confirmed `TestEverySkipIsRoutedOrWaived` walks `.go` files textually, so it does see a file behind a build tag.
+- **`versionLine()` is genuinely PURE** and `TestVersionAnswersWithNoDictionaryOrDeck` drives all of `run()` with a literal `deps{}` — no mocks, ARCH-PURE passes.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-1 — the released artifact predates the fix (`cmd/define/main.go:710`, new family `shipped-artifact-lags-the-fix`).** `git rev-list -n1 v0.1.0` → `7380263`. The two commits after it — `644ab63` (README install line) and `512c706` (the BR-1/BR-4 fix) — are not in the tarball the formula's `sha256` pins. So `brew install xianxu/tools/define` today installs a binary where `define --version --play` prints the version, exits 0 and drops `--play`, and `define --version cat` swallows the word. Closing #49 with Done-when #1 ticked ("installs a working `define`") records a claim about an artifact that does not contain this round's work. Re-tag `v0.1.1` after merge, bump `url` + `sha256` in `xianxu/homebrew-tools`, and say so in `## Log` — or tick the box with an explicit note that the fix lands in the next release.
+
+**I-2 — the mode×word half is still hand-enumerated. This is the 3rd finding in family `two-commands-one-line`** (`cmd/define/main.go:632-696`, `harvest_test.go:703-728`). Do not fix another instance. The rule: **every row in `modes` refuses a trailing word, derived from the list rather than remembered.** The mode×mode half already closes this way — `TestModeCollision` builds every pair from `declaredModes(t)`, which is why a 7th mode gets pair coverage for free. The word half does not: `run()` carries six hand-written `case *X && fs.NArg() != 0:` arms, and the tests hand-list which modes they check. A mode added tomorrow joins the pair matrix automatically and gets *no* word coverage — which is precisely how `-version` shipped. Close it the same way: iterate `declaredModes(t)`, build argv per mode (the AST pass already distinguishes `fs.Bool` from `fs.String`, so `-forget` gets `{"-forget","x","cat"}` and the rest get `{name,"cat"}`), and assert exit 2. Measured prevalence: 3 rounds, 6 hand-written arms, 2 modes that reached production without one.
+
+**I-3 — a depended-on contract is asserted but not enforced by anything a gate runs. This is the 2nd finding in family `cross-boundary-contract-untested`.** Rule: **a contract this code depends on must be pinned by a test that some gate actually executes.** Two measured instances:
+  - `cmd/define/version_conformance_test.go:1` is behind `//go:build conformance`. I grepped `Makefile*`, `scripts/parallel-checks.sh`, `scripts/pre-merge-checks.sh` and `.github/workflows/merge-check.yml`: nothing runs `-tags conformance`, and nothing sets `CONFORMANCE_STRICT`. BR-2's fix therefore exists but is never run by the close or the merge — it protects only whoever remembers the command. (`#37` already tracks *where* `CONFORMANCE_STRICT` gets set; this boundary is the reason to land it.)
+  - `main.go:706-712` and `atlas/define.md:2612` both assert `--version` answers *above* `withStore`. I moved the dispatch below `d = d.withStore(...)` in a scratch copy: the entire package stayed green, and `./define --version` in an empty dir behaved identically. The stated invariant is pinned by nothing, and the mutation shows the code does not actually depend on it — so either pin it or soften the prose to match.
+
+**I-4 — the compiled-artifact guard cannot see the artifact this window removed (`cmd/define/repo_guard_test.go:24-28`, new family `guard-blind-to-an-unlisted-shape`).** `7380263` deleted `cmd/define/testdata/__pycache__/capture.cpython-314.pyc` in a follow-up commit — the exact remedy `TestNoBinariesInHistory`'s own message says does not work ("deleting it in a later commit does not remove the cost"). Blob `b1fc21e`, 7892 bytes, magic `2b 0e 0d 0a`, is still reachable from HEAD and fetched by every clone of a now-public repo, and the guard reports green because `executableMagics` knows only Mach-O and ELF. The cost is 7.9 KB, so I would **not** rewrite history (it would move `7380263` and strand the formula's tarball). The class-level fix is the guard: extend it to compiled artifacts by exact extension (`.pyc`, `.pyo`, `.class`, `.o`, `.a`, `.so`, `.dylib`, `.wasm`) alongside the magic test — extension is exact here and does not reintroduce the symlink false-positive the magic-byte comment rejected — then record the accepted 7.9 KB as known debt.
+
+### 4. Minor findings
+
+- `main.go:583-585` still says `--llm-check` "is dispatched before the argument count is judged"; `main.go:593` reads the same way in the present tense. **2nd in family `usage-prose-lags-flags`** — rule: a claim about *where* a mode dispatches belongs only at the dispatch site. Prevalence measured at 2 sites, both about the pair this commit moved; delete both and let `main.go:670` and `main.go:706` carry it.
+- `harvest_test.go:713` — `{"-llm-check", "sycophantic"}` sets no environment, so if the guard ever regresses the test makes a live model call (I saw it: `http://127.0.0.1:8317`, 1.199s, real tokens). `llmcheck_test.go:135-141` already writes the rule down. Add the same three `t.Setenv` lines. (ARCH-MOCK.)
+- **2nd in family `doc-restates-itself`**: the install recipe + its two caveat paragraphs now exist in `README.md:9-30`, `cmd/define/README.md:10-24` and the tap's README, and have already diverged — both in-repo copies say "Both of the *first two* lines are load-bearing" and then explain lines 1 and 3. Rule: one canonical copy; the root README should keep the three commands and link `cmd/define/README.md` for the why, or vice versa. Fix the sentence in whichever survives.
+- `workshop/lessons.md:4185` — `[[validate-the-system-not-your-model-of-it]]` is the only `[[…]]` in the file and matches no heading. Either add the target or make it a plain pointer.
+- The conformance build omits the formula's `GOFLAGS = "-trimpath -mod=readonly"`; harmless for the `-X` path, worth one line of comment saying so.
+
+### 5. Test coverage notes
+
+Coverage of what this window changed is good, and I verified it by reversion rather than by reading: three separate mutations each redden exactly one test and no others. The gap is not in what the tests assert but in **which of them anything runs** (I-3) and in **what derives the list they iterate** (I-2). One test-hygiene item: `TestVersionIsHonestAboutUnstampedBuilds` mutates the package var and documents the `t.Parallel` dependency — BR-8 addressed, and the comment is the right artifact.
+
+### 6. Architectural notes
+
+- **ARCH-DRY** — flag (I-4 guard list, Minor doc triplication). The switch arms are the file's established idiom, so I-2 is filed as a coverage rule, not a refactor demand.
+- **ARCH-PURE** — pass. `versionLine()` is deterministic, `runVersion` is a two-line IO shell, tests need no mocks.
+- **ARCH-PURPOSE** — flag (I-1). The shadow-sweep on the version single-source is otherwise clean: binary derives via `-ldflags`, atlas records *where* not *what*, conformance test uses its own fixture, no README states a number. The one consumer that does not derive from HEAD is the released tarball.
+- **ARCH-MOCK** — pass with a Minor. The linker now has a seam and a live conformance check; the cadence is the gap (I-3).
+- **ARCH-CONSTRAINTS** — pass. `--version` is O(1) with no IO; the conformance test shells one `go build` (~2.8s measured), bounded and tag-gated.
+- **ARCH-SECURE** — pass. `--version` prints a compile-time constant and degrades visibly when unstamped rather than fabricating a number; the formula's `sha256` pins the tarball. The `.pyc` in public history (I-4) is hygiene, not exposure — it is a compiled testdata capture script.
+- **ARCH-ORDER** — pass. `run()` holds no state between events; the conformance test's subprocess extent is lexically bounded by `t.Context()` through `CommandContext`.
+
+### 7. Plan revision recommendations
+
+The `## Plan` and `## Done when` boxes match the code. One `## Revisions` entry is warranted on the issue, for I-1: Done-when #1 and #2 are ticked against `v0.1.0` = `7380263`, which does not contain `512c706`'s fix — record either the follow-up `v0.1.1` re-tag + formula bump, or an explicit note that the released binary lags the branch and why that was accepted.

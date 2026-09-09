@@ -17,17 +17,12 @@ brew tap xianxu/tools
 brew install xianxu/tools/define
 ```
 
-Both of the first two lines are load-bearing. Homebrew refuses to load formulae
-from an untrusted tap and reports it as `invalid syntax in tap!`, which is not
-what it sounds like; and bare `brew install define` installs a *different*
-program, since `define` also exists in homebrew-core.
+The `brew trust` line and the *qualified* formula name are both load-bearing;
+[cmd/define/README.md](cmd/define/README.md#install) says why, and is the one
+copy that does — this section is deliberately just the commands.
 
-macOS only — it reads the dictionaries macOS already has and plays audio with
-`afplay`. `define --version` names the release, and says `built from source`
-when it was not built by the formula.
-
-For contributors, or for a binary not yet tapped, `make build` / `make install`
-build everything here from source.
+macOS only. For contributors, or for a binary not yet tapped, `make build` /
+`make install` build everything here from source.
 
 ## Layout
 

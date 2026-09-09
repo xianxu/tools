@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -499,7 +500,23 @@ func TestVersionIsHonestAboutUnstampedBuilds(t *testing.T) {
 // is exactly the machine whose owner is trying to report a bug.
 func TestVersionAnswersWithNoDictionaryOrDeck(t *testing.T) {
 	var out, errb bytes.Buffer
-	d := deps{} // no dict, no store, no clock, no audio
+	// A STORE THAT FAILS IF IT IS TOUCHED, which is what makes this a pin on the
+	// dispatch's POSITION rather than only on its result.
+	//
+	// `deps{}` alone could not do that: withStore calls newStore only when it is
+	// non-nil, so with an empty deps the whole of withStore is a no-op and the
+	// dispatch could move below it with every test still green — the review
+	// measured exactly that mutation and found nothing failed (#49 I-3). The
+	// invariant is stated in main.go and in atlas/define.md; this is what makes it
+	// true rather than asserted.
+	d := deps{ // no dict, no clock, no audio — and a store that must not be built
+		newStore: func(options, io.Writer) storeDeps {
+			t.Error("--version built the store. It must answer ABOVE withStore: the " +
+				"machine whose owner is running --version is the one where the " +
+				"directory, the dictionary and the model may all be unavailable.")
+			return storeDeps{}
+		},
+	}
 	if code := run(t.Context(), []string{"-version"}, d, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Errorf("exit = %d, want 0; stderr %q", code, errb.String())
 	}

@@ -581,8 +581,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// line; silently honouring one of them is how -raw came to mean two different
 	// things in #2.
 	// --llm-check is a mode, like --forget: it answers a question about the
-	// configuration rather than looking a word up, so it is dispatched before the
-	// argument count is judged.
+	// configuration rather than looking a word up.
+	//
+	// It USED to say "so it is dispatched before the argument count is judged",
+	// which stopped being true when #49 moved it below the switch — and that is
+	// why the claim is gone rather than corrected: a statement about WHERE a mode
+	// dispatches belongs at the dispatch site, which can't drift from it. See
+	// main.go's switch arm and the dispatch below it.
 	forgetting := isSet(fs, "forget")
 
 	// MODES ARE VALIDATED AS A SET, in ONE enumeration, before any of them
@@ -590,8 +595,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	//
 	// Not pairwise as each collision is found, which is what this rule replaces:
 	// -harvest was refused beside -play and -reflect and silently swallowed by
-	// -forget and -llm-check, because those two dispatch above the switch and
-	// nobody enumerated them. Every mode added since #2 has cost this discovery
+	// -forget and -llm-check, because those two dispatched above the switch and
+	// nobody enumerated them. (#49 moved the last of those below it, so no mode
+	// dispatches above the argument count any more — the history is kept because
+	// it is why this list exists, not because it still describes the code.) Every mode added since #2 has cost this discovery
 	// again, and the pairwise form cannot cover the pair nobody has typed yet.
 	//
 	// A slice rather than a chain of cases so the CHECK and the LIST are the same

@@ -28,6 +28,37 @@ var executableMagics = [][]byte{
 	{0xCA, 0xFE, 0xBA, 0xBE}, {0x7F, 'E', 'L', 'F'},
 }
 
+// compiledExtensions are compiled artifacts a magic-byte test cannot see.
+//
+// THE MAGIC TEST ALONE FAILED OPEN. It knows Mach-O and ELF, so a `.pyc`
+// (magic `2b 0e 0d 0a`, version-dependent) sailed past it — and one did, into a
+// now-public repo (#49 I-4). The comment below rejects filename heuristics, and
+// rightly: "extensionless files in a source directory" false-positived on a
+// symlink. But that is a rejection of GUESSING, not of naming. These extensions
+// are EXACT — a file called `.pyc` is a compiled Python module, with no judgment
+// involved — so they carry none of the imprecision that rule was written about.
+var compiledExtensions = map[string]bool{
+	".pyc": true, ".pyo": true, ".class": true,
+	".o": true, ".a": true, ".so": true, ".dylib": true, ".wasm": true,
+}
+
+// acceptedCompiledBlobs is DEBT THIS GUARD HAS BEEN TOLD ABOUT, keyed by blob.
+//
+// Accepted rather than fixed, and the reason is in the guard's own error
+// message: the only real remedy is rewriting the commit that adds it. Doing so
+// here would move `7380263` — the commit `v0.1.0` tags and the formula's
+// `sha256` pins — and strand every published install to buy back 7.9 KB. So the
+// cost is recorded rather than paid.
+//
+// An entry is a decision, not a mute button: it names the blob, the size and the
+// why, and TestAcceptedCompiledBlobsAreStillReachable fails if one stops
+// existing, so a stale waiver cannot outlive the thing it waives.
+var acceptedCompiledBlobs = map[string]string{
+	"b1fc21e35796d1a4434f09c36f62e86e6b7e6879": "cmd/define/testdata/__pycache__/capture.cpython-314.pyc, " +
+		"7892 bytes — #49 I-4. Deleted from the tree at 7380263 but still reachable; " +
+		"rewriting would move the commit v0.1.0 tags.",
+}
+
 // The test is on MAGIC BYTES, not on a filename. An earlier version flagged
 // "extensionless files in a source directory" and false-positived on a tracked
 // symlink — the question is whether a file is an executable image, and that is
@@ -222,7 +253,11 @@ func scanForExecutables(t *testing.T, dir string, want map[string]string) []stri
 			t.Fatalf("skipping object %s: %v", f[0], err)
 		}
 		seen++
-		if f[1] == "blob" && isExecutableImage(head) {
+		// EITHER TEST CONVICTS: the magic bytes for an executable image, or an
+		// exact compiled extension for the formats magic cannot generalise over.
+		compiled := isExecutableImage(head) ||
+			compiledExtensions[strings.ToLower(filepath.Ext(want[f[0]]))]
+		if f[1] == "blob" && compiled && acceptedCompiledBlobs[f[0]] == "" {
 			found = append(found, fmt.Sprintf("%s (blob %s, %d bytes)", want[f[0]], f[0][:8], size))
 		}
 	}
@@ -278,6 +313,23 @@ func TestNoBinariesInHistory(t *testing.T) {
 		t.Errorf("compiled binary in history: %s — reachable from HEAD, so it is fetched by "+
 			"every clone. Rewrite the commit that adds it; deleting it in a later commit does not "+
 			"remove the cost.", hit)
+	}
+}
+
+// A WAIVER MUST NOT OUTLIVE WHAT IT WAIVES. An accepted blob that is no longer
+// reachable means the debt is gone (history was rewritten, or the object was
+// gc'd), and a waiver left behind would silently permit the NEXT artifact that
+// happens to hash the same way nothing — it would simply be dead prose claiming
+// a cost the repo no longer carries.
+func TestAcceptedCompiledBlobsAreStillReachable(t *testing.T) {
+	dir := repoRoot(t)
+	for sha, why := range acceptedCompiledBlobs {
+		out, err := exec.Command("git", "-C", dir, "cat-file", "-t", sha).Output()
+		if err != nil || strings.TrimSpace(string(out)) != "blob" {
+			t.Errorf("accepted compiled blob %s is no longer a reachable blob (%q) — the "+
+				"debt it records is gone, so delete the waiver rather than leaving a "+
+				"guard hole open. Recorded as: %s", sha, strings.TrimSpace(string(out)), why)
+		}
 	}
 }
 

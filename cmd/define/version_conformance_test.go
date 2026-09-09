@@ -55,6 +55,11 @@ func TestLdflagsStampReachesTheBinary(t *testing.T) {
 	}
 	// The SAME flag string the formula passes. If this drifts from
 	// Formula/define.rb the test stops meaning what it claims.
+	//
+	// It does NOT replicate the formula's GOFLAGS ("-trimpath -mod=readonly"):
+	// those change the build's reproducibility and module resolution, neither of
+	// which the `-X` symbol path depends on. What is under test is whether the
+	// linker can still find main.version, and that is orthogonal.
 	build := exec.CommandContext(t.Context(), goBin, "build",
 		"-ldflags", "-X main.version="+stampedVersion, "-o", out, ".")
 	if b, err := build.CombinedOutput(); err != nil {

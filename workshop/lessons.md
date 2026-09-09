@@ -4181,5 +4181,7 @@ prints `built from source`. One command distinguishes "I am testing the release"
 
 **Origin:** #49. Related: the same session lost an hour to a *host* diagnosis where
 every network probe I ran measured my own sandbox's restrictions rather than the VM —
-same root shape as this file's thesis, one layer down. See
-[[validate-the-system-not-your-model-of-it]].
+internet reachable, but the machine's own default gateway un-ARP-able, so every
+"the VM is unreachable" reading was a fact about my sandbox. Same root shape as this
+file's thesis one layer down: **I validate my model of the system instead of the
+system.**

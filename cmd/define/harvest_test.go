@@ -700,29 +700,90 @@ func TestRunRefusesTwoModes(t *testing.T) {
 	}
 }
 
-// A MODE PLUS A WORD is two commands on one line, and --version and --llm-check
-// are the two that could not be reached by the argument-count switch until #49
-// moved them below it. Pinned through run() for the same reason the collision
-// table is: the switch being right is not the claim that these modes reach it.
-func TestModesAboveTheSwitchRefuseAWord(t *testing.T) {
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"-version", "cat"}, "--version names the build"},
-		{[]string{"-llm-check", "sycophantic"}, "--llm-check reports the configuration"},
-	} {
-		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			var out, errb bytes.Buffer
-			code := run(t.Context(), tc.args, testDeps(t), strings.NewReader(""), &out, &errb)
-			if code != 2 {
-				t.Errorf("exit = %d, want 2 — a swallowed word is a silently different command", code)
+// stringFlags is the set of flag names declared with fs.String, derived the same
+// way declaredModes derives the mode list.
+//
+// It exists so the word-refusal check below can build argv per mode without
+// hand-knowing that -forget takes a value and the rest do not: `-forget cat`
+// means "forget cat", so the stray word has to be a THIRD argument there and a
+// second one everywhere else.
+func stringFlags(t *testing.T) map[string]bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing main.go: %v", err)
+	}
+	out := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "String" {
+			return true
+		}
+		lit, ok := call.Args[0].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		if name, err := strconv.Unquote(lit.Value); err == nil {
+			out["-"+name] = true
+		}
+		return true
+	})
+	return out
+}
+
+// EVERY MODE REFUSES A TRAILING WORD, and the list is DERIVED rather than
+// remembered — which is the whole finding (#49 I-2, 3rd in family
+// `two-commands-one-line`).
+//
+// The mode x mode half already closed this way: TestModeCollision builds every
+// pair from declaredModes, so a seventh mode gets pair coverage for free. The
+// mode x WORD half did not — run() carried six hand-written
+// `case *X && fs.NArg() != 0:` arms and the tests hand-listed which ones they
+// checked. So a mode added tomorrow joined the pair matrix automatically and got
+// NO word coverage, which is exactly how -version reached production swallowing
+// one (and -llm-check before it).
+//
+// Iterating declaredModes closes it: an eighth mode is covered the day its row is
+// added, with nobody remembering to extend a table.
+func TestEveryModeRefusesATrailingWord(t *testing.T) {
+	// A REMOTE provider with no key, so a REGRESSION cannot reach the network:
+	// if -llm-check ever stops refusing, it dispatches for real, and an empty
+	// environment resolves against the local proxy and spends tokens
+	// (llmcheck_test.go:135 writes the rule down; the review measured this test
+	// making a live 1.2s call before these lines existed).
+	t.Setenv("DEFINE_LLM_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("DEFINE_LLM_BASE_URL", "https://api.anthropic.com")
+
+	strFlags := stringFlags(t)
+	modes := declaredModes(t)
+	if len(modes) < 7 {
+		t.Fatalf("derived %d modes; run() declares at least seven, so this check is "+
+			"under-deriving and would certify a set nobody chose", len(modes))
+	}
+	for _, m := range modes {
+		t.Run(m.name, func(t *testing.T) {
+			args := []string{m.name, "cat"}
+			if strFlags[m.name] {
+				args = []string{m.name, "x", "cat"}
 			}
-			if !strings.Contains(errb.String(), tc.want) {
-				t.Errorf("stderr = %q, want it to contain %q", errb.String(), tc.want)
+			var out, errb bytes.Buffer
+			code := run(t.Context(), args, testDeps(t), strings.NewReader(""), &out, &errb)
+			if code != 2 {
+				t.Errorf("`define %s` exit = %d, want 2 — a mode plus a word is two "+
+					"commands on one line, and swallowing one is a silently different "+
+					"command. Every mode refuses this; add the arm beside its siblings "+
+					"in run()'s argument-count switch.",
+					strings.Join(args, " "), code)
 			}
 			if out.Len() != 0 {
-				t.Errorf("stdout = %q, want nothing — it refused", out.String())
+				t.Errorf("`define %s` wrote %q to stdout — it should refuse, not act",
+					strings.Join(args, " "), out.String())
 			}
 		})
 	}
