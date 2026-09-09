@@ -590,3 +590,180 @@ findings:
       section 4 makes lessons.md the rule-store, so a wrong rule there misdirects future
       work; rewrite both entries to what actually held.
 ```
+
+---
+
+## Re-review — 2026-09-08T19:32:27-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 48 — /play: a sitting without leaving the loop |
+| repo | tools |
+| issue file | workshop/issues/000048-play-a-sitting-without-leaving-the-loop.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | adcbcf1841ed6139fd0cc72f5adce4ad258e9c2a..ea74e04387b419859457fe6b56bd937e98cc32f6 |
+| command | sdlc close --issue 48 |
+| reviewer | claude |
+| timestamp | 2026-09-08T19:32:27-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The terminal work is genuinely good and I'd ship the *code* as-is: `suspend`/`resume` is the right shape with the right clause (`resume` repaints unconditionally, and `repaint` is the single gate both flags live in), `applyShape` collapses the two shape routes into one policy with a derived guard, the borrowed-channel design is now documented in `atlas/define.md`, and the interrupt test finally asserts both halves against an ordering the test can actually observe. What blocks SHIP is not correctness — it is that two production sites introduced by this issue are provably unpinned, and the plan asserts otherwise. I mutation-measured all three of this window's wiring sites in a scratch checkout of `ea74e04`: the loop's `/play` dispatch is now pinned (BR-17's instance is genuinely fixed), but gutting **all three** of `runPlayCommand`'s refusals leaves the `./cmd/define` failure set byte-identical to baseline, and making `newConsole`'s `newSitting` closure stop calling `sittingInPlace` altogether *also* leaves it byte-identical — production `/play` would run no sitting at all with a green suite. Meanwhile `c2e593a` **ticked** Chunk 1 Step 1 ("Write the failing tests. Three…") in the same commit whose `## Revisions` entry records "BR-6 — the three refusals this plan named in Chunk 1 were never written", and the same window added to `workshop/lessons.md`: *"Ticking a plan step you did not do is worse than leaving it open."* That is cheap to fix (three table-driven unit tests, one AST assertion, one untick) and must not cross the boundary as a ticked-but-undone claim — especially since BR-6 was already disposed `addressed` once in round 3 and was not.
+
+## 1. Strengths
+
+- **`screen.go:857-909` — suspend/resume is specified, not improvised.** `resume` repaints *unconditionally* with the reason written down ("whatever ran while this screen was quiet has overwritten every cell"), both verbs are idempotent, and `repaint`'s gate (`screen.go:919-922`) is the one place either flag is consulted. The comment even retracts its own earlier claim — the timer disarm is hygiene, and the sweep proved the gate is what stops the frame. `TestASuspendedScreenPaintsNothingAndResumesWhereItWas` + `TestResumeDoesNotReviveAStoppedScreen` pin the distinction from `Stop` in both directions.
+- **`applyShape` (`replraw.go:49-56`) is the right answer to BR-14, not a second patch.** One function *is* what a shape means; both routes call it; `TestBothShapeRoutesGoThroughOnePlace` (`play_cmd_test.go:319`) derives that from the source and `TestApplyShapeSetsBothWidths` pins the below-the-floor policy behaviourally. And `play_cmd.go:99-121` spells out the ordering constraint (shape *before* `resume`, because resume repaints).
+- **`TestASittingFromTheLoopNeverEntersRawMode` (`play_cmd_test.go:30`) checks its own premise.** It fails closed on the walk size *and* asserts `runPlay` still reaches `enterRaw`, so the guard cannot pass by having nothing to distinguish. That is the non-vacuity clause most derived guards omit.
+- **`TestASittingScopesTheInterruptAndHandsItBack` (`play_cmd_test.go:254`)** asserts both halves and orders the fire through a channel read the test filled — and `workshop/lessons.md` records all four failed attempts, which is the durable half.
+- **Docs gate satisfied in-window**: `atlas/define.md` gained both the derived command row and a full borrow-design section; `cmd/define/README.md:724-731` gained the per-command paragraph in the hand-swept section BR-2 named.
+- **The Go-semantics correction is correct.** I verified independently: with named results the defer's mutation wins for both `return a, b` and a bare `return`; with unnamed results it cannot win at all. `lessons.md` and `play_cmd.go:75-81` now say exactly that.
+
+## 2. Critical findings
+
+None. No correctness defect, crash path, or contract drift found in the shipped code.
+
+## 3. Important findings
+
+**I-1 — `newConsole`'s `newSitting` closure is unpinned; the whole suite survives it doing nothing (`cmd/define/replraw.go:123`).**
+**This is the 4th finding in family `plan-named-test-not-written`** (BR-6, BR-7, BR-17 precede it). Per the escalation rule I am not asking for this instance to be fixed — here is the rule.
+
+> **A capability delivered through an injected field is pinned at BOTH ends: the consumer, and the production assembly that supplies the real implementation.** A test that installs its own double for field `F` proves the consumer and *nothing* about the producer. When the producer is a closure inside a constructor, the cheap pin is the AST derivation this file already uses three times.
+
+The enumeration is exact and small — this issue introduced three wiring sites, and I mutation-measured each against `ea74e04` in a scratch checkout:
+
+| site | mutation | result |
+|---|---|---|
+| `runPlayCommand`'s 3 refusals (`play_cmd.go:23-49`) | body → `if c.startSitting == nil { return 0 }; c.startSitting(); return 0` | suite green (BR-6) |
+| loop dispatch (`replraw.go:540`) | `cc.startSitting = func() {}` | **reddens** `TestTypingSlashPlayRunsASitting`, `TestTheLoopAppliesTheShapeASittingHandsBack` ✓ |
+| `newConsole`'s closure (`replraw.go:123-126`) | body → `return 0, winSize{}`, never calling `sittingInPlace` | suite green |
+
+Two of three unpinned after four rounds of this family. `TestTypingSlashPlayRunsASitting` (`play_cmd_test.go:401`) sets `con.newSitting` itself, so it can never see the producer; `TestASittingFromTheLoopNeverEntersRawMode` and `TestBothEntryPointsReachOnePlaySession` walk `sittingInPlace` by name whether or not anything reaches it.
+*Fix sketch:* extend `TestBothEntryPointsReachOnePlaySession` (or a sibling in the same AST pass) with a third assertion — `newConsole`'s body must reach `sittingInPlace` — so the production wiring is derived rather than doubled. Same technique, ~10 lines.
+
+**I-2 — see BR-6 and BR-15 below; both are re-raised as `not-addressed` rather than as new ids.**
+
+## 4. Minor findings
+
+- `replraw.go:123` sets `con.newSitting` on *every* console `newConsole` builds, including `--play`'s (`play_loop.go:106`), contradicting the field's own doc at `replraw.go:187-191` ("or is nil where one cannot run"). Unreachable today. *(BR-11, still open.)*
+- `--play` on a deckless directory prints `define: no deck in this directory, so there is nothing to review` to **stdout** and returns **0** (`play_loop.go:29-31`); `/play` prints `noDeckMessage(...)` to **stderr** and returns **1** (`play_cmd.go:44-47`). Two doors, two answers. *(BR-1/BR-12, still open.)*
+- `play_cmd_test.go:170-179` re-implements `reviewEvents` (`play_loop_test.go:81`, same package, 20+ call sites); the `ParseDir` + `FuncDecl` preamble is copied between `play_cmd_test.go:32` and `:108` (ARCH-DRY). *(BR-13, still open.)*
+- `console.newSitting` is a `new*` name on a verb that runs a whole sitting and returns its exit code, and its `stderr` parameter is always `con.stderr` == `live`, the value the closure already captures (`replraw.go:114`, `125`, `296`, `548`). *(BR-16, still open.)*
+- **New, `guard-scope-narrower-than-claim`:** `TestBothShapeRoutesGoThroughOnePlace` (`play_cmd_test.go:319-321`) parses only `replraw.go`, but a second bare `repl.Resize(r, c)` outside `applyShape` lives at `play_cmd.go:116` — precisely the shape the guard's own message forbids ("a shape applied outside applyShape is a shape whose width policy was forgotten"). Benign today because `runEditor` calls `applyShape` immediately after, but the guard's doc claims a rule its parse scope cannot enforce.
+
+## 5. Test coverage notes
+
+- **`runPlayCommand`: zero tests.** No test file names it. Measured green under full gutting.
+- **`newConsole` → `sittingInPlace`: zero tests.** Measured green under a no-op closure (I-1).
+- **`opt.width` after a sitting is AST-only.** `TestTheLoopAppliesTheShapeASittingHandsBack` asserts `con.view.Size()` and explicitly declines to observe `opt.width` (`opt` is the loop's value copy). The behavioural half of BR-14's class rests entirely on `TestBothShapeRoutesGoThroughOnePlace`.
+- **No pty/e2e for `/play`.** Task 2 Step 2 now records this honestly ("NOT a pty test… the pty was used once, by hand"), but **Verification item 4 still reads "The pty test: `/play`, answer, Ctrl-C, back at the prompt"** — the same document contradicting itself.
+- `TestPlanCitesTestsThatExist` **skips** on this plan: the plan has no `## Done when` heading, so `donewhen == 0 && checked == 0` → `t.Skip`. It reports nothing either way, which is why the un-backticked Verification names went unnoticed.
+- `TestPlanTablesNameEntitiesThatExist` still exempts both `new` rows: one unticked box makes `inProgress` true (`repo_guard_test.go:770`, `797`). The rows are correct now — but they are correct by hand, not by guard.
+- Verified green in-window: `go test ./...` (all packages ok, 111s), `go vet` under default / `pty` / `conformance`, `gofmt` clean, `go build ./...` clean, working tree clean.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** `reviewEvents` re-implemented and the AST preamble copied (BR-13); the `runPlay`/`sittingInPlace` questions-and-console preamble is written twice (recorded honestly as Chunk 2 Step 1 DID NOT SHIP, which is the right way to record it).
+- **ARCH-PURE — pass.** `runPlayCommand` is pure over `commandCtx`; `applyShape` takes a `display` interface; `suspend`/`resume` unit-test against a `bytes.Buffer` with a real timer and no IO; `sittingInPlace` takes its terminal as parameters, which is exactly why the loop, the dispatch, the interrupt and the hand-back are all drivable in-process. The plan's claim that a pty was never needed is borne out by the code.
+- **ARCH-PURPOSE — flag.** Shadow-sweep of "one sitting, two doors": `playSession` is single-sourced and derived-guarded ✓, the atlas command list derives ✓, `/help` derives ✓. But the *deckless refusal* still reads two ways by door (BR-1/BR-12) — against Done-when's "a change to the sitting cannot apply to only one of them" — and BR-17's escalated **rule** was answered by fixing the **instance**: the dispatch got its test while the enumerable siblings (I-1's table) did not.
+- **ARCH-MOCK — pass.** No new external binary or service. The terminal is injected as `io.Writer` + channels and tests run the real stack (real `liveScreen`, real store) over a buffer, not a function-call mock. No live conformance is *owed* here, but note that the one manual pty run is the only end-to-end evidence and nothing in the suite carries it.
+- **ARCH-CONSTRAINTS — pass.** Nothing runs per keystroke; the sitting is bounded by `opt.count`; `suspend` disarms the throttle timer; extent is bounded — no goroutine is created by `sittingInPlace`, which is the whole point of borrowing the resize channel.
+- **ARCH-SECURE — N/A, stated.** No new untrusted-input parse, no credentials, no artifact format change.
+- **ARCH-ORDER — pass with a note.** `suspended`/`stopped` is two booleans with three legal states, both verbs idempotent, and the illegal combination (`resume` on a stopped screen) is pinned by its own test — a tagged enum would be over-engineering here. The interrupt ordering is made deterministic through a channel the test filled, which is the right seam and the right lesson. The note: the shape hand-back is applied in **two** places with **two** completenesses (`play_cmd.go:116` rows/cols only, `replraw.go:551` full policy), and the guard forbidding exactly that reads only one of the two files.
+
+## 7. Plan revision recommendations
+
+Append a single `## Revisions` entry dated 2026-09-08, "close review rounds 3-5", covering:
+
+1. **Untick Chunk 1 Step 1.** `c2e593a` ticked it while the same commit's Revisions entry recorded "BR-6 — the three refusals this plan named in Chunk 1 were never written", and the same window added the rule to `lessons.md`. Replace with the Step-2-style honest form: `- [ ] **Step 1: … DID NOT SHIP.**` plus one sentence — or write the three tests and leave it ticked.
+2. **Fix Verification item 4.** It still names "The pty test: `/play`, answer, Ctrl-C, back at the prompt" while Task 2 Step 2 says the opposite. Replace with the in-process rows that actually shipped.
+3. **Backtick the tests that shipped.** The de-backticking note is now stale — the names exist. Cite `TestASittingFromTheLoopNeverEntersRawMode`, `TestBothEntryPointsReachOnePlaySession`, `TestTheSittingDoorRecordsWhatItAnswers`, `TestASittingScopesTheInterruptAndHandsItBack`, `TestBothShapeRoutesGoThroughOnePlace`, `TestApplyShapeSetsBothWidths`, `TestTypingSlashPlayRunsASitting`, `TestTheLoopAppliesTheShapeASittingHandsBack`, `TestASuspendedScreenPaintsNothingAndResumesWhereItWas`, `TestResumeDoesNotReviveAStoppedScreen`. Note that `TestPlanCitesTestsThatExist` currently **skips** on this plan (no `## Done when` heading), so it will not catch a future omission here either.
+4. **Correct "The three things that must be built" §2.** It still specifies `newSitting func() console`, a constructor; what shipped is `func(context.Context, deps, options, <-chan Key, *interrupter, io.Writer) (int, winSize)`, a verb that returns an exit code and a shape.
+5. **Soften or re-scope Step 5's tick.** It claims "a review answered via `/play` and via `--play` produce the same event"; the shipped test drives one door and asserts properties, with the other door covered by the AST guard. Say that.
+6. **Record the class, not just the instances**, for the family that has now produced four findings: the rule in I-1, plus the enumeration table, so the next injected-seam design pins the producer as well as the consumer.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      play_loop.go untouched in this window; runPlay:29-31 still hand-rolls the sentence to stdout with exit 0, and noDeckMessage's doc (main.go:1209) is unchanged. Neither the sweep nor the rule-statement happened.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      Mutation-measured on a scratch checkout of ea74e04: gutting all three refusals leaves the ./cmd/define failure set byte-identical to baseline. No test names runPlayCommand. Worse, c2e593a TICKED Chunk 1 Step 1 in the same commit whose Revisions entry records this finding.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      Integration points now carries the liveScreen.suspend/resume row, and sittingInPlace's signature matches the shipped one exactly.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      replraw.go:123 still assigns unconditionally; play_loop.go:106 builds --play's console through newConsole, so it carries a non-nil factory the field doc at replraw.go:187-191 says must be nil.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Unchanged - stdout/exit 0 versus stderr/exit 1 for the same deckless directory.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      play_cmd_test.go:170-179 still re-implements reviewEvents (play_loop_test.go:81); the ParseDir preamble is still copied between play_cmd_test.go:32 and :108.
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      Half swept - entity rows, signature, Step 1's DID-NOT-SHIP note, Step 2's rewrite. Not swept, and one moved backwards - Chunk 1 Step 1 was ticked in c2e593a with none of its three tests written; Verification item 4 still claims a pty test Step 2 says was not written; Verification still backticks no test name though ten landed (TestPlanCitesTestsThatExist SKIPS here, no Done-when heading); "The three things that must be built" 2 still specifies newSitting func() console.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Field still named newSitting while returning (int, winSize); stderr param is still always con.stderr == live, the value the closure already captures.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      The INSTANCE is fixed and I verified it - no-opping cc.startSitting at replraw.go:540 reddens TestTypingSlashPlayRunsASitting and TestTheLoopAppliesTheShapeASittingHandsBack. The escalated RULE was not adopted - the same window ticked Chunk 1 Step 1 with none of its named tests written, and a third site of the same class (newConsole's closure) is unpinned.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      lessons.md now states the correct rule and records the earlier error; the round-1 narrowing is recorded as also wrong; play_cmd.go:75-81 corrected. I re-verified the Go semantics independently - named results, defer wins for both bare and explicit return.
+findings:
+  - id: new
+    severity: Important
+    family: plan-named-test-not-written
+    title: |
+      newConsole's newSitting closure can stop calling sittingInPlace entirely and the whole suite stays green
+    detail: |
+      4th in family - so the rule, not the instance. A capability delivered
+      through an injected field is pinned at BOTH ends: the consumer, and the
+      production assembly that supplies the real implementation. A test that
+      installs its own double for field F proves the consumer and nothing about
+      the producer. Enumeration is exact - this issue added three wiring sites,
+      all mutation-measured against ea74e04 in a scratch checkout: the loop
+      dispatch (replraw.go:540) reddens two tests; runPlayCommand's refusals and
+      newConsole's closure (replraw.go:123-126, body replaced with
+      "return 0, winSize{}") each leave the failure set byte-identical to
+      baseline. Two of three unpinned. TestTypingSlashPlayRunsASitting sets
+      con.newSitting itself so it can never see the producer; the two AST guards
+      walk sittingInPlace by name whether or not anything reaches it. Cheap
+      enforcement already exists in this file - add to
+      TestBothEntryPointsReachOnePlaySession that newConsole's body reaches
+      sittingInPlace, derived from the source.
+  - id: new
+    severity: Minor
+    family: guard-scope-narrower-than-claim
+    title: |
+      the one-place-for-a-shape guard parses only replraw.go while a second bare Resize lives in play_cmd.go
+    detail: |
+      TestBothShapeRoutesGoThroughOnePlace (play_cmd_test.go:319-321) calls
+      parser.ParseFile on "replraw.go" alone, and its message says "a shape
+      applied outside applyShape is a shape whose width policy was forgotten" -
+      but play_cmd.go:116 does exactly that, repl.Resize(r, c) with no opt.width,
+      one file over. Benign today because runEditor calls applyShape immediately
+      after, so the class the guard names is enforced only where it happens to
+      look.
+```

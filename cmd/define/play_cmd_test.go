@@ -440,3 +440,59 @@ func TestTheLoopAppliesTheShapeASittingHandsBack(t *testing.T) {
 			"a resize the sitting consumed reaches the loop by no other route", r, c)
 	}
 }
+
+// THE PRODUCER OF AN INJECTED CAPABILITY IS PINNED TOO (#48 BR-19).
+//
+// Fourth finding in one family, so the rule rather than the instance: **a
+// capability delivered through an injected field is pinned at BOTH ends — the
+// consumer, and the production assembly that supplies the real implementation.**
+// A test that installs its own double for a field proves the consumer and
+// nothing about the producer.
+//
+// TestTypingSlashPlayRunsASitting replaces con.newSitting with a stub, so it
+// proves the loop dispatches — and newConsole's closure could return a zero
+// value forever with the whole suite green. This reads the producer instead:
+// the closure newConsole installs must actually call sittingInPlace.
+func TestTheProducedSittingCapabilityCallsTheRealThing(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "replraw.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found, callsReal bool
+	ast.Inspect(file, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		sel, ok := as.Lhs[0].(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "newSitting" {
+			return true
+		}
+		lit, ok := as.Rhs[0].(*ast.FuncLit)
+		if !ok {
+			return true
+		}
+		found = true
+		ast.Inspect(lit.Body, func(m ast.Node) bool {
+			c, ok := m.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "sittingInPlace" {
+				callsReal = true
+			}
+			return true
+		})
+		return true
+	})
+	if !found {
+		t.Fatal("no `con.newSitting = func(...)` assignment in replraw.go; this guard " +
+			"would certify nothing")
+	}
+	if !callsReal {
+		t.Error("the closure newConsole installs for newSitting does not call " +
+			"sittingInPlace — every test that installs its own double would still " +
+			"pass while /play did nothing in production")
+	}
+}

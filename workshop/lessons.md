@@ -4097,3 +4097,16 @@ proof.
 ticked "extract what runPlay and this share" when the preamble is still written
 twice. An unticked box with a sentence saying what shipped instead is a record; a
 ticked one is a false claim in the artifact a reader trusts most.
+
+**An injected capability is pinned at BOTH ends.** A test that installs its own
+double for field `F` proves the CONSUMER and nothing about the PRODUCER — the
+production assembly that supplies the real implementation can return a zero value
+forever with the suite green. `#48` hit this four times in one issue: the loop
+dispatch, the command's refusals, the closure `newConsole` installs, and the
+shape hand-back.
+
+The rule that covers all four: **when you write a test that substitutes a double,
+write the second test that reads the producer.** Usually it is an AST guard —
+"the closure assigned to this field calls the real function" — and it costs a
+dozen lines. The mutation to check it with is the one that makes the producer a
+stub, not the one that breaks the consumer.

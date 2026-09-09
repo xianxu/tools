@@ -355,6 +355,86 @@ rounds:
           family: unverified-mechanism-claim
           round: 4
       blocked: true
+    - "n": 5
+      timestamp: "2026-09-08T19:32:27-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: play_loop.go untouched in this window; runPlay:29-31 still hand-rolls the sentence to stdout with exit 0, and noDeckMessage's doc (main.go:1209) is unchanged. Neither the sweep nor the rule-statement happened.
+          round: 5
+        - id: BR-6
+          disposition: not-addressed
+          note: 'Mutation-measured on a scratch checkout of ea74e04: gutting all three refusals leaves the ./cmd/define failure set byte-identical to baseline. No test names runPlayCommand. Worse, c2e593a TICKED Chunk 1 Step 1 in the same commit whose Revisions entry records this finding.'
+          round: 5
+        - id: BR-10
+          disposition: addressed
+          note: Integration points now carries the liveScreen.suspend/resume row, and sittingInPlace's signature matches the shipped one exactly.
+          round: 5
+        - id: BR-11
+          disposition: not-addressed
+          note: replraw.go:123 still assigns unconditionally; play_loop.go:106 builds --play's console through newConsole, so it carries a non-nil factory the field doc at replraw.go:187-191 says must be nil.
+          round: 5
+        - id: BR-12
+          disposition: not-addressed
+          note: Unchanged - stdout/exit 0 versus stderr/exit 1 for the same deckless directory.
+          round: 5
+        - id: BR-13
+          disposition: not-addressed
+          note: play_cmd_test.go:170-179 still re-implements reviewEvents (play_loop_test.go:81); the ParseDir preamble is still copied between play_cmd_test.go:32 and :108.
+          round: 5
+        - id: BR-15
+          disposition: not-addressed
+          note: Half swept - entity rows, signature, Step 1's DID-NOT-SHIP note, Step 2's rewrite. Not swept, and one moved backwards - Chunk 1 Step 1 was ticked in c2e593a with none of its three tests written; Verification item 4 still claims a pty test Step 2 says was not written; Verification still backticks no test name though ten landed (TestPlanCitesTestsThatExist SKIPS here, no Done-when heading); "The three things that must be built" 2 still specifies newSitting func() console.
+          round: 5
+        - id: BR-16
+          disposition: not-addressed
+          note: Field still named newSitting while returning (int, winSize); stderr param is still always con.stderr == live, the value the closure already captures.
+          round: 5
+        - id: BR-17
+          disposition: not-addressed
+          note: The INSTANCE is fixed and I verified it - no-opping cc.startSitting at replraw.go:540 reddens TestTypingSlashPlayRunsASitting and TestTheLoopAppliesTheShapeASittingHandsBack. The escalated RULE was not adopted - the same window ticked Chunk 1 Step 1 with none of its named tests written, and a third site of the same class (newConsole's closure) is unpinned.
+          round: 5
+        - id: BR-18
+          disposition: addressed
+          note: lessons.md now states the correct rule and records the earlier error; the round-1 narrowing is recorded as also wrong; play_cmd.go:75-81 corrected. I re-verified the Go semantics independently - named results, defer wins for both bare and explicit return.
+          round: 5
+      findings:
+        - id: BR-19
+          severity: Important
+          title: newConsole's newSitting closure can stop calling sittingInPlace entirely and the whole suite stays green
+          detail: |-
+            4th in family - so the rule, not the instance. A capability delivered
+            through an injected field is pinned at BOTH ends: the consumer, and the
+            production assembly that supplies the real implementation. A test that
+            installs its own double for field F proves the consumer and nothing about
+            the producer. Enumeration is exact - this issue added three wiring sites,
+            all mutation-measured against ea74e04 in a scratch checkout: the loop
+            dispatch (replraw.go:540) reddens two tests; runPlayCommand's refusals and
+            newConsole's closure (replraw.go:123-126, body replaced with
+            "return 0, winSize{}") each leave the failure set byte-identical to
+            baseline. Two of three unpinned. TestTypingSlashPlayRunsASitting sets
+            con.newSitting itself so it can never see the producer; the two AST guards
+            walk sittingInPlace by name whether or not anything reaches it. Cheap
+            enforcement already exists in this file - add to
+            TestBothEntryPointsReachOnePlaySession that newConsole's body reaches
+            sittingInPlace, derived from the source.
+          family: plan-named-test-not-written
+          round: 5
+        - id: BR-20
+          severity: Minor
+          title: the one-place-for-a-shape guard parses only replraw.go while a second bare Resize lives in play_cmd.go
+          detail: |-
+            TestBothShapeRoutesGoThroughOnePlace (play_cmd_test.go:319-321) calls
+            parser.ParseFile on "replraw.go" alone, and its message says "a shape
+            applied outside applyShape is a shape whose width policy was forgotten" -
+            but play_cmd.go:116 does exactly that, repl.Resize(r, c) with no opt.width,
+            one file over. Benign today because runEditor calls applyShape immediately
+            after, so the class the guard names is enforced only where it happens to
+            look.
+          family: guard-scope-narrower-than-claim
+          round: 5
+      blocked: false
 ---
 
 # Gate ledger — tools#48 (boundary-review)
@@ -551,15 +631,57 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   section 4 makes lessons.md the rule-store, so a wrong rule there misdirects future
   work; rewrite both entries to what actually held.
 
+## Round 5 — 2026-09-08T19:32:27-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — not-addressed — play_loop.go untouched in this window; runPlay:29-31 still hand-rolls the sentence to stdout with exit 0, and noDeckMessage's doc (main.go:1209) is unchanged. Neither the sweep nor the rule-statement happened.
+- BR-6 — not-addressed — Mutation-measured on a scratch checkout of ea74e04: gutting all three refusals leaves the ./cmd/define failure set byte-identical to baseline. No test names runPlayCommand. Worse, c2e593a TICKED Chunk 1 Step 1 in the same commit whose Revisions entry records this finding.
+- BR-10 — addressed — Integration points now carries the liveScreen.suspend/resume row, and sittingInPlace's signature matches the shipped one exactly.
+- BR-11 — not-addressed — replraw.go:123 still assigns unconditionally; play_loop.go:106 builds --play's console through newConsole, so it carries a non-nil factory the field doc at replraw.go:187-191 says must be nil.
+- BR-12 — not-addressed — Unchanged - stdout/exit 0 versus stderr/exit 1 for the same deckless directory.
+- BR-13 — not-addressed — play_cmd_test.go:170-179 still re-implements reviewEvents (play_loop_test.go:81); the ParseDir preamble is still copied between play_cmd_test.go:32 and :108.
+- BR-15 — not-addressed — Half swept - entity rows, signature, Step 1's DID-NOT-SHIP note, Step 2's rewrite. Not swept, and one moved backwards - Chunk 1 Step 1 was ticked in c2e593a with none of its three tests written; Verification item 4 still claims a pty test Step 2 says was not written; Verification still backticks no test name though ten landed (TestPlanCitesTestsThatExist SKIPS here, no Done-when heading); "The three things that must be built" 2 still specifies newSitting func() console.
+- BR-16 — not-addressed — Field still named newSitting while returning (int, winSize); stderr param is still always con.stderr == live, the value the closure already captures.
+- BR-17 — not-addressed — The INSTANCE is fixed and I verified it - no-opping cc.startSitting at replraw.go:540 reddens TestTypingSlashPlayRunsASitting and TestTheLoopAppliesTheShapeASittingHandsBack. The escalated RULE was not adopted - the same window ticked Chunk 1 Step 1 with none of its named tests written, and a third site of the same class (newConsole's closure) is unpinned.
+- BR-18 — addressed — lessons.md now states the correct rule and records the earlier error; the round-1 narrowing is recorded as also wrong; play_cmd.go:75-81 corrected. I re-verified the Go semantics independently - named results, defer wins for both bare and explicit return.
+
+### Raised
+
+- **BR-19** [Important] `plan-named-test-not-written` newConsole's newSitting closure can stop calling sittingInPlace entirely and the whole suite stays green
+  4th in family - so the rule, not the instance. A capability delivered
+  through an injected field is pinned at BOTH ends: the consumer, and the
+  production assembly that supplies the real implementation. A test that
+  installs its own double for field F proves the consumer and nothing about
+  the producer. Enumeration is exact - this issue added three wiring sites,
+  all mutation-measured against ea74e04 in a scratch checkout: the loop
+  dispatch (replraw.go:540) reddens two tests; runPlayCommand's refusals and
+  newConsole's closure (replraw.go:123-126, body replaced with
+  "return 0, winSize{}") each leave the failure set byte-identical to
+  baseline. Two of three unpinned. TestTypingSlashPlayRunsASitting sets
+  con.newSitting itself so it can never see the producer; the two AST guards
+  walk sittingInPlace by name whether or not anything reaches it. Cheap
+  enforcement already exists in this file - add to
+  TestBothEntryPointsReachOnePlaySession that newConsole's body reaches
+  sittingInPlace, derived from the source.
+- **BR-20** [Minor] `guard-scope-narrower-than-claim` the one-place-for-a-shape guard parses only replraw.go while a second bare Resize lives in play_cmd.go
+  TestBothShapeRoutesGoThroughOnePlace (play_cmd_test.go:319-321) calls
+  parser.ParseFile on "replraw.go" alone, and its message says "a shape
+  applied outside applyShape is a shape whose width policy was forgotten" -
+  but play_cmd.go:116 does exactly that, repl.Resize(r, c) with no opt.width,
+  one file over. Benign today because runEditor calls applyShape immediately
+  after, so the class the guard names is enforced only where it happens to
+  look.
+
 ## Open findings
 
 - **BR-1** [Minor] `refusal-enumeration-incomplete` the two entry points would print different sentences for the same nil deck
 - **BR-6** [Important] `plan-named-test-not-written` all three of runPlayCommand's refusals are unpinned - the plan's Chunk 1 tests were never written
-- **BR-10** [Minor] `plan-table-stale` the plan's entity tables have no suspend/resume row and a stale sittingInPlace signature
 - **BR-11** [Minor] `capability-wider-than-its-doc` newSitting is installed on every console newConsole builds, including --play's and the board's
 - **BR-12** [Minor] `refusal-wording-diverges` --play and /play give different sentences, streams and exit codes for a deckless directory
 - **BR-13** [Minor] `test-helper-duplicated` play_cmd_test.go re-implements reviewEvents and duplicates the AST-parse preamble
 - **BR-15** [Important] `plan-table-stale` the durable plan is 0/15 ticked at close, which exempts its two new-entity rows from the guard that would have checked them
 - **BR-16** [Minor] `new-seam-surface-unshaped` console.newSitting takes a parameter it already captures, and is named like a constructor while running a whole sitting
 - **BR-17** [Important] `plan-named-test-not-written` the /play dispatch in runEditor is unpinned - making the command a no-op leaves the suite green
-- **BR-18** [Important] `unverified-mechanism-claim` lessons.md states a Go semantics rule that is false, and records a superseded approach as what worked
+- **BR-19** [Important] `plan-named-test-not-written` newConsole's newSitting closure can stop calling sittingInPlace entirely and the whole suite stays green
+- **BR-20** [Minor] `guard-scope-narrower-than-claim` the one-place-for-a-shape guard parses only replraw.go while a second bare Resize lives in play_cmd.go
