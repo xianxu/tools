@@ -8,8 +8,22 @@ It reads the dictionaries already installed on the machine — no account, no
 index, no network for a lookup. The directory you run it in *is* the deck.
 
 ```sh
+brew tap xianxu/tools
+brew install define
+```
+
+macOS only: it reads the dictionaries macOS already has and plays audio with
+`afplay`. Nothing else is required — no account, no API key, no runtime.
+
+From a clone, for contributors:
+
+```sh
 go build -o ~/bin/define ./cmd/define    # from the repo root
 ```
+
+`define --version` names the release you installed, and says `built from source`
+when it was not built by the formula.
+
 
 macOS only, and deliberately: the dictionaries come from Dictionary.app through
 `CoreServices`, which is where the definitions and the IPA actually live.

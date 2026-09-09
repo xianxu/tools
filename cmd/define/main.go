@@ -440,6 +440,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	pronFlag := fs.String("pron", "", pronHelp)
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
+	versionFlag := fs.Bool("version", false, "print the version and exit")
 	// Names the artifact, not the file: the filename is per-language and this
 	// help text is printed before any language is resolved.
 	reflect := fs.Bool("reflect", false, "read the deck and write the learner model")
@@ -614,6 +615,15 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// different things in #2.
 		fmt.Fprintf(stderr, "define: %s and %s are both modes; run them separately\n", a, b)
 		return 2
+	}
+
+	// BEFORE the store, the dictionary and every other precondition — "what am I
+	// running" must answer on a machine where the rest of the program cannot.
+	// Beside --llm-check for the same reason it sits above withStore: neither
+	// needs a directory.
+	if *versionFlag {
+		fmt.Fprintln(stdout, versionLine())
+		return 0
 	}
 
 	if *llmCheck {
@@ -1314,4 +1324,28 @@ func modeCollision(modes []mode) (string, string, bool) {
 		first = m.name
 	}
 	return "", "", false
+}
+
+// version is stamped at build time by the Homebrew formula, through
+// `-ldflags -X main.version=vN.M.P` — the same mechanism pair's formula uses for
+// main.defaultPairHome (#49).
+//
+// It lives in the git tag and the formula, never in a constant someone has to
+// remember to bump: a version a human maintains is a version that is wrong at
+// exactly the moment it is read, because the bump and the tag are two acts.
+var version string
+
+// versionLine is what --version prints.
+//
+// AN UNSTAMPED BUILD SAYS SO. `go build ./cmd/define` from a clone is not a
+// release, and printing the last released number there would make this flag a
+// lie precisely where it is most likely to be read — a contributor reproducing a
+// bug against their own working tree. "(built from source)" is the honest answer
+// and is also the useful one: it tells a bug report which half of the world it
+// came from.
+func versionLine() string {
+	if version == "" {
+		return "define (built from source)"
+	}
+	return "define " + version
 }

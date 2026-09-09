@@ -461,3 +461,40 @@ func TestAnOrdinaryLookupNeverInfersTheOrigin(t *testing.T) {
 		t.Errorf("an ordinary lookup reported something: %q", errb.String())
 	}
 }
+
+// --version SAYS WHAT IT IS, and says so honestly when nothing stamped it (#49).
+//
+// A binary someone installed from a tap must be able to name itself: a bug
+// report that cannot say which version it came from costs a round trip to
+// establish what the reporter is running.
+func TestVersionIsHonestAboutUnstampedBuilds(t *testing.T) {
+	// The shipped default: nothing has set main.version.
+	if got := versionLine(); got != "define (built from source)" {
+		t.Errorf("versionLine() = %q on an unstamped build.\n"+
+			"Printing a release number here would be a lie exactly where it is most "+
+			"likely to be read — a contributor reproducing a bug against their own "+
+			"working tree.", got)
+	}
+
+	// And the stamped form, which the formula produces with -ldflags -X.
+	saved := version
+	defer func() { version = saved }()
+	version = "v0.1.0"
+	if got := versionLine(); got != "define v0.1.0" {
+		t.Errorf("versionLine() = %q with a stamp, want %q", got, "define v0.1.0")
+	}
+}
+
+// IT ANSWERS BEFORE ANYTHING ELSE CAN FAIL. --version must work on a machine
+// where the dictionary, the directory and the model are all unavailable, which
+// is exactly the machine whose owner is trying to report a bug.
+func TestVersionAnswersWithNoDictionaryOrDeck(t *testing.T) {
+	var out, errb bytes.Buffer
+	d := deps{} // no dict, no store, no clock, no audio
+	if code := run(t.Context(), []string{"-version"}, d, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Errorf("exit = %d, want 0; stderr %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "define") {
+		t.Errorf("stdout = %q, want the program to name itself", out.String())
+	}
+}
