@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-09
 updated: 2026-09-09
-estimate_hours:
+estimate_hours: 1.41
 started: 2026-09-09T10:02:30-07:00
 ---
 
@@ -55,6 +55,43 @@ and the formula, never in a constant someone has to remember to bump.
 **A build with no stamp says so** rather than claiming a version it does not
 have: `go build` from a clone is not a release, and printing `v0.1.0` there would
 make the flag a lie exactly where it is most likely to be read.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* Calibration tagged **stale**; derived against
+`#8` (3.71/2.98) and `#48` (3.60/3.40).
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.12 impl=0.04
+item: smaller-go-module        design=0.02 impl=0.10
+item: skill-or-dispatcher      design=0.03 impl=0.14
+item: atlas-docs               design=0.02 impl=0.06
+item: ux-rename-iteration      design=0.0  impl=0.15
+item: milestone-review         design=0.0  impl=0.30
+item: milestone-review         design=0.0  impl=0.40
+design-buffer: 0.15
+total: 1.41
+```
+
+| row | the work |
+|---|---|
+| `issue-spec` 0.12/0.04 | short: the shape was settled by two operator answers, and the facts were gathered before asking. |
+| `smaller-go-module` 0.02/0.10 | `--version`, stamped by ldflags, honest when unstamped. |
+| `skill-or-dispatcher` 0.03/0.14 | the tap repo, `Formula/define.rb`, its README — a packaging artifact rather than a Go module, and this is the closest primitive. |
+| `atlas-docs` 0.02/0.06 | the README's install section. |
+| `ux-rename-iteration` 0.0/0.15 | **installing from the tap on a real machine**, which is the only thing that proves a checksum and a formula. |
+| `milestone-review` 0.0/0.30 + 0.0/0.40 | the close pair, BELOW the house 0.60/0.85: the diff is one flag, two new files in a peer repo and a doc section, with no new architectural surface for a review to work against. |
+
+**Reconciliation.** Σdesign = 0.19, Σimpl = 1.19.
+0.19 × 1.15 + 1.19 = **1.41**.
+
+**Why it is the smallest issue in the project.** `define` has no brew
+dependencies — the formula is `go build` and one binary, where `pair`'s installs
+three asset trees and generates a runtime bundle. Most of the cost is the review
+pair and the hand-install, which are fixed.
 
 ## Done when
 
