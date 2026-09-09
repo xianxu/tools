@@ -83,10 +83,26 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 	// terminal, and this one has a throttled painter that fires on its own
 	// goroutine; without this its pending frame lands inside the sitting's.
 	repl.suspend()
-	defer repl.resume()
-
 	rows, cols := repl.Size()
 	sitting := newPinnedScreen(tty, rows, cols)
+	defer func() {
+		// THE SHAPE IS HANDED BACK, and this is not tidiness (#48 BR-5).
+		//
+		// The resize channel is BORROWED, so a SIGWINCH during the sitting is
+		// consumed by the sitting's loop and applied to the sitting's screen.
+		// The editor's screen never sees it — nothing else is reading that
+		// channel — so without this it repaints at the shape the terminal had
+		// before the sitting started, for the rest of the session. Too tall and
+		// the terminal scrolls; too narrow and the prompt is laid out against a
+		// width that is not there.
+		//
+		// resume() repaints, which is why the shape must be set BEFORE it: a
+		// repaint at a stale size is exactly the frame this exists to prevent.
+		// The plan claimed resume "takes the new shape" on its own; it does not,
+		// and the review measured that.
+		repl.Resize(sitting.Size())
+		repl.resume()
+	}()
 
 	// CTRL-C ENDS THE SITTING, NOT THE PROGRAM. interrupter.Set exists for
 	// exactly this — #16 built it so a streaming answer could own the interrupt

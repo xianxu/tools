@@ -4033,3 +4033,27 @@ but so were two resize watchers, and only one had been noticed.
 When a design borrows something a caller already holds, enumerate what the
 ordinary constructor ACQUIRES and answer each one. `newConsole` acquires three
 things; the plan answered one per round until the gate had asked three times.
+
+**A borrowed channel is consumed, not shared.** `#48`'s sitting borrows the
+REPL's resize channel so there is only one SIGWINCH watcher — correct — and that
+means a resize arriving during a sitting is CONSUMED by the sitting and applied
+to the sitting's screen. The editor's screen never sees it, so it repaints at the
+pre-sitting shape for the rest of the session. The plan claimed resume "takes the
+new shape"; resume repaints, and repainting does not change rows and cols.
+
+**When you borrow a stream, decide what happens to what you take off it.** The
+fix is one line — hand the final shape back before resuming — but nothing in the
+design pointed at it, because "borrow the channel" sounds like sharing and is not.
+
+**Three wrong tests for one property, and each was wrong in a way that PASSED.**
+Testing "Ctrl-C ends the sitting, not the program": the first fed
+`Key{KeyInterrupt}` into the channel, which bypasses the interrupter entirely and
+passed with the code deleted; the second waited on a `HasScope` helper the test
+had itself made true, so it fired before the sitting was in the picture and
+tested its own cancel; the third raced two goroutines over one `bytes.Buffer` and
+hung.
+
+What worked was narrowing the claim to the half that is deterministic in-process
+— the RESTORE, which is also the half that breaks silently — and saying plainly
+in the comment that the end-to-end path is covered by the pty run. **A test that
+covers less and cannot lie beats a test that covers more and can.**

@@ -142,59 +142,201 @@ func TestBothEntryPointsReachOnePlaySession(t *testing.T) {
 	}
 }
 
-// A SITTING RECORDS THE SAME THING FROM EITHER DOOR, asserted through the STORE
-// rather than through a fake capturer (#48).
+// THE SITTING DOOR IS ACTUALLY DRIVEN, and it records what a sitting records.
 //
-// The AST guards above prove both entry points REACH playSession; this proves
-// what playSession does when they get there. A fake capturer would show the
-// outcome reaching *a* capturer and nothing about what it writes — the gap #12's
-// mutation sweep found.
-func TestASittingRecordsTheSameEventFromEitherDoor(t *testing.T) {
-	answer := func(t *testing.T) *store.Mem {
-		t.Helper()
-		d, opt, st := playRig(t, "sycophantic")
-		qs, held, code := todaysQuestions(d, opt, io.Discard, io.Discard)
-		if code != 0 || len(qs) == 0 {
-			t.Fatalf("no questions to answer: code %d, %d questions", code, len(qs))
-		}
-		var out, errb bytes.Buffer
-		playSession(t.Context(), d, opt, play.NewSession(qs), held,
-			keysFor(gradeKey(t, qs[0], play.Correct)+"^"), playbackConsole(&out, &errb))
-		return st
+// The first version of this test called playSession twice and asserted the two
+// runs matched — a pin that cannot fail, wearing a name that claimed otherwise,
+// with a comment rationalising it (#48 BR-8). sittingInPlace takes its terminal
+// as parameters, so it can be driven over a buffer with a scripted key channel;
+// there was never a reason not to.
+//
+// Asserted through the STORE rather than a fake capturer: a fake shows the
+// outcome reaching *a* capturer and nothing about what it writes, which is the
+// gap #12's sweep found.
+func TestTheSittingDoorRecordsWhatItAnswers(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic")
+	qs, _, code := todaysQuestions(d, opt, io.Discard, io.Discard)
+	if code != 0 || len(qs) == 0 {
+		t.Fatalf("no questions: code %d, %d questions", code, len(qs))
 	}
 
-	// Two runs of the SAME playSession, which is what both doors call. The
-	// assertion is that a sitting's record is a property of playSession and not
-	// of the entry point — so if the doors ever diverge, the guards above catch
-	// it and this stays true of whatever they both reach.
-	first, second := answer(t), answer(t)
+	var tty, errb bytes.Buffer
+	repl := newLiveScreen(&tty, 24, 80)
+	keys := keysFor(gradeKey(t, qs[0], play.Correct) + "^")
 
-	got := func(st *store.Mem) []store.ReviewEvent {
-		evs, err := st.Events(time.Time{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		var reviewed []store.ReviewEvent
-		for _, e := range evs {
-			if e.Kind == store.EventReviewed {
-				reviewed = append(reviewed, e)
-			}
-		}
-		return reviewed
+	sittingInPlace(t.Context(), d, opt, keys, &interrupter{}, repl, nil, &tty, &errb)
+
+	evs, err := st.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	a, b := got(first), got(second)
-	if len(a) == 0 {
-		t.Fatal("a sitting recorded no review, so this proves nothing")
-	}
-	if len(a) != len(b) {
-		t.Fatalf("the two sittings recorded %d and %d reviews", len(a), len(b))
-	}
-	for i := range a {
-		if a[i].Word != b[i].Word || a[i].Correct != b[i].Correct || a[i].Form != b[i].Form {
-			t.Errorf("event %d differs: %+v vs %+v", i, a[i], b[i])
-		}
-		if a[i].Form == "" {
-			t.Errorf("event %d has no form, so the log cannot attribute it: %+v", i, a[i])
+	var reviewed []store.ReviewEvent
+	for _, e := range evs {
+		if e.Kind == store.EventReviewed {
+			reviewed = append(reviewed, e)
 		}
 	}
+	if len(reviewed) == 0 {
+		t.Fatal("a sitting driven through sittingInPlace recorded no review")
+	}
+	if reviewed[0].Form == "" {
+		t.Errorf("the event has no form, so the log cannot attribute it: %+v", reviewed[0])
+	}
+	if !reviewed[0].Correct {
+		t.Errorf("a correct answer was recorded wrong: %+v", reviewed[0])
+	}
+}
+
+// THE EDITOR'S SCREEN COMES BACK AT THE TERMINAL'S CURRENT SHAPE (#48 BR-5).
+//
+// The resize channel is borrowed, so a SIGWINCH during a sitting is consumed by
+// the sitting and applied to ITS screen. Without handing the shape back, the
+// editor repaints at the pre-sitting size for the rest of the session.
+func TestTheEditorScreenTakesTheShapeTheSittingEndedWith(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	qs, _, _ := todaysQuestions(d, opt, io.Discard, io.Discard)
+	if len(qs) == 0 {
+		t.Fatal("no questions, so this proves nothing")
+	}
+
+	var tty, errb bytes.Buffer
+	repl := newLiveScreen(&tty, 24, 80)
+
+	// A resize arrives while the sitting owns the terminal, and it must be
+	// CONSUMED before the interrupt — otherwise select could take either and the
+	// test would pass or fail at random. So the keys channel stays empty until
+	// the resize has actually been read, which is the only ordering the sitting
+	// can be forced into from outside.
+	resizes := make(chan winSize, 1)
+	resizes <- winSize{rows: 40, cols: 120}
+	keys := make(chan Key)
+
+	done := make(chan int, 1)
+	go func() {
+		done <- sittingInPlace(t.Context(), d, opt, keys, &interrupter{}, repl, resizes, &tty, &errb)
+	}()
+	for i := 0; len(resizes) > 0; i++ {
+		if i > 2000 {
+			t.Fatal("the sitting never read the resize")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	keys <- Key{Kind: KeyInterrupt}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sitting did not end on Ctrl-C")
+	}
+
+	rows, cols := repl.Size()
+	if rows != 40 || cols != 120 {
+		t.Errorf("the editor's screen is %dx%d, want 40x120 — a resize the sitting "+
+			"consumed was never handed back, so the prompt repaints at a shape the "+
+			"terminal no longer has", rows, cols)
+	}
+}
+
+// THE SITTING HANDS THE INTERRUPT BACK (#48 BR-7).
+//
+// interrupter.Set scopes Ctrl-C to the sitting and restore() returns it to the
+// loop. In the real path readKeys fires the interrupter and WITHHOLDS the key
+// when a scope consumed it (rawterm.go:104-110), so the sitting's context
+// cancels and the loop's does not — that end-to-end behaviour is what the
+// operator's pty run exercised.
+//
+// What is deterministic in-process, and what can silently break, is the RESTORE:
+// a Set without its restore leaves the sitting's cancel installed after the
+// sitting is gone, so the next Ctrl-C at the prompt cancels a dead context and
+// the loop never quits. This drives the real door and asserts both halves —
+// the loop's cancel untouched during, and working after.
+//
+// Two earlier versions of this test were wrong in ways worth recording: one fed
+// Key{KeyInterrupt} straight into the channel, which bypasses the interrupter
+// entirely and passed with Set/restore deleted; the other waited on HasScope,
+// which this test had already made true by installing the loop's own cancel.
+func TestASittingHandsTheInterruptBack(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+
+	var loopCancelled bool
+	interrupts := &interrupter{}
+	interrupts.Set(func() { loopCancelled = true })
+
+	var tty, errb bytes.Buffer
+	repl := newLiveScreen(&tty, 24, 80)
+	sittingInPlace(t.Context(), d, opt, keysFor("^"), interrupts, repl, nil, &tty, &errb)
+
+	if loopCancelled {
+		t.Error("the loop's cancel ran during the sitting — Ctrl-C would quit define " +
+			"instead of ending the review")
+	}
+	// RESTORED: the loop's own interrupt works again, and is the one that fires.
+	if !interrupts.Fire() {
+		t.Fatal("nothing consumed the interrupt after the sitting; the sink was left empty")
+	}
+	if !loopCancelled {
+		t.Error("the interrupt was not handed back to the loop — the next Ctrl-C at " +
+			"the prompt would cancel the sitting's dead context and never quit")
+	}
+}
+
+// THE THREE REFUSALS, which the plan's Chunk 1 named and the first build never
+// wrote (#48 BR-6).
+func TestSlashPlayRefusals(t *testing.T) {
+	live := func() commandCtx {
+		return commandCtx{deck: store.NewMem(), startSitting: func() {}, stderr: io.Discard}
+	}
+
+	t.Run("no terminal is a refusal", func(t *testing.T) {
+		// A nil capability IS the refusal — the rule setTimes states. One check
+		// covers the one-shot path, a pipe, and the line-mode REPL, which has no
+		// raw terminal at all.
+		var errb bytes.Buffer
+		c := live()
+		c.startSitting, c.stderr = nil, &errb
+		if code := runPlayCommand(c, nil); code != 1 {
+			t.Errorf("exit = %d, want 1", code)
+		}
+		if !strings.Contains(errb.String(), "terminal") {
+			t.Errorf("the refusal does not name the cause: %q", errb.String())
+		}
+	})
+
+	t.Run("no deck is a SECOND, separate refusal", func(t *testing.T) {
+		// todaysQuestions dereferences the deck, so a sitting without one panics
+		// rather than degrading. The capability says the terminal can host a
+		// sitting and nothing about there being one to review.
+		var errb bytes.Buffer
+		c := live()
+		c.deck, c.stderr, c.noCapture = nil, &errb, true
+		if code := runPlayCommand(c, nil); code != 1 {
+			t.Errorf("exit = %d, want 1", code)
+		}
+		if !strings.Contains(errb.String(), "DEFINE_NO_CAPTURE") {
+			t.Errorf("the refusal does not name which cause: %q", errb.String())
+		}
+	})
+
+	t.Run("an argument is a usage error", func(t *testing.T) {
+		var errb bytes.Buffer
+		c := live()
+		c.stderr = &errb
+		if code := runPlayCommand(c, []string{"sycophantic"}); code != 2 {
+			t.Errorf("exit = %d, want 2", code)
+		}
+		if !strings.Contains(errb.String(), "/play") {
+			t.Errorf("the refusal does not name the command: %q", errb.String())
+		}
+	})
+
+	t.Run("otherwise it RECORDS rather than performs", func(t *testing.T) {
+		var started bool
+		c := live()
+		c.startSitting = func() { started = true }
+		if code := runPlayCommand(c, nil); code != 0 {
+			t.Errorf("exit = %d, want 0", code)
+		}
+		if !started {
+			t.Error("the command did not record the intent, so the loop has nothing to do")
+		}
+	})
 }
