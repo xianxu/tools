@@ -1,11 +1,12 @@
 ---
 id: 000049
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-09
 updated: 2026-09-09
 estimate_hours:
+started: 2026-09-09T10:02:30-07:00
 ---
 
 # publish define through a homebrew tap
