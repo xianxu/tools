@@ -72,9 +72,14 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 	tty io.Writer, stderr io.Writer) (code int, shape winSize) {
 
 	rows, cols := repl.Size()
-	// NAMED RETURNS, because the shape is settled by the deferred hand-back —
-	// a plain `return code, shape` would evaluate shape BEFORE the defer runs
-	// and hand back the pre-sitting size, which is the very bug this returns for.
+	// NAMED RESULTS, because the shape is settled by the deferred hand-back and
+	// only a named result can be changed by a defer. With unnamed results the
+	// values are copied out before defers run, so the caller would get the
+	// pre-sitting size — the very bug this returns for, one level in.
+	//
+	// (An earlier comment here said `return code, shape` evaluates before the
+	// defer even when named. It does not: with named results the defer wins for
+	// both a bare return and an explicit one. Named vs unnamed is the axis.)
 	shape = winSize{rows: rows, cols: cols}
 
 	questions, held, c := todaysQuestions(d, opt, repl, stderr)

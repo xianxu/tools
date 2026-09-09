@@ -140,9 +140,15 @@ not the table row it first looked like.
 |------|----------|--------|-------|
 | `sittingInPlace` | `cmd/define/play_cmd.go` | new | the live terminal |
 | `applyShape` | `cmd/define/replraw.go` | new | the terminal's shape |
+| `liveScreen.suspend`/`resume` | `cmd/define/screen.go` | modified | the terminal, shared |
 
-- **`sittingInPlace(ctx, d, opt, sess, keys, interrupts, stdout, stderr) int`** —
-  runs one sitting on a terminal that is ALREADY raw.
+- **`sittingInPlace(ctx, d, opt, keys, interrupts, repl, resizes, tty, stderr)
+  (code int, shape winSize)`** — runs one sitting on a terminal that is ALREADY
+  raw, and returns the shape it ended at.
+  - **NAMED RESULTS**, because the shape is settled by the deferred hand-back and
+    only a named result can be changed by a defer.
+  - It takes the SCREEN and the channel rather than the `rawSession`: the session
+    is what `newSitting`'s closure holds, so this never sees it.
   - **The sibling is `replayInPlace`** (`replraw.go:506`), and the name is
     deliberate: same position in the loop, same "on the terminal we already
     hold" contract.
@@ -263,14 +269,19 @@ invocation. Nothing here runs per keystroke.
 - Create: the function in `cmd/define/play_cmd.go`
 - Modify: `cmd/define/play_loop.go` — extract what `runPlay` and this share
 
-- [x] **Step 1: Read `runPlay` and take the part below the guards.** The
-      questions, the console, the `playSession` call. If that means a helper both
-      call, write the helper — a second way to start a sitting is what this issue
-      exists to not create.
-- [x] **Step 2: Write the failing pty test.** Type `/play`, answer a question,
-      Ctrl-C, and assert the DEFINITION PROMPT is back — not a shell. And the
-      suspend/resume rows named in the Test surface, including the clause that
-      separates suspend from `Stop`: after resume the frame comes BACK.
+- [ ] **Step 1: extract the part `runPlay` and the sitting share. DID NOT SHIP.**
+      Both call `playSession` with the same arguments, and a derived guard holds
+      them to it — but the questions-and-console preamble is written twice rather
+      than in a helper. That is a smaller duplication than a second way to START
+      a sitting, which is what the step was protecting against, and the guard is
+      what actually enforces it. Left unticked because it was not done.
+- [x] **Step 2: the failing tests.** NOT a pty test — `runEditor` and
+      `sittingInPlace` both take their terminal as parameters, so the loop, the
+      dispatch, the sitting, the interrupt and the shape hand-back are all driven
+      in-process with a scripted key channel. The pty was used once, by hand, to
+      confirm the end-to-end feel; nothing in the suite depends on it.
+      Suspend/resume has its own rows, including the clause that separates it
+      from `Stop`: after resume the frame comes BACK.
 - [x] **Step 3: Implement.**
 - [x] **Step 4: The scoped interrupt.** `interrupts.Set(cancel)` with a deferred
       `restore()`, and a test that Ctrl-C inside the sitting does not cancel the

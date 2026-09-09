@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -384,5 +385,58 @@ func TestApplyShapeSetsBothWidths(t *testing.T) {
 	if _, c := view.Size(); c != minWrapWidth-1 {
 		t.Errorf("view cols = %d, want %d — the frame still has to fit the columns "+
 			"that exist", c, minWrapWidth-1)
+	}
+}
+
+// TYPING /play AT THE PROMPT ACTUALLY RUNS A SITTING (#48 BR-17).
+//
+// Third finding in the same family this session: a behaviour proved at the seam
+// and unproven at the site obliged to obey it. Measured by the reviewer —
+// replacing the loop's `cc.startSitting = func() { sitting = true }` with a
+// no-op left the whole suite green, so `/play` typed at the prompt could
+// silently do nothing while every unit test still passed.
+//
+// runEditor IS drivable with no terminal — that is what `console` and a scripted
+// key channel are for — so there was never a reason to leave this to the pty.
+func TestTypingSlashPlayRunsASitting(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+
+	var out, errb bytes.Buffer
+	con := recordingConsole(&out, &errb, func() {})
+	var ran bool
+	con.newSitting = func(ctx context.Context, d deps, opt options, keys <-chan Key,
+		interrupts *interrupter, stderr io.Writer) (int, winSize) {
+		ran = true
+		return 0, winSize{rows: 30, cols: 100}
+	}
+
+	runEditor(t.Context(), scriptKeys("/play\r"), nil, d, opt, con)
+
+	if !ran {
+		t.Error("typing /play at the prompt ran no sitting — the command records " +
+			"the intent and the loop must perform it")
+	}
+}
+
+// AND THE SHAPE THE SITTING ENDED AT REACHES THE LOOP, which is the other half
+// of the same wiring: without it the prompt keeps the pre-sitting width.
+func TestTheLoopAppliesTheShapeASittingHandsBack(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	opt.width = 80
+
+	var out, errb bytes.Buffer
+	con := recordingConsole(&out, &errb, func() {})
+	con.newSitting = func(ctx context.Context, d deps, o options, keys <-chan Key,
+		interrupts *interrupter, stderr io.Writer) (int, winSize) {
+		return 0, winSize{rows: 30, cols: 100}
+	}
+
+	// The loop's own copy of opt is what a later lookup wraps against, so the
+	// observable is the SCREEN it resized — the recorder records the call.
+	runEditor(t.Context(), scriptKeys("/play\r"), nil, d, opt, con)
+
+	if r, c := con.view.Size(); r != 30 || c != 100 {
+		t.Errorf("the loop's view is %dx%d after a sitting handed back 30x100 — "+
+			"a resize the sitting consumed reaches the loop by no other route", r, c)
 	}
 }

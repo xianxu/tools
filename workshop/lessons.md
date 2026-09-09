@@ -4053,10 +4053,17 @@ had itself made true, so it fired before the sitting was in the picture and
 tested its own cancel; the third raced two goroutines over one `bytes.Buffer` and
 hung.
 
-What worked was narrowing the claim to the half that is deterministic in-process
-— the RESTORE, which is also the half that breaks silently — and saying plainly
-in the comment that the end-to-end path is covered by the pty run. **A test that
-covers less and cannot lie beats a test that covers more and can.**
+**Narrowing to the deterministic half was ALSO wrong, and the next round proved
+it:** asserting only the RESTORE passes when `Set` and `restore` are BOTH deleted,
+because never scoping the interrupt also leaves the loop's cancel installed. A
+narrower claim is not automatically a safer one — it is only safer if what it
+drops cannot fail silently.
+
+What worked was making the ORDERING observable: have the sitting consume a resize
+first, which is a channel read the test can poll, then fire the interrupt while
+the sitting owns it. **Look for a synchronisation point the test can watch —
+a channel it filled, a file it can stat — rather than racing a buffer or
+reaching for a helper that reports the state you yourself set.**
 
 **Fix the class the first time, or the same bug comes back one field over.**
 `#48`'s sitting borrows the resize channel, so a shape consumed during a sitting
@@ -4066,8 +4073,27 @@ field over, entries wrapping at the pre-sitting width. The fix is one function
 that IS what a shape means, called by every route, with a guard deriving the
 routes from the source.
 
-**When a value is settled by a deferred call, the return must be NAMED.** `return
-code, shape` evaluates `shape` before the defer runs, so it hands back the
-pre-sitting size — the exact bug the return exists to fix, one level in. Caught
-by reading it back rather than by a test, which is worth noting: nothing would
-have failed.
+**When a value is settled by a deferred call, the results must be NAMED** — and
+that is the whole rule. With named results a defer's mutation wins for BOTH a
+bare `return` and an explicit `return a, b`; with unnamed results it cannot win
+at all, because the values are copied out before defers run.
+
+**The first version of this entry got that wrong**, claiming `return code, shape`
+evaluates before the defer even with named results. It does not; I checked it
+afterwards with a four-line program, which is what I should have done before
+writing a semantics rule into the rule-store. A wrong rule here is worse than no
+rule: `AGENTS.md` §4 makes this file the thing future work is steered by.
+
+**A test that drives the loop was available the whole time.** `#48` left the
+`/play` dispatch unpinned — replacing the recorded intent with a no-op left the
+whole suite green — on the assumption that a sitting needs a terminal. It does
+not: `runEditor` takes a `console` and a key CHANNEL precisely so it can be
+driven with neither, and three existing tests already do it. **Before deferring a
+behaviour to a manual run, check whether the seam that makes it testable is
+already there.** The manual run then confirms the feel rather than carrying the
+proof.
+
+**Ticking a plan step you did not do is worse than leaving it open.** `#48`
+ticked "extract what runPlay and this share" when the preamble is still written
+twice. An unticked box with a sentence saying what shipped instead is a record; a
+ticked one is a false claim in the artifact a reader trusts most.

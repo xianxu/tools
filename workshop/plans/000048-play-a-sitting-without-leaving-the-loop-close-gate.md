@@ -268,6 +268,93 @@ rounds:
           family: new-seam-surface-unshaped
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-08T18:56:35-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: play_loop.go is unmodified in this window and no artifact states the rule; runPlay:30 still hand-rolls the sentence.
+          round: 4
+        - id: BR-2
+          disposition: addressed
+          note: The named surface shipped at cmd/define/README.md:724-730; Step 8's wording is folded into the plan-revision list.
+          round: 4
+        - id: BR-3
+          disposition: addressed
+          note: The shipped signature takes repl *liveScreen and the real tty, not sess/stdout; the stale plan ROW is BR-10/BR-15's.
+          round: 4
+        - id: BR-6
+          disposition: not-addressed
+          note: TestSlashPlayRefusals was written in 15ecac4 and DELETED in c2e593a; removing the nil-capability refusal now reddens nothing.
+          round: 4
+        - id: BR-7
+          disposition: addressed
+          note: Verified by reverting Set/restore in a scratch copy - the test fails at "the sitting did not end when its own interrupt fired".
+          round: 4
+        - id: BR-10
+          disposition: not-addressed
+          note: Still no suspend/resume entity row, and line 144's sittingInPlace signature is unchanged.
+          round: 4
+        - id: BR-11
+          disposition: not-addressed
+          note: replraw.go:123 still sets con.newSitting unconditionally, so --play's console and the board carry it.
+          round: 4
+        - id: BR-12
+          disposition: not-addressed
+          note: play_loop.go is unmodified; the two doors still differ in sentence, stream and exit code.
+          round: 4
+        - id: BR-13
+          disposition: not-addressed
+          note: reviewEvents is still re-implemented at play_cmd_test.go:172-178 and ParseDir is still copied at :31 and :107.
+          round: 4
+        - id: BR-14
+          disposition: addressed
+          note: Verified by bypassing applyShape on the hand-back route - both clauses of TestBothShapeRoutesGoThroughOnePlace fail.
+          round: 4
+        - id: BR-15
+          disposition: not-addressed
+          note: Boxes ticked but two of them falsely (Task 2 Steps 1 and 2); signature row, suspend/resume row, Verification backticks and the did-not-ship record are all still missing.
+          round: 4
+        - id: BR-16
+          disposition: not-addressed
+          note: Still named newSitting for a verb, and still takes the stderr it already captures as live.
+          round: 4
+      findings:
+        - id: BR-17
+          severity: Important
+          title: the /play dispatch in runEditor is unpinned - making the command a no-op leaves the suite green
+          detail: |-
+            This is the 3rd finding in family plan-named-test-not-written, so the rule rather
+            than the instance. Measured: replacing cc.startSitting = func() { sitting = true }
+            (replraw.go:540) with a no-op leaves every non-git-dependent test passing, so /play
+            typed at the prompt can silently do nothing. The rule: a plan step is not ticked
+            until the test it names exists AND a named mutation of the code it covers reddens
+            it. The enumeration is exact - Verification lists 6 items plus 3 Test-surface rows;
+            delivered and mutation-checked are items 3, 5 (one door), 6 and the shape rows;
+            unmet are item 2 (the refusals, deleted in c2e593a - see BR-6) and item 4 (the pty
+            row, pty_conformance_test.go untouched in this window). Two obligations unmet while
+            15/15 boxes read done. Adopt the rule at the tick and record the two unmet
+            obligations in the plan's Revisions instead of ticking over them.
+          family: plan-named-test-not-written
+          round: 4
+        - id: BR-18
+          severity: Important
+          title: lessons.md states a Go semantics rule that is false, and records a superseded approach as what worked
+          detail: |-
+            workshop/lessons.md:4069 says "return code, shape evaluates shape before the defer
+            runs, so it hands back the pre-sitting size". With NAMED results - which
+            sittingInPlace has - that is not so; I ran it, and the deferred mutation still wins
+            for both a bare return and return code, shape. The real requirement is that the
+            results be named, which they are. The same wrong claim is in the code comment at
+            play_cmd.go:75-78. Separately, lines 4056-4060 record the round-1 approach ("narrow
+            the claim to the RESTORE... the end-to-end path is covered by the pty run") that
+            BR-7 rejected and c2e593a replaced, and there is no pty run for /play. AGENTS.md
+            section 4 makes lessons.md the rule-store, so a wrong rule there misdirects future
+            work; rewrite both entries to what actually held.
+          family: unverified-mechanism-claim
+          round: 4
+      blocked: true
 ---
 
 # Gate ledger — tools#48 (boundary-review)
@@ -421,16 +508,58 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   newly-introduced internal seam that downstream work will consume, so the surface is worth
   settling now.
 
+## Round 4 — 2026-09-08T18:56:35-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — play_loop.go is unmodified in this window and no artifact states the rule; runPlay:30 still hand-rolls the sentence.
+- BR-2 — addressed — The named surface shipped at cmd/define/README.md:724-730; Step 8's wording is folded into the plan-revision list.
+- BR-3 — addressed — The shipped signature takes repl *liveScreen and the real tty, not sess/stdout; the stale plan ROW is BR-10/BR-15's.
+- BR-6 — not-addressed — TestSlashPlayRefusals was written in 15ecac4 and DELETED in c2e593a; removing the nil-capability refusal now reddens nothing.
+- BR-7 — addressed — Verified by reverting Set/restore in a scratch copy - the test fails at "the sitting did not end when its own interrupt fired".
+- BR-10 — not-addressed — Still no suspend/resume entity row, and line 144's sittingInPlace signature is unchanged.
+- BR-11 — not-addressed — replraw.go:123 still sets con.newSitting unconditionally, so --play's console and the board carry it.
+- BR-12 — not-addressed — play_loop.go is unmodified; the two doors still differ in sentence, stream and exit code.
+- BR-13 — not-addressed — reviewEvents is still re-implemented at play_cmd_test.go:172-178 and ParseDir is still copied at :31 and :107.
+- BR-14 — addressed — Verified by bypassing applyShape on the hand-back route - both clauses of TestBothShapeRoutesGoThroughOnePlace fail.
+- BR-15 — not-addressed — Boxes ticked but two of them falsely (Task 2 Steps 1 and 2); signature row, suspend/resume row, Verification backticks and the did-not-ship record are all still missing.
+- BR-16 — not-addressed — Still named newSitting for a verb, and still takes the stderr it already captures as live.
+
+### Raised
+
+- **BR-17** [Important] `plan-named-test-not-written` the /play dispatch in runEditor is unpinned - making the command a no-op leaves the suite green
+  This is the 3rd finding in family plan-named-test-not-written, so the rule rather
+  than the instance. Measured: replacing cc.startSitting = func() { sitting = true }
+  (replraw.go:540) with a no-op leaves every non-git-dependent test passing, so /play
+  typed at the prompt can silently do nothing. The rule: a plan step is not ticked
+  until the test it names exists AND a named mutation of the code it covers reddens
+  it. The enumeration is exact - Verification lists 6 items plus 3 Test-surface rows;
+  delivered and mutation-checked are items 3, 5 (one door), 6 and the shape rows;
+  unmet are item 2 (the refusals, deleted in c2e593a - see BR-6) and item 4 (the pty
+  row, pty_conformance_test.go untouched in this window). Two obligations unmet while
+  15/15 boxes read done. Adopt the rule at the tick and record the two unmet
+  obligations in the plan's Revisions instead of ticking over them.
+- **BR-18** [Important] `unverified-mechanism-claim` lessons.md states a Go semantics rule that is false, and records a superseded approach as what worked
+  workshop/lessons.md:4069 says "return code, shape evaluates shape before the defer
+  runs, so it hands back the pre-sitting size". With NAMED results - which
+  sittingInPlace has - that is not so; I ran it, and the deferred mutation still wins
+  for both a bare return and return code, shape. The real requirement is that the
+  results be named, which they are. The same wrong claim is in the code comment at
+  play_cmd.go:75-78. Separately, lines 4056-4060 record the round-1 approach ("narrow
+  the claim to the RESTORE... the end-to-end path is covered by the pty run") that
+  BR-7 rejected and c2e593a replaced, and there is no pty run for /play. AGENTS.md
+  section 4 makes lessons.md the rule-store, so a wrong rule there misdirects future
+  work; rewrite both entries to what actually held.
+
 ## Open findings
 
 - **BR-1** [Minor] `refusal-enumeration-incomplete` the two entry points would print different sentences for the same nil deck
-- **BR-2** [Minor] `hand-swept-surface-unnamed` Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
-- **BR-3** [Minor] `terminal-ownership-unstated` the sittingInPlace signature still takes sess/stdout, the pair the stated rule says it must not build a console from
-- **BR-7** [Important] `plan-named-test-not-written` the scoped interrupt has no test - removing Set/restore reddens nothing
+- **BR-6** [Important] `plan-named-test-not-written` all three of runPlayCommand's refusals are unpinned - the plan's Chunk 1 tests were never written
 - **BR-10** [Minor] `plan-table-stale` the plan's entity tables have no suspend/resume row and a stale sittingInPlace signature
 - **BR-11** [Minor] `capability-wider-than-its-doc` newSitting is installed on every console newConsole builds, including --play's and the board's
 - **BR-12** [Minor] `refusal-wording-diverges` --play and /play give different sentences, streams and exit codes for a deckless directory
 - **BR-13** [Minor] `test-helper-duplicated` play_cmd_test.go re-implements reviewEvents and duplicates the AST-parse preamble
-- **BR-14** [Important] `borrowed-channel-swallows-owners-events` the borrowed resize hands back the screen shape but not opt.width, so entries looked up after a sitting wrap at the pre-sitting width
 - **BR-15** [Important] `plan-table-stale` the durable plan is 0/15 ticked at close, which exempts its two new-entity rows from the guard that would have checked them
 - **BR-16** [Minor] `new-seam-surface-unshaped` console.newSitting takes a parameter it already captures, and is named like a constructor while running a whole sitting
+- **BR-17** [Important] `plan-named-test-not-written` the /play dispatch in runEditor is unpinned - making the command a no-op leaves the suite green
+- **BR-18** [Important] `unverified-mechanism-claim` lessons.md states a Go semantics rule that is false, and records a superseded approach as what worked
