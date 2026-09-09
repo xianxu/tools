@@ -75,3 +75,4 @@ lang.txt
 # fails when it is staged, and after a git rm in a later commit the index guard
 # passes while the history guard fails.
 /cmd/*/define
+__pycache__/
