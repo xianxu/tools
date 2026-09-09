@@ -95,25 +95,25 @@ pair and the hand-install, which are fixed.
 
 ## Done when
 
-- [ ] `brew tap xianxu/tools && brew install define` installs a working `define`
+- [x] `brew tap xianxu/tools && brew install define` installs a working `define`
       on a clean machine.
-- [ ] `define --version` reports the released version, and reports something
+- [x] `define --version` reports the released version, and reports something
       honest (not a fabricated number) when built from a clone.
-- [ ] The formula declares macOS rather than failing confusingly elsewhere.
-- [ ] `tools` carries a `v0.1.0` tag, and the formula's `sha256` matches the
+- [x] The formula declares macOS rather than failing confusingly elsewhere.
+- [x] `tools` carries a `v0.1.0` tag, and the formula's `sha256` matches the
       tarball GitHub serves for it — verified by installing from the tap, not by
       assuming the checksum.
-- [ ] `cmd/define/README.md` leads with the brew install and keeps the
+- [x] `cmd/define/README.md` leads with the brew install and keeps the
       build-from-source line for contributors.
 
 ## Plan
 
 Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
 
-- [ ] `--version`, stamped by ldflags, honest when unstamped.
-- [ ] Tag `v0.1.0` and confirm the tarball's checksum from GitHub.
-- [ ] The tap repo, its formula and its README.
-- [ ] Install from the tap on this machine and run it.
+- [x] `--version`, stamped by ldflags, honest when unstamped.
+- [x] Tag `v0.1.0` and confirm the tarball's checksum from GitHub.
+- [x] The tap repo, its formula and its README.
+- [x] Install from the tap on this machine and run it.
 
 ## Log
 
@@ -127,3 +127,37 @@ we can use the same tap I assume."*
 needs a first release; `define` shells out only to `afplay` and has no brew
 dependencies at all; and there is no `--version` flag. The operator chose a new
 tap and `v0.1.0` when asked.
+
+### 2026-09-09 — installed from the tap on a clean machine
+
+`xianxu/homebrew-tools` is public, `Formula/define.rb` builds from the `v0.1.0`
+tarball, and **the checksum was verified the only way that counts** — by
+installing from the tap rather than by trusting the number.
+
+**Two things only a real install could have found**, both now in the tap README
+and (this round) in `cmd/define/README.md`, which still carried the broken pair:
+
+- `brew trust xianxu/tools` is required first. Without it Homebrew reports
+  `invalid syntax in tap!`, which reads like a Ruby error in the formula.
+- `brew install define` installs a DIFFERENT program — `define` also exists in
+  homebrew-core. The qualified `xianxu/tools/define` is the one that works.
+
+**Smoke-tested in a vanilla VM** (`make tart-clean && VANILLA=1 make tart`), not
+a provisioned one, and that distinction turned out to be load-bearing. A normal
+`make tart` mounts the workspace, and `construct/dev-aliases.sh` then emits a
+`define()` SHELL FUNCTION that rebuilds from source — functions outrank PATH in
+zsh, so it silently shadows the bottle and the smoke test measures a local build.
+The tell is `--version`: the function builds without ldflags, so it prints
+`built from source` where the bottle prints `define v0.1.0`. This trap applies to
+every `cmd/X` in every ariadne-styled peer, so it will recur for any future
+formula.
+
+Operator verified in the VM: install, lookup and audio. Version stamping verified
+here both ways — unstamped `go build` → `define (built from source)`;
+`-ldflags -X main.version=v0.1.0` → `define v0.1.0` — which is the formula's own
+`test do` assertion.
+
+`v0.1.0` points at `7380263` on the branch and is pushed to origin. `sdlc merge`
+uses `gh pr merge --merge`, so the commit becomes an ancestor of `main` and the
+tag stays reachable — checked rather than assumed, since a squash would have
+stranded it.

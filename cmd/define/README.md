@@ -8,9 +8,16 @@ It reads the dictionaries already installed on the machine — no account, no
 index, no network for a lookup. The directory you run it in *is* the deck.
 
 ```sh
+brew trust xianxu/tools          # third-party taps are untrusted by default
 brew tap xianxu/tools
-brew install define
+brew install xianxu/tools/define
 ```
+
+Both of the first two lines are load-bearing. Homebrew refuses to load formulae
+from an untrusted tap and reports it as `invalid syntax in tap!`, which is not
+what it sounds like. And bare `brew install define` installs a *different*
+program — `define` also exists in homebrew-core — so the qualified name is the
+one that gets this one.
 
 macOS only: it reads the dictionaries macOS already has and plays audio with
 `afplay`. Nothing else is required — no account, no API key, no runtime.
