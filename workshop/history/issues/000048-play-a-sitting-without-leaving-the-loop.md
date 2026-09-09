@@ -1,6 +1,6 @@
 ---
 id: 000048
-status: codecomplete
+status: done
 deps: ["tools#6"]
 github_issue:
 created: 2026-09-07
