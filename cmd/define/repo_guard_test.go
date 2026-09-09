@@ -28,6 +28,37 @@ var executableMagics = [][]byte{
 	{0xCA, 0xFE, 0xBA, 0xBE}, {0x7F, 'E', 'L', 'F'},
 }
 
+// compiledExtensions are compiled artifacts a magic-byte test cannot see.
+//
+// THE MAGIC TEST ALONE FAILED OPEN. It knows Mach-O and ELF, so a `.pyc`
+// (magic `2b 0e 0d 0a`, version-dependent) sailed past it — and one did, into a
+// now-public repo (#49 I-4). The comment below rejects filename heuristics, and
+// rightly: "extensionless files in a source directory" false-positived on a
+// symlink. But that is a rejection of GUESSING, not of naming. These extensions
+// are EXACT — a file called `.pyc` is a compiled Python module, with no judgment
+// involved — so they carry none of the imprecision that rule was written about.
+var compiledExtensions = map[string]bool{
+	".pyc": true, ".pyo": true, ".class": true,
+	".o": true, ".a": true, ".so": true, ".dylib": true, ".wasm": true,
+}
+
+// acceptedCompiledBlobs is DEBT THIS GUARD HAS BEEN TOLD ABOUT, keyed by blob.
+//
+// Accepted rather than fixed, and the reason is in the guard's own error
+// message: the only real remedy is rewriting the commit that adds it. Doing so
+// here would move `7380263` — the commit `v0.1.0` tags and the formula's
+// `sha256` pins — and strand every published install to buy back 7.9 KB. So the
+// cost is recorded rather than paid.
+//
+// An entry is a decision, not a mute button: it names the blob, the size and the
+// why, and TestAcceptedCompiledBlobsAreStillReachable fails if one stops
+// existing, so a stale waiver cannot outlive the thing it waives.
+var acceptedCompiledBlobs = map[string]string{
+	"b1fc21e35796d1a4434f09c36f62e86e6b7e6879": "cmd/define/testdata/__pycache__/capture.cpython-314.pyc, " +
+		"7892 bytes — #49 I-4. Deleted from the tree at 7380263 but still reachable; " +
+		"rewriting would move the commit v0.1.0 tags.",
+}
+
 // The test is on MAGIC BYTES, not on a filename. An earlier version flagged
 // "extensionless files in a source directory" and false-positived on a tracked
 // symlink — the question is whether a file is an executable image, and that is
@@ -150,6 +181,16 @@ func repoRoot(t *testing.T) string {
 	return strings.TrimSpace(string(git(t, "rev-parse", "--show-toplevel")))
 }
 
+// WHAT CONVICTS A BLOB, stated here because this is the mechanism that decides
+// it and a decision rule restated elsewhere drifts from the code that runs it
+// (#49 III): EITHER the first four bytes are an executable image's magic —
+// Mach-O in all four flavours, universal, or ELF — OR the path carries an exact
+// compiled extension from compiledExtensions. Magic alone failed open on a
+// `.pyc`; the extension list is exact rather than heuristic, which is why it does
+// not reintroduce the symlink false-positive that made an earlier
+// filename-shaped check wrong. atlas/repo-guards.md links here rather than
+// repeating this.
+//
 // scanForExecutables reads every blob named by want (sha -> path) out of git and
 // returns the ones that are executable images.
 //
@@ -161,7 +202,23 @@ func repoRoot(t *testing.T) string {
 // still reachable from HEAD — a guard carrying the exact defect it exists to
 // catch. A guard that enumerates a work list must assert it reached the end of
 // it, and must check the exit status of every process it depends on.
-func scanForExecutables(t *testing.T, dir string, want map[string]string) []string {
+// `waived` is the debt this particular caller has been told about, and it is a
+// PARAMETER rather than a package global for a reason the review measured
+// (#49 I-1): both guards call this, but the waiver's justification —
+// "rewriting would move the commit v0.1.0 tags" — is an argument about HISTORY
+// and says nothing about the index. As a global it silenced both, so staging a
+// NEW file carrying the same blob passed the index guard, which
+// atlas/repo-guards.md calls "the last moment the mistake is free". The index
+// guard passes nil.
+// `want` maps a sha to EVERY path that carries it, not one.
+//
+// It used to collapse to a single path, justified by "identical content at two
+// paths collapses; either name locates it" — TRUE while conviction was decided by
+// CONTENT alone. `compiledExtensions` made conviction path-DEPENDENT, and the
+// justification did not survive that change: the same blob tracked as both
+// `art.pyc` and `art.txt` was convicted or acquitted by whichever path happened to
+// win the map (#49 I-B). Any path carrying a compiled extension now convicts.
+func scanForExecutables(t *testing.T, dir string, want map[string][]string, waived map[string]string) []string {
 	t.Helper()
 	if len(want) == 0 {
 		t.Fatal("nothing to scan; this test would pass vacuously")
@@ -222,8 +279,18 @@ func scanForExecutables(t *testing.T, dir string, want map[string]string) []stri
 			t.Fatalf("skipping object %s: %v", f[0], err)
 		}
 		seen++
-		if f[1] == "blob" && isExecutableImage(head) {
-			found = append(found, fmt.Sprintf("%s (blob %s, %d bytes)", want[f[0]], f[0][:8], size))
+		// EITHER TEST CONVICTS: the magic bytes for an executable image, or an
+		// exact compiled extension for the formats magic cannot generalise over.
+		compiled := isExecutableImage(head)
+		for _, path := range want[f[0]] {
+			if compiledExtensions[strings.ToLower(filepath.Ext(path))] {
+				compiled = true
+				break
+			}
+		}
+		if f[1] == "blob" && compiled && waived[f[0]] == "" {
+			found = append(found, fmt.Sprintf("%s (blob %s, %d bytes)",
+				strings.Join(want[f[0]], ", "), f[0][:8], size))
 		}
 	}
 
@@ -248,7 +315,7 @@ func scanForExecutables(t *testing.T, dir string, want map[string]string) []stri
 func TestNoCommittedBinaries(t *testing.T) {
 	dir := repoRoot(t)
 
-	want := map[string]string{}
+	want := map[string][]string{}
 	for _, line := range strings.Split(string(git(t, "-C", dir, "ls-files", "-s")), "\n") {
 		meta, path, ok := strings.Cut(line, "\t") // "<mode> <sha> <stage>\t<path>"
 		if !ok {
@@ -258,9 +325,15 @@ func TestNoCommittedBinaries(t *testing.T) {
 		if len(f) < 2 {
 			continue
 		}
-		want[f[1]] = path // identical content at two paths collapses; either name locates it
+		// EVERY path, not the last one: conviction is path-dependent now (see
+		// scanForExecutables), so a blob tracked under both a compiled and a
+		// harmless extension must still be convicted by the compiled one.
+		want[f[1]] = append(want[f[1]], path)
 	}
-	for _, hit := range scanForExecutables(t, dir, want) {
+	// nil: NOTHING is waived at the index. A blob already in history is a cost
+	// already paid; the same bytes staged again today is a new mistake, and this
+	// is the last moment it is free.
+	for _, hit := range scanForExecutables(t, dir, want, nil) {
 		t.Errorf("compiled binary is tracked: %s", hit)
 	}
 }
@@ -274,10 +347,27 @@ func TestNoCommittedBinaries(t *testing.T) {
 func TestNoBinariesInHistory(t *testing.T) {
 	dir := repoRoot(t)
 
-	for _, hit := range scanForExecutables(t, dir, historyPaths(t, dir)) {
+	for _, hit := range scanForExecutables(t, dir, historyPaths(t, dir), acceptedCompiledBlobs) {
 		t.Errorf("compiled binary in history: %s — reachable from HEAD, so it is fetched by "+
 			"every clone. Rewrite the commit that adds it; deleting it in a later commit does not "+
 			"remove the cost.", hit)
+	}
+}
+
+// A WAIVER MUST NOT OUTLIVE WHAT IT WAIVES. An accepted blob that is no longer
+// reachable means the debt is gone (history was rewritten, or the object was
+// gc'd), and a waiver left behind would silently permit the NEXT artifact that
+// happens to hash the same way nothing — it would simply be dead prose claiming
+// a cost the repo no longer carries.
+func TestAcceptedCompiledBlobsAreStillReachable(t *testing.T) {
+	dir := repoRoot(t)
+	for sha, why := range acceptedCompiledBlobs {
+		out, err := exec.Command("git", "-C", dir, "cat-file", "-t", sha).Output()
+		if err != nil || strings.TrimSpace(string(out)) != "blob" {
+			t.Errorf("accepted compiled blob %s is no longer a reachable blob (%q) — the "+
+				"debt it records is gone, so delete the waiver rather than leaving a "+
+				"guard hole open. Recorded as: %s", sha, strings.TrimSpace(string(out)), why)
+		}
 	}
 }
 
@@ -327,18 +417,18 @@ func TestNoTrackedRuntimeState(t *testing.T) {
 // historyPaths maps every path-bearing object reachable from HEAD to its path.
 // rev-list --objects prints "<sha> <path>" for blobs and trees, bare shas for
 // commits.
-func historyPaths(t *testing.T, dir string) map[string]string {
+func historyPaths(t *testing.T, dir string) map[string][]string {
 	t.Helper()
-	out := map[string]string{}
+	out := map[string][]string{}
 	for _, line := range strings.Split(string(git(t, "-C", dir, "rev-list", "--objects", "HEAD")), "\n") {
 		sha, path, ok := strings.Cut(line, " ")
 		if !ok || path == "" {
 			continue
 		}
-		if _, dup := out[sha]; dup {
+		if slices.Contains(out[sha], path) {
 			continue
 		}
-		out[sha] = path
+		out[sha] = append(out[sha], path)
 	}
 	return out
 }
@@ -354,18 +444,24 @@ func TestNoRuntimeStateInHistory(t *testing.T) {
 	if len(paths) == 0 {
 		t.Fatal("rev-list returned no path-bearing objects; this test would pass vacuously")
 	}
-	for _, path := range paths {
-		segs := strings.Split(filepath.ToSlash(path), "/")
-		for _, seg := range segs {
-			if isRuntimeDir(seg) {
-				t.Errorf("runtime deck state is reachable from HEAD: %s — rewrite the commit "+
-					"that adds it; removing the file in a later commit does not remove the cost", path)
-				break
+	// EVERY path per blob, not the first. historyPaths now maps a sha to all of
+	// them (#49 I-B), and this loop had the same blind spot the executable guard
+	// did: a deck file committed at a second path under content identical to an
+	// innocent one would never have been examined.
+	for _, group := range paths {
+		for _, path := range group {
+			segs := strings.Split(filepath.ToSlash(path), "/")
+			for _, seg := range segs {
+				if isRuntimeDir(seg) {
+					t.Errorf("runtime deck state is reachable from HEAD: %s — rewrite the commit "+
+						"that adds it; removing the file in a later commit does not remove the cost", path)
+					break
+				}
 			}
-		}
-		if isRuntimeFile(segs[len(segs)-1]) && !legacyRuntimeFilePaths[filepath.ToSlash(path)] {
-			t.Errorf("a runtime artifact's basename is reachable from HEAD: %s — rewrite the "+
-				"commit that adds it; removing the file in a later commit does not remove the cost", path)
+			if isRuntimeFile(segs[len(segs)-1]) && !legacyRuntimeFilePaths[filepath.ToSlash(path)] {
+				t.Errorf("a runtime artifact's basename is reachable from HEAD: %s — rewrite the "+
+					"commit that adds it; removing the file in a later commit does not remove the cost", path)
+			}
 		}
 	}
 }

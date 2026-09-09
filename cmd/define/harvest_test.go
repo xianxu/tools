@@ -675,21 +675,157 @@ func TestModeCollision(t *testing.T) {
 // And the guard reached through run(), which is where the repo pins this class
 // (play_loop_test.go does the same for "-forget takes the word to remove").
 // modeCollision being right is not the same claim as run() calling it.
+//
+// DERIVED, LIKE EVERY OTHER MODE-SET ENUMERATION (#49 IV, 4th in family
+// `two-commands-one-line`). This was a hand-typed table, and the commit series
+// that argued a remembered enumeration IS the defect added three rows to it by
+// hand — so the through-run() pair claim was the last mode set carried by memory,
+// and an eighth mode would get no row. Every pair now comes from declaredModes,
+// which is what makes the claim survive a mode nobody has typed yet.
+//
+// EVERY unordered pair, not a sample: modeCollision returns on the first two it
+// finds, so a pair that dispatches before the check would be invisible to any
+// subset that happened to miss it.
 func TestRunRefusesTwoModes(t *testing.T) {
-	for _, args := range [][]string{
-		{"-forget", "x", "-harvest"},
-		{"-llm-check", "-harvest"},
-		{"-play", "-harvest"},
-		{"-reflect", "-harvest"},
-	} {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
+	strFlags := stringFlagNames(t)
+	modes := declaredModesOrFail(t)
+	for i, a := range modes {
+		for _, b := range modes[i+1:] {
+			args := append(argvForMode(strFlags, a.name), argvForMode(strFlags, b.name)...)
+			t.Run(a.name+" "+b.name, func(t *testing.T) {
+				var out, errb bytes.Buffer
+				code := run(t.Context(), args, testDeps(t), strings.NewReader(""), &out, &errb)
+				if code != 2 {
+					t.Errorf("`define %s` exit = %d, want 2 — a dropped mode is a silently "+
+						"different command", strings.Join(args, " "), code)
+				}
+				if !strings.Contains(errb.String(), "modes") {
+					t.Errorf("stderr = %q, want it to name the collision", errb.String())
+				}
+			})
+		}
+	}
+}
+
+// flagsDeclaredWith maps `x := fs.<Kind>("name", …)` to x -> "-name".
+//
+// ONE WALKER, PARAMETERISED. There were two, differing only in the selector they
+// matched and the map they built (#49 minor, ARCH-DRY) — and two copies of an AST
+// walk is two things to widen the next time a flag is declared a new way.
+func flagsDeclaredWith(t *testing.T, kind string) map[string]string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parsing main.go: %v", err)
+	}
+	out := map[string]string{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		id, ok := as.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		call, ok := as.Rhs[0].(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != kind {
+			return true
+		}
+		lit, ok := call.Args[0].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		if name, err := strconv.Unquote(lit.Value); err == nil {
+			out[id.Name] = "-" + name
+		}
+		return true
+	})
+	return out
+}
+
+// declaredModesOrFail is declaredModes plus the floor both set-enumerating tests
+// need, in one place rather than two byte-identical copies (#49 minor, ARCH-DRY).
+//
+// The floor is the #12 BR-17 rule: an extraction finding FEWER members than the
+// code declares is under-deriving, and every check built on it is then certifying
+// a set nobody chose.
+func declaredModesOrFail(t *testing.T) []mode {
+	t.Helper()
+	modes := declaredModes(t)
+	if len(modes) < 7 {
+		t.Fatalf("derived %d modes; run() declares at least seven, so this check is "+
+			"under-deriving and would certify a set nobody chose", len(modes))
+	}
+	return modes
+}
+
+// argvForMode is one mode as a user would type it: a string flag needs a value,
+// a bool flag is the name alone. Derived, so `-forget` is not special-cased by
+// memory in the two tests that build argv.
+func argvForMode(strFlags map[string]bool, name string) []string {
+	if strFlags[name] {
+		return []string{name, "x"}
+	}
+	return []string{name}
+}
+
+// stringFlagNames is the SET of flag names declared with fs.String.
+func stringFlagNames(t *testing.T) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for _, name := range flagsDeclaredWith(t, "String") {
+		out[name] = true
+	}
+	return out
+}
+
+// EVERY MODE REFUSES A TRAILING WORD, and the list is DERIVED rather than
+// remembered — which is the whole finding (#49 I-2, 3rd in family
+// `two-commands-one-line`).
+//
+// The mode x mode half already closed this way: TestModeCollision builds every
+// pair from declaredModes, so a seventh mode gets pair coverage for free. The
+// mode x WORD half did not — run() carried six hand-written
+// `case *X && fs.NArg() != 0:` arms and the tests hand-listed which ones they
+// checked. So a mode added tomorrow joined the pair matrix automatically and got
+// NO word coverage, which is exactly how -version reached production swallowing
+// one (and -llm-check before it).
+//
+// Iterating declaredModes closes it: an eighth mode is covered the day its row is
+// added, with nobody remembering to extend a table.
+func TestEveryModeRefusesATrailingWord(t *testing.T) {
+	// A REMOTE provider with no key, so a REGRESSION cannot reach the network:
+	// if -llm-check ever stops refusing, it dispatches for real, and an empty
+	// environment resolves against the local proxy and spends tokens
+	// (llmcheck_test.go:135 writes the rule down; the review measured this test
+	// making a live 1.2s call before these lines existed).
+	t.Setenv("DEFINE_LLM_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("DEFINE_LLM_BASE_URL", "https://api.anthropic.com")
+
+	strFlags := stringFlagNames(t)
+	modes := declaredModesOrFail(t)
+	for _, m := range modes {
+		t.Run(m.name, func(t *testing.T) {
+			args := append(argvForMode(strFlags, m.name), "cat")
 			var out, errb bytes.Buffer
 			code := run(t.Context(), args, testDeps(t), strings.NewReader(""), &out, &errb)
 			if code != 2 {
-				t.Errorf("exit = %d, want 2 — a dropped mode is a silently different command", code)
+				t.Errorf("`define %s` exit = %d, want 2 — a mode plus a word is two "+
+					"commands on one line, and swallowing one is a silently different "+
+					"command. Every mode refuses this; add the arm beside its siblings "+
+					"in run()'s argument-count switch.",
+					strings.Join(args, " "), code)
 			}
-			if !strings.Contains(errb.String(), "modes") {
-				t.Errorf("stderr = %q, want it to name the collision", errb.String())
+			if out.Len() != 0 {
+				t.Errorf("`define %s` wrote %q to stdout — it should refuse, not act",
+					strings.Join(args, " "), out.String())
 			}
 		})
 	}
@@ -867,38 +1003,8 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 	}
 
 	// 1. Every `x := fs.Bool("name", …)` — the variable a flag is read through,
-	//    and the name a user types.
-	flagName := map[string]string{}
-	ast.Inspect(file, func(n ast.Node) bool {
-		as, ok := n.(*ast.AssignStmt)
-		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-			return true
-		}
-		id, ok := as.Lhs[0].(*ast.Ident)
-		if !ok {
-			return true
-		}
-		call, ok := as.Rhs[0].(*ast.CallExpr)
-		if !ok || len(call.Args) == 0 {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		if sel.Sel.Name != "Bool" {
-			return true
-		}
-		lit, ok := call.Args[0].(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return true
-		}
-		name, err := strconv.Unquote(lit.Value)
-		if err == nil {
-			flagName[id.Name] = "-" + name
-		}
-		return true
-	})
+	//    and the name a user types. Shared with stringFlagNames' walker.
+	flagName := flagsDeclaredWith(t, "Bool")
 	// A mode can also be a bool LOCAL that names its flag directly —
 	// `forgetting := isSet(fs, "forget")`. That is one of the six, and the first
 	// version of this guard missed it (#8 BR-11): it found five, and its
@@ -958,14 +1064,26 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 		if !ok {
 			return true
 		}
-		// The body must RETURN a call — that is what makes it a mode rather than
-		// a flag that merely adjusts behaviour.
+		// The body must RETURN — ANY return, whatever the expression. What makes a
+		// flag a mode is that run() ENDS on it; the shape of what it hands back is
+		// incidental.
+		//
+		// This required a `return <call>` and so failed OPEN on #49's `-version`,
+		// whose body was `fmt.Fprintln(...); return 0`. A BasicLit is not a
+		// CallExpr, so the parse found 6 modes, the list declared 6, the floor
+		// agreed with itself, and `define --version --play` silently swallowed
+		// --play. That is the THIRD instance of the collision-list bug this guard
+		// exists to end, and the second time the guard itself was the reason it
+		// went unseen (#8 BR-11 was the first: it recognised only `if *x`, so
+		// -forget's `if forgetting` slipped through).
+		//
+		// Widening to any return makes the guard shape-INDEPENDENT, so an eighth
+		// mode cannot repeat this by being written a new way. It cannot over-match:
+		// the condition must already be a bare flag ident, so a validation branch
+		// like `if *harvest && fs.NArg() != 0 { return 2 }` is a BinaryExpr and
+		// never reaches here.
 		for _, stmt := range is.Body.List {
-			ret, ok := stmt.(*ast.ReturnStmt)
-			if !ok || len(ret.Results) != 1 {
-				continue
-			}
-			if _, ok := ret.Results[0].(*ast.CallExpr); ok {
+			if ret, ok := stmt.(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
 				dispatched[name] = true
 			}
 		}

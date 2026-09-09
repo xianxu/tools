@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -459,5 +460,88 @@ func TestAnOrdinaryLookupNeverInfersTheOrigin(t *testing.T) {
 	}
 	if errb.Len() != 0 {
 		t.Errorf("an ordinary lookup reported something: %q", errb.String())
+	}
+}
+
+// --version SAYS WHAT IT IS, and says so honestly when nothing stamped it (#49).
+//
+// A binary someone installed from a tap must be able to name itself: a bug
+// report that cannot say which version it came from costs a round trip to
+// establish what the reporter is running.
+func TestVersionIsHonestAboutUnstampedBuilds(t *testing.T) {
+	// The shipped default: nothing has set main.version.
+	if got := versionLine(); got != "define (built from source)" {
+		t.Errorf("versionLine() = %q on an unstamped build.\n"+
+			"Printing a release number here would be a lie exactly where it is most "+
+			"likely to be read — a contributor reproducing a bug against their own "+
+			"working tree.", got)
+	}
+
+	// And the stamped form, which the formula produces with -ldflags -X.
+	//
+	// This assigns the Go variable, so it pins versionLine and NOT the linker —
+	// rename `version` and this stays green while the release ships unstamped.
+	// That path is pinned by TestLdflagsStampReachesTheBinary (conformance),
+	// which shells the real toolchain with the formula's own flag.
+	//
+	// Mutating a package-level var is safe here only because nothing in
+	// cmd/define calls t.Parallel; the first parallel test in this package has to
+	// revisit it.
+	saved := version
+	defer func() { version = saved }()
+	version = "v0.1.0"
+	if got := versionLine(); got != "define v0.1.0" {
+		t.Errorf("versionLine() = %q with a stamp, want %q", got, "define v0.1.0")
+	}
+}
+
+// IT ANSWERS BEFORE ANYTHING ELSE CAN FAIL. --version and --llm-check must both
+// work on a machine where the dictionary, the directory and the model are all
+// unavailable — which is exactly the machine whose owner is trying to report a
+// bug.
+//
+// TABLED OVER BOTH MODES, because the class is enumerable and was two long
+// (#49 I-C). Round 2 pinned --version this way and named --llm-check in the same
+// breath — main.go's comment says "both answer on a machine where the rest of the
+// program cannot" — but only one got a test, so moving the --llm-check dispatch
+// below withStore left the whole package green. An eighth store-independent mode
+// joins by adding a row.
+func TestStoreIndependentModesAnswerAboveTheStore(t *testing.T) {
+	for _, mode := range []string{"-version", "-llm-check"} {
+		t.Run(mode, func(t *testing.T) {
+			// A REMOTE provider with no key, so -llm-check reports unavailable
+			// without reaching the network (llmcheck_test.go:135 states the rule).
+			t.Setenv("DEFINE_LLM_API_KEY", "")
+			t.Setenv("ANTHROPIC_API_KEY", "")
+			t.Setenv("DEFINE_LLM_BASE_URL", "https://api.anthropic.com")
+
+			var out, errb bytes.Buffer
+			built := false
+			// A STORE THAT RECORDS BEING BUILT, which is what makes this a pin on
+			// the dispatch's POSITION rather than only on its result. `deps{}`
+			// alone cannot: withStore calls newStore only when it is non-nil, so
+			// with an empty deps the whole of withStore is a no-op and the
+			// dispatch could move below it with every test still green — the
+			// review measured exactly that mutation (#49 I-3, I-C).
+			d := deps{ // no dict, no clock, no audio
+				newStore: func(options, io.Writer) storeDeps {
+					built = true
+					return storeDeps{}
+				},
+			}
+			run(t.Context(), []string{mode}, d, strings.NewReader(""), &out, &errb)
+
+			// The EXIT CODE is deliberately not asserted: --version returns 0 and
+			// --llm-check returns non-zero when unconfigured, and the shared claim
+			// is about what the mode TOUCHES, not what it concludes.
+			if built {
+				t.Errorf("%s built the store. It must answer ABOVE withStore: the machine "+
+					"whose owner is running it is the one where the directory, the "+
+					"dictionary and the model may all be unavailable.", mode)
+			}
+			if out.Len() == 0 && errb.Len() == 0 {
+				t.Errorf("%s wrote nothing to either stream; it is supposed to answer", mode)
+			}
+		})
 	}
 }

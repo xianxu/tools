@@ -29,9 +29,20 @@ index-only guard was green. The remedy is to rewrite the commit that **adds** it
 (`git filter-branch --index-filter` over `main..HEAD`), while the branch is still
 unpushed.
 
-Both decide by **magic bytes** — Mach-O in either endianness, 32- or 64-bit, or
-universal, and ELF — not by filename. An earlier version tested "extensionless
-file in a source directory" and false-positived on a tracked symlink.
+What convicts a blob is stated at the mechanism — `scanForExecutables`' doc
+comment in `cmd/define/repo_guard_test.go` — and deliberately not restated here,
+because a decision rule copied into the atlas drifts from the code that runs it.
+In outline: executable magic (Mach-O, universal, ELF) **or** an exact compiled
+extension. Magic alone once failed open on a `.pyc`; the extension list is exact
+rather than the "extensionless file in a source directory" heuristic that an
+earlier version used and that false-positived on a tracked symlink.
+
+The two guards differ in what they forgive. The **history** guard accepts a
+waiver list (`acceptedCompiledBlobs`) for debt already reachable from HEAD, where
+the only real remedy is rewriting a commit; the **index** guard is passed `nil`
+and forgives nothing, because a blob staged today is a new mistake and this is
+the last moment it is free. `TestAcceptedCompiledBlobsAreStillReachable` fails if
+a waiver outlives its debt.
 
 Three properties they hold deliberately, each learned from a version that lacked
 it:

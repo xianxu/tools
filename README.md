@@ -7,6 +7,23 @@ context (`AGENTS.md`, skills), and the build/merge machinery are inherited
 through `construct/deps` (`substrate ../ariadne`) and recomposed by `weave`.
 This repo declares only its own binaries.
 
+## Install
+
+`define` is published through a Homebrew tap:
+
+```sh
+brew trust xianxu/tools          # third-party taps are untrusted by default
+brew tap xianxu/tools
+brew install xianxu/tools/define
+```
+
+The `brew trust` line and the *qualified* formula name are both load-bearing;
+[cmd/define/README.md](cmd/define/README.md#install) says why, and is the one
+copy that does — this section is deliberately just the commands.
+
+macOS only. For contributors, or for a binary not yet tapped, `make build` /
+`make install` build everything here from source.
+
 ## Layout
 
 ```

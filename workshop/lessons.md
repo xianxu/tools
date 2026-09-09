@@ -4151,3 +4151,70 @@ direction can now diverge from the other.
 **And this arrived inside the fix for the root cause it illustrates**, which is
 the strongest evidence in this file that the discipline has to be mechanical
 rather than intentional.
+
+## Smoke-testing a published binary in a dev VM measures the dev build, not the release
+
+**Pattern:** #49 published `define` through a Homebrew tap and smoke-tested it in a
+`make tart` VM. That VM mounts the workspace, and `construct/dev-aliases.sh` emits a
+build-on-demand **shell function** for every `cmd/X` in every ariadne-styled peer —
+`define() { ( cd .../tools && go build -o bin/define ./cmd/define ) || return; .../bin/define "$@"; }`.
+`tart-vm-rc.zsh` says the quiet part outright: *"Functions outrank PATH in zsh, so they
+transparently shadow any stale copy."* It is **designed** to shadow. So `brew install`
+succeeds, `define` runs, everything looks green — and every command measured a local
+build of the working tree, never the bottle. The install could have been entirely
+broken and the smoke test would still have passed.
+
+**Rule:** A deployment test must run in an environment with **no path back to the
+source**. For this fleet that is `make tart-clean && VANILLA=1 make tart` — `VANILLA`
+skips the mount, so `~/workspace/ariadne/construct/dev-aliases.sh` is unreadable and
+the emitter degrades to the no-op its own comment promises; `tart-clean` is required
+too, because `VANILLA` only skips *running* setup and a previously provisioned VM
+already has `~/.zshrc` sourcing `~/.tart-vm-rc.zsh` on disk. Generalisation: **when a
+dev environment deliberately shadows PATH, "it worked" from inside it is evidence
+about the shadow, not about the artifact** — and this applies to every `cmd/X` in
+every peer, so it recurs for every future formula, not just this one.
+
+**Build in a tell.** `define --version` prints `define v0.1.0` only when the formula's
+`-ldflags -X main.version=` ran; the shadowing function builds without ldflags and so
+prints `built from source`. One command distinguishes "I am testing the release" from
+"I am testing my working tree" — every published binary should have one.
+
+**Origin:** #49. Related: the same session lost an hour to a *host* diagnosis where
+every network probe I ran measured my own sandbox's restrictions rather than the VM —
+internet reachable, but the machine's own default gateway un-ARP-able, so every
+"the VM is unreachable" reading was a fact about my sandbox. Same root shape as this
+file's thesis one layer down: **I validate my model of the system instead of the
+system.**
+
+## Mutation-verify a guard against the invariant it NAMES, not against the bug that motivated it
+
+**Pattern:** #49's boundary review coined the family `guard-fails-open` after two guards I
+had *just* added, and had *just* mutation-verified, both failed open. (a) A test asserting
+"atlas has a table row for every conformance check" was `strings.Contains(atlas,
+"`name`")` — satisfied by a mention **anywhere**. My own edit had added a prose mention of
+`version_conformance_test.go` one line above the table, so the single unprotected row was
+the one for the check the merge gate depends on. My mutation passed only because I deleted
+a *different* row, one with no prose mention. (b) A binary guard extended to convict by
+file extension kept its `sha -> ONE path` map, whose justification ("identical content at
+two paths collapses; either name locates it") had been true only while conviction was
+decided by **content**. Adding an extension test made conviction path-dependent and
+silently invalidated the premise: the same blob tracked as `art.pyc` *and* `art.txt` was
+acquitted by whichever won the map. I had verified it with a single `.pyc` at one path.
+
+**Rule:** After writing or widening a guard, **read the sentence in its own error message
+and mutate THAT claim, enumerating every shape the claim has** — not the one reproduction
+from the finding. "Has a table row" has two shapes (row present vs. name merely mentioned);
+"a compiled blob is not tracked" has two (one path vs. the same blob at several); "answers
+above the store" had two members (`--version`, `--llm-check`) and only one was tested. A
+guard verified against its motivating example is verified against the case you already
+fixed, which is the case least likely to recur.
+
+**Corollary — widening a predicate can invalidate a data structure's premise.** Both (b)
+and its sibling (`TestNoRuntimeStateInHistory`, same map, same blind spot) came from
+changing *how* a thing is judged while leaving *what is collected* alone. When you add a
+new axis of judgment, re-read every comment justifying a collapse, dedup, or "first one
+wins" upstream of it — those comments are premises, and yours may have just become false.
+
+**Origin:** #49 round 4, after rounds 1–3 had each found the previous round's fix
+incomplete in the same way. Related: [[smoke-testing-a-published-binary-in-a-dev-vm]] and
+this file's thesis — I validate my model of the system instead of the system.

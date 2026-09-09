@@ -440,6 +440,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	pronFlag := fs.String("pron", "", pronHelp)
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
+	versionFlag := fs.Bool("version", false, "print the version and exit")
 	// Names the artifact, not the file: the filename is per-language and this
 	// help text is printed before any language is resolved.
 	reflect := fs.Bool("reflect", false, "read the deck and write the learner model")
@@ -484,7 +485,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"records nothing, because it is for scripts.\n"+
 			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+
 			"session-only, because the event log is what persists it.\n\n"+
-			"--llm-check reports whether the model seam is configured and reachable.\n"+
+			"--version names the build; --llm-check reports whether the model seam is configured and reachable.\n"+
 			"Model features degrade silently by design, so this is where they are loud.\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
@@ -580,8 +581,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// line; silently honouring one of them is how -raw came to mean two different
 	// things in #2.
 	// --llm-check is a mode, like --forget: it answers a question about the
-	// configuration rather than looking a word up, so it is dispatched before the
-	// argument count is judged.
+	// configuration rather than looking a word up.
+	//
+	// It USED to say "so it is dispatched before the argument count is judged",
+	// which stopped being true when #49 moved it below the switch — and that is
+	// why the claim is gone rather than corrected: a statement about WHERE a mode
+	// dispatches belongs at the dispatch site, which can't drift from it. See
+	// main.go's switch arm and the dispatch below it.
 	forgetting := isSet(fs, "forget")
 
 	// MODES ARE VALIDATED AS A SET, in ONE enumeration, before any of them
@@ -589,8 +595,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	//
 	// Not pairwise as each collision is found, which is what this rule replaces:
 	// -harvest was refused beside -play and -reflect and silently swallowed by
-	// -forget and -llm-check, because those two dispatch above the switch and
-	// nobody enumerated them. Every mode added since #2 has cost this discovery
+	// -forget and -llm-check, because those two dispatched above the switch and
+	// nobody enumerated them. (#49 moved the last of those below it, so no mode
+	// dispatches above the argument count any more — the history is kept because
+	// it is why this list exists, not because it still describes the code.) Every mode added since #2 has cost this discovery
 	// again, and the pairwise form cannot cover the pair nobody has typed yet.
 	//
 	// A slice rather than a chain of cases so the CHECK and the LIST are the same
@@ -607,6 +615,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		{"-reflect", *reflect},
 		{"-harvest", *harvest},
 		{"-stats", *statsFlag},
+		{"-version", *versionFlag},
 	}
 	if a, b, clash := modeCollision(modes); clash {
 		// Two modes on one line is two commands on one line, exactly as -forget
@@ -616,9 +625,6 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		return 2
 	}
 
-	if *llmCheck {
-		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
-	}
 	// A command may take arguments, so the WHOLE argument list is one line:
 	// `define /history 7` has to mean what `/history 7` means at the prompt.
 	// Classifying only fs.Arg(0) made the argument count reject it as "too many
@@ -668,6 +674,22 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// beside it can only be a misread intent.
 		fmt.Fprintln(stderr, "define: --stats reads the whole log; do not also pass a word")
 		return 2
+	// --version and --llm-check USED TO DISPATCH ABOVE THIS SWITCH, which is
+	// precisely why neither could be reached by it: `define --version cat` and
+	// `define --llm-check sycophantic` both printed and exited 0, swallowing the
+	// word. That is the same defect the -harvest comment above names twice, and
+	// the enumerable class is "modes dispatched above the argument count" — so
+	// the fix moved BOTH below, rather than adding a word check to the new one.
+	//
+	// Nothing is lost by the move: this switch reads flags and a parsed line, so
+	// both still answer on a machine with no dictionary and no deck, which is the
+	// property TestVersionAnswersWithNoDictionaryOrDeck pins.
+	case *versionFlag && fs.NArg() != 0:
+		fmt.Fprintln(stderr, "define: --version names the build; do not also pass a word")
+		return 2
+	case *llmCheck && fs.NArg() != 0:
+		fmt.Fprintln(stderr, "define: --llm-check reports the configuration; do not also pass a word")
+		return 2
 	case *playFlag && fs.NArg() != 0:
 		// Same rule, and --play needed it MORE than --reflect does: it writes
 		// events, so `define --play sycophantic` would change state under a
@@ -688,6 +710,17 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		fmt.Fprintln(stderr, "define: -pron applies to one lookup; at the prompt use /pron fr")
 		return 2
 	}
+	// STILL BEFORE THE STORE and the dictionary — "what am I running" and "is the
+	// model configured" must both answer on a machine where the rest of the
+	// program cannot. They sit below the switch only so the argument count judges
+	// them like every other mode.
+	if *versionFlag {
+		return runVersion(stdout)
+	}
+	if *llmCheck {
+		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
+	}
+
 	// The flag rides on the LINE, beside `literal`, because that is what it is:
 	// a per-line modifier. parseREPLLine never sets it, so nothing either loop
 	// parses carries a language.
@@ -1314,4 +1347,40 @@ func modeCollision(modes []mode) (string, string, bool) {
 		first = m.name
 	}
 	return "", "", false
+}
+
+// version is stamped at build time by the Homebrew formula, through
+// `-ldflags -X main.version=vN.M.P` — the same mechanism pair's formula uses for
+// main.defaultPairHome (#49).
+//
+// It lives in the git tag and the formula, never in a constant someone has to
+// remember to bump: a version a human maintains is a version that is wrong at
+// exactly the moment it is read, because the bump and the tag are two acts.
+var version string
+
+// versionLine is what --version prints.
+//
+// AN UNSTAMPED BUILD SAYS SO. `go build ./cmd/define` from a clone is not a
+// release, and printing the last released number there would make this flag a
+// lie precisely where it is most likely to be read — a contributor reproducing a
+// bug against their own working tree. "(built from source)" is the honest answer
+// and is also the useful one: it tells a bug report which half of the world it
+// came from.
+func versionLine() string {
+	if version == "" {
+		return "define (built from source)"
+	}
+	return "define " + version
+}
+
+// runVersion is --version: a named function rather than two inline lines, so the
+// dispatch shape matches runLLMCheck's and every other mode's.
+//
+// It sits BELOW versionLine deliberately. Placing it above put it between
+// `version` and the doc comment written for `version`, which orphaned the var and
+// handed its prose to this function — the exact defect
+// TestADocCommentNamesWhatItSitsOn names, caught by that guard on the way in.
+func runVersion(stdout io.Writer) int {
+	fmt.Fprintln(stdout, versionLine())
+	return 0
 }

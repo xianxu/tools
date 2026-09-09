@@ -2062,7 +2062,11 @@ quietly made session-wide.
 
 ## Conformance
 
-Live checks sit behind `//go:build conformance` and run **on demand, not in CI** —
+Live checks sit behind `//go:build conformance`. Most run **on demand, not in CI**;
+the one exception is `version_conformance_test.go`, which the merge gate runs via
+`scripts/merge-checks.d/10-release-stamp.sh` because it needs no live service —
+just the local toolchain — and it guards the release stamp, whose failure mode is
+silent (#49). The rest are on demand —
 they need a host with NOAD installed and reachable network, neither of which
 belongs in `merge-check.yml`.
 
@@ -2077,6 +2081,13 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `reflect_conformance_test.go` | the live model still answers in the shape the parser expects |
 | `live_property_test.go` | the no-data-loss predicate holds over the WHOLE dictionary, not a sample |
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
+| `harvest_conformance_test.go` | the live model's agreement across rounds stays above the floor the cache's premise needs |
+| `version_conformance_test.go` | `-ldflags -X main.version` still reaches the binary — the one row the merge gate runs, since its failure is silent |
+
+`TestAtlasListsEveryConformanceCheck` derives this table's rows from the files on
+disk, because it lagged by two of nine before anyone noticed (#49 III) — a
+hand-typed enumeration of a code-derivable set does not survive one unrelated
+issue.
 
 **A skip reads as green, so green has to be made to mean "it ran".** Every suite
 above routes its dependency check through `conformance.SkipOrFail`
@@ -2601,6 +2612,20 @@ one right answer and the two callers took different ones; it is deleted. A kind
 with no row there draws an underline that does nothing, which
 `TestEveryRegionKindIsActionable` catches by deriving its loop from
 `numRegionKinds`.
+
+- **`--version` is stamped by the BUILD, not stored in the source (`#49`).**
+  `main.version` is empty in the tree and set by the Homebrew formula through
+  `-ldflags -X main.version=vN.M.P` — the same mechanism `pair`'s formula uses
+  for `main.defaultPairHome`. The number therefore lives in the git tag and the
+  formula, the two things that already have to agree for a release to exist, so
+  there is no third copy to drift.
+
+  An UNSTAMPED build says `built from source` rather than the last released
+  number: `go build` from a clone is not a release, and a version there would be
+  a lie exactly where a contributor reproducing a bug would read it. The flag
+  answers ABOVE `withStore`, beside `--llm-check`, because the machine whose
+  owner is filing a bug report is the machine where the dictionary, the
+  directory and the model may all be unavailable.
 
 - **A sitting runs from the loop by BORROWING the terminal (`#48`).** `/play`
   records the intent and `runEditor` performs it — `/pron`'s rule one verb up:

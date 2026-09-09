@@ -7,12 +7,39 @@ you about it later, and answers questions a dictionary cannot.
 It reads the dictionaries already installed on the machine — no account, no
 index, no network for a lookup. The directory you run it in *is* the deck.
 
+## Install
+
+```sh
+brew trust xianxu/tools          # third-party taps are untrusted by default
+brew tap xianxu/tools
+brew install xianxu/tools/define
+```
+
+The first and third lines are load-bearing, and neither is obvious:
+
+- **`brew trust`** — Homebrew refuses to load formulae from an untrusted tap and
+  reports it as `invalid syntax in tap!`, which sounds like a broken formula and
+  is not.
+- **the qualified `xianxu/tools/define`** — bare `brew install define` installs a
+  *different* program, since `define` also exists in homebrew-core. If both land
+  they collide on `PATH`.
+
+Both were found by installing on a clean machine, which is the only thing that
+tests a formula.
+
+macOS only, and deliberately: the definitions and the IPA come from
+Dictionary.app through `CoreServices`, which is where they actually live, and
+pronunciation plays with `afplay`. Nothing else is required — no account, no API
+key, no runtime.
+
+From a clone, for contributors:
+
 ```sh
 go build -o ~/bin/define ./cmd/define    # from the repo root
 ```
 
-macOS only, and deliberately: the dictionaries come from Dictionary.app through
-`CoreServices`, which is where the definitions and the IPA actually live.
+`define --version` names the release you installed, and says `built from source`
+when it was not built by the formula.
 
 ## Using it
 
