@@ -69,21 +69,27 @@ func runPlayCommand(c commandCtx, args []string) int {
 // into the caller's buffer rather than out to a terminal it does not own.
 func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 	interrupts *interrupter, repl *liveScreen, resizes <-chan winSize,
-	tty io.Writer, stderr io.Writer) int {
+	tty io.Writer, stderr io.Writer) (code int, shape winSize) {
 
-	questions, held, code := todaysQuestions(d, opt, repl, stderr)
-	if code != 0 || len(questions) == 0 {
+	rows, cols := repl.Size()
+	// NAMED RETURNS, because the shape is settled by the deferred hand-back —
+	// a plain `return code, shape` would evaluate shape BEFORE the defer runs
+	// and hand back the pre-sitting size, which is the very bug this returns for.
+	shape = winSize{rows: rows, cols: cols}
+
+	questions, held, c := todaysQuestions(d, opt, repl, stderr)
+	if c != 0 || len(questions) == 0 {
+		code = c
 		// todaysQuestions has already said why — emptyQueueReason writes the
 		// sentence into the screen the loop is showing, so the learner reads it
 		// at the prompt rather than in a screen that flashes and vanishes.
-		return code
+		return code, shape
 	}
 
 	// THE EDITOR'S SCREEN GOES QUIET for the duration. Two screens over one
 	// terminal, and this one has a throttled painter that fires on its own
 	// goroutine; without this its pending frame lands inside the sitting's.
 	repl.suspend()
-	rows, cols := repl.Size()
 	sitting := newPinnedScreen(tty, rows, cols)
 	defer func() {
 		// THE SHAPE IS HANDED BACK, and this is not tidiness (#48 BR-5).
@@ -100,7 +106,9 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 		// repaint at a stale size is exactly the frame this exists to prevent.
 		// The plan claimed resume "takes the new shape" on its own; it does not,
 		// and the review measured that.
-		repl.Resize(sitting.Size())
+		r, c := sitting.Size()
+		shape = winSize{rows: r, cols: c}
+		repl.Resize(r, c)
 		repl.resume()
 	}()
 
@@ -127,5 +135,6 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 		},
 		stdout: sitting, stderr: sitting,
 	}
-	return playSession(sctx, d, opt, play.NewSession(questions), held, keys, con)
+	code = playSession(sctx, d, opt, play.NewSession(questions), held, keys, con)
+	return code, shape
 }

@@ -139,6 +139,7 @@ not the table row it first looked like.
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `sittingInPlace` | `cmd/define/play_cmd.go` | new | the live terminal |
+| `applyShape` | `cmd/define/replraw.go` | new | the terminal's shape |
 
 - **`sittingInPlace(ctx, d, opt, sess, keys, interrupts, stdout, stderr) int`** —
   runs one sitting on a terminal that is ALREADY raw.
@@ -233,7 +234,7 @@ invocation. Nothing here runs per keystroke.
 - Create: `cmd/define/play_cmd.go`, `cmd/define/play_cmd_test.go`
 - Modify: `cmd/define/command.go` (the row + the field)
 
-- [ ] **Step 1: Write the failing tests.** Three, named for what each asserts —
+- [x] **Step 1: Write the failing tests.** Three, named for what each asserts —
       written as prose because a plan citing a test that does not exist yet turns
       the suite red (see Verification):
 
@@ -246,13 +247,13 @@ invocation. Nothing here runs per keystroke.
       3. **it takes no argument**, the rule `--play` and `--stats` state, and it
          RECORDS rather than performs: the command returns, the loop acts.
 
-- [ ] **Step 2: Run them, watch them fail.**
-- [ ] **Step 3: Add the row, the field and the function.**
-- [ ] **Step 4: Run them, watch them pass.**
-- [ ] **Step 5: The atlas's command list is DERIVED** (`TestDocsQuoteTheCommandList`,
+- [x] **Step 2: Run them, watch them fail.**
+- [x] **Step 3: Add the row, the field and the function.**
+- [x] **Step 4: Run them, watch them pass.**
+- [x] **Step 5: The atlas's command list is DERIVED** (`TestDocsQuoteTheCommandList`,
       `doc_sync_test.go:354`) and will fail until it quotes the new row. Update it;
       that failure is the guard working.
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ## Chunk 2: the sitting
 
@@ -262,31 +263,31 @@ invocation. Nothing here runs per keystroke.
 - Create: the function in `cmd/define/play_cmd.go`
 - Modify: `cmd/define/play_loop.go` — extract what `runPlay` and this share
 
-- [ ] **Step 1: Read `runPlay` and take the part below the guards.** The
+- [x] **Step 1: Read `runPlay` and take the part below the guards.** The
       questions, the console, the `playSession` call. If that means a helper both
       call, write the helper — a second way to start a sitting is what this issue
       exists to not create.
-- [ ] **Step 2: Write the failing pty test.** Type `/play`, answer a question,
+- [x] **Step 2: Write the failing pty test.** Type `/play`, answer a question,
       Ctrl-C, and assert the DEFINITION PROMPT is back — not a shell. And the
       suspend/resume rows named in the Test surface, including the clause that
       separates suspend from `Stop`: after resume the frame comes BACK.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: The scoped interrupt.** `interrupts.Set(cancel)` with a deferred
+- [x] **Step 3: Implement.**
+- [x] **Step 4: The scoped interrupt.** `interrupts.Set(cancel)` with a deferred
       `restore()`, and a test that Ctrl-C inside the sitting does not cancel the
       loop's context.
-- [ ] **Step 5: Assert through the STORE that both entry points record the same
+- [x] **Step 5: Assert through the STORE that both entry points record the same
       thing** — a review answered via `/play` and via `--play` produce the same
       event. Not through a fake capturer: `#12`'s mutation sweep found that a fake proves the
       outcome reaches *a* capturer and nothing about what it writes.
-- [ ] **Step 6: The derived guard the issue asks for:** nothing may call
+- [x] **Step 6: The derived guard the issue asks for:** nothing may call
       `enterRaw` while a session is live. Parse the call sites the way
       `TestEveryWriteWordsCallSitePassesAVocabulary` does
       (`deckwords_test.go`), and fail closed on the count.
-- [ ] **Step 7: Mutation sweep.** Remove the `Set`/`restore` pair and confirm the
+- [x] **Step 7: Mutation sweep.** Remove the `Set`/`restore` pair and confirm the
       Ctrl-C row reddens; point `/play` at `runPlay` and confirm the
       enterRaw guard reddens.
-- [ ] **Step 8: README + atlas.**
-- [ ] **Step 9: Commit, then `sdlc close --issue 48`.**
+- [x] **Step 8: README + atlas.**
+- [x] **Step 9: Commit, then `sdlc close --issue 48`.**
 
 ---
 
@@ -374,3 +375,39 @@ the README's command list is guarded by a derived test. It is not: the guard
 reads `atlas/define.md`. `#8` learned that by adding `/stats` and watching which
 document failed, and this plan restated the wrong version anyway — the
 file:line rule at the top of this document exists precisely for that.
+
+### 2026-09-08 — close review rounds 1 and 2
+
+**BR-5 (Critical) and BR-14 are one bug found twice**, and the second is the
+reason to record them together. The sitting BORROWS the resize channel — one
+watcher for the process, which is right — and a borrowed channel is CONSUMED, not
+shared: a SIGWINCH during a sitting is read by the sitting and reaches the loop by
+no other route. This plan claimed "the suspended screen takes the new shape on
+resume". It does not; resume repaints, and repainting does not change rows and
+cols.
+
+Round 1 fixed the instance — hand the screen's shape back — and round 2 found the
+class: the loop also derives `opt.width` from a shape, with a below-the-floor
+policy, so an entry looked up after a sitting wrapped at the pre-sitting width.
+`applyShape` is now the one place a shape means anything, called by both routes,
+and `TestBothShapeRoutesGoThroughOnePlace` derives that from the source so a
+third route is covered when it arrives.
+
+**BR-7 took four wrong tests, each of which PASSED.** Feeding
+`Key{KeyInterrupt}` into the channel bypasses the interrupter entirely; waiting
+on a `HasScope` helper the test had itself made true fired before the sitting was
+in the picture; racing two goroutines over one `bytes.Buffer` hung; and asserting
+only the restore passed with `Set` AND `restore` both deleted, because never
+scoping also leaves the loop's cancel installed. What works orders the fire
+deterministically by making the sitting consume a resize first — a channel read
+the test can observe, unlike a buffer it must not race — and asserts BOTH halves.
+
+**BR-8** — a test named `...FromEitherDoor` called `playSession` twice and
+invoked neither, with a comment rationalising it. **BR-6** — the three refusals
+this plan named in Chunk 1 were never written. **BR-9** — the atlas had no entry
+for the borrow design. **BR-15** — these boxes.
+
+**The entity table gained what shipped**: `applyShape`, and `sittingInPlace`'s
+signature returning the shape via NAMED returns, because a plain return evaluates
+before the deferred hand-back and would return the pre-sitting size — the very
+bug it exists to fix, one level in.

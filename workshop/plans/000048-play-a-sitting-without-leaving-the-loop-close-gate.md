@@ -155,6 +155,119 @@ rounds:
           family: test-helper-duplicated
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-08T18:33:10-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: play_loop.go:30 still hand-rolls the sentence; verified by running both doors — --play prints "no deck in this directory, so there is nothing to review" to stdout and exits 0, /play prints noDeckMessage to stderr and exits 1. No rule stated anywhere.
+          round: 3
+        - id: BR-2
+          disposition: not-addressed
+          note: README.md:724-730 did get its paragraph, but the plan's Step 8 is still the bare "README + atlas" — the rule the finding asked for was never stated.
+          round: 3
+        - id: BR-3
+          disposition: not-addressed
+          note: The plan is unmodified in this window; the Integration-points row still reads (ctx, d, opt, sess, keys, interrupts, stdout, stderr). The code got it right, so the predicted defect did not ship — only the artifact contradicts it.
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: 'Fixed in the window''s base commit adcbcf1; TestPlanCitesTestsThatExist is green. The inverse is now true and folded into the new plan-table-stale finding: the plan cites no shipped test name at all.'
+          round: 3
+        - id: BR-5
+          disposition: addressed
+          note: 'Mutation-verified: deleting play_cmd.go:103 reddens TestTheEditorScreenTakesTheShapeTheSittingEndedWith with its own sentence. Only the screen shape is handed back, though — see the new opt.width finding.'
+          round: 3
+        - id: BR-6
+          disposition: addressed
+          note: 'Mutation-verified: replacing runPlayCommand''s body with a bare nil check plus c.startSitting() reddens three of TestSlashPlayRefusals'' four subtests, on sentence and exit code.'
+          round: 3
+        - id: BR-7
+          disposition: not-addressed
+          note: 'Mutation re-run: with BOTH restore := interrupts.Set(cancel) and defer restore() deleted, TestASittingHandsTheInterruptBack still PASSES. keysFor("^") puts Key{KeyInterrupt} straight on the channel, bypassing the interrupter — the flaw the test''s own comment attributes to version one — and the test installs the loop''s cancel itself, so Fire()''s consumed is true either way. Only the restore half is pinned (dropping defer restore() alone does redden). The pty test the plan names at Task 2 Step 2 and Verification item 4 still does not exist; pty_conformance_test.go has no /play case.'
+          round: 3
+        - id: BR-8
+          disposition: addressed
+          note: Renamed to TestTheSittingDoorRecordsWhatItAnswers and now drives sittingInPlace over a buffer with a scripted key channel, asserting through store.Events rather than a fake.
+          round: 3
+        - id: BR-9
+          disposition: addressed
+          note: 'atlas/define.md:2605-2626 now names sittingInPlace, the three acquisitions a borrower must not take, suspend/resume, the shape hand-back and the scoped interrupt. Residual: the console block at atlas/define.md:268-274 still enumerates five fields and omits newSitting.'
+          round: 3
+        - id: BR-10
+          disposition: not-addressed
+          note: 'Plan unmodified. Root cause now measured: repo_guard_test.go:797 skips status "new" rows while any "- [ ] " remains, and the plan is 0/15 ticked — so both new rows are exempt rather than passing. Rolled into the new plan-table-stale finding.'
+          round: 3
+        - id: BR-11
+          disposition: not-addressed
+          note: replraw.go:101-104 still sets con.newSitting unconditionally, so --play's console (play_loop.go:106) carries a factory the field's own doc at replraw.go:166-169 says is nil where a sitting cannot run.
+          round: 3
+        - id: BR-12
+          disposition: not-addressed
+          note: 'Confirmed by running the built binary in a deckless directory: --play says "no deck in this directory, so there is nothing to review" on stdout, exit 0; /play says noDeckMessage on stderr, exit 1, and names DEFINE_NO_CAPTURE where --play does not.'
+          round: 3
+        - id: BR-13
+          disposition: not-addressed
+          note: 'Both duplications survive: play_cmd_test.go:169-181 re-implements reviewEvents (play_loop_test.go:81), and the ParseDir + FuncDecl preamble is still copied between play_cmd_test.go:31-63 and :106-131.'
+          round: 3
+      findings:
+        - id: BR-14
+          severity: Important
+          title: the borrowed resize hands back the screen shape but not opt.width, so entries looked up after a sitting wrap at the pre-sitting width
+          detail: |-
+            This is the 2nd finding in family borrowed-channel-swallows-owners-events, so the rule
+            rather than the instance. The rule: a borrower that consumes an owner's event stream owes
+            back EVERY effect the owner's handler applies - enumerate that handler and mirror it, or
+            hand the raw event back instead of one derived value. The enumeration here is exact and
+            small. The owner's handler (replraw.go:404-430) applies two pieces of state: the wrap
+            policy (opt.width = sz.cols, clamped to 0 below minWrapWidth, lines 424-427) and the
+            screen shape (view.Resize, line 428). BR-5's fix hands back the second only, and cannot
+            hand back the first - opt reaches sittingInPlace by value through con.newSitting
+            (replraw.go:532) and again by value into playSession. So a SIGWINCH consumed by a sitting
+            leaves lookupAndRender (replraw.go:685) and newCommandCtx (replraw.go:495) using the
+            pre-sitting width for the rest of the session; on a narrowed terminal Paint's clipVisible
+            then cuts the over-wide lines at the right edge. Fix the rule: factor lines 424-428 into
+            one applyResize(sz, &opt, view) that both the owner's case and the sitting's hand-back
+            call, so a third effect added later is handed back by construction.
+          family: borrowed-channel-swallows-owners-events
+          round: 3
+        - id: BR-15
+          severity: Important
+          title: the durable plan is 0/15 ticked at close, which exempts its two new-entity rows from the guard that would have checked them
+          detail: |-
+            This is the 2nd finding in family plan-table-stale, so the rule rather than the rows. The
+            rule: at a close boundary the durable plan is reconciled with what shipped in ONE sweep -
+            checkboxes, entity rows, signatures, test names - because the guards that read plans key
+            off "is this plan still in progress". Measured: repo_guard_test.go:797 does
+            `if inProgress && status == "new" { continue }`, and inProgress is
+            `strings.Contains(body, "- [ ] ")`. The plan has 15 unticked steps and 0 ticked, so BOTH
+            new rows (runPlayCommand, sittingInPlace) are skipped outright - that is how BR-3's and
+            BR-10's stale rows survived a green suite. Same sweep, same rule: the sittingInPlace row's
+            signature still names sess and stdout against a shipped (ctx, d, opt, keys, interrupts,
+            repl, resizes, tty, stderr); there is still no suspend/resume entity row despite PQ-5's
+            revision claiming one; and the Verification section now backticks no test name at all,
+            de-backticked in adcbcf1 "until the tests land" - they have landed, and
+            TestPlanCitesTestsThatExist's own message says "write it, or cite the one that shipped".
+            Also record what did not ship: the pty test at Task 2 Step 2, and Step 1's shared-half
+            extraction (play_loop.go is unmodified).
+          family: plan-table-stale
+          round: 3
+        - id: BR-16
+          severity: Minor
+          title: console.newSitting takes a parameter it already captures, and is named like a constructor while running a whole sitting
+          detail: |-
+            replraw.go:101-104 builds the closure over `live`, and runEditor passes stderr := con.stderr
+            (replraw.go:532), which IS `live` - so the sixth parameter is always the value already
+            captured and can be dropped. Separately, the field is `func(...) int` that performs a
+            sitting and returns its exit code, while the plan specified `newSitting func() console`, a
+            constructor; a `new*` name on a verb is the one thing a reader of the dispatch at
+            replraw.go:532 cannot guess. Rename to runSitting and drop the redundant writer. This is a
+            newly-introduced internal seam that downstream work will consume, so the surface is worth
+            settling now.
+          family: new-seam-surface-unshaped
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#48 (boundary-review)
@@ -247,18 +360,77 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   package, and the ParseDir + FuncDecl walk is copied between play_cmd_test.go:23-58 and :104-119
   (ARCH-DRY).
 
+## Round 3 — 2026-09-08T18:33:10-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — play_loop.go:30 still hand-rolls the sentence; verified by running both doors — --play prints "no deck in this directory, so there is nothing to review" to stdout and exits 0, /play prints noDeckMessage to stderr and exits 1. No rule stated anywhere.
+- BR-2 — not-addressed — README.md:724-730 did get its paragraph, but the plan's Step 8 is still the bare "README + atlas" — the rule the finding asked for was never stated.
+- BR-3 — not-addressed — The plan is unmodified in this window; the Integration-points row still reads (ctx, d, opt, sess, keys, interrupts, stdout, stderr). The code got it right, so the predicted defect did not ship — only the artifact contradicts it.
+- BR-4 — addressed — Fixed in the window's base commit adcbcf1; TestPlanCitesTestsThatExist is green. The inverse is now true and folded into the new plan-table-stale finding: the plan cites no shipped test name at all.
+- BR-5 — addressed — Mutation-verified: deleting play_cmd.go:103 reddens TestTheEditorScreenTakesTheShapeTheSittingEndedWith with its own sentence. Only the screen shape is handed back, though — see the new opt.width finding.
+- BR-6 — addressed — Mutation-verified: replacing runPlayCommand's body with a bare nil check plus c.startSitting() reddens three of TestSlashPlayRefusals' four subtests, on sentence and exit code.
+- BR-7 — not-addressed — Mutation re-run: with BOTH restore := interrupts.Set(cancel) and defer restore() deleted, TestASittingHandsTheInterruptBack still PASSES. keysFor("^") puts Key{KeyInterrupt} straight on the channel, bypassing the interrupter — the flaw the test's own comment attributes to version one — and the test installs the loop's cancel itself, so Fire()'s consumed is true either way. Only the restore half is pinned (dropping defer restore() alone does redden). The pty test the plan names at Task 2 Step 2 and Verification item 4 still does not exist; pty_conformance_test.go has no /play case.
+- BR-8 — addressed — Renamed to TestTheSittingDoorRecordsWhatItAnswers and now drives sittingInPlace over a buffer with a scripted key channel, asserting through store.Events rather than a fake.
+- BR-9 — addressed — atlas/define.md:2605-2626 now names sittingInPlace, the three acquisitions a borrower must not take, suspend/resume, the shape hand-back and the scoped interrupt. Residual: the console block at atlas/define.md:268-274 still enumerates five fields and omits newSitting.
+- BR-10 — not-addressed — Plan unmodified. Root cause now measured: repo_guard_test.go:797 skips status "new" rows while any "- [ ] " remains, and the plan is 0/15 ticked — so both new rows are exempt rather than passing. Rolled into the new plan-table-stale finding.
+- BR-11 — not-addressed — replraw.go:101-104 still sets con.newSitting unconditionally, so --play's console (play_loop.go:106) carries a factory the field's own doc at replraw.go:166-169 says is nil where a sitting cannot run.
+- BR-12 — not-addressed — Confirmed by running the built binary in a deckless directory: --play says "no deck in this directory, so there is nothing to review" on stdout, exit 0; /play says noDeckMessage on stderr, exit 1, and names DEFINE_NO_CAPTURE where --play does not.
+- BR-13 — not-addressed — Both duplications survive: play_cmd_test.go:169-181 re-implements reviewEvents (play_loop_test.go:81), and the ParseDir + FuncDecl preamble is still copied between play_cmd_test.go:31-63 and :106-131.
+
+### Raised
+
+- **BR-14** [Important] `borrowed-channel-swallows-owners-events` the borrowed resize hands back the screen shape but not opt.width, so entries looked up after a sitting wrap at the pre-sitting width
+  This is the 2nd finding in family borrowed-channel-swallows-owners-events, so the rule
+  rather than the instance. The rule: a borrower that consumes an owner's event stream owes
+  back EVERY effect the owner's handler applies - enumerate that handler and mirror it, or
+  hand the raw event back instead of one derived value. The enumeration here is exact and
+  small. The owner's handler (replraw.go:404-430) applies two pieces of state: the wrap
+  policy (opt.width = sz.cols, clamped to 0 below minWrapWidth, lines 424-427) and the
+  screen shape (view.Resize, line 428). BR-5's fix hands back the second only, and cannot
+  hand back the first - opt reaches sittingInPlace by value through con.newSitting
+  (replraw.go:532) and again by value into playSession. So a SIGWINCH consumed by a sitting
+  leaves lookupAndRender (replraw.go:685) and newCommandCtx (replraw.go:495) using the
+  pre-sitting width for the rest of the session; on a narrowed terminal Paint's clipVisible
+  then cuts the over-wide lines at the right edge. Fix the rule: factor lines 424-428 into
+  one applyResize(sz, &opt, view) that both the owner's case and the sitting's hand-back
+  call, so a third effect added later is handed back by construction.
+- **BR-15** [Important] `plan-table-stale` the durable plan is 0/15 ticked at close, which exempts its two new-entity rows from the guard that would have checked them
+  This is the 2nd finding in family plan-table-stale, so the rule rather than the rows. The
+  rule: at a close boundary the durable plan is reconciled with what shipped in ONE sweep -
+  checkboxes, entity rows, signatures, test names - because the guards that read plans key
+  off "is this plan still in progress". Measured: repo_guard_test.go:797 does
+  `if inProgress && status == "new" { continue }`, and inProgress is
+  `strings.Contains(body, "- [ ] ")`. The plan has 15 unticked steps and 0 ticked, so BOTH
+  new rows (runPlayCommand, sittingInPlace) are skipped outright - that is how BR-3's and
+  BR-10's stale rows survived a green suite. Same sweep, same rule: the sittingInPlace row's
+  signature still names sess and stdout against a shipped (ctx, d, opt, keys, interrupts,
+  repl, resizes, tty, stderr); there is still no suspend/resume entity row despite PQ-5's
+  revision claiming one; and the Verification section now backticks no test name at all,
+  de-backticked in adcbcf1 "until the tests land" - they have landed, and
+  TestPlanCitesTestsThatExist's own message says "write it, or cite the one that shipped".
+  Also record what did not ship: the pty test at Task 2 Step 2, and Step 1's shared-half
+  extraction (play_loop.go is unmodified).
+- **BR-16** [Minor] `new-seam-surface-unshaped` console.newSitting takes a parameter it already captures, and is named like a constructor while running a whole sitting
+  replraw.go:101-104 builds the closure over `live`, and runEditor passes stderr := con.stderr
+  (replraw.go:532), which IS `live` - so the sixth parameter is always the value already
+  captured and can be dropped. Separately, the field is `func(...) int` that performs a
+  sitting and returns its exit code, while the plan specified `newSitting func() console`, a
+  constructor; a `new*` name on a verb is the one thing a reader of the dispatch at
+  replraw.go:532 cannot guess. Rename to runSitting and drop the redundant writer. This is a
+  newly-introduced internal seam that downstream work will consume, so the surface is worth
+  settling now.
+
 ## Open findings
 
 - **BR-1** [Minor] `refusal-enumeration-incomplete` the two entry points would print different sentences for the same nil deck
 - **BR-2** [Minor] `hand-swept-surface-unnamed` Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
 - **BR-3** [Minor] `terminal-ownership-unstated` the sittingInPlace signature still takes sess/stdout, the pair the stated rule says it must not build a console from
-- **BR-4** [Minor] `plan-cites-unwritten-test` the plan's Verification section backticks a test that does not exist, so TestPlanCitesTestsThatExist is red on main
-- **BR-5** [Critical] `borrowed-channel-swallows-owners-events` a resize consumed during a sitting is never handed back, so the REPL screen paints at a stale shape for the rest of the session
-- **BR-6** [Important] `plan-named-test-not-written` all three of runPlayCommand's refusals are unpinned - the plan's Chunk 1 tests were never written
 - **BR-7** [Important] `plan-named-test-not-written` the scoped interrupt has no test - removing Set/restore reddens nothing
-- **BR-8** [Important] `test-name-overclaims-what-it-pins` TestASittingRecordsTheSameEventFromEitherDoor never invokes either door
-- **BR-9** [Important] `atlas-stale-for-new-surface` atlas update appears missing for console.newSitting, liveScreen.suspend/resume and sittingInPlace
 - **BR-10** [Minor] `plan-table-stale` the plan's entity tables have no suspend/resume row and a stale sittingInPlace signature
 - **BR-11** [Minor] `capability-wider-than-its-doc` newSitting is installed on every console newConsole builds, including --play's and the board's
 - **BR-12** [Minor] `refusal-wording-diverges` --play and /play give different sentences, streams and exit codes for a deckless directory
 - **BR-13** [Minor] `test-helper-duplicated` play_cmd_test.go re-implements reviewEvents and duplicates the AST-parse preamble
+- **BR-14** [Important] `borrowed-channel-swallows-owners-events` the borrowed resize hands back the screen shape but not opt.width, so entries looked up after a sitting wrap at the pre-sitting width
+- **BR-15** [Important] `plan-table-stale` the durable plan is 0/15 ticked at close, which exempts its two new-entity rows from the guard that would have checked them
+- **BR-16** [Minor] `new-seam-surface-unshaped` console.newSitting takes a parameter it already captures, and is named like a constructor while running a whole sitting

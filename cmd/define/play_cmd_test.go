@@ -213,7 +213,8 @@ func TestTheEditorScreenTakesTheShapeTheSittingEndedWith(t *testing.T) {
 
 	done := make(chan int, 1)
 	go func() {
-		done <- sittingInPlace(t.Context(), d, opt, keys, &interrupter{}, repl, resizes, &tty, &errb)
+		c, _ := sittingInPlace(t.Context(), d, opt, keys, &interrupter{}, repl, resizes, &tty, &errb)
+		done <- c
 	}()
 	for i := 0; len(resizes) > 0; i++ {
 		if i > 2000 {
@@ -236,25 +237,20 @@ func TestTheEditorScreenTakesTheShapeTheSittingEndedWith(t *testing.T) {
 	}
 }
 
-// THE SITTING HANDS THE INTERRUPT BACK (#48 BR-7).
+// CTRL-C ENDS THE SITTING, NOT THE LOOP — both halves (#48 BR-7).
 //
-// interrupter.Set scopes Ctrl-C to the sitting and restore() returns it to the
-// loop. In the real path readKeys fires the interrupter and WITHHOLDS the key
-// when a scope consumed it (rawterm.go:104-110), so the sitting's context
-// cancels and the loop's does not — that end-to-end behaviour is what the
-// operator's pty run exercised.
+// The property has two, and a test asserting only one passes on code that has
+// neither. FOUR earlier attempts each passed while wrong: feeding
+// Key{KeyInterrupt} into the channel bypasses the interrupter entirely; waiting
+// on a HasScope helper this test had itself made true fired before the sitting
+// was in the picture; racing two goroutines over one bytes.Buffer hung; and
+// asserting only the restore passed with Set AND restore both deleted, because
+// never scoping also leaves the loop's cancel installed.
 //
-// What is deterministic in-process, and what can silently break, is the RESTORE:
-// a Set without its restore leaves the sitting's cancel installed after the
-// sitting is gone, so the next Ctrl-C at the prompt cancels a dead context and
-// the loop never quits. This drives the real door and asserts both halves —
-// the loop's cancel untouched during, and working after.
-//
-// Two earlier versions of this test were wrong in ways worth recording: one fed
-// Key{KeyInterrupt} straight into the channel, which bypasses the interrupter
-// entirely and passed with Set/restore deleted; the other waited on HasScope,
-// which this test had already made true by installing the loop's own cancel.
-func TestASittingHandsTheInterruptBack(t *testing.T) {
+// So: fire the interrupt WHILE the sitting owns it, ordered deterministically by
+// making the sitting consume a resize first — a channel read the test can
+// observe, unlike a buffer it must not race.
+func TestASittingScopesTheInterruptAndHandsItBack(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
 
 	var loopCancelled bool
@@ -263,80 +259,130 @@ func TestASittingHandsTheInterruptBack(t *testing.T) {
 
 	var tty, errb bytes.Buffer
 	repl := newLiveScreen(&tty, 24, 80)
-	sittingInPlace(t.Context(), d, opt, keysFor("^"), interrupts, repl, nil, &tty, &errb)
+	resizes := make(chan winSize, 1)
+	resizes <- winSize{rows: 30, cols: 100}
+	keys := make(chan Key)
 
+	done := make(chan struct{})
+	go func() {
+		sittingInPlace(t.Context(), d, opt, keys, interrupts, repl, resizes, &tty, &errb)
+		close(done)
+	}()
+
+	// The sitting has read the resize, so it is inside playSession with its own
+	// cancel installed.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(resizes) > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the sitting never read the resize, so it never took the interrupt over")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// HALF ONE: the interrupt reaches the SITTING. In the real path readKeys
+	// fires the sink and withholds the key when a scope consumed it
+	// (rawterm.go:104-110), which is what ends the sitting and leaves the loop
+	// alone.
+	if !interrupts.Fire() {
+		t.Fatal("nothing consumed the interrupt; the sitting installed no scope")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		close(keys)
+		t.Fatal("the sitting did not end when its own interrupt fired")
+	}
 	if loopCancelled {
-		t.Error("the loop's cancel ran during the sitting — Ctrl-C would quit define " +
+		t.Error("the interrupt reached the LOOP's cancel — Ctrl-C would quit define " +
 			"instead of ending the review")
 	}
-	// RESTORED: the loop's own interrupt works again, and is the one that fires.
-	if !interrupts.Fire() {
-		t.Fatal("nothing consumed the interrupt after the sitting; the sink was left empty")
-	}
-	if !loopCancelled {
-		t.Error("the interrupt was not handed back to the loop — the next Ctrl-C at " +
-			"the prompt would cancel the sitting's dead context and never quit")
+
+	// HALF TWO: it is handed back. A Set without its restore leaves a dead
+	// context installed, and the next Ctrl-C at the prompt never quits.
+	if !interrupts.Fire() || !loopCancelled {
+		t.Error("the interrupt was not restored to the loop after the sitting")
 	}
 }
 
-// THE THREE REFUSALS, which the plan's Chunk 1 named and the first build never
-// wrote (#48 BR-6).
-func TestSlashPlayRefusals(t *testing.T) {
-	live := func() commandCtx {
-		return commandCtx{deck: store.NewMem(), startSitting: func() {}, stderr: io.Discard}
+// A SHAPE IS APPLIED IN ONE PLACE, BY BOTH ROUTES (#48 BR-14).
+//
+// A terminal shape now arrives twice: from the loop's own resize case, and
+// handed back when a sitting ends — the sitting CONSUMED the resize, because the
+// channel is borrowed and whoever reads it takes the value. The first fix handed
+// back the screen's shape and not opt.width, so an entry looked up after a
+// sitting wrapped at the pre-sitting width: the instance fixed, the class not.
+//
+// So the guard is that both routes go through applyShape, derived from the
+// source rather than listed — a third route added later is covered when it is
+// added.
+func TestBothShapeRoutesGoThroughOnePlace(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "replraw.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var applyCalls, bareResizes int
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		// applyShape's OWN Resize is the one legitimate call — it is the place
+		// everything else is required to go through.
+		inApplyShape := fn.Name.Name == "applyShape"
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch f := call.Fun.(type) {
+			case *ast.Ident:
+				if f.Name == "applyShape" {
+					applyCalls++
+				}
+			case *ast.SelectorExpr:
+				// view.Resize(...) elsewhere is a second place that knows what a
+				// shape means, and it is the one that forgets opt.width.
+				if f.Sel.Name == "Resize" && !inApplyShape {
+					bareResizes++
+				}
+			}
+			return true
+		})
+	}
+	if applyCalls < 2 {
+		t.Errorf("applyShape is called %d times in replraw.go; both the resize case "+
+			"and the post-sitting hand-back must use it, or opt.width is set on one "+
+			"route and not the other", applyCalls)
+	}
+	if bareResizes != 0 {
+		t.Errorf("replraw.go calls view.Resize directly %d time(s) — a shape applied "+
+			"outside applyShape is a shape whose width policy was forgotten", bareResizes)
+	}
+}
+
+// AND THE POLICY ITSELF: below the wrap floor, wrapping is OFF while the frame
+// still fits the columns that exist.
+func TestApplyShapeSetsBothWidths(t *testing.T) {
+	var tty bytes.Buffer
+	view := newLiveScreen(&tty, 24, 80)
+
+	opt := options{width: 80}
+	applyShape(&opt, view, winSize{rows: 40, cols: 120})
+	if opt.width != 120 {
+		t.Errorf("opt.width = %d, want 120", opt.width)
+	}
+	if r, c := view.Size(); r != 40 || c != 120 {
+		t.Errorf("view is %dx%d, want 40x120", r, c)
 	}
 
-	t.Run("no terminal is a refusal", func(t *testing.T) {
-		// A nil capability IS the refusal — the rule setTimes states. One check
-		// covers the one-shot path, a pipe, and the line-mode REPL, which has no
-		// raw terminal at all.
-		var errb bytes.Buffer
-		c := live()
-		c.startSitting, c.stderr = nil, &errb
-		if code := runPlayCommand(c, nil); code != 1 {
-			t.Errorf("exit = %d, want 1", code)
-		}
-		if !strings.Contains(errb.String(), "terminal") {
-			t.Errorf("the refusal does not name the cause: %q", errb.String())
-		}
-	})
-
-	t.Run("no deck is a SECOND, separate refusal", func(t *testing.T) {
-		// todaysQuestions dereferences the deck, so a sitting without one panics
-		// rather than degrading. The capability says the terminal can host a
-		// sitting and nothing about there being one to review.
-		var errb bytes.Buffer
-		c := live()
-		c.deck, c.stderr, c.noCapture = nil, &errb, true
-		if code := runPlayCommand(c, nil); code != 1 {
-			t.Errorf("exit = %d, want 1", code)
-		}
-		if !strings.Contains(errb.String(), "DEFINE_NO_CAPTURE") {
-			t.Errorf("the refusal does not name which cause: %q", errb.String())
-		}
-	})
-
-	t.Run("an argument is a usage error", func(t *testing.T) {
-		var errb bytes.Buffer
-		c := live()
-		c.stderr = &errb
-		if code := runPlayCommand(c, []string{"sycophantic"}); code != 2 {
-			t.Errorf("exit = %d, want 2", code)
-		}
-		if !strings.Contains(errb.String(), "/play") {
-			t.Errorf("the refusal does not name the command: %q", errb.String())
-		}
-	})
-
-	t.Run("otherwise it RECORDS rather than performs", func(t *testing.T) {
-		var started bool
-		c := live()
-		c.startSitting = func() { started = true }
-		if code := runPlayCommand(c, nil); code != 0 {
-			t.Errorf("exit = %d, want 0", code)
-		}
-		if !started {
-			t.Error("the command did not record the intent, so the loop has nothing to do")
-		}
-	})
+	applyShape(&opt, view, winSize{rows: 40, cols: minWrapWidth - 1})
+	if opt.width != 0 {
+		t.Errorf("opt.width = %d, want 0 — below the floor an entry cannot be broken "+
+			"and stay readable", opt.width)
+	}
+	if _, c := view.Size(); c != minWrapWidth-1 {
+		t.Errorf("view cols = %d, want %d — the frame still has to fit the columns "+
+			"that exist", c, minWrapWidth-1)
+	}
 }

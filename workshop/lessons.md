@@ -4057,3 +4057,17 @@ What worked was narrowing the claim to the half that is deterministic in-process
 — the RESTORE, which is also the half that breaks silently — and saying plainly
 in the comment that the end-to-end path is covered by the pty run. **A test that
 covers less and cannot lie beats a test that covers more and can.**
+
+**Fix the class the first time, or the same bug comes back one field over.**
+`#48`'s sitting borrows the resize channel, so a shape consumed during a sitting
+reaches the loop by no other route. Round 1 handed back the screen's shape.
+Round 2 found the loop also derives `opt.width` from a shape — same bug, one
+field over, entries wrapping at the pre-sitting width. The fix is one function
+that IS what a shape means, called by every route, with a guard deriving the
+routes from the source.
+
+**When a value is settled by a deferred call, the return must be NAMED.** `return
+code, shape` evaluates `shape` before the defer runs, so it hands back the
+pre-sitting size — the exact bug the return exists to fix, one level in. Caught
+by reading it back rather than by a test, which is worth noting: nothing would
+have failed.
