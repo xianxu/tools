@@ -2602,6 +2602,20 @@ with no row there draws an underline that does nothing, which
 `TestEveryRegionKindIsActionable` catches by deriving its loop from
 `numRegionKinds`.
 
+- **`--version` is stamped by the BUILD, not stored in the source (`#49`).**
+  `main.version` is empty in the tree and set by the Homebrew formula through
+  `-ldflags -X main.version=vN.M.P` — the same mechanism `pair`'s formula uses
+  for `main.defaultPairHome`. The number therefore lives in the git tag and the
+  formula, the two things that already have to agree for a release to exist, so
+  there is no third copy to drift.
+
+  An UNSTAMPED build says `built from source` rather than the last released
+  number: `go build` from a clone is not a release, and a version there would be
+  a lie exactly where a contributor reproducing a bug would read it. The flag
+  answers ABOVE `withStore`, beside `--llm-check`, because the machine whose
+  owner is filing a bug report is the machine where the dictionary, the
+  directory and the model may all be unavailable.
+
 - **A sitting runs from the loop by BORROWING the terminal (`#48`).** `/play`
   records the intent and `runEditor` performs it — `/pron`'s rule one verb up:
   a command decides what, the loop owns doing it. Both `--play` and `/play` reach
