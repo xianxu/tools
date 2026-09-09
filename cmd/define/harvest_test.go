@@ -681,6 +681,11 @@ func TestRunRefusesTwoModes(t *testing.T) {
 		{"-llm-check", "-harvest"},
 		{"-play", "-harvest"},
 		{"-reflect", "-harvest"},
+		{"-stats", "-harvest"},
+		// #49's mode, and the one that proved the enumeration was not derived:
+		// -version printed and exited 0 beside every other mode.
+		{"-version", "-harvest"},
+		{"-version", "-play"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var out, errb bytes.Buffer
@@ -690,6 +695,34 @@ func TestRunRefusesTwoModes(t *testing.T) {
 			}
 			if !strings.Contains(errb.String(), "modes") {
 				t.Errorf("stderr = %q, want it to name the collision", errb.String())
+			}
+		})
+	}
+}
+
+// A MODE PLUS A WORD is two commands on one line, and --version and --llm-check
+// are the two that could not be reached by the argument-count switch until #49
+// moved them below it. Pinned through run() for the same reason the collision
+// table is: the switch being right is not the claim that these modes reach it.
+func TestModesAboveTheSwitchRefuseAWord(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-version", "cat"}, "--version names the build"},
+		{[]string{"-llm-check", "sycophantic"}, "--llm-check reports the configuration"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			var out, errb bytes.Buffer
+			code := run(t.Context(), tc.args, testDeps(t), strings.NewReader(""), &out, &errb)
+			if code != 2 {
+				t.Errorf("exit = %d, want 2 — a swallowed word is a silently different command", code)
+			}
+			if !strings.Contains(errb.String(), tc.want) {
+				t.Errorf("stderr = %q, want it to contain %q", errb.String(), tc.want)
+			}
+			if out.Len() != 0 {
+				t.Errorf("stdout = %q, want nothing — it refused", out.String())
 			}
 		})
 	}
@@ -958,14 +991,26 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 		if !ok {
 			return true
 		}
-		// The body must RETURN a call — that is what makes it a mode rather than
-		// a flag that merely adjusts behaviour.
+		// The body must RETURN — ANY return, whatever the expression. What makes a
+		// flag a mode is that run() ENDS on it; the shape of what it hands back is
+		// incidental.
+		//
+		// This required a `return <call>` and so failed OPEN on #49's `-version`,
+		// whose body was `fmt.Fprintln(...); return 0`. A BasicLit is not a
+		// CallExpr, so the parse found 6 modes, the list declared 6, the floor
+		// agreed with itself, and `define --version --play` silently swallowed
+		// --play. That is the THIRD instance of the collision-list bug this guard
+		// exists to end, and the second time the guard itself was the reason it
+		// went unseen (#8 BR-11 was the first: it recognised only `if *x`, so
+		// -forget's `if forgetting` slipped through).
+		//
+		// Widening to any return makes the guard shape-INDEPENDENT, so an eighth
+		// mode cannot repeat this by being written a new way. It cannot over-match:
+		// the condition must already be a bare flag ident, so a validation branch
+		// like `if *harvest && fs.NArg() != 0 { return 2 }` is a BinaryExpr and
+		// never reaches here.
 		for _, stmt := range is.Body.List {
-			ret, ok := stmt.(*ast.ReturnStmt)
-			if !ok || len(ret.Results) != 1 {
-				continue
-			}
-			if _, ok := ret.Results[0].(*ast.CallExpr); ok {
+			if ret, ok := stmt.(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
 				dispatched[name] = true
 			}
 		}

@@ -19,8 +19,10 @@ what it sounds like. And bare `brew install define` installs a *different*
 program — `define` also exists in homebrew-core — so the qualified name is the
 one that gets this one.
 
-macOS only: it reads the dictionaries macOS already has and plays audio with
-`afplay`. Nothing else is required — no account, no API key, no runtime.
+macOS only, and deliberately: the definitions and the IPA come from
+Dictionary.app through `CoreServices`, which is where they actually live, and
+pronunciation plays with `afplay`. Nothing else is required — no account, no API
+key, no runtime.
 
 From a clone, for contributors:
 
@@ -30,10 +32,6 @@ go build -o ~/bin/define ./cmd/define    # from the repo root
 
 `define --version` names the release you installed, and says `built from source`
 when it was not built by the formula.
-
-
-macOS only, and deliberately: the dictionaries come from Dictionary.app through
-`CoreServices`, which is where the definitions and the IPA actually live.
 
 ## Using it
 

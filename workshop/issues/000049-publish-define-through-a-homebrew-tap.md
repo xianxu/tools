@@ -161,3 +161,56 @@ here both ways — unstamped `go build` → `define (built from source)`;
 uses `gh pr merge --merge`, so the commit becomes an ancestor of `main` and the
 tag stays reachable — checked rather than assumed, since a squash would have
 stranded it.
+
+### 2026-09-09 — boundary review round 1: REWORK, five blocking findings fixed
+
+**BR-1 (Critical) was real and was the THIRD instance of a named class.** `-version`
+dispatched as a mode but was absent from `run()`'s collision list, so
+`define --version --play` printed the version, exited 0 and silently dropped
+`--play`. `main.go:598` names the same bug twice already.
+
+The guard built to prevent exactly this (`TestEveryDispatchedModeIsInTheCollisionList`)
+went green because its AST parse required `return <call>` and the new dispatch was
+`return 0` — a `BasicLit`, not a `CallExpr`. **That is the second time this guard was
+itself the reason the bug went unseen** (#8 BR-11 was the first: it recognised only
+`if *x`, so `-forget`'s `if forgetting` slipped past). So the fix is the CLASS, not the
+site (ARCH-PURPOSE): the parse now accepts ANY `return` in a flag-guarded `if`, making
+it shape-INDEPENDENT, and it cannot over-match because the condition must already be a
+bare flag ident. Mutation-verified — dropping the `{"-version", *versionFlag}` row now
+fails with *"run() returns on -version, so it is a MODE, but it is not in the collision
+list"*, where before it passed.
+
+**BR-4 swept with it.** The enumerable class is *modes dispatched above the
+argument-count switch* — exactly `-llm-check` and `-version`, both of which swallowed a
+word (`define --llm-check sycophantic` exited 0). Both moved BELOW the switch rather
+than growing a bespoke check, so the switch every other mode is judged by now judges
+them too. Still above `withStore`, so the "answers on a broken machine" property holds.
+
+**BR-2: the ldflags path was pinned by nothing** — the unit test assigns the Go
+variable, which cannot fail when the LINKER path breaks.
+`TestLdflagsStampReachesTheBinary` (conformance) now shells the real toolchain with the
+formula's own flag and reads `--version` off the built binary. Mutation-verified with a
+realistic refactor (rename `version` → `buildVersion`, update its one test reference):
+the package builds, both version unit tests PASS, the shipped binary says
+`define (built from source)` — and only the conformance test reddens.
+
+**BR-3:** the root `README.md` gained an Install section; it had offered only
+`make build` on a now-public repo whose issue exists to replace that path.
+
+**BR-5:** the `define()` shadow trap moved from this Log to `workshop/lessons.md`,
+since Logs archive to `workshop/history/` which AGENTS.md tells agents not to read.
+
+**A guard caught me mid-fix**, which is worth recording: placing `runVersion` above
+`var version string` inserted it between that var and its own doc comment, orphaning
+the var and handing its prose to the new function — precisely what
+`TestADocCommentNamesWhatItSitsOn` exists to catch. It failed, named the defect, and
+`runVersion` moved below `versionLine`. Likewise `TestEverySkipIsRoutedOrWaived` caught
+the new conformance test's bare `t.Skip`, now routed through `conformance.SkipOrFail`
+so `CONFORMANCE_STRICT=1` cannot report green for a check that did not run.
+
+Minors also closed: the two overlapping "macOS only" paragraphs merged, the stray blank
+line removed, `fs.Usage` prose names `--version`, and the package-var mutation in
+`main_test.go` records its `t.Parallel` dependency.
+
+Verified: `go build ./...`, `go vet ./...`, `go vet -tags conformance ./cmd/define/`,
+`gofmt -l` clean, `go test ./...` fully green.

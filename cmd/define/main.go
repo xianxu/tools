@@ -485,7 +485,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"records nothing, because it is for scripts.\n"+
 			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+
 			"session-only, because the event log is what persists it.\n\n"+
-			"--llm-check reports whether the model seam is configured and reachable.\n"+
+			"--version names the build; --llm-check reports whether the model seam is configured and reachable.\n"+
 			"Model features degrade silently by design, so this is where they are loud.\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
@@ -608,6 +608,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		{"-reflect", *reflect},
 		{"-harvest", *harvest},
 		{"-stats", *statsFlag},
+		{"-version", *versionFlag},
 	}
 	if a, b, clash := modeCollision(modes); clash {
 		// Two modes on one line is two commands on one line, exactly as -forget
@@ -617,18 +618,6 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		return 2
 	}
 
-	// BEFORE the store, the dictionary and every other precondition — "what am I
-	// running" must answer on a machine where the rest of the program cannot.
-	// Beside --llm-check for the same reason it sits above withStore: neither
-	// needs a directory.
-	if *versionFlag {
-		fmt.Fprintln(stdout, versionLine())
-		return 0
-	}
-
-	if *llmCheck {
-		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
-	}
 	// A command may take arguments, so the WHOLE argument list is one line:
 	// `define /history 7` has to mean what `/history 7` means at the prompt.
 	// Classifying only fs.Arg(0) made the argument count reject it as "too many
@@ -678,6 +667,22 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// beside it can only be a misread intent.
 		fmt.Fprintln(stderr, "define: --stats reads the whole log; do not also pass a word")
 		return 2
+	// --version and --llm-check USED TO DISPATCH ABOVE THIS SWITCH, which is
+	// precisely why neither could be reached by it: `define --version cat` and
+	// `define --llm-check sycophantic` both printed and exited 0, swallowing the
+	// word. That is the same defect the -harvest comment above names twice, and
+	// the enumerable class is "modes dispatched above the argument count" — so
+	// the fix moved BOTH below, rather than adding a word check to the new one.
+	//
+	// Nothing is lost by the move: this switch reads flags and a parsed line, so
+	// both still answer on a machine with no dictionary and no deck, which is the
+	// property TestVersionAnswersWithNoDictionaryOrDeck pins.
+	case *versionFlag && fs.NArg() != 0:
+		fmt.Fprintln(stderr, "define: --version names the build; do not also pass a word")
+		return 2
+	case *llmCheck && fs.NArg() != 0:
+		fmt.Fprintln(stderr, "define: --llm-check reports the configuration; do not also pass a word")
+		return 2
 	case *playFlag && fs.NArg() != 0:
 		// Same rule, and --play needed it MORE than --reflect does: it writes
 		// events, so `define --play sycophantic` would change state under a
@@ -698,6 +703,17 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		fmt.Fprintln(stderr, "define: -pron applies to one lookup; at the prompt use /pron fr")
 		return 2
 	}
+	// STILL BEFORE THE STORE and the dictionary — "what am I running" and "is the
+	// model configured" must both answer on a machine where the rest of the
+	// program cannot. They sit below the switch only so the argument count judges
+	// them like every other mode.
+	if *versionFlag {
+		return runVersion(stdout)
+	}
+	if *llmCheck {
+		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
+	}
+
 	// The flag rides on the LINE, beside `literal`, because that is what it is:
 	// a per-line modifier. parseREPLLine never sets it, so nothing either loop
 	// parses carries a language.
@@ -1348,4 +1364,16 @@ func versionLine() string {
 		return "define (built from source)"
 	}
 	return "define " + version
+}
+
+// runVersion is --version: a named function rather than two inline lines, so the
+// dispatch shape matches runLLMCheck's and every other mode's.
+//
+// It sits BELOW versionLine deliberately. Placing it above put it between
+// `version` and the doc comment written for `version`, which orphaned the var and
+// handed its prose to this function — the exact defect
+// TestADocCommentNamesWhatItSitsOn names, caught by that guard on the way in.
+func runVersion(stdout io.Writer) int {
+	fmt.Fprintln(stdout, versionLine())
+	return 0
 }

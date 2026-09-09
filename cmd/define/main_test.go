@@ -477,6 +477,15 @@ func TestVersionIsHonestAboutUnstampedBuilds(t *testing.T) {
 	}
 
 	// And the stamped form, which the formula produces with -ldflags -X.
+	//
+	// This assigns the Go variable, so it pins versionLine and NOT the linker —
+	// rename `version` and this stays green while the release ships unstamped.
+	// That path is pinned by TestLdflagsStampReachesTheBinary (conformance),
+	// which shells the real toolchain with the formula's own flag.
+	//
+	// Mutating a package-level var is safe here only because nothing in
+	// cmd/define calls t.Parallel; the first parallel test in this package has to
+	// revisit it.
 	saved := version
 	defer func() { version = saved }()
 	version = "v0.1.0"

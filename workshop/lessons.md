@@ -4151,3 +4151,35 @@ direction can now diverge from the other.
 **And this arrived inside the fix for the root cause it illustrates**, which is
 the strongest evidence in this file that the discipline has to be mechanical
 rather than intentional.
+
+## Smoke-testing a published binary in a dev VM measures the dev build, not the release
+
+**Pattern:** #49 published `define` through a Homebrew tap and smoke-tested it in a
+`make tart` VM. That VM mounts the workspace, and `construct/dev-aliases.sh` emits a
+build-on-demand **shell function** for every `cmd/X` in every ariadne-styled peer —
+`define() { ( cd .../tools && go build -o bin/define ./cmd/define ) || return; .../bin/define "$@"; }`.
+`tart-vm-rc.zsh` says the quiet part outright: *"Functions outrank PATH in zsh, so they
+transparently shadow any stale copy."* It is **designed** to shadow. So `brew install`
+succeeds, `define` runs, everything looks green — and every command measured a local
+build of the working tree, never the bottle. The install could have been entirely
+broken and the smoke test would still have passed.
+
+**Rule:** A deployment test must run in an environment with **no path back to the
+source**. For this fleet that is `make tart-clean && VANILLA=1 make tart` — `VANILLA`
+skips the mount, so `~/workspace/ariadne/construct/dev-aliases.sh` is unreadable and
+the emitter degrades to the no-op its own comment promises; `tart-clean` is required
+too, because `VANILLA` only skips *running* setup and a previously provisioned VM
+already has `~/.zshrc` sourcing `~/.tart-vm-rc.zsh` on disk. Generalisation: **when a
+dev environment deliberately shadows PATH, "it worked" from inside it is evidence
+about the shadow, not about the artifact** — and this applies to every `cmd/X` in
+every peer, so it recurs for every future formula, not just this one.
+
+**Build in a tell.** `define --version` prints `define v0.1.0` only when the formula's
+`-ldflags -X main.version=` ran; the shadowing function builds without ldflags and so
+prints `built from source`. One command distinguishes "I am testing the release" from
+"I am testing my working tree" — every published binary should have one.
+
+**Origin:** #49. Related: the same session lost an hour to a *host* diagnosis where
+every network probe I ran measured my own sandbox's restrictions rather than the VM —
+same root shape as this file's thesis, one layer down. See
+[[validate-the-system-not-your-model-of-it]].
