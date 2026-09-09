@@ -181,6 +181,16 @@ func repoRoot(t *testing.T) string {
 	return strings.TrimSpace(string(git(t, "rev-parse", "--show-toplevel")))
 }
 
+// WHAT CONVICTS A BLOB, stated here because this is the mechanism that decides
+// it and a decision rule restated elsewhere drifts from the code that runs it
+// (#49 III): EITHER the first four bytes are an executable image's magic —
+// Mach-O in all four flavours, universal, or ELF — OR the path carries an exact
+// compiled extension from compiledExtensions. Magic alone failed open on a
+// `.pyc`; the extension list is exact rather than heuristic, which is why it does
+// not reintroduce the symlink false-positive that made an earlier
+// filename-shaped check wrong. atlas/repo-guards.md links here rather than
+// repeating this.
+//
 // scanForExecutables reads every blob named by want (sha -> path) out of git and
 // returns the ones that are executable images.
 //
@@ -192,7 +202,15 @@ func repoRoot(t *testing.T) string {
 // still reachable from HEAD — a guard carrying the exact defect it exists to
 // catch. A guard that enumerates a work list must assert it reached the end of
 // it, and must check the exit status of every process it depends on.
-func scanForExecutables(t *testing.T, dir string, want map[string]string) []string {
+// `waived` is the debt this particular caller has been told about, and it is a
+// PARAMETER rather than a package global for a reason the review measured
+// (#49 I-1): both guards call this, but the waiver's justification —
+// "rewriting would move the commit v0.1.0 tags" — is an argument about HISTORY
+// and says nothing about the index. As a global it silenced both, so staging a
+// NEW file carrying the same blob passed the index guard, which
+// atlas/repo-guards.md calls "the last moment the mistake is free". The index
+// guard passes nil.
+func scanForExecutables(t *testing.T, dir string, want map[string]string, waived map[string]string) []string {
 	t.Helper()
 	if len(want) == 0 {
 		t.Fatal("nothing to scan; this test would pass vacuously")
@@ -257,7 +275,7 @@ func scanForExecutables(t *testing.T, dir string, want map[string]string) []stri
 		// exact compiled extension for the formats magic cannot generalise over.
 		compiled := isExecutableImage(head) ||
 			compiledExtensions[strings.ToLower(filepath.Ext(want[f[0]]))]
-		if f[1] == "blob" && compiled && acceptedCompiledBlobs[f[0]] == "" {
+		if f[1] == "blob" && compiled && waived[f[0]] == "" {
 			found = append(found, fmt.Sprintf("%s (blob %s, %d bytes)", want[f[0]], f[0][:8], size))
 		}
 	}
@@ -295,7 +313,10 @@ func TestNoCommittedBinaries(t *testing.T) {
 		}
 		want[f[1]] = path // identical content at two paths collapses; either name locates it
 	}
-	for _, hit := range scanForExecutables(t, dir, want) {
+	// nil: NOTHING is waived at the index. A blob already in history is a cost
+	// already paid; the same bytes staged again today is a new mistake, and this
+	// is the last moment it is free.
+	for _, hit := range scanForExecutables(t, dir, want, nil) {
 		t.Errorf("compiled binary is tracked: %s", hit)
 	}
 }
@@ -309,7 +330,7 @@ func TestNoCommittedBinaries(t *testing.T) {
 func TestNoBinariesInHistory(t *testing.T) {
 	dir := repoRoot(t)
 
-	for _, hit := range scanForExecutables(t, dir, historyPaths(t, dir)) {
+	for _, hit := range scanForExecutables(t, dir, historyPaths(t, dir), acceptedCompiledBlobs) {
 		t.Errorf("compiled binary in history: %s — reachable from HEAD, so it is fetched by "+
 			"every clone. Rewrite the commit that adds it; deleting it in a later commit does not "+
 			"remove the cost.", hit)

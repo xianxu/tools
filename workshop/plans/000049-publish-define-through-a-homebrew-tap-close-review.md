@@ -263,3 +263,87 @@ Coverage of what this window changed is good, and I verified it by reversion rat
 ### 7. Plan revision recommendations
 
 The `## Plan` and `## Done when` boxes match the code. One `## Revisions` entry is warranted on the issue, for I-1: Done-when #1 and #2 are ticked against `v0.1.0` = `7380263`, which does not contain `512c706`'s fix — record either the follow-up `v0.1.1` re-tag + formula bump, or an explicit note that the released binary lags the branch and why that was accepted.
+
+---
+
+## Re-review — 2026-09-09T15:08:59-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 49 — publish define through a homebrew tap |
+| repo | tools |
+| issue file | workshop/issues/000049-publish-define-through-a-homebrew-tap.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 12aacfb887f7c58401aa0fa5b164b8ef00973ea0..18ebf80764b3c0ec3ed7409be50d4b844c7f7a86 |
+| command | sdlc close --issue 49 |
+| reviewer | claude |
+| timestamp | 2026-09-09T15:08:59-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All eight prior findings are genuinely addressed, and I verified the five substantive ones by reverting them in a scratch copy rather than reading the commit messages: dropping `{"-version", *versionFlag}` now reddens `TestEveryDispatchedModeIsInTheCollisionList`; renaming `main.version` leaves both unit tests green while `TestLdflagsStampReachesTheBinary` alone fails; moving the `--version` dispatch below `withStore` reddens the position test; deleting the `-version` word arm reddens exactly that subtest of the derived `TestEveryModeRefusesATrailingWord`; and emptying `acceptedCompiledBlobs` reddens `TestNoBinariesInHistory` naming the `.pyc`. The built binary refuses `-version -play`, `-version -harvest`, `-version -forget cat`, `-version -llm-check`, `-version cat` and `-llm-check cat` — all exit 2. `go build`, `go vet`, `gofmt`, `go test ./...`, `GOOS=linux go vet -tags conformance`, and `bash scripts/run-merge-checks.sh` are all clean. Nothing here blocks SHIP. What holds it back from SHIP outright is four cheap Importants: a waiver whose scope is wider than its own justification (confirmed — a freshly staged `.pyc` with the same blob passes the *index* guard), a merge gate that exits 0 when its `-run` pattern matches nothing (measured), atlas prose that now contradicts the code in two places, and an issue whose Done-when boxes are ticked against a release tag that does not exist yet.
+
+## 1. Strengths
+
+- **`cmd/define/harvest_test.go:1053` — the guard was widened at the class, not the site.** Requiring `return <call>` was what let `-version` through; accepting *any* single-result `return` under a bare flag ident makes it shape-independent, and the "cannot over-match" argument holds — I checked `declaredModes`' two condition shapes and a validation branch like `*harvest && fs.NArg() != 0` is a `BinaryExpr` that never reaches the body walk.
+- **`cmd/define/main_test.go:504` — a `newStore` that fails if it is built.** This is the difference between asserting an invariant and enforcing one: `deps{}` alone left `withStore` a no-op, so the position claim in `main.go` and `atlas/define.md` was decorative. Now the reviewer's own mutation reddens.
+- **`cmd/define/version_conformance_test.go:39` — production and test flow finally share the linker.** It shells the real toolchain with `-X main.version=`, and the version it stamps is deliberately fake so the test does not become a third place the release number lives. That reasoning is right and rare.
+- **`cmd/define/harvest_test.go:743` — the word-refusal half is now derived from `declaredModes`**, and it sets `DEFINE_LLM_*` so an `-llm-check` regression cannot quietly spend tokens. Both halves of that are good instincts.
+- **`cmd/define/repo_guard_test.go:31` — the "exact extension, not a heuristic" distinction is correctly drawn.** The old comment rejected *guessing* from filenames; `.pyc` is not a guess. Extending by extension rather than by more magic bytes is the right call.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I. `cmd/define/repo_guard_test.go:257` — the history waiver also silences the index guard.**
+`acceptedCompiledBlobs` is consulted inside `scanForExecutables`, which both `TestNoCommittedBinaries` (index) and `TestNoBinariesInHistory` (history) call. The waiver's justification is purely historical — *"rewriting would move the commit `v0.1.0` tags"* — and that argument says nothing about the index, which `atlas/repo-guards.md` calls "the last moment the mistake is free." Confirmed by reproduction: staging `cmd/define/testdata/replanted.pyc` containing the identical blob `b1fc21e3` leaves `TestNoCommittedBinaries` green, while a *different* `.pyc` is caught (`blob 8eb0aaa3, 24 bytes`). Fix: make the waiver a parameter — `scanForExecutables(t, dir, want, waived map[string]string)` — passing `nil` from the index guard and `acceptedCompiledBlobs` from the history guard. Family: `waiver-wider-than-its-reason`.
+
+**II. `scripts/merge-checks.d/10-release-stamp.sh:28` — the gate passes green when its check does not run.**
+`go test -run <no match>` exits 0 (`ok … [no tests to run]`, measured). Rename or delete `TestLdflagsStampReachesTheBinary` and this merge check reports `✓ merge-check passed` having executed nothing — the exact "a skip reads as green" failure the script's own 20-line header argues against. `CONFORMANCE_STRICT` is also unset here, so a routed skip added inside that path later would read as pass too. Fix: `CONFORMANCE_STRICT=1 go test -tags conformance -run '^TestLdflagsStampReachesTheBinary$' -v -count=1 ./cmd/define/` piped through an assertion that `--- PASS: TestLdflagsStampReachesTheBinary` appeared. Family: `gate-green-without-running`.
+
+**III. `atlas/repo-guards.md:32` and `atlas/define.md:2063` — the atlas now states two things the code contradicts. This is the 2nd finding in family `usage-prose-lags-flags`.**
+Per the family rule I am not asking for these two edits — here is the rule.
+Instances measured: (a) *"Both decide by **magic bytes** … not by filename"* is false as of `compiledExtensions`, and neither `acceptedCompiledBlobs` nor `TestAcceptedCompiledBlobsAreStillReachable` appears anywhere in `atlas/`; (b) *"run **on demand, not in CI** … neither belongs in `merge-check.yml`"* is false as of `10-release-stamp.sh`; (c) the 7-row conformance table omits `version_conformance_test.go` **and** `harvest_conformance_test.go` — it lags by 2 of 9, and has since before this window.
+**Rule:** *a statement of a mechanism's decision rule belongs at the mechanism, and an atlas enumeration of a code-derivable set must be derived or pinned, never retyped.* Two mechanical consequences: move "what convicts a blob" into `scanForExecutables`' own doc comment and have `atlas/repo-guards.md` link rather than restate — the same move BR-7 made for `fs.Usage`, and `TestADocCommentNamesWhatItSitsOn` already enforces the co-location one level down; and pin the conformance table in `cmd/define/doc_sync_test.go` (which already pins counts in `atlas/define.md`) by globbing `*_conformance_test.go` + `live_property_test.go` and failing on any file with no table row. Item (c) is the evidence that a hand-typed table does not survive even one unrelated issue.
+
+**IV. `cmd/define/harvest_test.go:679` — `TestRunRefusesTwoModes` is still a hand-typed mode set, and this window added three rows to it by hand. This is the 4th finding in family `two-commands-one-line`.**
+Rows `{"-stats","-harvest"}`, `{"-version","-harvest"}`, `{"-version","-play"}` were typed in the same commit series that argued (correctly, at `harvest_test.go:731`) that a remembered enumeration is the defect. The file itself states why this table is not redundant: *"modeCollision being right is not the same claim as run() calling it."* So the through-`run()` pair claim is the one enumeration still carried by memory, and an 8th mode gets no row.
+**Rule:** *every test that enumerates the mode SET iterates `declaredModes(t)`; a mode-name string literal inside a test table is the defect, not a missing row.* (Per-mode behaviour tests naming one mode — `stats_test.go:229`, `capture_test.go:236` — are outside it; the rule is about set-enumerations.) Measured prevalence after I-2: exactly one hand-enumerated mode set remains, this one. Enforceable form, if you want it mechanical: an AST guard over `*_test.go` failing on any composite literal holding ≥2 names from `declaredModes` inside a func that does not call `declaredModes`.
+
+**V. `workshop/issues/000049-publish-define-through-a-homebrew-tap.md:106,113` — Done-when #1 and #4 are ticked against a release that does not exist.**
+The issue's own `## Revisions` says #1 is satisfied by `v0.1.1`; `git tag -l` shows only `v0.1.0 -> 7380263`, and the installed `xianxu/homebrew-tools/Formula/define.rb` still pins `url … v0.1.0.tar.gz` / `sha256 47f486f6…` — the tarball that ships the BR-1 defect. Closing with these boxes ticked records a verified claim about an artifact this issue's own review disqualified. Fix: untick #1 (or annotate it *pending `v0.1.1`*), add the tag + formula bump + reinstall as an explicit post-merge `## Plan` row, and keep it out of `--verified`. Family: `checkbox-outruns-artifact`.
+
+## 4. Minor findings
+
+- `cmd/define/harvest_test.go:707` — `stringFlags` is a near-verbatim copy of the `fs.Bool` walker at `harvest_test.go:965`; they differ only in `"String"` vs `"Bool"` and the map shape. ARCH-DRY: one `flagsDeclaredWith(t, kind)`.
+- `scripts/merge-checks.d/10-release-stamp.sh` ignores the `$BASE $HEAD` the runner passes it, so it rebuilds `cmd/define` on every PR including docs-only ones. Either scope it, or say in the header that always-run is deliberate.
+- `cmd/define/stats_test.go:240` is now covered by `TestEveryModeRefusesATrailingWord/-stats`; harmless, but it is the shape the derived test replaces.
+- `version_conformance_test.go:53`'s `-ldflags` string is a hand restatement of `Formula/define.rb` in the peer tap; nothing here derives it. This would be a repeat in family `cross-boundary-contract-untested`, so recording rather than raising — and the formula's own `test do` asserts `define v#{version}`, which pins it from the other side.
+
+## 5. Test coverage notes
+
+Coverage on the code this window ships is strong and, unusually, *demonstrated* — every fix I checked reddens under a realistic mutation, not just under a contrived one (the `version` → `buildVersion` rename is the kind of refactor someone would actually do, and only the conformance test noticed). Full suite green in 112s; `-tags conformance -run Ldflags` green in ~4s. The gaps are all one layer out from the code: the merge gate that runs the conformance test cannot tell "passed" from "did not exist" (Important II), the index half of the compiled-artifact guard has a content-keyed hole (Important I), and the through-`run()` pair matrix is the one mode enumeration still typed by hand (Important IV). `TestAcceptedCompiledBlobsAreStillReachable` does what it claims — I confirmed it fails on a bogus sha.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag (Minor).** The version number has exactly one source (tag → formula → linker), and the mode list one source; the duplication is the two AST walkers.
+- **ARCH-PURE — pass.** `versionLine()` is pure and unit-tested without IO; `runVersion(io.Writer)` is the thin shell; the position test injects a failing seam rather than mocking.
+- **ARCH-PURPOSE — flag (Importants III, IV, V).** The shadow-sweep over "the mode set" and "the conformance suite set" found two hand-maintained restatements left; the sweep over "the version number" found none. V is the purpose itself: the issue is *"brew install works"*, and the published artifact still predates the fix.
+- **ARCH-MOCK — pass.** The linker is correctly treated as an external dependency: real toolchain, real flag, real binary, and a gate that runs it. The only unmodelled surface is the peer formula, mitigated by its `test do`.
+- **ARCH-CONSTRAINTS — flag (Minor).** `-run Ldflags` scoping deliberately keeps live model and dictionary calls out of the gate, and the derived word test pins `DEFINE_LLM_*` so a regression cannot spend tokens — both good. The gate is unconditioned on the diff range.
+- **ARCH-SECURE — pass.** `version` is linker-supplied; no credential reaches a log, argv or fixture; the conformance build writes only into `t.TempDir()`. Worth noting that Important I *is* a provenance error in miniature: the waiver keys on content hash when its justification is about a commit, and content is exactly the wrong key for "this specific historical debt."
+- **ARCH-ORDER — pass, non-vacuously.** `run()` holds no state between events: it is one-shot and returns on the first mode it dispatches, so there is no `(state, event)` space for `--version` to enter. The one ordering that *does* matter — dispatch position relative to `withStore` — is now pinned by a seam that fails when crossed, which is the right shape.
+
+## 7. Plan revision recommendations
+
+- **`## Revisions` — "Done-when #1/#4 remain unticked until `v0.1.1` exists."** Reason: the Revisions entry already says #1 is satisfied by `v0.1.1`, but the checkboxes above it still claim satisfaction, and only `v0.1.0` is tagged. Delta: untick #1 and #4, add `- [ ] Tag v0.1.1 on main after merge; bump url + sha256 in xianxu/homebrew-tools; reinstall from the tap to verify` to `## Plan`, and keep that claim out of `sdlc close --verified`.
+- **`## Revisions` — "the mode enumeration is derived at every consumer except `TestRunRefusesTwoModes`."** Reason: the round-2 Log states the enumeration problem as solved ("an eighth mode is covered the day its row is added"), which is true of the word half and the pair half in `modeCollision`, but not of the through-`run()` pair table — and this window added rows to it by hand. Delta: record the remaining consumer and the rule that covers it (Important IV), so the next mode does not have to rediscover which half was derived.

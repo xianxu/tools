@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -695,6 +696,49 @@ func TestStoreLayoutDocsNameEveryRuntimeDir(t *testing.T) {
 					"directory; a directory the program writes and this does not "+
 					"name is a file nobody can account for.", doc.path, dir)
 			}
+		}
+	}
+}
+
+// TestAtlasListsEveryConformanceCheck derives the atlas's conformance table from
+// the files on disk.
+//
+// THE TABLE LAGGED BY TWO OF NINE and nobody noticed across several issues
+// (#49 III): `harvest_conformance_test.go` and `version_conformance_test.go` both
+// existed with no row. That is the ordinary fate of a hand-typed enumeration of a
+// set the code already knows — the same defect `declaredModes` exists to end one
+// directory over, applied to docs.
+//
+// Only presence is derived, never the prose: what a check ASSERTS is a human
+// sentence and belongs to whoever wrote the check. This fails when a file has no
+// row at all, which is the half that rots silently.
+func TestAtlasListsEveryConformanceCheck(t *testing.T) {
+	files, err := filepath.Glob("*_conformance_test.go")
+	if err != nil {
+		t.Fatalf("globbing conformance files: %v", err)
+	}
+	// live_property_test.go is conformance by tag rather than by name, and the
+	// table has always carried it; deriving it by name alone would drop the row.
+	if _, err := os.Stat("live_property_test.go"); err == nil {
+		files = append(files, "live_property_test.go")
+	}
+	if len(files) < 7 {
+		t.Fatalf("found %d conformance files %v; this package has at least seven, so "+
+			"this derivation is under-deriving and would certify a table nobody wrote",
+			len(files), files)
+	}
+
+	atlas, err := os.ReadFile(filepath.Join("..", "..", "atlas", "define.md"))
+	if err != nil {
+		t.Fatalf("reading atlas/define.md: %v", err)
+	}
+	for _, f := range files {
+		name := filepath.Base(f)
+		if !strings.Contains(string(atlas), "`"+name+"`") {
+			t.Errorf("atlas/define.md has no row for %s. Every conformance check earns "+
+				"one, because the table is how a reader learns which assumptions are "+
+				"pinned against the live world — and a check with no row is one nobody "+
+				"knows to run. Add it beside its siblings in the conformance table.", name)
 		}
 	}
 }

@@ -96,6 +96,11 @@ rounds:
       agent: claude
       blocked: true
       protocol_error: no valid findings block
+    - "n": 3
+      timestamp: "2026-09-09T15:08:59-07:00"
+      agent: claude
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#49 (boundary-review)
@@ -153,6 +158,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   the dependency for whoever adds the first parallel test.
 
 ## Round 2 — 2026-09-09T14:13:14-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
+
+## Round 3 — 2026-09-09T15:08:59-07:00 (claude) — BLOCKED
 
 **Protocol error:** no valid findings block — this round contributed no findings.
 

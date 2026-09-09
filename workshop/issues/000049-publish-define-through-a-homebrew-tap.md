@@ -95,14 +95,19 @@ pair and the hand-install, which are fixed.
 
 ## Done when
 
-- [x] `brew tap xianxu/tools && brew install define` installs a working `define`
-      on a clean machine.
+- [ ] `brew tap xianxu/tools && brew install define` installs a working `define`
+      on a clean machine. **Pending `v0.1.1`** — the mechanism is proven (installed
+      from the tap on a clean vanilla VM: install, lookup and audio all confirmed),
+      but `v0.1.0` = `7380263` predates the BR-1 fix, so the *published* binary
+      still drops a mode. Ticks when `v0.1.1` is installed and verified.
 - [x] `define --version` reports the released version, and reports something
       honest (not a fabricated number) when built from a clone.
 - [x] The formula declares macOS rather than failing confusingly elsewhere.
-- [x] `tools` carries a `v0.1.0` tag, and the formula's `sha256` matches the
+- [ ] `tools` carries a release tag, and the formula's `sha256` matches the
       tarball GitHub serves for it — verified by installing from the tap, not by
-      assuming the checksum.
+      assuming the checksum. **Pending `v0.1.1`**: this held for `v0.1.0`
+      (checksum independently re-hashed by the boundary review), and re-holds once
+      the tag and formula are bumped.
 - [x] `cmd/define/README.md` leads with the brew install and keeps the
       build-from-source line for contributors.
 
@@ -114,6 +119,9 @@ Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
 - [x] Tag `v0.1.0` and confirm the tarball's checksum from GitHub.
 - [x] The tap repo, its formula and its README.
 - [x] Install from the tap on this machine and run it.
+- [ ] **Post-merge:** tag `v0.1.1` on `main`, bump `url` + `sha256` in
+      `xianxu/homebrew-tools`, and `brew reinstall` to verify `define v0.1.1` —
+      the release that actually contains the BR-1 fix (#49 V).
 
 ## Log
 
@@ -263,7 +271,57 @@ waiver outlives its debt. Both halves mutation-verified.
 `43559b0`. So the tarball the formula pins ships a `define` where
 `--version --play` drops `--play`. Done-when #1 is NOT ticked against that
 artifact: `v0.1.1` is tagged on main after merge and the tap's `url` + `sha256`
-bumped, then verified by reinstalling. Recorded under `## Revisions`.
+bumped, then verified by reinstalling. Recorded under `### 2026-09-09 — boundary review round 3: FIX-THEN-SHIP, five Importants closed
+
+Round 3 re-verified all eight prior findings by reversion in a scratch copy. Its
+five new Importants, each fixed and mutation-verified:
+
+**I — a waiver wider than its own justification.** `acceptedCompiledBlobs` was a
+package global consulted inside `scanForExecutables`, which BOTH guards call. Its
+argument is purely historical ("rewriting would move the commit `v0.1.0` tags")
+and says nothing about the index — so staging a NEW file carrying the same blob
+passed `TestNoCommittedBinaries`, the guard `atlas/repo-guards.md` calls "the last
+moment the mistake is free". The waiver is now a PARAMETER: `nil` from the index
+guard, the list from the history guard. Verified by reproducing the reviewer's
+bypass — a fresh `replanted.pyc` with blob `b1fc21e3` is now caught.
+
+**II — a gate that passes green when its check does not run.** `go test -run
+<no match>` exits 0, so renaming the test would leave the merge check reporting
+`✓ passed` having executed nothing — the exact "a skip reads as green" failure the
+script's own header argues against. It now anchors the pattern, sets
+`CONFORMANCE_STRICT=1`, and REQUIRES the test's own `--- PASS` line as proof of
+execution. Mutation-verified: renaming the test now fails the gate.
+
+**III — atlas prose contradicting the code, 2nd in family `usage-prose-lags-flags`.**
+The rule taken, not the two edits: *a statement of a mechanism's decision rule
+belongs at the mechanism, and an atlas enumeration of a code-derivable set must be
+derived, never retyped.* "What convicts a blob" moved into `scanForExecutables`'
+doc comment with `atlas/repo-guards.md` linking rather than restating; the
+"on demand, not in CI" claim corrected; and the conformance table — which lagged
+by TWO of nine and had since before this window — completed and then PINNED by
+`TestAtlasListsEveryConformanceCheck`, which globs the files and fails on any with
+no row. Only presence is derived; the prose stays human.
+
+**IV — the last hand-typed mode set, 4th in family `two-commands-one-line`.**
+`TestRunRefusesTwoModes` was a literal table, and this issue's own commit series —
+which argued that a remembered enumeration IS the defect — added three rows to it
+by hand. Now every unordered pair derives from `declaredModes` (21 pairs), so an
+eighth mode is covered the day its row is added. Mutation-verified: removing
+run()'s `return 2` on a collision reddens 11 of 21.
+
+**V — Done-when ticked against a release that does not exist.** #1 and #4 are
+UNTICKED and annotated *pending `v0.1.1`*, with the tag + formula bump + reinstall
+added as an explicit post-merge `## Plan` row. That row is deliberately unchecked
+at close time — it happens after the merge — so this close passes `--no-plan-check`
+with the reason recorded rather than pretending otherwise.
+
+Minors: the two near-identical AST walkers collapsed into one
+`flagsDeclaredWith(t, kind)` with `argvForMode` deriving argv shape (ARCH-DRY);
+the merge check's always-run behaviour documented as deliberate. Recorded not
+fixed: the conformance test's `-ldflags` string is a hand restatement of the peer
+formula, which the formula's own `test do` pins from the other side.
+
+## Revisions`.
 
 Minors closed: two stale claims about WHERE `--llm-check` dispatches deleted
 rather than corrected (a statement about dispatch position belongs at the dispatch

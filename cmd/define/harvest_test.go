@@ -675,53 +675,70 @@ func TestModeCollision(t *testing.T) {
 // And the guard reached through run(), which is where the repo pins this class
 // (play_loop_test.go does the same for "-forget takes the word to remove").
 // modeCollision being right is not the same claim as run() calling it.
+//
+// DERIVED, LIKE EVERY OTHER MODE-SET ENUMERATION (#49 IV, 4th in family
+// `two-commands-one-line`). This was a hand-typed table, and the commit series
+// that argued a remembered enumeration IS the defect added three rows to it by
+// hand — so the through-run() pair claim was the last mode set carried by memory,
+// and an eighth mode would get no row. Every pair now comes from declaredModes,
+// which is what makes the claim survive a mode nobody has typed yet.
+//
+// EVERY unordered pair, not a sample: modeCollision returns on the first two it
+// finds, so a pair that dispatches before the check would be invisible to any
+// subset that happened to miss it.
 func TestRunRefusesTwoModes(t *testing.T) {
-	for _, args := range [][]string{
-		{"-forget", "x", "-harvest"},
-		{"-llm-check", "-harvest"},
-		{"-play", "-harvest"},
-		{"-reflect", "-harvest"},
-		{"-stats", "-harvest"},
-		// #49's mode, and the one that proved the enumeration was not derived:
-		// -version printed and exited 0 beside every other mode.
-		{"-version", "-harvest"},
-		{"-version", "-play"},
-	} {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			var out, errb bytes.Buffer
-			code := run(t.Context(), args, testDeps(t), strings.NewReader(""), &out, &errb)
-			if code != 2 {
-				t.Errorf("exit = %d, want 2 — a dropped mode is a silently different command", code)
-			}
-			if !strings.Contains(errb.String(), "modes") {
-				t.Errorf("stderr = %q, want it to name the collision", errb.String())
-			}
-		})
+	strFlags := stringFlagNames(t)
+	modes := declaredModes(t)
+	if len(modes) < 7 {
+		t.Fatalf("derived %d modes; run() declares at least seven, so this check is "+
+			"under-deriving and would certify a set nobody chose", len(modes))
+	}
+	for i, a := range modes {
+		for _, b := range modes[i+1:] {
+			args := append(argvForMode(strFlags, a.name), argvForMode(strFlags, b.name)...)
+			t.Run(a.name+" "+b.name, func(t *testing.T) {
+				var out, errb bytes.Buffer
+				code := run(t.Context(), args, testDeps(t), strings.NewReader(""), &out, &errb)
+				if code != 2 {
+					t.Errorf("`define %s` exit = %d, want 2 — a dropped mode is a silently "+
+						"different command", strings.Join(args, " "), code)
+				}
+				if !strings.Contains(errb.String(), "modes") {
+					t.Errorf("stderr = %q, want it to name the collision", errb.String())
+				}
+			})
+		}
 	}
 }
 
-// stringFlags is the set of flag names declared with fs.String, derived the same
-// way declaredModes derives the mode list.
+// flagsDeclaredWith maps `x := fs.<Kind>("name", …)` to x -> "-name".
 //
-// It exists so the word-refusal check below can build argv per mode without
-// hand-knowing that -forget takes a value and the rest do not: `-forget cat`
-// means "forget cat", so the stray word has to be a THIRD argument there and a
-// second one everywhere else.
-func stringFlags(t *testing.T) map[string]bool {
+// ONE WALKER, PARAMETERISED. There were two, differing only in the selector they
+// matched and the map they built (#49 minor, ARCH-DRY) — and two copies of an AST
+// walk is two things to widen the next time a flag is declared a new way.
+func flagsDeclaredWith(t *testing.T, kind string) map[string]string {
 	t.Helper()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "main.go", nil, 0)
 	if err != nil {
 		t.Fatalf("parsing main.go: %v", err)
 	}
-	out := map[string]bool{}
+	out := map[string]string{}
 	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			return true
+		}
+		id, ok := as.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		call, ok := as.Rhs[0].(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "String" {
+		if !ok || sel.Sel.Name != kind {
 			return true
 		}
 		lit, ok := call.Args[0].(*ast.BasicLit)
@@ -729,10 +746,30 @@ func stringFlags(t *testing.T) map[string]bool {
 			return true
 		}
 		if name, err := strconv.Unquote(lit.Value); err == nil {
-			out["-"+name] = true
+			out[id.Name] = "-" + name
 		}
 		return true
 	})
+	return out
+}
+
+// argvForMode is one mode as a user would type it: a string flag needs a value,
+// a bool flag is the name alone. Derived, so `-forget` is not special-cased by
+// memory in the two tests that build argv.
+func argvForMode(strFlags map[string]bool, name string) []string {
+	if strFlags[name] {
+		return []string{name, "x"}
+	}
+	return []string{name}
+}
+
+// stringFlagNames is the SET of flag names declared with fs.String.
+func stringFlagNames(t *testing.T) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for _, name := range flagsDeclaredWith(t, "String") {
+		out[name] = true
+	}
 	return out
 }
 
@@ -760,7 +797,7 @@ func TestEveryModeRefusesATrailingWord(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("DEFINE_LLM_BASE_URL", "https://api.anthropic.com")
 
-	strFlags := stringFlags(t)
+	strFlags := stringFlagNames(t)
 	modes := declaredModes(t)
 	if len(modes) < 7 {
 		t.Fatalf("derived %d modes; run() declares at least seven, so this check is "+
@@ -768,10 +805,7 @@ func TestEveryModeRefusesATrailingWord(t *testing.T) {
 	}
 	for _, m := range modes {
 		t.Run(m.name, func(t *testing.T) {
-			args := []string{m.name, "cat"}
-			if strFlags[m.name] {
-				args = []string{m.name, "x", "cat"}
-			}
+			args := append(argvForMode(strFlags, m.name), "cat")
 			var out, errb bytes.Buffer
 			code := run(t.Context(), args, testDeps(t), strings.NewReader(""), &out, &errb)
 			if code != 2 {
@@ -961,38 +995,8 @@ func TestEveryDispatchedModeIsInTheCollisionList(t *testing.T) {
 	}
 
 	// 1. Every `x := fs.Bool("name", …)` — the variable a flag is read through,
-	//    and the name a user types.
-	flagName := map[string]string{}
-	ast.Inspect(file, func(n ast.Node) bool {
-		as, ok := n.(*ast.AssignStmt)
-		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-			return true
-		}
-		id, ok := as.Lhs[0].(*ast.Ident)
-		if !ok {
-			return true
-		}
-		call, ok := as.Rhs[0].(*ast.CallExpr)
-		if !ok || len(call.Args) == 0 {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		if sel.Sel.Name != "Bool" {
-			return true
-		}
-		lit, ok := call.Args[0].(*ast.BasicLit)
-		if !ok || lit.Kind != token.STRING {
-			return true
-		}
-		name, err := strconv.Unquote(lit.Value)
-		if err == nil {
-			flagName[id.Name] = "-" + name
-		}
-		return true
-	})
+	//    and the name a user types. Shared with stringFlagNames' walker.
+	flagName := flagsDeclaredWith(t, "Bool")
 	// A mode can also be a bool LOCAL that names its flag directly —
 	// `forgetting := isSet(fs, "forget")`. That is one of the six, and the first
 	// version of this guard missed it (#8 BR-11): it found five, and its
