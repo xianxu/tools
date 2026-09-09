@@ -214,3 +214,78 @@ line removed, `fs.Usage` prose names `--version`, and the package-var mutation i
 
 Verified: `go build ./...`, `go vet ./...`, `go vet -tags conformance ./cmd/define/`,
 `gofmt -l` clean, `go test ./...` fully green.
+
+### 2026-09-09 — boundary review round 2: FIX-THEN-SHIP, four Importants closed
+
+Round 2 mutation-verified all five round-1 fixes independently and found no
+Criticals. Its four new Importants:
+
+**I-2 — the mode x word half was still hand-enumerated (3rd in family
+`two-commands-one-line`).** The mode x mode half already derived every pair from
+`declaredModes`, which is why a seventh mode got pair coverage free; the word half
+was six hand-written switch arms plus hand-listed tests, so a new mode joined the
+pair matrix automatically and got NO word coverage — *exactly* how `-version`
+reached production swallowing one, and `-llm-check` before it.
+`TestEveryModeRefusesATrailingWord` now iterates the derived list (with
+`stringFlags` deriving argv shape, so `-forget` gets a value and the rest do not),
+and an eighth mode is covered the day its row is added. Mutation-verified: deleting
+the `-version` arm reddens exactly that subtest. It also sets the three
+`DEFINE_LLM_*` vars, because the review measured the old test making a **live 1.2s
+model call** when `-llm-check` regressed.
+
+**I-3 — an asserted invariant that nothing enforced, both halves.** `main.go` and
+`atlas/define.md` both claim `--version` answers ABOVE `withStore`; the reviewer
+moved the dispatch below it and the whole suite stayed green, because `deps{}`
+leaves `newStore` nil and `withStore` a no-op. The test now injects a `newStore`
+that FAILS if built, so the position is pinned rather than described — the
+reviewer's exact mutation now reddens. Second half: nothing ran `-tags
+conformance`, so BR-2's fix protected only whoever remembered the command. Added
+`scripts/merge-checks.d/10-release-stamp.sh`, which the CI workflow already
+dispatches through `run-merge-checks.sh`, scoped to `-run Ldflags` so the gate
+makes no live model or dictionary calls. Mutation-verified end to end: renaming
+`main.version` now fails the MERGE GATE, not just a test somebody might run. The
+fleet-wide `CONFORMANCE_STRICT` question stays with ariadne#37; this is the
+repo-local floor that does not wait on it.
+
+**I-4 — the compiled-artifact guard was blind to the artifact this window
+removed.** `TestNoBinariesInHistory` knew only Mach-O and ELF magic, so a `.pyc`
+walked into a now-public repo and the guard reported green. Extended by EXACT
+extension (`.pyc`, `.pyo`, `.class`, `.o`, `.a`, `.so`, `.dylib`, `.wasm`) — which
+carries none of the imprecision the magic-bytes comment rejected, since a file
+named `.pyc` is a compiled module with no judgment involved. The existing blob
+`b1fc21e3` (7892 bytes) is recorded in `acceptedCompiledBlobs` as debt ACCEPTED
+rather than paid: rewriting would move `7380263`, the commit `v0.1.0` tags and the
+formula's `sha256` pins. `TestAcceptedCompiledBlobsAreStillReachable` fails if a
+waiver outlives its debt. Both halves mutation-verified.
+
+**I-1 — the released artifact predates the fix. Operator chose to cut `v0.1.1`.**
+`v0.1.0` = `7380263`, which contains neither `512c706` (the BR-1/BR-4 fix) nor
+`43559b0`. So the tarball the formula pins ships a `define` where
+`--version --play` drops `--play`. Done-when #1 is NOT ticked against that
+artifact: `v0.1.1` is tagged on main after merge and the tap's `url` + `sha256`
+bumped, then verified by reinstalling. Recorded under `## Revisions`.
+
+Minors closed: two stale claims about WHERE `--llm-check` dispatches deleted
+rather than corrected (a statement about dispatch position belongs at the dispatch
+site); the install recipe reduced to ONE canonical copy — root README keeps the
+commands and links `cmd/define/README.md#install` for the why, and the miscounted
+"first two lines" (it was lines 1 and 3) is fixed; the dangling `[[...]]` in
+lessons.md replaced with the actual lesson; and a note that the conformance build
+deliberately omits the formula's `GOFLAGS`, since `-trimpath -mod=readonly` are
+orthogonal to the `-X` symbol path.
+
+Verified: `go build ./...`, `go vet ./...`, `go vet -tags conformance`, `gofmt -l`
+clean, `go test ./...` green, `go test -tags conformance -run Ldflags` green, and
+`bash scripts/run-merge-checks.sh` green.
+
+## Revisions
+
+**2026-09-09 — Done-when #1 is satisfied by `v0.1.1`, not `v0.1.0`.**
+*Reason:* the boundary review (I-1) measured that `v0.1.0` = `7380263` predates
+`512c706`'s Critical fix, so the published tarball ships a `define` that silently
+drops a mode. Ticking "installs a working `define`" against it would record a
+claim about an artifact lacking this issue's own work.
+*Delta:* the release cut for this issue is `v0.1.1`, tagged on `main` after the
+merge, with `url` + `sha256` bumped in `xianxu/homebrew-tools` and verified by
+reinstalling from the tap. `v0.1.0` remains tagged and reachable as the first
+release; it is superseded rather than withdrawn.
