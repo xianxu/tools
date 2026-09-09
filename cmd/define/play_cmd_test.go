@@ -496,3 +496,123 @@ func TestTheProducedSittingCapabilityCallsTheRealThing(t *testing.T) {
 			"pass while /play did nothing in production")
 	}
 }
+
+// A WORD DROPPED IN A SITTING STOPS BEING HIGHLIGHTED (#48, found by applying
+// BR-5's root cause rather than by a reviewer raising it).
+//
+// The highlight set is DERIVED FROM THE DECK, and #48 is the first thing that
+// lets the deck shrink while a session is running: before /play, a sitting was
+// always its own process and a stale set died with it. The loop caches the set
+// in a local — replraw.go says so, and /lang already had to solve the same
+// problem — so a word dropped mid-sitting would go on being painted as known at
+// the prompt afterwards.
+//
+// This is the THIRD field of one bug: the resize's screen shape (BR-5), the
+// resize's opt.width (BR-14), and the deck's own contents. The rule they share:
+// when a sitting mutates something the loop caches, the loop must be told.
+func TestAWordDroppedInASittingLeavesTheHighlightSet(t *testing.T) {
+	v := &memVocabulary{}
+	v.Add("keel")
+	v.Add("hot dog")
+	if !v.Has(store.Key("keel")) {
+		t.Fatal("the fixture did not add the word, so this proves nothing")
+	}
+	if v.MaxPhraseWords() != 2 {
+		t.Fatalf("MaxPhraseWords = %d, want 2 — the phrase is what makes the "+
+			"recount observable", v.MaxPhraseWords())
+	}
+
+	// THE PHRASE WIDTH COMES BACK DOWN. MaxPhraseWords is a property of the whole
+	// SET, so dropping the only multi-word entry must lower it or the scanner
+	// keeps looking ahead for phrases that cannot be there. `keel` stays, so the
+	// recount has something to land on — with an empty set 0 would be right and
+	// the assertion would prove nothing.
+	v.Forget("hot dog")
+	if v.Has(store.Key("hot dog")) {
+		t.Error("a dropped word is still in the highlight set; the prompt would keep " +
+			"painting it as known")
+	}
+	if !v.Has(store.Key("keel")) {
+		t.Error("Forget took a word it was not given")
+	}
+	if v.MaxPhraseWords() != 1 {
+		t.Errorf("MaxPhraseWords = %d after dropping the only phrase, want 1",
+			v.MaxPhraseWords())
+	}
+
+	// Forgetting what was never there is not an error and disturbs nothing — a
+	// drop can name a word this session never looked up.
+	v.Forget("never-added")
+	if !v.Has(store.Key("keel")) || v.MaxPhraseWords() != 1 {
+		t.Errorf("a no-op Forget changed the set: has(keel)=%v max=%d",
+			v.Has(store.Key("keel")), v.MaxPhraseWords())
+	}
+
+	// And the set empties cleanly, where 0 IS the right answer.
+	v.Forget("keel")
+	if v.MaxPhraseWords() != 0 {
+		t.Errorf("MaxPhraseWords = %d on an empty set, want 0", v.MaxPhraseWords())
+	}
+}
+
+// AND THE DROP PATH CALLS IT — the wiring, not just the verb.
+//
+// Applying the rule this issue kept learning: a behaviour proved on the unit is
+// unproven at the site obliged to use it. Removing `d.vocab.Forget(out.Word)`
+// from the drop arm left the whole suite green.
+//
+// READ FROM THE SOURCE rather than driven, and the reason is worth recording: I
+// could not get the `d` gesture to reach the drop arm through playSession with a
+// scripted key channel — and while working that out, found that the existing
+// TestDropRecordsNoReview passes VACUOUSLY for the same reason. It asserts that
+// dropping records no review, which is also true when the drop never happens.
+// That is a separate finding about an existing test, noted in the issue's Log
+// rather than fixed here.
+//
+// So this guard checks that the arm contains the call. It cannot prove the arm
+// runs; it can prove the call is not silently deleted, which is the regression
+// that actually happened during this issue.
+func TestTheDropArmUpdatesTheHighlightSet(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "play_loop.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inDropArm, callsForget bool
+	ast.Inspect(file, func(n ast.Node) bool {
+		clause, ok := n.(*ast.CaseClause)
+		if !ok {
+			return true
+		}
+		for _, expr := range clause.List {
+			sel, ok := expr.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "OutcomeDrop" {
+				continue
+			}
+			inDropArm = true
+			for _, stmt := range clause.Body {
+				ast.Inspect(stmt, func(m ast.Node) bool {
+					c, ok := m.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					if s, ok := c.Fun.(*ast.SelectorExpr); ok && s.Sel.Name == "Forget" {
+						if inner, ok := s.X.(*ast.SelectorExpr); ok && inner.Sel.Name == "vocab" {
+							callsForget = true
+						}
+					}
+					return true
+				})
+			}
+		}
+		return true
+	})
+	if !inDropArm {
+		t.Fatal("no OutcomeDrop case in play_loop.go; this guard would certify nothing")
+	}
+	if !callsForget {
+		t.Error("the OutcomeDrop arm does not call d.vocab.Forget — the deck loses the " +
+			"word and the session's highlight set keeps it, so the prompt goes on " +
+			"painting a dropped word as known")
+	}
+}

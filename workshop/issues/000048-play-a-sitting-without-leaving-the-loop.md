@@ -217,3 +217,57 @@ said the frame stayed off the terminal because of it. The sweep proved otherwise
 removing the disarm reddened nothing, because `repaint`'s gate already stops the
 flush. It is hygiene, and the comment says so now rather than claiming a
 load-bearing role it does not have.
+
+### 2026-09-08 — the root cause, and what it found
+
+The operator asked for the root cause rather than another surface fix. Reading
+the fourteen findings across four plan rounds and four close rounds, they are not
+fourteen mistakes. They are three, and arguably one.
+
+**1. I check one side of a relationship.** `enterAlt` is idempotent — but
+`restore` is shared (PQ-1). The sitting gets its own `finish` — but the entity
+row still called `newConsole` (PQ-8). Two painters were handled — but so were two
+resize watchers (PQ-4). The screen's shape was handed back — but not `opt.width`
+(BR-5, BR-14). The consumer was pinned — but not the producer (BR-19). The seam
+was pinned — but not the site (BR-17).
+
+Every one is a design that creates a RELATIONSHIP — borrower/owner,
+producer/consumer, seam/site, acquire/release — where I reasoned about the half I
+was building and not the half it implies.
+
+**2. I test the property as I conceive it.** Four wrong interrupt tests (BR-7),
+each passing; a test named "either door" that invoked neither (BR-8); three
+refusals ticked and unwritten (BR-6). And when I swept, I chose the mutation that
+matched MY model of the break — removing `restore` — rather than the one a
+careless edit would make, which was removing `Set` and `restore` together.
+
+**3. I write prose in the same motion as code, and prose has no compiler.** A
+false Go rule in the rule-store (BR-18); a plan ticked for work that did not ship
+(BR-15); four wrong claims about existing code in `#8`.
+
+**Underneath all three: I validate my model of the system instead of the system.**
+The counter-practice is not "be more careful" — it is that every check that
+actually worked this session was an EXECUTION. The compiler found
+`Progress.FirstSeen`. A four-line program found the false defer rule. A probe
+found the Havana midnight. The reviewer's mutation found what mine missed. The
+operator's smoke test found `words/day 0.0`. Reasoning found none of them.
+
+**Applying it, before this round's reviewer could.** If the rule is "a sitting
+mutates state the loop caches, and the loop must be told", then the shape was two
+of three: **the DECK is the third.** A sitting can drop a word (`d`), and the
+loop caches the highlight set in a local — `replraw.go` says so explicitly,
+because `/lang` had to solve the same problem. Before `#48` a word could only
+leave the deck in a one-shot `--forget`, where a stale set died with the process.
+
+So: look a word up, `/play`, drop it, come back — and it was still painted green
+at the prompt. Found by applying the rule rather than by a review. `Vocabulary`
+gains `Forget`, symmetric with the `Add` that `Capture` already does, with the
+phrase-width recount that is easy to miss.
+
+**And it turned up a second thing.** While trying to drive the drop path in a
+test, the `d` gesture would not reach the arm — and `TestDropRecordsNoReview`
+(`play_loop_test.go:1408`) passes for the same reason. It asserts that dropping
+records no review, which is ALSO true when the drop never happens. That is a
+pre-existing vacuous test, not this issue's to fix, and it is recorded here so it
+is not lost: the drop wiring is guarded from the source instead, which catches the
+regression that actually occurred.

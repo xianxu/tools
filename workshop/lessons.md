@@ -4110,3 +4110,29 @@ write the second test that reads the producer.** Usually it is an AST guard —
 "the closure assigned to this field calls the real function" — and it costs a
 dozen lines. The mutation to check it with is the one that makes the producer a
 stub, not the one that breaks the consumer.
+
+**THE ROOT CAUSE UNDER MOST OF THIS FILE: I validate my model of the system
+instead of the system.**
+
+`#48` produced fourteen findings across eight gate rounds, and they collapse into
+three shapes — checking one side of a relationship I created, testing the property
+as I conceived it (with the mutation that matches my conception), and writing
+confident prose that no compiler reads. All three are the same act: reasoning
+where executing was available.
+
+The evidence is that EVERY check that worked this session was an execution. The
+compiler found a field I was sure existed. A four-line program found a Go rule I
+had just written into this file, wrongly. A probe over tzdata found the
+midnight-DST bug. The reviewer's mutation found what my mutation missed. The
+operator's smoke test found a figure that read as broken. Reasoning found none of
+them; every one cost seconds to check.
+
+**So: when a claim is checkable in under a minute, check it.** What a function
+does, what a field holds, what a test actually covers, what the language
+guarantees. Not because carefulness fails, but because at this cost there is no
+reason to spend confidence instead.
+
+**And when a design creates a relationship, enumerate BOTH sides before writing
+it.** Borrower and owner, producer and consumer, seam and site, acquire and
+release. Write the second half down even when the first is all you are building —
+that list is where every "one field over" bug in this issue was hiding.

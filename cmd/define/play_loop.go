@@ -452,6 +452,17 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
 				} else if removed {
 					held.dropped(out.Word)
+					// AND THE HIGHLIGHT SET, because it is derived from the deck
+					// and the deck just shrank (#48). Before /play a sitting was
+					// always its own process, so a stale set died with it; now the
+					// loop outlives the sitting and would go on painting a dropped
+					// word as known at the prompt.
+					//
+					// Beside held.dropped rather than inside it: that keeps the
+					// SITTING's view of the deck, this keeps the SESSION's.
+					if d.vocab != nil {
+						d.vocab.Forget(out.Word)
+					}
 					refresh()
 					fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
 				}

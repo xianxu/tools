@@ -29,6 +29,15 @@ type Vocabulary interface {
 	Load()
 	// Add puts a word in the set, normalising it the way the deck does.
 	Add(word string)
+	// Forget takes one out, and exists because the set is DERIVED FROM THE DECK
+	// and the deck can now shrink while a session is running (#48).
+	//
+	// Before /play, a word could only leave the deck in a one-shot --forget, and
+	// the highlight set died with the process. A sitting entered from the loop
+	// outlives nothing — the loop does — so a word dropped mid-sitting would go
+	// on being painted as known at the prompt afterwards. Add without Forget is
+	// half a set.
+	Forget(word string)
 	// Has answers for an ALREADY-NORMALISED key — callers build candidate keys as
 	// they scan text, so normalising here would mean doing it twice per token.
 	Has(key string) bool
@@ -71,6 +80,31 @@ type memVocabulary struct {
 
 // Load is a no-op: there is nothing durable behind an in-memory set.
 func (v *memVocabulary) Load() {}
+
+// Forget removes a word, and RECOUNTS the phrase width.
+//
+// The recount is the part that is easy to miss: MaxPhraseWords is a property of
+// the whole set, so dropping the only two-word entry must bring it back down or
+// the scanner keeps looking ahead for phrases that cannot be there. Add
+// maintains it going up; this maintains it going down.
+func (v *memVocabulary) Forget(word string) {
+	key := store.Key(word)
+	if key == "" {
+		return
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.words[key] {
+		return
+	}
+	delete(v.words, key)
+	v.maxWords = 0
+	for w := range v.words {
+		if n := len(wordRuns(w)); n > v.maxWords {
+			v.maxWords = n
+		}
+	}
+}
 
 func (v *memVocabulary) Add(word string) {
 	key := store.Key(word)
