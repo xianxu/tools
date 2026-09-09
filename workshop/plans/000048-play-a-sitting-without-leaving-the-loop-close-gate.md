@@ -435,6 +435,89 @@ rounds:
           family: guard-scope-narrower-than-claim
           round: 5
       blocked: false
+    - "n": 6
+      timestamp: "2026-09-08T21:39:28-07:00"
+      agent: claude
+      dispose:
+        - id: BR-17
+          disposition: addressed
+          note: 'Mutation-verified: no-op''ing cc.startSitting at replraw.go:540 reddens TestTypingSlashPlayRunsASitting and TestTheLoopAppliesTheShapeASittingHandsBack.'
+          round: 6
+        - id: BR-19
+          disposition: addressed
+          note: 'Mutation-verified: replacing newConsole''s newSitting closure body with `return 0, winSize{}` reddens TestTheProducedSittingCapabilityCallsTheRealThing.'
+          round: 6
+        - id: BR-6
+          disposition: not-addressed
+          note: 'Re-measured at 116d0f3: gutting runPlayCommand to a bare nil check plus c.startSitting() leaves the whole ./cmd/define suite green. No test names runPlayCommand.'
+          round: 6
+        - id: BR-15
+          disposition: not-addressed
+          note: Entity rows and the DID-NOT-SHIP record are fixed; the plan still carries `newSitting func() console`, two pty claims contradicting Task 2 Step 2, no Forget row, no revision for rounds 3-6, and no backticked test names. I confirmed by execution that a bogus `new` row still passes the guard while the plan is inProgress.
+          round: 6
+        - id: BR-1
+          disposition: not-addressed
+          note: play_loop.go:30 still hand-rolls the sentence; no rule stated in code, plan or lessons.md.
+          round: 6
+        - id: BR-12
+          disposition: not-addressed
+          note: Unchanged - play_loop.go:30 stdout/exit-0 versus play_cmd.go:44-45 stderr/exit-1.
+          round: 6
+        - id: BR-11
+          disposition: not-addressed
+          note: replraw.go:123 still assigns con.newSitting unconditionally; the field doc at replraw.go:189-193 is unchanged since 2dc2100.
+          round: 6
+        - id: BR-13
+          disposition: not-addressed
+          note: play_cmd_test.go:171-180 still re-implements reviewEvents; the AST preamble is now duplicated four ways (:32, :108, :321, :458).
+          round: 6
+        - id: BR-16
+          disposition: not-addressed
+          note: Signature and name unchanged; runEditor still passes con.stderr, which is the `live` screen the closure already captures.
+          round: 6
+        - id: BR-20
+          disposition: not-addressed
+          note: Guard still parses replraw.go alone; play_cmd.go:116 still calls repl.Resize directly.
+          round: 6
+      findings:
+        - id: BR-21
+          severity: Important
+          title: memVocabulary.Forget recounts maxWords without Add's phraseRunsJoin filter, so a drop can widen the phrase window past what Add allows
+          detail: |-
+            vocab.go:101-106 recomputes maxWords as max(len(wordRuns(w))) over every key, while Add
+            (vocab.go:129-131) raises it only when phraseRunsJoin(key, runs) - because a key holding
+            other punctuation is permanently unmatchable and counting it makes every stream hold a
+            wider window for a match that cannot happen, a cost Add's comment records as measured.
+            Executed at 116d0f3: Add("keel"); Add("e.g."); Add("junk") gives MaxPhraseWords()==1, and
+            Forget("junk") raises it to 2. Any /play drop on a deck holding one punctuated entry
+            widens the streaming renderer's lookahead for the rest of the session. No wrong highlight
+            results, so the blast radius is latency (ARCH-CONSTRAINTS), but the invariant is broken
+            and the two maintainers of one derived aggregate should be one helper (ARCH-DRY). The
+            existing test uses `keel` and `hot dog` and cannot see it - written from the fix's own
+            model.
+          family: inverse-op-diverges-from-its-pair
+          round: 6
+        - id: BR-22
+          severity: Important
+          title: suspend/resume and the sitting's finish are unpinned at the call site, and BR-19's hand-written enumeration of wiring sites was wrong
+          detail: |-
+            This is the 5th finding in family plan-named-test-not-written. Not asking for these
+            instances to be patched - the rule is the deliverable. Measured at 116d0f3, full
+            ./cmd/define suite per mutation: deleting repl.suspend() (play_cmd.go:97) and
+            repl.resume() (play_cmd.go:117) leaves it GREEN; replacing the sitting console's finish
+            body (play_cmd.go:137-140) with a no-op leaves it GREEN; gutting runPlayCommand leaves it
+            GREEN (BR-6). So the issue's headline capability - the editor's throttled painter going
+            quiet so it cannot land inside the sitting's frame - and the README's promised
+            summary-in-the-scrollback are both unpinned. BR-19 stated the both-ends rule and then
+            HAND-LISTED the sites ("the enumeration is exact - three wiring sites"); it missed three.
+            The rule: an enumeration of sites obliged to obey a capability must be DERIVED from the
+            source, not listed from memory - the discipline TestASittingFromTheLoopNeverEntersRawMode
+            already applies to callees and TestBothShapeRoutesGoThroughOnePlace to routes. One AST
+            guard over sittingInPlace's body (calls suspend, calls resume, writes Transcript() into
+            repl), shaped like the drop-arm guard at play_cmd_test.go:557-616, covers the class.
+          family: plan-named-test-not-written
+          round: 6
+      blocked: false
 ---
 
 # Gate ledger — tools#48 (boundary-review)
@@ -673,6 +756,51 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   after, so the class the guard names is enforced only where it happens to
   look.
 
+## Round 6 — 2026-09-08T21:39:28-07:00 (claude) — passed
+
+### Disposed
+
+- BR-17 — addressed — Mutation-verified: no-op'ing cc.startSitting at replraw.go:540 reddens TestTypingSlashPlayRunsASitting and TestTheLoopAppliesTheShapeASittingHandsBack.
+- BR-19 — addressed — Mutation-verified: replacing newConsole's newSitting closure body with `return 0, winSize{}` reddens TestTheProducedSittingCapabilityCallsTheRealThing.
+- BR-6 — not-addressed — Re-measured at 116d0f3: gutting runPlayCommand to a bare nil check plus c.startSitting() leaves the whole ./cmd/define suite green. No test names runPlayCommand.
+- BR-15 — not-addressed — Entity rows and the DID-NOT-SHIP record are fixed; the plan still carries `newSitting func() console`, two pty claims contradicting Task 2 Step 2, no Forget row, no revision for rounds 3-6, and no backticked test names. I confirmed by execution that a bogus `new` row still passes the guard while the plan is inProgress.
+- BR-1 — not-addressed — play_loop.go:30 still hand-rolls the sentence; no rule stated in code, plan or lessons.md.
+- BR-12 — not-addressed — Unchanged - play_loop.go:30 stdout/exit-0 versus play_cmd.go:44-45 stderr/exit-1.
+- BR-11 — not-addressed — replraw.go:123 still assigns con.newSitting unconditionally; the field doc at replraw.go:189-193 is unchanged since 2dc2100.
+- BR-13 — not-addressed — play_cmd_test.go:171-180 still re-implements reviewEvents; the AST preamble is now duplicated four ways (:32, :108, :321, :458).
+- BR-16 — not-addressed — Signature and name unchanged; runEditor still passes con.stderr, which is the `live` screen the closure already captures.
+- BR-20 — not-addressed — Guard still parses replraw.go alone; play_cmd.go:116 still calls repl.Resize directly.
+
+### Raised
+
+- **BR-21** [Important] `inverse-op-diverges-from-its-pair` memVocabulary.Forget recounts maxWords without Add's phraseRunsJoin filter, so a drop can widen the phrase window past what Add allows
+  vocab.go:101-106 recomputes maxWords as max(len(wordRuns(w))) over every key, while Add
+  (vocab.go:129-131) raises it only when phraseRunsJoin(key, runs) - because a key holding
+  other punctuation is permanently unmatchable and counting it makes every stream hold a
+  wider window for a match that cannot happen, a cost Add's comment records as measured.
+  Executed at 116d0f3: Add("keel"); Add("e.g."); Add("junk") gives MaxPhraseWords()==1, and
+  Forget("junk") raises it to 2. Any /play drop on a deck holding one punctuated entry
+  widens the streaming renderer's lookahead for the rest of the session. No wrong highlight
+  results, so the blast radius is latency (ARCH-CONSTRAINTS), but the invariant is broken
+  and the two maintainers of one derived aggregate should be one helper (ARCH-DRY). The
+  existing test uses `keel` and `hot dog` and cannot see it - written from the fix's own
+  model.
+- **BR-22** [Important] `plan-named-test-not-written` suspend/resume and the sitting's finish are unpinned at the call site, and BR-19's hand-written enumeration of wiring sites was wrong
+  This is the 5th finding in family plan-named-test-not-written. Not asking for these
+  instances to be patched - the rule is the deliverable. Measured at 116d0f3, full
+  ./cmd/define suite per mutation: deleting repl.suspend() (play_cmd.go:97) and
+  repl.resume() (play_cmd.go:117) leaves it GREEN; replacing the sitting console's finish
+  body (play_cmd.go:137-140) with a no-op leaves it GREEN; gutting runPlayCommand leaves it
+  GREEN (BR-6). So the issue's headline capability - the editor's throttled painter going
+  quiet so it cannot land inside the sitting's frame - and the README's promised
+  summary-in-the-scrollback are both unpinned. BR-19 stated the both-ends rule and then
+  HAND-LISTED the sites ("the enumeration is exact - three wiring sites"); it missed three.
+  The rule: an enumeration of sites obliged to obey a capability must be DERIVED from the
+  source, not listed from memory - the discipline TestASittingFromTheLoopNeverEntersRawMode
+  already applies to callees and TestBothShapeRoutesGoThroughOnePlace to routes. One AST
+  guard over sittingInPlace's body (calls suspend, calls resume, writes Transcript() into
+  repl), shaped like the drop-arm guard at play_cmd_test.go:557-616, covers the class.
+
 ## Open findings
 
 - **BR-1** [Minor] `refusal-enumeration-incomplete` the two entry points would print different sentences for the same nil deck
@@ -682,6 +810,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-13** [Minor] `test-helper-duplicated` play_cmd_test.go re-implements reviewEvents and duplicates the AST-parse preamble
 - **BR-15** [Important] `plan-table-stale` the durable plan is 0/15 ticked at close, which exempts its two new-entity rows from the guard that would have checked them
 - **BR-16** [Minor] `new-seam-surface-unshaped` console.newSitting takes a parameter it already captures, and is named like a constructor while running a whole sitting
-- **BR-17** [Important] `plan-named-test-not-written` the /play dispatch in runEditor is unpinned - making the command a no-op leaves the suite green
-- **BR-19** [Important] `plan-named-test-not-written` newConsole's newSitting closure can stop calling sittingInPlace entirely and the whole suite stays green
 - **BR-20** [Minor] `guard-scope-narrower-than-claim` the one-place-for-a-shape guard parses only replraw.go while a second bare Resize lives in play_cmd.go
+- **BR-21** [Important] `inverse-op-diverges-from-its-pair` memVocabulary.Forget recounts maxWords without Add's phraseRunsJoin filter, so a drop can widen the phrase window past what Add allows
+- **BR-22** [Important] `plan-named-test-not-written` suspend/resume and the sitting's finish are unpinned at the call site, and BR-19's hand-written enumeration of wiring sites was wrong

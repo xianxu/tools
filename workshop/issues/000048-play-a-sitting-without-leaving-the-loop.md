@@ -1,12 +1,13 @@
 ---
 id: 000048
-status: working
+status: codecomplete
 deps: ["tools#6"]
 github_issue:
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-08
 estimate_hours: 3.60
 started: 2026-09-07T23:50:42-07:00
+actual_hours: 3.40
 ---
 
 # /play: a sitting without leaving the loop
@@ -175,6 +176,7 @@ now needs. The work is joining three seams, and the failure mode is writing a
 fourth path through terminal setup instead.
 
 ### 2026-09-08 — built, and smoke-tested by the operator
+- 2026-09-08: closed — /play ships: a sitting from the definition prompt, returning to it on both exits. OPERATOR SMOKE TEST PASSED on a freshly restaged deck, Ctrl-C included. ROOT CAUSE WORK, at the operator request: the fourteen findings across eight rounds collapse into three shapes — I check one side of a relationship I create (borrower/owner, producer/consumer, seam/site, acquire/release), I test the property as I conceive it and sweep with the mutation matching my conception rather than the one a careless edit makes, and I write prose no compiler reads. Under all three: I validate my model instead of the system, and every check that actually worked this session was an EXECUTION (the compiler found Progress.FirstSeen; a four-line program found the false defer rule I had written into lessons.md; a tzdata probe found the midnight-DST bug; the reviewer mutation found what mine missed; the operator smoke test found words/day 0.0). APPLIED RATHER THAN NARRATED, and it found a defect no review raised: if a sitting mutates state the loop caches, the resize screen shape (BR-5) and opt.width (BR-14) were two of three — the DECK is the third. A sitting drops a word with d, the loop caches the highlight set in a local (replraw.go says so, because /lang had to solve the same problem), and before /play a word could only leave the deck in a one-shot where the stale set died with the process. Look a word up, /play, drop it, come back: still painted green. Vocabulary gains Forget, symmetric with the Add that Capture already does, with the phrase-width recount that is easy to miss; TestAWordDroppedInASittingLeavesTheHighlightSet pins the verb (removing the recount reddens it) and TestTheDropArmUpdatesTheHighlightSet pins the wiring from the source. ALSO RECORDED: TestDropRecordsNoReview (play_loop_test.go:1408) passes VACUOUSLY — dropping records no review is also true when the drop never happens, which is why the gesture could not be driven in a test. Pre-existing, not this issue to fix, written down so it is not lost. BR-19: a capability delivered through an injected field is pinned at BOTH ends — a test installing its own double proves the consumer and nothing about the production assembly; TestTheProducedSittingCapabilityCallsTheRealThing reads the closure newConsole installs and reddens when it stops calling sittingInPlace. BR-17: TestTypingSlashPlayRunsASitting drives runEditor with a scripted key channel — no terminal needed, which three existing tests already showed — and reddens when the recorded intent becomes a no-op. BR-18: a FALSE Go rule in lessons.md and a code comment, that return code, shape evaluates before the defer even with named results; verified with a four-line program that it does not, named vs unnamed being the axis, and both rewritten. BR-5/BR-14: applyShape is the one place a shape means anything, with guards deriving both routes from the source. BR-7: four wrong tests each passing; what shipped orders the fire by making the sitting consume a resize first and asserts both halves. BR-6, BR-8, BR-9, BR-15 all addressed; one plan step is UNTICKED with a sentence saying what shipped instead. Earlier: liveScreen.suspend/resume, a console assembled by hand because newConsole acquires three things a borrower must not, console.newSitting built where sess is in scope, the summary written UP into the editor buffer. go test -count=1 ./... green; go vet clean under default and pty; gofmt clean.; review verdict: FIX-THEN-SHIP
 
 **Operator smoke test PASSED** on a freshly restaged deck (ten words, five
 authored cloze items, no events), including the Ctrl-C path the first run had

@@ -729,6 +729,11 @@ sitting, so anything true of one is true of the other.
 
 Ctrl-C inside a sitting ends the SITTING. At the prompt it still quits `define`.
 
+In a directory with no deck, both forms say which reason — nothing here yet, or
+`DEFINE_NO_CAPTURE` set — and exit `1`, the same as `--forget`, `--harvest`,
+`--reflect` and `/history`. An EMPTY deck is different and exits `0`: having
+looked nothing up yet is not an error.
+
 `/stats` is the screen above, from the prompt — the same figures `--stats`
 prints, because both doors reach one fold. It takes no argument: it reads
 everything.

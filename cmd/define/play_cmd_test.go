@@ -616,3 +616,33 @@ func TestTheDropArmUpdatesTheHighlightSet(t *testing.T) {
 			"painting a dropped word as known")
 	}
 }
+
+// FORGET CANNOT RAISE THE BOUND ABOVE WHAT ADD PERMITS (#48 I-1).
+//
+// Add raises MaxPhraseWords only for keys whose tokens can REJOIN — a key holding
+// other punctuation (`e.g.`, `9/11`) is permanently unmatchable, and vocab.go
+// records the measured cost of counting it anyway. The first Forget recounted
+// with `len(wordRuns(w))` and no join check, so dropping any word could widen
+// every stream's lookahead for a match that cannot happen.
+//
+// The reviewer found it by EXECUTING it, which is this issue's whole lesson
+// arriving inside its own fix: I wrote the inverse of Add without reading Add.
+func TestForgetRecountsByTheSameRuleAddRaisesBy(t *testing.T) {
+	v := &memVocabulary{}
+	v.Add("keel")
+	v.Add("e.g.") // unmatchable: two runs that cannot rejoin
+	v.Add("junk")
+
+	before := v.MaxPhraseWords()
+	if before != 1 {
+		t.Fatalf("MaxPhraseWords = %d before any drop, want 1 — Add does not count "+
+			"an unmatchable key, and if it did this test would prove nothing", before)
+	}
+
+	v.Forget("junk")
+	if after := v.MaxPhraseWords(); after > before {
+		t.Errorf("MaxPhraseWords rose from %d to %d on a DROP — Forget recounted by a "+
+			"different rule than Add raises by, so every stream now holds a wider "+
+			"window for a match that cannot happen", before, after)
+	}
+}

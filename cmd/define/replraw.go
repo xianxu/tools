@@ -184,9 +184,15 @@ type console struct {
 	resizes <-chan winSize
 	// finish hands the terminal back — see handBack for the order and why.
 	finish func()
-	// newSitting runs today's review on THIS terminal, or is nil where one
-	// cannot run — a test's console, and the line-mode loop, which has no
-	// terminal at all. Nil is what /play refuses on (#48).
+	// newSitting runs today's review on THIS terminal, or is nil on a console
+	// that newConsole did not build — a test's double, and the line-mode loop,
+	// which has no terminal at all. Nil is what /play refuses on (#48).
+	//
+	// newConsole sets it UNCONDITIONALLY, including for `--play`'s own console
+	// where nothing reads it (only runEditor does). That is deliberate rather
+	// than an oversight: the alternative is a console that knows which loop is
+	// about to use it, and `newConsole`'s whole argument is that the screen
+	// constructor "IS the whole difference" between them (#48 BR-11).
 	// It returns the shape the terminal ended at, because a resize consumed
 	// during the sitting reaches nothing else — see applyShape.
 	newSitting func(ctx context.Context, d deps, opt options, keys <-chan Key,

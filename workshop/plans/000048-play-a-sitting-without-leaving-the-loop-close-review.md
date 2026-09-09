@@ -767,3 +767,200 @@ findings:
       after, so the class the guard names is enforced only where it happens to
       look.
 ```
+
+---
+
+## Re-review — 2026-09-08T21:39:28-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 48 — /play: a sitting without leaving the loop |
+| repo | tools |
+| issue file | workshop/issues/000048-play-a-sitting-without-leaving-the-loop.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | adcbcf1841ed6139fd0cc72f5adce4ad258e9c2a..116d0f326d5bb4d1d3531b6fcfe5dd098070ab40 |
+| command | sdlc close --issue 48 |
+| reviewer | claude |
+| timestamp | 2026-09-08T21:39:28-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Two of the three open Importants are genuinely closed this round and I mutation-verified both: gutting `newConsole`'s `newSitting` closure reddens `TestTheProducedSittingCapabilityCallsTheRealThing`, and no-op'ing the loop's `cc.startSitting` reddens `TestTypingSlashPlayRunsASitting` and `TestTheLoopAppliesTheShapeASittingHandsBack`. `applyShape`, `suspend`/`resume`'s single `repaint` gate, and the deck-shrink sweep (`d.deck.Forget` has exactly two call sites; only the loop-outliving one needed telling) are all solid. What stops a clean SHIP is one live defect and one measured coverage gap. The defect: `memVocabulary.Forget` recounts `maxWords` with a *different rule* than `Add` maintains it with — I ran it, and after a `Forget` a deliberately-unmatchable key raises `MaxPhraseWords` from 1 to 2, re-introducing the wider-lookahead cost `Add`'s own comment says was measured and rejected. The gap: I removed `repl.suspend()`/`repl.resume()` from `sittingInPlace`, and separately gutted its `finish`, and the whole `./cmd/define` suite stayed green both times — so the issue's headline capability and the README's promised summary-in-the-scrollback are both unpinned, and BR-19's hand-written enumeration of "exactly three wiring sites" was wrong.
+
+## 1. Strengths
+
+- **The producer guard is real, not decorative.** `play_cmd_test.go:452-500` reads `newConsole`'s installed closure from the source; I replaced its body with `return 0, winSize{}` and it reddened with its own message. That is BR-19's rule actually enforced, and it is confirmed-good ground to build on.
+- **The dispatch pin holds under mutation.** `replraw.go:540` → `TestTypingSlashPlayRunsASitting` (`play_cmd_test.go:398`): a no-op `startSitting` reddens two tests, not one.
+- **`applyShape` (`replraw.go:36-53`) is ARCH-DRY done right** — one function that *is* what a shape means, both replraw routes derived from the source by `TestBothShapeRoutesGoThroughOnePlace`, plus `TestApplyShapeSetsBothWidths` on the policy itself.
+- **One gate for "may I paint" (`screen.go:918-922`).** Both `stopped` and `suspended` live in `repaint`, the only writer to the tty, and `TestResumeDoesNotReviveAStoppedScreen` pins the interaction of the two flags rather than each alone.
+- **The deck-shrink shadow-sweep is complete.** `d.deck.Forget` has exactly two call sites — `main.go:1196` (one-shot `--forget`, stale set dies with the process) and `play_loop.go:451` (the sitting, which the loop outlives). Only the second needs telling, and it is told. ARCH-PURPOSE passes on this axis.
+- **`Task 2 Step 1` left unticked with "DID NOT SHIP" written into it** is the right artifact discipline, and the lessons entry that generalises it is well earned.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-1 — `memVocabulary.Forget`'s recount uses a different rule than `Add`, so `MaxPhraseWords` can rise above what `Add` permits** (`cmd/define/vocab.go:101-106`).
+
+`Add` (`vocab.go:129-131`) raises `maxWords` only when `phraseRunsJoin(key, runs)` — a key holding other punctuation (`e.g.`, `9/11`) is permanently unmatchable, and the comment records the measured cost of counting it anyway ("a single-word deck holds 5 bytes and adding the unmatchable `e.g.` holds 9"). `Forget`'s recount drops that filter:
+
+```go
+v.maxWords = 0
+for w := range v.words {
+    if n := len(wordRuns(w)); n > v.maxWords { v.maxWords = n }
+}
+```
+
+Executed, not reasoned: `Add("keel"); Add("e.g."); Add("junk")` → `MaxPhraseWords()==1`; `Forget("junk")` → `MaxPhraseWords()==2`. Any `/play` drop, on a deck containing one punctuated entry, widens the streaming renderer's lookahead window for the rest of the session. No wrong highlight results (`phraseGap` still refuses the candidate), so the blast radius is latency on the streaming path — ARCH-CONSTRAINTS, and ARCH-DRY for the duplicated maintenance rule.
+
+Fix sketch: one helper both sides call — `v.recount()` applying `phraseRunsJoin`, or in `Forget` `if n := len(runs); n > v.maxWords && phraseRunsJoin(w, runs)`. Extend `TestAWordDroppedInASittingLeavesTheHighlightSet` with a punctuated key; the current fixture (`keel`, `hot dog`) was written from the same mental model as the fix and cannot see this.
+
+**I-2 — `suspend`/`resume` and the sitting's `finish` are unpinned at the site; the enumeration that was supposed to prevent this was hand-written and wrong.**
+
+**This is the 5th finding in family `plan-named-test-not-written`.** Earlier rounds fixed instances (BR-6, BR-17, BR-19). Per the escalation rule I am not asking for these two instances to be patched — the rule is what needs fixing.
+
+Measured in a scratch checkout of `116d0f3`, full `./cmd/define` suite each time:
+
+| mutation | result |
+|---|---|
+| delete `repl.suspend()` (`play_cmd.go:97`) **and** `repl.resume()` (`play_cmd.go:117`) | **green** |
+| replace `finish:` body (`play_cmd.go:137-140`) with `func() {}` | **green** |
+| gut `runPlayCommand` (`play_cmd.go:23-49`) to a bare nil check + `c.startSitting()` | **green** (BR-6, still) |
+
+So the one genuinely new capability this issue exists for — the editor's screen going quiet so its throttled painter cannot land inside the sitting's frame — is pinned as a *unit* (`TestASuspendedScreenPaintsNothingAndResumesWhereItWas`) and not at the site obliged to call it. Same for the summary-goes-up decision the plan spends two revisions arguing for and the README promises the user ("with the session's summary in the scrollback above you", `README.md:724`).
+
+**The rule:** BR-19 stated "an injected capability is pinned at BOTH ends" and then *hand-listed* the sites — "the enumeration is exact — this issue added three wiring sites". It was not exact; it missed three more, including the headline one. **An enumeration of "sites obliged to obey" must be derived from the source, not listed from memory** — the same discipline `TestASittingFromTheLoopNeverEntersRawMode` already applies to callees and `TestBothShapeRoutesGoThroughOnePlace` to routes. Concretely: one AST guard over `sittingInPlace`'s body asserting it calls each of `suspend`, `resume` and writes `Transcript()` into `repl`, derived the way the drop-arm guard (`play_cmd_test.go:557-616`) already is. That guard is cheap and it covers the class rather than the three instances I happened to mutate.
+
+**I-3 — BR-6 remains open and measurably so.** Disposed `not-addressed` below rather than re-raised; noted here only because it is the Done-when "`/play` on the line-mode REPL refuses with a sentence naming the cause", ticked `[x]` in the issue, with no test naming `runPlayCommand` anywhere in the tree.
+
+**I-4 — BR-15 remains partly open, and I verified the exemption mechanism it named.** In a scratch copy I renamed the `runPlayCommand` entity row to `noSuchEntityAtAll` and `TestPlanTablesNameEntitiesThatExist` stayed **green** — because the plan still contains one `- [ ] ` (Task 2 Step 1), `inProgress` is true, and `repo_guard_test.go:797` skips every `new` row. All three `new` rows (`runPlayCommand`, `sittingInPlace`, `applyShape`) are unchecked at this close. Details in the disposition and in §7.
+
+## 4. Minor findings
+
+- **BR-1 / BR-12 unchanged:** `play_loop.go:30` still prints `"define: no deck in this directory, so there is nothing to review"` to **stdout** and returns **0**; `play_cmd.go:44-45` prints `noDeckMessage` to **stderr** and returns **1**. Same condition, two doors, two answers — and no rule was written down either way.
+- **BR-11 unchanged:** `replraw.go:123` sets `con.newSitting` unconditionally, so `--play`'s pinned-screen console carries a sitting factory. Unreachable (only `runEditor` reads it), but the field's doc at `replraw.go:189-193` says nil is what a console gets where a sitting cannot run.
+- **BR-16 unchanged:** the sixth parameter of `newSitting` (`replraw.go:193`) is always `con.stderr`, which in production *is* the `live` screen the closure already captures (`replraw.go:296` → `:548`). Still named `newSitting` while running a sitting and returning an exit code.
+- **BR-13 unchanged:** `play_cmd_test.go:171-180` re-implements `reviewEvents` (`play_loop_test.go:81`) in the same package; the `ParseDir`+`FuncDecl` preamble is now duplicated at `:32` and `:108`, with two more `ParseFile` copies at `:321` and `:458` (ARCH-DRY).
+- **BR-20 unchanged:** `TestBothShapeRoutesGoThroughOnePlace` (`play_cmd_test.go:321`) parses `replraw.go` alone while `play_cmd.go:116` does a bare `repl.Resize(r, c)` — benign (the caller runs `applyShape` immediately after) but the guard's own message claims a class it does not police.
+- `Stop()` while suspended silently drops its final flush, because `repaint`'s gate now includes `suspended`. Unreachable today (the sitting is synchronous inside the dispatch, so `runEditor` cannot return mid-suspension) — noted for whoever makes a sitting asynchronous.
+- The plan's `## Verification` section has two items numbered `6`.
+
+## 5. Test coverage notes
+
+- `go test -count=1 ./...`, `go vet ./...`, `gofmt -l .` all clean at `116d0f3`.
+- Mutation-verified live this round: the producer guard, the loop dispatch, the shape hand-back, and the drop-arm `Forget` guard all redden under the mutation they claim to catch.
+- Mutation-verified **absent**: `runPlayCommand`'s three refusals, `repl.suspend()`/`repl.resume()`, the sitting console's `finish`.
+- `TestAWordDroppedInASittingLeavesTheHighlightSet` is a fixture written from the fix's own model — it asserts the recount goes *down* and never asks whether it may go *up* past `Add`'s rule. That is the gap I-1 lives in.
+- `TestTheDropArmUpdatesTheHighlightSet` honestly documents that it reads the source rather than driving the arm, and records the pre-existing vacuous `TestDropRecordsNoReview` in the issue Log rather than hiding it. That is the right call for this boundary.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** I-1 (two maintenance rules for one derived aggregate) and BR-13 (test helper re-implemented, AST preamble ×4).
+- **ARCH-PURE — pass.** `runPlayCommand` is pure over `commandCtx`; `applyShape` and `Forget` are pure; `sittingInPlace` is the thin IO shell and takes its terminal as parameters, which is what let this round's tests drive the loop in-process at all.
+- **ARCH-PURPOSE — pass, with one note.** The shadow-sweep on deck-shrink is complete (two `d.deck.Forget` sites, correct one wired). The `/play`-vs-`--play` refusal divergence (BR-1/BR-12) is the one place a "one sitting, two doors" purpose is still delivered as two.
+- **ARCH-MOCK — pass.** `TestTheSittingDoorRecordsWhatItAnswers` asserts through `store.Mem`, the stateful fake, not a call-counting capturer; production and test share the `console`/key-channel boundary.
+- **ARCH-CONSTRAINTS — flag (I-1).** Otherwise sound: a sitting is bounded by `opt.count`, nothing added runs per keystroke, and the borrow means one resize watcher for the process's life.
+- **ARCH-SECURE — N/A, stated.** No new untrusted input, no credentials; `Forget`'s argument comes from the deck this process just read.
+- **ARCH-ORDER — pass.** `suspend`/`resume` is a reversible flag distinct from the one-way `stopped`, both read at one gate, and `TestResumeDoesNotReviveAStoppedScreen` pins the only interesting combination — two booleans here do not need a tagged enum. The interrupt is `Set` + `defer restore()`, and the tests make ordering *observable* (poll the borrowed `resizes` channel, then fire) rather than sampling one interleaving. Extent is lexically bounded: the sitting's screen is stopped and no goroutine outlives the call. The one gap is that no test observes the *interleaving between the two screens* — which is exactly what I-2's missing site-guard would cover cheaply.
+
+## 7. Plan revision recommendations
+
+Add a `## Revisions` entry dated 2026-09-08 covering close-review rounds 3–6, and in the same sweep:
+
+1. **Delete or rewrite the `newSitting func() console` code block** (`plan:95`). The shipped field is `func(ctx, d, opt, keys, interrupts, stderr) (int, winSize)` — a verb returning an exit code and a shape, not a constructor returning a console. The plan has claimed the wrong signature for six rounds.
+2. **Reconcile the pty claims.** `plan:180` ("`sittingInPlace` — needs a terminal, so the **pty test** under the `pty` tag") and Verification item 4 (`plan:312`) both still promise a pty test that `Task 2 Step 2` (`plan:278`) explicitly records as not shipped. One of the three has to change.
+3. **Add the entity rows for what the last commit shipped:** `Vocabulary.Forget` (`cmd/define/vocab.go`, modified — the interface gained a method) and `memVocabulary.Forget` (new). The deck-as-third-field work has no row and no revision entry anywhere in the plan.
+4. **Back-tick the tests that shipped in `## Verification`.** The un-backticked convention was adopted "until the tests land"; they have landed, and `TestPlanCitesTestsThatExist`'s own message asks for the name that shipped.
+5. **Resolve the `inProgress` exemption.** While Task 2 Step 1 stays `- [ ]`, every `new` entity row in this plan is skipped by `TestPlanTablesNameEntitiesThatExist` — I confirmed a bogus row passes. Either tick it with the "shipped instead:" sentence inline, or move the not-shipped record into the Revisions section so the plan can close as complete and its rows become checkable.
+6. Renumber the duplicated Verification item `6`.
+
+```findings
+dispose:
+  - id: BR-17
+    disposition: addressed
+    note: |
+      Mutation-verified: no-op'ing cc.startSitting at replraw.go:540 reddens TestTypingSlashPlayRunsASitting and TestTheLoopAppliesTheShapeASittingHandsBack.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      Mutation-verified: replacing newConsole's newSitting closure body with `return 0, winSize{}` reddens TestTheProducedSittingCapabilityCallsTheRealThing.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      Re-measured at 116d0f3: gutting runPlayCommand to a bare nil check plus c.startSitting() leaves the whole ./cmd/define suite green. No test names runPlayCommand.
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      Entity rows and the DID-NOT-SHIP record are fixed; the plan still carries `newSitting func() console`, two pty claims contradicting Task 2 Step 2, no Forget row, no revision for rounds 3-6, and no backticked test names. I confirmed by execution that a bogus `new` row still passes the guard while the plan is inProgress.
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      play_loop.go:30 still hand-rolls the sentence; no rule stated in code, plan or lessons.md.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Unchanged - play_loop.go:30 stdout/exit-0 versus play_cmd.go:44-45 stderr/exit-1.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      replraw.go:123 still assigns con.newSitting unconditionally; the field doc at replraw.go:189-193 is unchanged since 2dc2100.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      play_cmd_test.go:171-180 still re-implements reviewEvents; the AST preamble is now duplicated four ways (:32, :108, :321, :458).
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Signature and name unchanged; runEditor still passes con.stderr, which is the `live` screen the closure already captures.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      Guard still parses replraw.go alone; play_cmd.go:116 still calls repl.Resize directly.
+findings:
+  - id: new
+    severity: Important
+    family: inverse-op-diverges-from-its-pair
+    title: |
+      memVocabulary.Forget recounts maxWords without Add's phraseRunsJoin filter, so a drop can widen the phrase window past what Add allows
+    detail: |
+      vocab.go:101-106 recomputes maxWords as max(len(wordRuns(w))) over every key, while Add
+      (vocab.go:129-131) raises it only when phraseRunsJoin(key, runs) - because a key holding
+      other punctuation is permanently unmatchable and counting it makes every stream hold a
+      wider window for a match that cannot happen, a cost Add's comment records as measured.
+      Executed at 116d0f3: Add("keel"); Add("e.g."); Add("junk") gives MaxPhraseWords()==1, and
+      Forget("junk") raises it to 2. Any /play drop on a deck holding one punctuated entry
+      widens the streaming renderer's lookahead for the rest of the session. No wrong highlight
+      results, so the blast radius is latency (ARCH-CONSTRAINTS), but the invariant is broken
+      and the two maintainers of one derived aggregate should be one helper (ARCH-DRY). The
+      existing test uses `keel` and `hot dog` and cannot see it - written from the fix's own
+      model.
+  - id: new
+    severity: Important
+    family: plan-named-test-not-written
+    title: |
+      suspend/resume and the sitting's finish are unpinned at the call site, and BR-19's hand-written enumeration of wiring sites was wrong
+    detail: |
+      This is the 5th finding in family plan-named-test-not-written. Not asking for these
+      instances to be patched - the rule is the deliverable. Measured at 116d0f3, full
+      ./cmd/define suite per mutation: deleting repl.suspend() (play_cmd.go:97) and
+      repl.resume() (play_cmd.go:117) leaves it GREEN; replacing the sitting console's finish
+      body (play_cmd.go:137-140) with a no-op leaves it GREEN; gutting runPlayCommand leaves it
+      GREEN (BR-6). So the issue's headline capability - the editor's throttled painter going
+      quiet so it cannot land inside the sitting's frame - and the README's promised
+      summary-in-the-scrollback are both unpinned. BR-19 stated the both-ends rule and then
+      HAND-LISTED the sites ("the enumeration is exact - three wiring sites"); it missed three.
+      The rule: an enumeration of sites obliged to obey a capability must be DERIVED from the
+      source, not listed from memory - the discipline TestASittingFromTheLoopNeverEntersRawMode
+      already applies to callees and TestBothShapeRoutesGoThroughOnePlace to routes. One AST
+      guard over sittingInPlace's body (calls suspend, calls resume, writes Transcript() into
+      repl), shaped like the drop-arm guard at play_cmd_test.go:557-616, covers the class.
+```

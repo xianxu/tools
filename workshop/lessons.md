@@ -4136,3 +4136,18 @@ reason to spend confidence instead.
 it.** Borrower and owner, producer and consumer, seam and site, acquire and
 release. Write the second half down even when the first is all you are building —
 that list is where every "one field over" bug in this issue was hiding.
+
+**Write the INVERSE of an operation by reading the operation.** `#48` added
+`Vocabulary.Forget` to undo `Add`, and recounted the phrase bound with
+`len(wordRuns(w))` — while `Add` raises it only for keys whose tokens can
+REJOIN. So a drop could push `MaxPhraseWords` ABOVE anything `Add` would ever
+produce, widening every stream's lookahead for a match that cannot happen. The
+reviewer found it by executing three lines.
+
+The fix is not "read more carefully" — it is that a rule needed in two directions
+belongs in ONE function both call. `phraseWidth` is that function; neither
+direction can now diverge from the other.
+
+**And this arrived inside the fix for the root cause it illustrates**, which is
+the strongest evidence in this file that the discipline has to be mechanical
+rather than intentional.

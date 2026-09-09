@@ -98,9 +98,11 @@ func (v *memVocabulary) Forget(word string) {
 		return
 	}
 	delete(v.words, key)
+	// Recounted with phraseWidth — the SAME rule Add raises by, so the bound can
+	// only ever be what Add would have produced for the remaining set.
 	v.maxWords = 0
 	for w := range v.words {
-		if n := len(wordRuns(w)); n > v.maxWords {
+		if n := phraseWidth(w); n > v.maxWords {
 			v.maxWords = n
 		}
 	}
@@ -130,10 +132,31 @@ func (v *memVocabulary) Add(word string) {
 	// unmatchable `e.g.` holds 9 — the same cost as a real three-token phrase.
 	// A bound derived from an input set must come from the subset that can
 	// exercise it. TestAPunctuatedKeyIsNotMatchable pins the matching half.
-	runs := wordRuns(key)
-	if n := len(runs); n > v.maxWords && phraseRunsJoin(key, runs) {
+	if n := phraseWidth(key); n > v.maxWords {
 		v.maxWords = n
 	}
+}
+
+// phraseWidth is how many tokens a key contributes to the lookahead bound, and
+// it is ZERO for a key that can never be matched.
+//
+// THE RULE LIVES ONCE, because it is now needed in both directions. Add raises
+// the bound and Forget recounts it, and the first version of Forget recounted
+// with a DIFFERENT rule — `len(wordRuns(w))`, without the join check — so
+// dropping any word could RAISE MaxPhraseWords above what Add would ever permit.
+// The reviewer executed it: Add("keel"), Add("e.g."), Add("junk") gives 1, and
+// Forget("junk") gives 2, widening every stream's window for a match that cannot
+// happen.
+//
+// That is the inverse of an operation written without reading the operation —
+// which is the failure this issue spent eight rounds on, arriving one last time
+// in its own fix.
+func phraseWidth(key string) int {
+	runs := wordRuns(key)
+	if !phraseRunsJoin(key, runs) {
+		return 0
+	}
+	return len(runs)
 }
 
 func (v *memVocabulary) Has(key string) bool {
