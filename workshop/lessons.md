@@ -4023,3 +4023,131 @@ a form name for display while the accuracy map was still keyed by the raw string
 so `meaning` and `meaning\x1b[2J` printed as two identical-looking rows with
 different numbers. Group by what the reader SEES, after the transform, or the
 screen contradicts itself.
+
+**Check the RELEASE side, not just the acquisition.** `#48`'s plan took three
+gate rounds and every finding was the same shape. `enterAlt` is idempotent — but
+`restore` is shared. The sitting gets its own `finish` — but the entity row still
+called `newConsole`, which installs the restoring one. Two painters were handled —
+but so were two resize watchers, and only one had been noticed.
+
+When a design borrows something a caller already holds, enumerate what the
+ordinary constructor ACQUIRES and answer each one. `newConsole` acquires three
+things; the plan answered one per round until the gate had asked three times.
+
+**A borrowed channel is consumed, not shared.** `#48`'s sitting borrows the
+REPL's resize channel so there is only one SIGWINCH watcher — correct — and that
+means a resize arriving during a sitting is CONSUMED by the sitting and applied
+to the sitting's screen. The editor's screen never sees it, so it repaints at the
+pre-sitting shape for the rest of the session. The plan claimed resume "takes the
+new shape"; resume repaints, and repainting does not change rows and cols.
+
+**When you borrow a stream, decide what happens to what you take off it.** The
+fix is one line — hand the final shape back before resuming — but nothing in the
+design pointed at it, because "borrow the channel" sounds like sharing and is not.
+
+**Three wrong tests for one property, and each was wrong in a way that PASSED.**
+Testing "Ctrl-C ends the sitting, not the program": the first fed
+`Key{KeyInterrupt}` into the channel, which bypasses the interrupter entirely and
+passed with the code deleted; the second waited on a `HasScope` helper the test
+had itself made true, so it fired before the sitting was in the picture and
+tested its own cancel; the third raced two goroutines over one `bytes.Buffer` and
+hung.
+
+**Narrowing to the deterministic half was ALSO wrong, and the next round proved
+it:** asserting only the RESTORE passes when `Set` and `restore` are BOTH deleted,
+because never scoping the interrupt also leaves the loop's cancel installed. A
+narrower claim is not automatically a safer one — it is only safer if what it
+drops cannot fail silently.
+
+What worked was making the ORDERING observable: have the sitting consume a resize
+first, which is a channel read the test can poll, then fire the interrupt while
+the sitting owns it. **Look for a synchronisation point the test can watch —
+a channel it filled, a file it can stat — rather than racing a buffer or
+reaching for a helper that reports the state you yourself set.**
+
+**Fix the class the first time, or the same bug comes back one field over.**
+`#48`'s sitting borrows the resize channel, so a shape consumed during a sitting
+reaches the loop by no other route. Round 1 handed back the screen's shape.
+Round 2 found the loop also derives `opt.width` from a shape — same bug, one
+field over, entries wrapping at the pre-sitting width. The fix is one function
+that IS what a shape means, called by every route, with a guard deriving the
+routes from the source.
+
+**When a value is settled by a deferred call, the results must be NAMED** — and
+that is the whole rule. With named results a defer's mutation wins for BOTH a
+bare `return` and an explicit `return a, b`; with unnamed results it cannot win
+at all, because the values are copied out before defers run.
+
+**The first version of this entry got that wrong**, claiming `return code, shape`
+evaluates before the defer even with named results. It does not; I checked it
+afterwards with a four-line program, which is what I should have done before
+writing a semantics rule into the rule-store. A wrong rule here is worse than no
+rule: `AGENTS.md` §4 makes this file the thing future work is steered by.
+
+**A test that drives the loop was available the whole time.** `#48` left the
+`/play` dispatch unpinned — replacing the recorded intent with a no-op left the
+whole suite green — on the assumption that a sitting needs a terminal. It does
+not: `runEditor` takes a `console` and a key CHANNEL precisely so it can be
+driven with neither, and three existing tests already do it. **Before deferring a
+behaviour to a manual run, check whether the seam that makes it testable is
+already there.** The manual run then confirms the feel rather than carrying the
+proof.
+
+**Ticking a plan step you did not do is worse than leaving it open.** `#48`
+ticked "extract what runPlay and this share" when the preamble is still written
+twice. An unticked box with a sentence saying what shipped instead is a record; a
+ticked one is a false claim in the artifact a reader trusts most.
+
+**An injected capability is pinned at BOTH ends.** A test that installs its own
+double for field `F` proves the CONSUMER and nothing about the PRODUCER — the
+production assembly that supplies the real implementation can return a zero value
+forever with the suite green. `#48` hit this four times in one issue: the loop
+dispatch, the command's refusals, the closure `newConsole` installs, and the
+shape hand-back.
+
+The rule that covers all four: **when you write a test that substitutes a double,
+write the second test that reads the producer.** Usually it is an AST guard —
+"the closure assigned to this field calls the real function" — and it costs a
+dozen lines. The mutation to check it with is the one that makes the producer a
+stub, not the one that breaks the consumer.
+
+**THE ROOT CAUSE UNDER MOST OF THIS FILE: I validate my model of the system
+instead of the system.**
+
+`#48` produced fourteen findings across eight gate rounds, and they collapse into
+three shapes — checking one side of a relationship I created, testing the property
+as I conceived it (with the mutation that matches my conception), and writing
+confident prose that no compiler reads. All three are the same act: reasoning
+where executing was available.
+
+The evidence is that EVERY check that worked this session was an execution. The
+compiler found a field I was sure existed. A four-line program found a Go rule I
+had just written into this file, wrongly. A probe over tzdata found the
+midnight-DST bug. The reviewer's mutation found what my mutation missed. The
+operator's smoke test found a figure that read as broken. Reasoning found none of
+them; every one cost seconds to check.
+
+**So: when a claim is checkable in under a minute, check it.** What a function
+does, what a field holds, what a test actually covers, what the language
+guarantees. Not because carefulness fails, but because at this cost there is no
+reason to spend confidence instead.
+
+**And when a design creates a relationship, enumerate BOTH sides before writing
+it.** Borrower and owner, producer and consumer, seam and site, acquire and
+release. Write the second half down even when the first is all you are building —
+that list is where every "one field over" bug in this issue was hiding.
+
+**Write the INVERSE of an operation by reading the operation.** `#48` added
+`Vocabulary.Forget` to undo `Add`, and recounted the phrase bound with
+`len(wordRuns(w))` — while `Add` raises it only for keys whose tokens can
+REJOIN. So a drop could push `MaxPhraseWords` ABOVE anything `Add` would ever
+produce, widening every stream's lookahead for a match that cannot happen. The
+reviewer found it by executing three lines.
+
+The fix is not "read more carefully" — it is that a rule needed in two directions
+belongs in ONE function both call. `phraseWidth` is that function; neither
+direction can now diverge from the other.
+
+**And this arrived inside the fix for the root cause it illustrates**, which is
+the strongest evidence in this file that the discipline has to be mechanical
+rather than intentional.

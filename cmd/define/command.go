@@ -25,6 +25,7 @@ var commands = []command{
 	{name: "help", summary: "list the commands", run: runHelp},
 	{name: "history", summary: "words looked up recently", run: runHistory},
 	{name: "stats", summary: "deck, streak and accuracy figures", run: runStatsCommand},
+	{name: "play", summary: "review the words due today", run: runPlayCommand},
 	{name: "sound", summary: "how many times to play a pronunciation", run: runSound},
 	{name: "lang", summary: "the language this deck is in", run: runLang},
 	{name: "pron", summary: "replay this word in its source language, once", run: runPron},
@@ -164,6 +165,14 @@ type commandCtx struct {
 	// "there is no session here" for the one-shot and piped paths.
 	times    int
 	setTimes func(int)
+	// startSitting asks the LOOP to run today's review, and is nil wherever one
+	// cannot run: the one-shot path, a pipe, and the line-mode REPL, which has no
+	// raw terminal. Nil IS the refusal — the rule setTimes states above.
+	//
+	// A func rather than a bool, and the loop supplies it only when it can honour
+	// it, so "can I" and "do it" are one fact rather than two that can disagree.
+	// That is cc.replay's shape (#48).
+	startSitting func()
 	// noCapture only so a nil deck can say WHY. DEFINE_NO_CAPTURE means the
 	// deck was never opened; without it, nil means this directory has none.
 	noCapture bool

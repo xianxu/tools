@@ -1116,6 +1116,7 @@ catches up.
 | `/help` | list the commands |
 | `/history` | words looked up recently |
 | `/stats` | deck, streak and accuracy figures |
+| `/play` | review the words due today |
 | `/sound` | how many times to play a pronunciation |
 | `/lang` | the language this deck is in |
 | `/pron` | replay this word in its source language, once |
@@ -2600,6 +2601,29 @@ one right answer and the two callers took different ones; it is deleted. A kind
 with no row there draws an underline that does nothing, which
 `TestEveryRegionKindIsActionable` catches by deriving its loop from
 `numRegionKinds`.
+
+- **A sitting runs from the loop by BORROWING the terminal (`#48`).** `/play`
+  records the intent and `runEditor` performs it — `/pron`'s rule one verb up:
+  a command decides what, the loop owns doing it. Both `--play` and `/play` reach
+  one `playSession`, which is what stops a change applying to only one of them.
+
+  Borrowing is the whole design, and `newConsole` acquires three things a
+  borrower must not: a `finish` that restores the SHARED `rawSession` and prints
+  the transcript to a cooked terminal, a second `watchResize` goroutine, and a
+  second `enterMouse`. So `sittingInPlace` assembles its console by hand, borrows
+  the loop's resize channel, and writes its summary UP into the editor's buffer
+  rather than out to a terminal it does not own.
+
+  Two screens then share one terminal, and each carries a throttled painter that
+  fires on its own goroutine — so `liveScreen` gained **suspend/resume**, which
+  `Stop` is not: `Stop` is the end of a screen's life, this is a pause that comes
+  back. The editor's screen is suspended for the duration and **takes the
+  sitting's final shape before resuming**, because the borrowed resize channel
+  means a SIGWINCH during a sitting is consumed by the sitting and would
+  otherwise never reach the editor at all.
+
+  Ctrl-C is scoped through `interrupter.Set` with a deferred restore, so it ends
+  the sitting; at the prompt it still quits `define`.
 
 - **One span walk feeds both the colour and the click (`#46` M2).** Three layers,
   and the boundaries are the point. The MATCHER (`wordRuns` + `highlightSpans`)

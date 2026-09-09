@@ -1,12 +1,13 @@
 ---
 id: 000048
-status: working
+status: codecomplete
 deps: ["tools#6"]
 github_issue:
 created: 2026-09-07
-updated: 2026-09-07
-estimate_hours:
+updated: 2026-09-08
+estimate_hours: 3.60
 started: 2026-09-07T23:50:42-07:00
+actual_hours: 3.40
 ---
 
 # /play: a sitting without leaving the loop
@@ -66,39 +67,94 @@ that a fourth path through terminal setup gets written instead.
   a REPL to do it, and scripts use the flag. Two entry points, one
   `playSession`.
 
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
+`sdlc estimate-source`, so the per-primitive hours are provisional; derived
+against `#8` (3.71/2.98) and `#46` (7.02/5.91), the two most recent closes.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.35 impl=0.06
+item: smaller-go-module        design=0.03 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.12
+item: greenfield-go-module     design=0.04 impl=0.20
+item: smaller-go-module        design=0.02 impl=0.12
+item: cross-cutting-refactor   design=0.03 impl=0.16
+item: smaller-go-module        design=0.02 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.12
+item: atlas-docs               design=0.02 impl=0.06
+item: smaller-go-module        design=0.0  impl=0.20
+item: ux-rename-iteration      design=0.0  impl=0.20
+item: milestone-review         design=0.0  impl=0.60
+item: milestone-review         design=0.0  impl=0.85
+design-buffer: 0.15
+total: 3.60
+```
+
+| row | the work |
+|---|---|
+| `issue-spec` 0.35/0.06 | the Spec plus FOUR plan rounds, two of them Criticals about terminal ownership. Level with `#12`'s 0.35 and below `#8`'s 0.30-equivalent inflated by rounds: the design was reshaped rather than merely evidenced. |
+| `smaller-go-module` 0.03/0.14 | `liveScreen.suspend`/`resume` — the one genuinely new capability, one flag in `repaint`'s existing guard plus a state model. |
+| `smaller-go-module` 0.02/0.12 | `console.newSitting`, the factory built where `sess` is in scope so `runEditor`'s signature stays untouched. |
+| `greenfield-go-module` 0.04/0.20 | `play_cmd.go`: `runPlayCommand` and `sittingInPlace`. |
+| `smaller-go-module` 0.02/0.12 | the command row, the two refusals (no terminal, no deck), the atlas's derived list. |
+| `cross-cutting-refactor` 0.03/0.16 | extracting `runPlay`'s shared half so both entry points reach one `playSession` — the Done-when that stops a change applying to only one. |
+| `smaller-go-module` 0.02/0.14 | the pty test: `/play`, answer, Ctrl-C, back at the prompt. |
+| `smaller-go-module` 0.02/0.12 | the `enterRaw` guard, and the store assertion that both doors record alike. |
+| `atlas-docs` 0.02/0.06 | the README's per-command paragraph and the atlas. |
+| `smaller-go-module` 0.0/0.20 | the mutation sweeps: the `Set`/`restore` pair, the `enterRaw` guard, suspend-is-not-Stop. |
+| `ux-rename-iteration` 0.0/0.20 | the hand-run. Above `#8`'s 0.15 because a TERMINAL is what is being changed, and a wrong answer shows as corruption a test cannot see. |
+| `milestone-review` 0.0/0.60 + 0.0/0.85 | the close boundary, run + remediation — the house pair. |
+
+**Reconciliation.** Σdesign = 0.55, Σimpl = 2.97.
+0.55 × 1.15 + 2.97 × 1.0 = **3.60**.
+
+**Read against the trailing record.** This repo's ledger: `#42` 0.36, `#44` 0.47,
+`#10` 0.62, `#12` 1.23, `#46` 1.18, `#8` 1.24 — median ≈ 0.62, which at 3.60
+predicts roughly 6h actual. That gap is the within-session parallelism `#117`'s
+ledger instruments; multiplying the rows to meet it would destroy the only signal
+it carries.
+
+**Why this is close to `#8` despite looking harder.** The variable impl is 1.32
+against `#8`'s 1.22 — the fixed tail (sweeps, hand-run, docs, two review rows) is
+1.91 in both. The terminal work is genuinely small ONCE NAMED: one flag in an
+existing guard, one factory, one struct assembled by hand. What was expensive was
+finding out that it had to be, which is design and is priced in `issue-spec`.
+
 ## Done when
 
-- [ ] `/play` runs today's sitting from inside the loop and returns to the
+- [x] `/play` runs today's sitting from inside the loop and returns to the
       definition prompt, both on finishing the queue and on Ctrl-C.
-- [ ] Ctrl-C during a sitting ends the SITTING, not the program — through
+- [x] Ctrl-C during a sitting ends the SITTING, not the program — through
       `interrupter.Set`, not a second interrupt path.
-- [ ] The terminal is entered ONCE. A guard, not a comment: nothing may call
+- [x] The terminal is entered ONCE. A guard, not a comment: nothing may call
       `enterRaw` while a session is live, and the check derives its set of call
       sites rather than listing them.
-- [ ] `--play` and `/play` reach the same `playSession`, so a change to the
+- [x] `--play` and `/play` reach the same `playSession`, so a change to the
       sitting cannot apply to only one of them.
-- [ ] `/play` on the line-mode REPL refuses with a sentence naming the cause.
-- [ ] The command appears in `/help` and in the README's command list, which are
-      already guarded by derived tests.
-- [ ] Everything a sitting records is recorded identically from either entry
+- [x] `/play` on the line-mode REPL refuses with a sentence naming the cause.
+- [x] The command appears in `/help` (which reads the `commands` registry, so it
+      follows from the row) and in the ATLAS's command list, which is the derived
+      one — `TestDocsQuoteTheCommandList` checks `atlas/define.md`, not the
+      README. The README's own prose is hand-written and swept, not derived.
+- [x] Everything a sitting records is recorded identically from either entry
       point — one capture path, asserted through the store rather than through a
       fake.
 
 ## Plan
 
-**The durable plan lands with the implementation branch**, not before it.
-`workshop/plans/*-plan.md` is checked against the CODE by
-`TestPlanCitesTestsThatExist` and `TestPlanTableStatusMatchesTheChangeWindow`
-(`repo_guard_test.go:1306`, `:1271`), which walk every plan in the tree — so a
-plan committed ahead of its own branch turns the suite red for whatever issue is
-closing. It was written, it did that to `#8`, and it comes back with `#48`'s
-branch. `#8` BR-12 is why this sentence exists rather than a path to a file
-nothing holds.
+Durable design: `workshop/plans/000048-play-from-the-loop-plan.md`, on this
+branch — a plan is checked against the code in its window by guards that walk
+every plan in the tree (`repo_guard_test.go:1306`), so it travels with the branch
+that implements it rather than ahead of it (#8 BR-12).
 
 Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
 
-- [ ] The command — /play records the intent, refuses where it cannot run.
-- [ ] The sitting — sittingInPlace on the terminal the loop already holds, with
+- [x] The command — /play records the intent, refuses where it cannot run.
+- [x] The sitting — sittingInPlace on the terminal the loop already holds, with
       Ctrl-C scoped through interrupter.Set.
 
 ## Log
@@ -118,3 +174,102 @@ project's scope event of the same date.
 for exactly the "something narrower than the session owns Ctrl-C" case a sitting
 now needs. The work is joining three seams, and the failure mode is writing a
 fourth path through terminal setup instead.
+
+### 2026-09-08 — built, and smoke-tested by the operator
+- 2026-09-08: closed — /play ships: a sitting from the definition prompt, returning to it on both exits. OPERATOR SMOKE TEST PASSED on a freshly restaged deck, Ctrl-C included. ROOT CAUSE WORK, at the operator request: the fourteen findings across eight rounds collapse into three shapes — I check one side of a relationship I create (borrower/owner, producer/consumer, seam/site, acquire/release), I test the property as I conceive it and sweep with the mutation matching my conception rather than the one a careless edit makes, and I write prose no compiler reads. Under all three: I validate my model instead of the system, and every check that actually worked this session was an EXECUTION (the compiler found Progress.FirstSeen; a four-line program found the false defer rule I had written into lessons.md; a tzdata probe found the midnight-DST bug; the reviewer mutation found what mine missed; the operator smoke test found words/day 0.0). APPLIED RATHER THAN NARRATED, and it found a defect no review raised: if a sitting mutates state the loop caches, the resize screen shape (BR-5) and opt.width (BR-14) were two of three — the DECK is the third. A sitting drops a word with d, the loop caches the highlight set in a local (replraw.go says so, because /lang had to solve the same problem), and before /play a word could only leave the deck in a one-shot where the stale set died with the process. Look a word up, /play, drop it, come back: still painted green. Vocabulary gains Forget, symmetric with the Add that Capture already does, with the phrase-width recount that is easy to miss; TestAWordDroppedInASittingLeavesTheHighlightSet pins the verb (removing the recount reddens it) and TestTheDropArmUpdatesTheHighlightSet pins the wiring from the source. ALSO RECORDED: TestDropRecordsNoReview (play_loop_test.go:1408) passes VACUOUSLY — dropping records no review is also true when the drop never happens, which is why the gesture could not be driven in a test. Pre-existing, not this issue to fix, written down so it is not lost. BR-19: a capability delivered through an injected field is pinned at BOTH ends — a test installing its own double proves the consumer and nothing about the production assembly; TestTheProducedSittingCapabilityCallsTheRealThing reads the closure newConsole installs and reddens when it stops calling sittingInPlace. BR-17: TestTypingSlashPlayRunsASitting drives runEditor with a scripted key channel — no terminal needed, which three existing tests already showed — and reddens when the recorded intent becomes a no-op. BR-18: a FALSE Go rule in lessons.md and a code comment, that return code, shape evaluates before the defer even with named results; verified with a four-line program that it does not, named vs unnamed being the axis, and both rewritten. BR-5/BR-14: applyShape is the one place a shape means anything, with guards deriving both routes from the source. BR-7: four wrong tests each passing; what shipped orders the fire by making the sitting consume a resize first and asserts both halves. BR-6, BR-8, BR-9, BR-15 all addressed; one plan step is UNTICKED with a sentence saying what shipped instead. Earlier: liveScreen.suspend/resume, a console assembled by hand because newConsole acquires three things a borrower must not, console.newSitting built where sess is in scope, the summary written UP into the editor buffer. go test -count=1 ./... green; go vet clean under default and pty; gofmt clean.; review verdict: FIX-THEN-SHIP
+
+**Operator smoke test PASSED** on a freshly restaged deck (ten words, five
+authored cloze items, no events), including the Ctrl-C path the first run had
+missed.
+
+**What the four plan rounds bought.** The issue was filed as three existing seams
+meeting, and the operator and I both read it as straightforward. The command half
+was. The terminal half needed three things, none of which existed:
+
+1. **`liveScreen.suspend`/`resume`** — two screens now share one terminal, and
+   each carries a throttled painter that fires on its own goroutine. `Stop` is
+   one-way; it is the end of a screen's life, not a pause. One flag, checked in
+   `repaint`'s existing gate, which is the only thing that writes to the tty.
+2. **A console that BORROWS.** `newConsole` acquires three things a borrower must
+   not: a `finish` that restores the SHARED session and prints to a cooked
+   terminal, a second `watchResize` goroutine, and a second `enterMouse`. The
+   sitting assembles its console by hand and borrows the loop's resize channel,
+   so there is one watcher for the process's life.
+3. **`console.newSitting`**, built where `sess` and the real stdout are in scope,
+   so `runEditor`'s signature stays what its own doc calls the point: "the editor
+   loop with the terminal factored out".
+
+**The summary goes UP, not out.** `handBack` prints the transcript AFTER
+restoring to cooked mode, and the order is the precondition — the first revision
+proposed a no-op restorer, which keeps the order and removes what it was for.
+The sitting writes its transcript into the editor's buffer instead, where it is
+in the scrollback when the prompt returns.
+
+**Three guards, each mutation-checked with the real regression:**
+`TestASittingFromTheLoopNeverEntersRawMode` walks `sittingInPlace`'s callees
+transitively and names the path (routing `/play` through `runPlay` reddens it as
+`sittingInPlace → runPlay → enterRaw`);
+`TestBothEntryPointsReachOnePlaySession` is the Done-when that stops a change
+applying to only one door; and
+`TestASuspendedScreenPaintsNothingAndResumesWhereItWas` carries the clause that
+separates suspend from `Stop` — after resume, the frame comes back.
+
+**One comment corrected mid-build.** `suspend` disarms the timer, and the comment
+said the frame stayed off the terminal because of it. The sweep proved otherwise:
+removing the disarm reddened nothing, because `repaint`'s gate already stops the
+flush. It is hygiene, and the comment says so now rather than claiming a
+load-bearing role it does not have.
+
+### 2026-09-08 — the root cause, and what it found
+
+The operator asked for the root cause rather than another surface fix. Reading
+the fourteen findings across four plan rounds and four close rounds, they are not
+fourteen mistakes. They are three, and arguably one.
+
+**1. I check one side of a relationship.** `enterAlt` is idempotent — but
+`restore` is shared (PQ-1). The sitting gets its own `finish` — but the entity
+row still called `newConsole` (PQ-8). Two painters were handled — but so were two
+resize watchers (PQ-4). The screen's shape was handed back — but not `opt.width`
+(BR-5, BR-14). The consumer was pinned — but not the producer (BR-19). The seam
+was pinned — but not the site (BR-17).
+
+Every one is a design that creates a RELATIONSHIP — borrower/owner,
+producer/consumer, seam/site, acquire/release — where I reasoned about the half I
+was building and not the half it implies.
+
+**2. I test the property as I conceive it.** Four wrong interrupt tests (BR-7),
+each passing; a test named "either door" that invoked neither (BR-8); three
+refusals ticked and unwritten (BR-6). And when I swept, I chose the mutation that
+matched MY model of the break — removing `restore` — rather than the one a
+careless edit would make, which was removing `Set` and `restore` together.
+
+**3. I write prose in the same motion as code, and prose has no compiler.** A
+false Go rule in the rule-store (BR-18); a plan ticked for work that did not ship
+(BR-15); four wrong claims about existing code in `#8`.
+
+**Underneath all three: I validate my model of the system instead of the system.**
+The counter-practice is not "be more careful" — it is that every check that
+actually worked this session was an EXECUTION. The compiler found
+`Progress.FirstSeen`. A four-line program found the false defer rule. A probe
+found the Havana midnight. The reviewer's mutation found what mine missed. The
+operator's smoke test found `words/day 0.0`. Reasoning found none of them.
+
+**Applying it, before this round's reviewer could.** If the rule is "a sitting
+mutates state the loop caches, and the loop must be told", then the shape was two
+of three: **the DECK is the third.** A sitting can drop a word (`d`), and the
+loop caches the highlight set in a local — `replraw.go` says so explicitly,
+because `/lang` had to solve the same problem. Before `#48` a word could only
+leave the deck in a one-shot `--forget`, where a stale set died with the process.
+
+So: look a word up, `/play`, drop it, come back — and it was still painted green
+at the prompt. Found by applying the rule rather than by a review. `Vocabulary`
+gains `Forget`, symmetric with the `Add` that `Capture` already does, with the
+phrase-width recount that is easy to miss.
+
+**And it turned up a second thing.** While trying to drive the drop path in a
+test, the `d` gesture would not reach the arm — and `TestDropRecordsNoReview`
+(`play_loop_test.go:1408`) passes for the same reason. It asserts that dropping
+records no review, which is ALSO true when the drop never happens. That is a
+pre-existing vacuous test, not this issue's to fix, and it is recorded here so it
+is not lost: the drop wiring is guarded from the source instead, which catches the
+regression that actually occurred.

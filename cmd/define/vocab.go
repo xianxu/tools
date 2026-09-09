@@ -29,6 +29,15 @@ type Vocabulary interface {
 	Load()
 	// Add puts a word in the set, normalising it the way the deck does.
 	Add(word string)
+	// Forget takes one out, and exists because the set is DERIVED FROM THE DECK
+	// and the deck can now shrink while a session is running (#48).
+	//
+	// Before /play, a word could only leave the deck in a one-shot --forget, and
+	// the highlight set died with the process. A sitting entered from the loop
+	// outlives nothing — the loop does — so a word dropped mid-sitting would go
+	// on being painted as known at the prompt afterwards. Add without Forget is
+	// half a set.
+	Forget(word string)
 	// Has answers for an ALREADY-NORMALISED key — callers build candidate keys as
 	// they scan text, so normalising here would mean doing it twice per token.
 	Has(key string) bool
@@ -72,6 +81,33 @@ type memVocabulary struct {
 // Load is a no-op: there is nothing durable behind an in-memory set.
 func (v *memVocabulary) Load() {}
 
+// Forget removes a word, and RECOUNTS the phrase width.
+//
+// The recount is the part that is easy to miss: MaxPhraseWords is a property of
+// the whole set, so dropping the only two-word entry must bring it back down or
+// the scanner keeps looking ahead for phrases that cannot be there. Add
+// maintains it going up; this maintains it going down.
+func (v *memVocabulary) Forget(word string) {
+	key := store.Key(word)
+	if key == "" {
+		return
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.words[key] {
+		return
+	}
+	delete(v.words, key)
+	// Recounted with phraseWidth — the SAME rule Add raises by, so the bound can
+	// only ever be what Add would have produced for the remaining set.
+	v.maxWords = 0
+	for w := range v.words {
+		if n := phraseWidth(w); n > v.maxWords {
+			v.maxWords = n
+		}
+	}
+}
+
 func (v *memVocabulary) Add(word string) {
 	key := store.Key(word)
 	if key == "" {
@@ -96,10 +132,31 @@ func (v *memVocabulary) Add(word string) {
 	// unmatchable `e.g.` holds 9 — the same cost as a real three-token phrase.
 	// A bound derived from an input set must come from the subset that can
 	// exercise it. TestAPunctuatedKeyIsNotMatchable pins the matching half.
-	runs := wordRuns(key)
-	if n := len(runs); n > v.maxWords && phraseRunsJoin(key, runs) {
+	if n := phraseWidth(key); n > v.maxWords {
 		v.maxWords = n
 	}
+}
+
+// phraseWidth is how many tokens a key contributes to the lookahead bound, and
+// it is ZERO for a key that can never be matched.
+//
+// THE RULE LIVES ONCE, because it is now needed in both directions. Add raises
+// the bound and Forget recounts it, and the first version of Forget recounted
+// with a DIFFERENT rule — `len(wordRuns(w))`, without the join check — so
+// dropping any word could RAISE MaxPhraseWords above what Add would ever permit.
+// The reviewer executed it: Add("keel"), Add("e.g."), Add("junk") gives 1, and
+// Forget("junk") gives 2, widening every stream's window for a match that cannot
+// happen.
+//
+// That is the inverse of an operation written without reading the operation —
+// which is the failure this issue spent eight rounds on, arriving one last time
+// in its own fix.
+func phraseWidth(key string) int {
+	runs := wordRuns(key)
+	if !phraseRunsJoin(key, runs) {
+		return 0
+	}
+	return len(runs)
 }
 
 func (v *memVocabulary) Has(key string) bool {

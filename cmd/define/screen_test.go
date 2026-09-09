@@ -1557,3 +1557,79 @@ func TestAnIndicatorAfterAPartialLineSwallowsIt(t *testing.T) {
 			"content it did not write", got)
 	}
 }
+
+// SUSPEND IS NOT STOP, and this asserts the difference rather than the
+// similarity (#48).
+//
+// A sitting entered from the REPL needs the editor's screen to go quiet while
+// another screen owns the terminal, and then come back with its buffer and
+// viewport intact. Stop is the end of a screen's life: it flushes, kills the
+// timer and refuses forever. A test that only checked "nothing paints while
+// suspended" would pass on a Stop in disguise, so the resume clause is the one
+// that carries the weight.
+func TestASuspendedScreenPaintsNothingAndResumesWhereItWas(t *testing.T) {
+	var tty bytes.Buffer
+	l := newLiveScreen(&tty, 24, 80)
+
+	l.Draw("prompt", nil)
+	if tty.Len() == 0 {
+		t.Fatal("a live screen painted nothing, so this test proves nothing")
+	}
+
+	l.suspend()
+	tty.Reset()
+
+	// Nothing this screen is asked to do may reach the terminal.
+	l.Write([]byte("while another screen owns the tty\n"))
+	l.Draw("prompt", nil)
+	l.Page(1)
+	if tty.Len() != 0 {
+		t.Errorf("a suspended screen painted %q — it would land inside the other "+
+			"screen's frame", tty.String())
+	}
+
+	// NOR MAY THE TIMER, which is the half a caller cannot see: flush runs on
+	// its own goroutine. Wait past the throttle window and confirm silence.
+	time.Sleep(2 * paintInterval)
+	if tty.Len() != 0 {
+		t.Errorf("the throttled painter fired while suspended: %q", tty.String())
+	}
+
+	// AND IT COMES BACK — unconditionally, because the other screen overwrote
+	// every cell — with what was written while it was quiet.
+	l.resume()
+	if tty.Len() == 0 {
+		t.Fatal("resume painted nothing; a screen that cannot come back is a Stop")
+	}
+	if !strings.Contains(tty.String(), "while another screen owns the tty") {
+		t.Errorf("the buffer did not survive the suspension:\n%s", tty.String())
+	}
+
+	// Idempotent both ways, so a caller cannot suspend twice and resume once.
+	l.suspend()
+	l.suspend()
+	l.resume()
+	l.resume()
+	tty.Reset()
+	l.Draw("prompt", nil)
+	if tty.Len() == 0 {
+		t.Error("the screen did not come back after a doubled suspend/resume")
+	}
+}
+
+// AND A STOPPED SCREEN STAYS STOPPED. resume must not revive one — Stop is
+// called when the terminal has been handed back, and painting after that would
+// draw onto the NORMAL screen over whatever the user was looking at.
+func TestResumeDoesNotReviveAStoppedScreen(t *testing.T) {
+	var tty bytes.Buffer
+	l := newLiveScreen(&tty, 24, 80)
+	l.Draw("prompt", nil)
+	l.Stop()
+	tty.Reset()
+
+	l.resume()
+	l.Draw("prompt", nil)
+	if tty.Len() != 0 {
+		t.Errorf("a stopped screen painted after resume: %q", tty.String())
+	}
+}

@@ -65,6 +65,173 @@ rounds:
           family: unstated-goroutine-extent
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-08T15:18:01-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: not-addressed
+          note: hand-back ownership is answered; where the summary lands is not, and the no-op restorer breaks handBack's cooked-terminal precondition
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: console gains newSitting, built in newConsole where sess and the real stdout are in scope; runEditor's signature untouched
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: nil deck named as a separate refusal reusing noDeckMessage(c.noCapture)
+          round: 2
+        - id: PQ-4
+          disposition: not-addressed
+          note: two-painter hazard handled; the extent clause — who is still running when sittingInPlace returns — is still unwritten
+          round: 2
+      findings:
+        - id: PQ-5
+          severity: Important
+          title: liveScreen suspend/resume is the plan's one new capability and it has no named test, no strategy line, and no state model
+          detail: |-
+            The plan calls it "the smallest piece that cannot be avoided" yet it appears
+            in neither the Pure entities nor the Integration points table, and the Test
+            surface paragraph covers only runPlayCommand and sittingInPlace. It is also
+            the riskiest piece: repaint gates on l.stopped (screen.go:862), whose doc
+            says painting must stop dead once set (screen.go:600-604), and Stop both
+            flushes and latches (screen.go:841-852) — so a second boolean beside stopped
+            declares four states of which three are legal, the constellation ARCH-ORDER
+            exists to catch. Name it as one tagged state (running / suspended / stopped)
+            and name the test with its adversarial strategy; the deterministic seam
+            already exists, since interval is a field precisely so a test can hold the
+            paint window open rather than race the clock (screen.go:637-640).
+          family: new-seam-untested
+          round: 2
+        - id: PQ-6
+          severity: Important
+          title: the Done-when README row rests on a false claim about existing guards, and Step 8 names no section
+          detail: |-
+            Done-when says /play must appear in /help and "in the README's command list,
+            which are already guarded by derived tests". /help is genuinely derived
+            (runHelp lists c.cmds, command.go:152 and 252). The README half is not:
+            TestDocsQuoteTheCommandList reads ../../atlas/define.md only
+            (doc_sync_test.go:362), and neither cmd/define/README.md nor the root
+            README.md has a command list — commands are prose paragraphs
+            (cmd/define/README.md:716-768). doc_sync_test.go:376-380 states this repo's
+            convention for that surface: the prose sites are swept by hand "and named as
+            such in the plan rather than pretending a mechanism covers them". Task 2
+            Step 8 is the bare item "README + atlas" and Verification lists no README
+            check, so the sweep is neither guarded nor named. Name the section, or fix
+            the Done-when row.
+          family: hand-swept-surface-unnamed
+          round: 2
+        - id: PQ-7
+          severity: Minor
+          title: the two entry points would print different sentences for the same nil deck
+          detail: |-
+            This is the 2nd finding in family refusal-enumeration-incomplete. Per the
+            escalation rule I am not asking you to fix this instance — state the rule.
+            The rule: one refusal condition gets one sentence from one helper. The
+            enumeration is measurable and small — six sites call noDeckMessage
+            (main.go:1193, stats.go:43, stats.go:237, history_cmd.go:220, harvest.go:111,
+            reflect.go:340) and exactly one hand-rolls it, runPlay at play_loop.go:30
+            ("no deck in this directory, so there is nothing to review"). The plan has
+            /play use noDeckMessage, so after this issue the same condition reads two
+            ways depending on which entry point you took — against Done-when's "a change
+            to the sitting cannot apply to only one of them". Either sweep play_loop.go:30
+            into the helper in the same round, or state that noDeckMessage owns the cause
+            and a caller may append its own consequence, and make both entry points obey it.
+          family: refusal-enumeration-incomplete
+          round: 2
+      blocked: true
+    - "n": 3
+      timestamp: "2026-09-08T15:24:59-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: The sitting's finish is now its own two lines and the summary lands in the REPL's buffer; the ownership question is answered in prose, though the sittingInPlace row still contradicts it (see the new finding).
+          round: 3
+        - id: PQ-4
+          disposition: not-addressed
+          note: The extent enumeration omits the sitting's own watchResize goroutine, and which ctx the sitting's console gets is still unwritten.
+          round: 3
+        - id: PQ-5
+          disposition: addressed
+          note: Spec, test and the resume-brings-the-frame-back clause are all present; the tagged state is implied rather than named, which is not worth a block.
+          round: 3
+        - id: PQ-6
+          disposition: addressed
+          note: The Done-when row now states the truth — atlas/define.md is the derived surface, the README's prose is swept.
+          round: 3
+        - id: PQ-7
+          disposition: not-addressed
+          note: 'Minor, carried: the rule for who owns the no-deck sentence is still unstated and play_loop.go:30 still hand-rolls it.'
+          round: 3
+      findings:
+        - id: PQ-8
+          severity: Important
+          title: the sittingInPlace row still builds the console with newConsole, which re-installs the restoring finish and a second SIGWINCH watcher
+          detail: |-
+            This is the 3rd finding in family terminal-ownership-unstated, so the ask is the
+            rule, not the row. The rule: newConsole builds a console for a terminal its caller
+            OWNS, and ownership - not the screen constructor - is the axis a borrowed console
+            differs on, so it belongs as a parameter of the one builder exactly as newScreen
+            already is. A borrowed console differs in three places and no others: finish (stop
+            this screen and write its transcript into the REPL's screen; no sess.restore, no
+            write to the real stdout), resizes (the REPL's own channel, or a watcher on a ctx
+            cancelled when the sitting returns), and enterAlt/enterMouse (already entered,
+            idempotent at rawterm.go:147-150). As written, "only the console differs -
+            newConsole(ctx, d, sess, stdout, newPinnedScreen)" contradicts both "three things"
+            #1 and #2, gives back finish = onceHandBack (replraw.go:85) which playSession's
+            over() calls on every exit path (play_loop.go:242), and leaves sittingInPlace with
+            no stated way to reach a console at all - its signature carries no con and
+            runEditor has no rawSession.
+          family: terminal-ownership-unstated
+          round: 3
+        - id: PQ-9
+          severity: Minor
+          title: Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
+          detail: |-
+            This is the 2nd finding in family hand-swept-surface-unnamed, so the rule rather
+            than the instance: a prose surface no test derives is named - file and section - in
+            the step that sweeps it, which is this repo's own stated convention at
+            doc_sync_test.go:376-380. Here that is the per-command paragraphs at
+            cmd/define/README.md:724-760, where /stats, /history and /pron each have one.
+          family: hand-swept-surface-unnamed
+          round: 3
+      blocked: true
+    - "n": 4
+      timestamp: "2026-09-08T15:30:56-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-4
+          disposition: addressed
+          note: Extent is written — nothing of the sitting's outlives the call, the key reader is borrowed, and the sitting starts no second watchResize because it borrows the REPL's resizes channel.
+          round: 4
+        - id: PQ-8
+          disposition: addressed
+          note: The rule is stated as the three acquisitions a borrower must not take, and the newConsole call is gone from the sittingInPlace row.
+          round: 4
+        - id: PQ-7
+          disposition: not-addressed
+          note: Minor, carried — the plan still says five noDeckMessage callers (six exist) and play_loop.go:30 still hand-rolls the sentence.
+          round: 4
+        - id: PQ-9
+          disposition: not-addressed
+          note: Minor, carried — Step 8 is still the bare item and names no README section.
+          round: 4
+      findings:
+        - id: PQ-10
+          severity: Minor
+          title: the sittingInPlace signature still takes sess/stdout, the pair the stated rule says it must not build a console from
+          detail: 'This is the 4th finding in family terminal-ownership-unstated, so the rule not the row — and the plan now STATES the rule correctly (newSitting owns assembly, built where the rawSession and the real stdout are in scope). The signature is the one artifact left contradicting it: replayInPlace''s sess is the plain session struct (replraw.go:625, session.go:9) and its stdout at the call site is con.stdout, the liveScreen (replraw.go:507), so an implementer building the pinned screen from those arguments reproduces PQ-2''s fabricated 80x24 via defaultCols. Make the signature take the console.'
+          family: terminal-ownership-unstated
+          round: 4
+        - id: PQ-11
+          severity: Minor
+          title: the plan's Verification section backticks a test that does not exist, so TestPlanCitesTestsThatExist is red on main
+          detail: 'go test -run TestPlanCitesTestsThatExist ./... fails today: repo_guard_test.go:1353 reports that the plan cites TestSlashPlayRefusesWhereItCannotRun and no such test exists. The plan cites that guard itself (repo_guard_test.go:1306) and then trips it, and its own Verification step 1 demands a clean suite. Un-backtick the not-yet-written names, or note the expected red until Task 1 Step 1 lands.'
+          family: plan-cites-unwritten-test
+          round: 4
+      blocked: false
+content_hash: 4e5353d8d198b28ddd50be538190c2f7e3e132ce9df37df0915a82d8663992dc
 ---
 
 # Gate ledger — tools#48 (plan-quality)
@@ -114,9 +281,109 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   which ctx the sitting's console gets, and which screen owns the tty while
   the other is suspended.
 
+## Round 2 — 2026-09-08T15:18:01-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — not-addressed — hand-back ownership is answered; where the summary lands is not, and the no-op restorer breaks handBack's cooked-terminal precondition
+- PQ-2 — addressed — console gains newSitting, built in newConsole where sess and the real stdout are in scope; runEditor's signature untouched
+- PQ-3 — addressed — nil deck named as a separate refusal reusing noDeckMessage(c.noCapture)
+- PQ-4 — not-addressed — two-painter hazard handled; the extent clause — who is still running when sittingInPlace returns — is still unwritten
+
+### Raised
+
+- **PQ-5** [Important] `new-seam-untested` liveScreen suspend/resume is the plan's one new capability and it has no named test, no strategy line, and no state model
+  The plan calls it "the smallest piece that cannot be avoided" yet it appears
+  in neither the Pure entities nor the Integration points table, and the Test
+  surface paragraph covers only runPlayCommand and sittingInPlace. It is also
+  the riskiest piece: repaint gates on l.stopped (screen.go:862), whose doc
+  says painting must stop dead once set (screen.go:600-604), and Stop both
+  flushes and latches (screen.go:841-852) — so a second boolean beside stopped
+  declares four states of which three are legal, the constellation ARCH-ORDER
+  exists to catch. Name it as one tagged state (running / suspended / stopped)
+  and name the test with its adversarial strategy; the deterministic seam
+  already exists, since interval is a field precisely so a test can hold the
+  paint window open rather than race the clock (screen.go:637-640).
+- **PQ-6** [Important] `hand-swept-surface-unnamed` the Done-when README row rests on a false claim about existing guards, and Step 8 names no section
+  Done-when says /play must appear in /help and "in the README's command list,
+  which are already guarded by derived tests". /help is genuinely derived
+  (runHelp lists c.cmds, command.go:152 and 252). The README half is not:
+  TestDocsQuoteTheCommandList reads ../../atlas/define.md only
+  (doc_sync_test.go:362), and neither cmd/define/README.md nor the root
+  README.md has a command list — commands are prose paragraphs
+  (cmd/define/README.md:716-768). doc_sync_test.go:376-380 states this repo's
+  convention for that surface: the prose sites are swept by hand "and named as
+  such in the plan rather than pretending a mechanism covers them". Task 2
+  Step 8 is the bare item "README + atlas" and Verification lists no README
+  check, so the sweep is neither guarded nor named. Name the section, or fix
+  the Done-when row.
+- **PQ-7** [Minor] `refusal-enumeration-incomplete` the two entry points would print different sentences for the same nil deck
+  This is the 2nd finding in family refusal-enumeration-incomplete. Per the
+  escalation rule I am not asking you to fix this instance — state the rule.
+  The rule: one refusal condition gets one sentence from one helper. The
+  enumeration is measurable and small — six sites call noDeckMessage
+  (main.go:1193, stats.go:43, stats.go:237, history_cmd.go:220, harvest.go:111,
+  reflect.go:340) and exactly one hand-rolls it, runPlay at play_loop.go:30
+  ("no deck in this directory, so there is nothing to review"). The plan has
+  /play use noDeckMessage, so after this issue the same condition reads two
+  ways depending on which entry point you took — against Done-when's "a change
+  to the sitting cannot apply to only one of them". Either sweep play_loop.go:30
+  into the helper in the same round, or state that noDeckMessage owns the cause
+  and a caller may append its own consequence, and make both entry points obey it.
+
+## Round 3 — 2026-09-08T15:24:59-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — addressed — The sitting's finish is now its own two lines and the summary lands in the REPL's buffer; the ownership question is answered in prose, though the sittingInPlace row still contradicts it (see the new finding).
+- PQ-4 — not-addressed — The extent enumeration omits the sitting's own watchResize goroutine, and which ctx the sitting's console gets is still unwritten.
+- PQ-5 — addressed — Spec, test and the resume-brings-the-frame-back clause are all present; the tagged state is implied rather than named, which is not worth a block.
+- PQ-6 — addressed — The Done-when row now states the truth — atlas/define.md is the derived surface, the README's prose is swept.
+- PQ-7 — not-addressed — Minor, carried: the rule for who owns the no-deck sentence is still unstated and play_loop.go:30 still hand-rolls it.
+
+### Raised
+
+- **PQ-8** [Important] `terminal-ownership-unstated` the sittingInPlace row still builds the console with newConsole, which re-installs the restoring finish and a second SIGWINCH watcher
+  This is the 3rd finding in family terminal-ownership-unstated, so the ask is the
+  rule, not the row. The rule: newConsole builds a console for a terminal its caller
+  OWNS, and ownership - not the screen constructor - is the axis a borrowed console
+  differs on, so it belongs as a parameter of the one builder exactly as newScreen
+  already is. A borrowed console differs in three places and no others: finish (stop
+  this screen and write its transcript into the REPL's screen; no sess.restore, no
+  write to the real stdout), resizes (the REPL's own channel, or a watcher on a ctx
+  cancelled when the sitting returns), and enterAlt/enterMouse (already entered,
+  idempotent at rawterm.go:147-150). As written, "only the console differs -
+  newConsole(ctx, d, sess, stdout, newPinnedScreen)" contradicts both "three things"
+  #1 and #2, gives back finish = onceHandBack (replraw.go:85) which playSession's
+  over() calls on every exit path (play_loop.go:242), and leaves sittingInPlace with
+  no stated way to reach a console at all - its signature carries no con and
+  runEditor has no rawSession.
+- **PQ-9** [Minor] `hand-swept-surface-unnamed` Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
+  This is the 2nd finding in family hand-swept-surface-unnamed, so the rule rather
+  than the instance: a prose surface no test derives is named - file and section - in
+  the step that sweeps it, which is this repo's own stated convention at
+  doc_sync_test.go:376-380. Here that is the per-command paragraphs at
+  cmd/define/README.md:724-760, where /stats, /history and /pron each have one.
+
+## Round 4 — 2026-09-08T15:30:56-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-4 — addressed — Extent is written — nothing of the sitting's outlives the call, the key reader is borrowed, and the sitting starts no second watchResize because it borrows the REPL's resizes channel.
+- PQ-8 — addressed — The rule is stated as the three acquisitions a borrower must not take, and the newConsole call is gone from the sittingInPlace row.
+- PQ-7 — not-addressed — Minor, carried — the plan still says five noDeckMessage callers (six exist) and play_loop.go:30 still hand-rolls the sentence.
+- PQ-9 — not-addressed — Minor, carried — Step 8 is still the bare item and names no README section.
+
+### Raised
+
+- **PQ-10** [Minor] `terminal-ownership-unstated` the sittingInPlace signature still takes sess/stdout, the pair the stated rule says it must not build a console from
+  This is the 4th finding in family terminal-ownership-unstated, so the rule not the row — and the plan now STATES the rule correctly (newSitting owns assembly, built where the rawSession and the real stdout are in scope). The signature is the one artifact left contradicting it: replayInPlace's sess is the plain session struct (replraw.go:625, session.go:9) and its stdout at the call site is con.stdout, the liveScreen (replraw.go:507), so an implementer building the pinned screen from those arguments reproduces PQ-2's fabricated 80x24 via defaultCols. Make the signature take the console.
+- **PQ-11** [Minor] `plan-cites-unwritten-test` the plan's Verification section backticks a test that does not exist, so TestPlanCitesTestsThatExist is red on main
+  go test -run TestPlanCitesTestsThatExist ./... fails today: repo_guard_test.go:1353 reports that the plan cites TestSlashPlayRefusesWhereItCannotRun and no such test exists. The plan cites that guard itself (repo_guard_test.go:1306) and then trips it, and its own Verification step 1 demands a clean suite. Un-backtick the not-yet-written names, or note the expected red until Task 1 Step 1 lands.
+
 ## Open findings
 
-- **PQ-1** [Critical] `terminal-ownership-unstated` newConsole's finish restores the shared rawSession, so a sitting started from the loop hands the terminal back mid-REPL
-- **PQ-2** [Critical] `terminal-ownership-unstated` the performing half has neither the rawSession nor the real tty in scope inside runEditor
-- **PQ-3** [Important] `refusal-enumeration-incomplete` the nil-capability refusal omits the absent-deck case, which todaysQuestions dereferences
-- **PQ-4** [Important] `unstated-goroutine-extent` the ARCH-ORDER "no concurrency" N/A is wrong — newConsole starts a resize watcher and each screen carries a paint timer
+- **PQ-7** [Minor] `refusal-enumeration-incomplete` the two entry points would print different sentences for the same nil deck
+- **PQ-9** [Minor] `hand-swept-surface-unnamed` Step 8 is the bare item "README + atlas" and names no section for the hand-swept half
+- **PQ-10** [Minor] `terminal-ownership-unstated` the sittingInPlace signature still takes sess/stdout, the pair the stated rule says it must not build a console from
+- **PQ-11** [Minor] `plan-cites-unwritten-test` the plan's Verification section backticks a test that does not exist, so TestPlanCitesTestsThatExist is red on main

@@ -27,8 +27,18 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 	// flag — keying it on the env var would hand a nil store to the queue builder
 	// on the other path and panic.
 	if d.deck == nil {
-		fmt.Fprintln(stdout, "define: no deck in this directory, so there is nothing to review")
-		return 0
+		// THE SAME ANSWER /play GIVES, through the same helper. Two doors onto one
+		// sitting were giving one condition two answers — this printed to stdout
+		// and returned 0 while /play used noDeckMessage on stderr and returned 1
+		// (#48 BR-1/BR-12). noDeckMessage also tells the two CAUSES apart, which
+		// this sentence never did: DEFINE_NO_CAPTURE opened nothing on purpose,
+		// an ordinary directory simply has none.
+		//
+		// 1 rather than 0, matching --forget, --harvest, --reflect and /history,
+		// which #8 found unanimous. A script asking for a review and getting none
+		// should know.
+		fmt.Fprintln(stderr, noDeckMessage(opt.noCapture))
+		return 1
 	}
 
 	// EVERY PRECONDITION FOR OWNING THE TERMINAL IS SETTLED HERE, before the
@@ -452,6 +462,17 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
 				} else if removed {
 					held.dropped(out.Word)
+					// AND THE HIGHLIGHT SET, because it is derived from the deck
+					// and the deck just shrank (#48). Before /play a sitting was
+					// always its own process, so a stale set died with it; now the
+					// loop outlives the sitting and would go on painting a dropped
+					// word as known at the prompt.
+					//
+					// Beside held.dropped rather than inside it: that keeps the
+					// SITTING's view of the deck, this keeps the SESSION's.
+					if d.vocab != nil {
+						d.vocab.Forget(out.Word)
+					}
 					refresh()
 					fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
 				}

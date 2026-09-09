@@ -331,18 +331,46 @@ func TestPlayRefusesWhenStdoutIsNotATerminal(t *testing.T) {
 // No deck, no session — guarded on the PRECONDITION, since DEFINE_NO_CAPTURE and
 // a Getwd failure both produce it and keying on the flag would panic on the other
 // path.
-func TestNoDeckExitsZeroWithAMessage(t *testing.T) {
-	d := testDeps(t)
-	d.deck = nil
-	var out, errb bytes.Buffer
+// A NIL DECK NAMES ITS CAUSE ON STDERR AND EXITS 1 — the same answer from both
+// doors onto a sitting (#48 BR-1/BR-12).
+//
+// CHANGED from exit 0 on stdout, and the change is the point. `--play` and
+// `/play` were giving ONE condition two answers, and neither had a rule written
+// down; the old sentence also could not tell the two CAUSES apart, which
+// noDeckMessage exists to do. `#8` measured the house convention as unanimous —
+// --forget, --harvest, --reflect and /history all use stderr and 1 — so the
+// outlier is what moved.
+//
+// A script asking for a review and getting none should know. The EMPTY deck is
+// the case worth protecting from an error, and it still exits 0 with its own
+// sentence.
+func TestNoDeckNamesTheCauseAndExitsOne(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		noCapture bool
+		want      string
+	}{
+		{"no directory", false, "no deck in this directory"},
+		{"capture off", true, "DEFINE_NO_CAPTURE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := testDeps(t)
+			d.deck = nil
+			var out, errb bytes.Buffer
 
-	code := runPlay(t.Context(), d, options{}, strings.NewReader(""), &out, &errb)
+			code := runPlay(t.Context(), d, options{noCapture: tc.noCapture},
+				strings.NewReader(""), &out, &errb)
 
-	if code != 0 {
-		t.Errorf("exit = %d, want 0", code)
-	}
-	if !strings.Contains(out.String(), "no deck") {
-		t.Errorf("stdout = %q, want an explanation", out.String())
+			if code != 1 {
+				t.Errorf("exit = %d, want 1", code)
+			}
+			if !strings.Contains(errb.String(), tc.want) {
+				t.Errorf("stderr = %q, want it to name the cause %q", errb.String(), tc.want)
+			}
+			if out.Len() != 0 {
+				t.Errorf("a diagnostic reached stdout: %q", out.String())
+			}
+		})
 	}
 }
 

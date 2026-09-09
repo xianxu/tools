@@ -721,6 +721,19 @@ Tab to complete, `/help` to list them. It works the same from every entry mode:
 `define /help`, `echo /help | define`, and `/help` typed at the prompt are one
 thing.
 
+`/play` runs today's review without leaving the prompt. Answer the questions, or
+press Ctrl-C when you have had enough — either way you land back where you were,
+with the session's summary in the scrollback above you. `--play` still works as a
+command of its own, for a session that is only a review; both reach the same
+sitting, so anything true of one is true of the other.
+
+Ctrl-C inside a sitting ends the SITTING. At the prompt it still quits `define`.
+
+In a directory with no deck, both forms say which reason — nothing here yet, or
+`DEFINE_NO_CAPTURE` set — and exit `1`, the same as `--forget`, `--harvest`,
+`--reflect` and `/history`. An EMPTY deck is different and exits `0`: having
+looked nothing up yet is not an error.
+
 `/stats` is the screen above, from the prompt — the same figures `--stats`
 prints, because both doors reach one fold. It takes no argument: it reads
 everything.

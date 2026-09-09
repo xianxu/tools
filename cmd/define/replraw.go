@@ -33,6 +33,28 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	return runEditor(ctx, keys, interrupts, d, opt, newConsole(ctx, d, sess, stdout, newLiveScreen))
 }
 
+// applyShape is everything the loop derives from a terminal shape, in ONE place.
+//
+// The POLICY width for wrapping new entries, and the TRUE width for placing rows.
+// Below 20 columns wrapping is turned off — a dictionary entry cannot be broken
+// that narrowly and stay readable — while the frame still has to fit the columns
+// that exist.
+//
+// It is a function because a shape now arrives by two routes (#48 BR-14). A
+// resize during a SITTING is consumed by the sitting — the channel is borrowed,
+// so there is one watcher and whoever reads it takes the value — and is handed
+// back when the sitting ends. The first fix handed back the screen's shape and
+// not opt.width, so an entry looked up after a sitting wrapped at the
+// pre-sitting width: the instance fixed, the class not. With one function there
+// is no second half to forget.
+func applyShape(opt *options, view display, sz winSize) {
+	opt.width = sz.cols
+	if sz.cols < minWrapWidth {
+		opt.width = 0
+	}
+	view.Resize(sz.rows, sz.cols)
+}
+
 // newConsole takes the terminal and builds what a full-screen loop draws on.
 //
 // ONE builder, TWO loops, and it exists because the second one arrived as a
@@ -75,7 +97,7 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 		// narrow terminal, and only one of them may be zero.
 		return winSize{rows: terminalRows(stdout), cols: terminalCols(stdout)}
 	})
-	return console{
+	con := console{
 		view: live, resizes: resizes,
 		// ONCE, and the transcript is why it has to be: restore() and Stop() are
 		// both idempotent because they run from more than one exit path, and
@@ -91,6 +113,18 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 		// piped paths keep the real stderr (D6), so a script's `2>` is untouched.
 		stdout: live, stderr: live,
 	}
+	// newSitting builds a console for a full-screen sitting on THIS terminal.
+	//
+	// Built HERE because this is where `sess`, the real `stdout` and the concrete
+	// screen are in scope — runEditor has none of them, and widening its
+	// signature would undo the thing its own doc calls the point: "the editor
+	// loop with the terminal factored out". The closure carries the terminal so
+	// the loop never has to (#48 PQ-2).
+	con.newSitting = func(ctx context.Context, d deps, opt options, keys <-chan Key,
+		interrupts *interrupter, stderr io.Writer) (int, winSize) {
+		return sittingInPlace(ctx, d, opt, keys, interrupts, live, resizes, stdout, stderr)
+	}
+	return con
 }
 
 // viewportGesture moves the VIEW rather than the state, and reports whether it
@@ -150,6 +184,19 @@ type console struct {
 	resizes <-chan winSize
 	// finish hands the terminal back — see handBack for the order and why.
 	finish func()
+	// newSitting runs today's review on THIS terminal, or is nil on a console
+	// that newConsole did not build — a test's double, and the line-mode loop,
+	// which has no terminal at all. Nil is what /play refuses on (#48).
+	//
+	// newConsole sets it UNCONDITIONALLY, including for `--play`'s own console
+	// where nothing reads it (only runEditor does). That is deliberate rather
+	// than an oversight: the alternative is a console that knows which loop is
+	// about to use it, and `newConsole`'s whole argument is that the screen
+	// constructor "IS the whole difference" between them (#48 BR-11).
+	// It returns the shape the terminal ended at, because a resize consumed
+	// during the sitting reaches nothing else — see applyShape.
+	newSitting func(ctx context.Context, d deps, opt options, keys <-chan Key,
+		interrupts *interrupter, stderr io.Writer) (int, winSize)
 	// stdout and stderr are where the session's bytes go.
 	stdout io.Writer
 	stderr io.Writer
@@ -400,15 +447,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			// loop is idle: this case is only reached between keystrokes, so the
 			// frame is briefly stale rather than concurrently painted by two
 			// goroutines.
-			// The POLICY width for wrapping new entries, and the TRUE width for
-			// placing rows. Below 20 columns wrapping is turned off — a
-			// dictionary entry cannot be broken that narrowly and stay readable
-			// — while the frame still has to fit the columns that exist.
-			opt.width = sz.cols
-			if sz.cols < minWrapWidth {
-				opt.width = 0
-			}
-			view.Resize(sz.rows, sz.cols)
+			applyShape(&opt, view, sz)
 			draw()
 			continue
 		case k, open := <-keys:
@@ -499,7 +538,27 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					if sess.hasCurrent() {
 						cc.replay = func(l store.Lang) { pron = l }
 					}
+					// RECORDED here, PERFORMED below — /pron's rule one verb up.
+					// Supplied only when this console can host a sitting, so a
+					// nil capability IS /play's refusal.
+					var sitting bool
+					if con.newSitting != nil {
+						cc.startSitting = func() { sitting = true }
+					}
 					dispatchCommand(cmd, commands, cc)
+					if sitting {
+						// The loop owns running it, so --play and /play reach one
+						// playSession. Its exit code is the SITTING's and does not
+						// end the loop: a review that finished, or a Ctrl-C that
+						// ended one, both land back at this prompt.
+						_, sz := con.newSitting(ctx, d, opt, keys, interrupts, stderr)
+						// EVERYTHING the loop derives from a shape, through the
+						// one function its own resize case uses — a resize the
+						// sitting consumed reaches the loop by no other route.
+						applyShape(&opt, view, sz)
+						draw()
+						continue
+					}
 					if pron != "" {
 						// The same replay a bare Enter takes, one parameter apart.
 						// No reset: pron is declared inside this block and
