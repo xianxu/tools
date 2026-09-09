@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -722,8 +723,10 @@ func TestAtlasListsEveryConformanceCheck(t *testing.T) {
 	if _, err := os.Stat("live_property_test.go"); err == nil {
 		files = append(files, "live_property_test.go")
 	}
-	if len(files) < 7 {
-		t.Fatalf("found %d conformance files %v; this package has at least seven, so "+
+	// The floor tracks what is on disk: at 7 against 9 files the glob could lose
+	// two and still certify (#49 minor).
+	if len(files) < 9 {
+		t.Fatalf("found %d conformance files %v; this package has at least nine, so "+
 			"this derivation is under-deriving and would certify a table nobody wrote",
 			len(files), files)
 	}
@@ -732,13 +735,64 @@ func TestAtlasListsEveryConformanceCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading atlas/define.md: %v", err)
 	}
+	// THE ROW FORM, not a mention anywhere in the file.
+	//
+	// The assertion used to be a substring test for the filename, which ANY prose
+	// mention satisfied — and the prose one line above the table names
+	// version_conformance_test.go, so the row for the ONE check the merge gate
+	// depends on was the single unprotected row in the whole table (#49 I-A). The
+	// error message said "has no row", which is a claim a substring test cannot
+	// make. Matching the leading pipe makes the test say what it means.
 	for _, f := range files {
 		name := filepath.Base(f)
-		if !strings.Contains(string(atlas), "`"+name+"`") {
-			t.Errorf("atlas/define.md has no row for %s. Every conformance check earns "+
-				"one, because the table is how a reader learns which assumptions are "+
-				"pinned against the live world — and a check with no row is one nobody "+
-				"knows to run. Add it beside its siblings in the conformance table.", name)
+		row := regexp.MustCompile("(?m)^\\| `" + regexp.QuoteMeta(name) + "` \\|")
+		if !row.Match(atlas) {
+			t.Errorf("atlas/define.md has no TABLE ROW for %s (a mention in prose is "+
+				"not a row). Every conformance check earns one, because the table is "+
+				"how a reader learns which assumptions are pinned against the live "+
+				"world — and a check with no row is one nobody knows to run. Add a "+
+				"row naming it beside its siblings in the conformance table.", name)
 		}
+	}
+}
+
+// TestBothREADMEsShipTheSameInstallRecipe keeps one user-facing recipe in sync
+// across the two docs that carry it.
+//
+// 2nd in family `doc-restates-itself` (#49). The root README and cmd/define's
+// carry the same three `brew` lines verbatim with nothing holding them together,
+// and the pair has ALREADY diverged once this issue — both said "the first two
+// lines are load-bearing" while explaining lines one and three. The root's own
+// text claims cmd/define's is "the one copy that does", which is true of the WHY
+// and not of the commands.
+//
+// The commands are pinned, not the prose: an install recipe that differs between
+// two docs sends somebody to a broken install, whereas two explanations of the
+// same fact are just writing.
+func TestBothREADMEsShipTheSameInstallRecipe(t *testing.T) {
+	brewBlock := func(t *testing.T, path string) string {
+		t.Helper()
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		// The first fenced block containing `brew install`.
+		for _, chunk := range strings.Split(string(b), "```") {
+			if strings.Contains(chunk, "brew install") {
+				return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(chunk), "sh"))
+			}
+		}
+		t.Fatalf("%s has no fenced block containing `brew install` — the install "+
+			"recipe is what this pins, so its absence is the failure", path)
+		return ""
+	}
+	root := brewBlock(t, filepath.Join("..", "..", "README.md"))
+	tool := brewBlock(t, "README.md")
+	if root != tool {
+		t.Errorf("the install recipe differs between README.md and cmd/define/README.md.\n"+
+			"root:\n%s\n\ncmd/define:\n%s\n\n"+
+			"One recipe, two docs: a reader following the stale one gets a broken "+
+			"install. Keep the commands identical; the explanation can differ.",
+			root, tool)
 	}
 }

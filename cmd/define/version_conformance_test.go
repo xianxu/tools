@@ -66,7 +66,13 @@ func TestLdflagsStampReachesTheBinary(t *testing.T) {
 		t.Fatalf("go build with the formula's ldflags failed: %v\n%s", err, b)
 	}
 
-	b, err := exec.CommandContext(t.Context(), out, "--version").CombinedOutput()
+	// RUN FROM A TEMP DIR, not from the package dir `go test` inherits. Harmless
+	// today because --version returns above withStore — but this repo's own
+	// history is "three deck files reached commits because go test runs with cwd
+	// set to cmd/define/", and the directory IS the deck.
+	runCmd := exec.CommandContext(t.Context(), out, "--version")
+	runCmd.Dir = t.TempDir()
+	b, err := runCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("running the stamped binary failed: %v\n%s", err, b)
 	}

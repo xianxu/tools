@@ -1,12 +1,13 @@
 ---
 id: 000049
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-09
 updated: 2026-09-09
 estimate_hours: 1.41
 started: 2026-09-09T10:02:30-07:00
+actual_hours: 3.62
 ---
 
 # publish define through a homebrew tap
@@ -126,6 +127,7 @@ Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
 ## Log
 
 ### 2026-09-09 — filed
+- 2026-09-09: closed — Round 4. Rounds 2 and 3 each INDEPENDENTLY mutation-verified every prior finding fixed (round 3 reverted all eight in a scratch copy); round 3 verdict FIX-THEN-SHIP, no Criticals. Round 3s five Importants are now closed and each mutation-verified: I — acceptedCompiledBlobs was a global consulted by BOTH guards though its justification is historical only, so a NEW file carrying the waived blob passed the index guard; it is a parameter now (nil at the index) and I reproduced the reviewers exact bypass to confirm it is caught. II — the merge gate reported green when its check did not run (go test -run with no match exits 0); it now anchors the pattern, sets CONFORMANCE_STRICT=1 and requires the tests own --- PASS line, verified by renaming the test and watching the gate fail. III — the decision rule moved to the mechanism with the atlas linking rather than restating, the on-demand-not-in-CI claim corrected, and the conformance table (which lagged by two of nine) completed and pinned by TestAtlasListsEveryConformanceCheck, mutation-verified by deleting a row. IV — TestRunRefusesTwoModes was the last hand-enumerated mode set; all 21 pairs now derive from declaredModes, mutation-verified by removing run()s refusal (11 of 21 redden). V — Done-when #1 and #4 are UNTICKED and annotated pending v0.1.1, since v0.1.0 = 7380263 predates the BR-1 fix; the tag + formula bump + reinstall is an explicit post-merge Plan row. TWO GATES WAIVED DELIBERATELY: --no-plan-check because that post-merge row cannot be ticked before the merge it follows, and --no-ledger because the round-1 entries BR-1..BR-5 are fixed and were verified fixed by rounds 2 and 3, but the reviewer emits no findings block when a round carries no NEW findings, so the ledger cannot converge on its own. go build/vet, vet -tags conformance, gofmt clean, go test ./... green, run-merge-checks.sh green.; review verdict: FIX-THEN-SHIP
 
 Operator: *"now, we should publish this as a homebrew. I already publish pair, so
 we can use the same tap I assume."*
@@ -271,7 +273,22 @@ waiver outlives its debt. Both halves mutation-verified.
 `43559b0`. So the tarball the formula pins ships a `define` where
 `--version --play` drops `--play`. Done-when #1 is NOT ticked against that
 artifact: `v0.1.1` is tagged on main after merge and the tap's `url` + `sha256`
-bumped, then verified by reinstalling. Recorded under `### 2026-09-09 — boundary review round 3: FIX-THEN-SHIP, five Importants closed
+bumped, then verified by reinstalling. Recorded under `## Revisions`.
+
+Minors closed: two stale claims about WHERE `--llm-check` dispatches deleted
+rather than corrected (a statement about dispatch position belongs at the dispatch
+site); the install recipe reduced to ONE canonical copy — root README keeps the
+commands and links `cmd/define/README.md#install` for the why, and the miscounted
+"first two lines" (it was lines 1 and 3) is fixed; the dangling `[[...]]` in
+lessons.md replaced with the actual lesson; and a note that the conformance build
+deliberately omits the formula's `GOFLAGS`, since `-trimpath -mod=readonly` are
+orthogonal to the `-X` symbol path.
+
+Verified: `go build ./...`, `go vet ./...`, `go vet -tags conformance`, `gofmt -l`
+clean, `go test ./...` green, `go test -tags conformance -run Ldflags` green, and
+`bash scripts/run-merge-checks.sh` green.
+
+### 2026-09-09 — boundary review round 3: FIX-THEN-SHIP, five Importants closed
 
 Round 3 re-verified all eight prior findings by reversion in a scratch copy. Its
 five new Importants, each fixed and mutation-verified:
@@ -321,20 +338,57 @@ the merge check's always-run behaviour documented as deliberate. Recorded not
 fixed: the conformance test's `-ldflags` string is a hand restatement of the peer
 formula, which the formula's own `test do` pins from the other side.
 
-## Revisions`.
+### 2026-09-09 — boundary review round 4: FIX-THEN-SHIP, and a new family named
 
-Minors closed: two stale claims about WHERE `--llm-check` dispatches deleted
-rather than corrected (a statement about dispatch position belongs at the dispatch
-site); the install recipe reduced to ONE canonical copy — root README keeps the
-commands and links `cmd/define/README.md#install` for the why, and the miscounted
-"first two lines" (it was lines 1 and 3) is fixed; the dangling `[[...]]` in
-lessons.md replaced with the actual lesson; and a note that the conformance build
-deliberately omits the formula's `GOFLAGS`, since `-trimpath -mod=readonly` are
-orthogonal to the `-X` symbol path.
+Round 4 coined **`guard-fails-open`** and stated the rule that indicts this
+session's own method: *a guard must be mutation-verified against the invariant it
+NAMES, in its general form — not against the single reproduction that motivated
+it.* Both guards I added last round passed the exact case in the finding they
+closed and failed the general claim in their own error message. Every fix below is
+therefore mutated in EACH SHAPE the general form has, and each shape gets its own
+red.
+
+**I-A — the atlas pin matched a mention, not a row.** `strings.Contains(atlas,
+"`+"`"+`name`+"`"+`")` is satisfied by prose, and my own edit added a prose mention of
+`version_conformance_test.go` one line above the table — so the single unprotected
+row was the one for the check the merge gate depends on. My round-3 mutation
+passed only because I deleted the *harvest* row, which has no prose mention. Now
+matches the leading pipe. Both shapes red: deleting the version row (prose-shielded)
+and the harvest row (not).
+
+**I-B — conviction became path-dependent while `want` still held one path.**
+`sha -> ONE path` was justified by "identical content at two paths collapses;
+either name locates it", true only while conviction was decided by CONTENT. Adding
+`compiledExtensions` broke that premise, so the same blob tracked as `art.pyc` AND
+`art.txt` was acquitted by whichever won the map. Now `sha -> every path`, convicted
+if ANY path carries a compiled extension. Both shapes red: one compiled path, and
+the same blob doubled under a harmless extension. `TestNoRuntimeStateInHistory`
+consumed the same map and had the identical blind spot; fixed with it.
+
+**I-C — the sibling named in the same breath got no pin.** Round 2 pinned
+`--version` above `withStore`; the comment it added says `--version` and
+`--llm-check` "must BOTH answer on a machine where the rest of the program cannot",
+and only one was tested — so moving the `--llm-check` dispatch below `withStore`
+left the package green. Now tabled over both modes, asserting what the mode TOUCHES
+rather than what it concludes (`--llm-check` exits non-zero when unconfigured).
+Both modes red under their own mutation.
+
+Minors: the install recipe is pinned across both READMEs by
+`TestBothREADMEsShipTheSameInstallRecipe` (2nd in family `doc-restates-itself`, and
+the pair had already diverged once this issue) — mutation-verified by drifting the
+root copy; the conformance run moved to `t.TempDir()` so the built binary does not
+inherit `cmd/define/` as cwd, which is exactly how three deck files once reached
+commits; the duplicated mode floor collapsed into `declaredModesOrFail`; and the
+atlas-table floor raised from 7 to 9 so the glob cannot lose two files and still
+certify.
+
+**A self-inflicted repair:** round 3's Log entry had been spliced into the MIDDLE
+of round 2's sentence "Recorded under `+"`"+`## Revisions`+"`"+`.", because the insertion matched
+that inline code span rather than the heading. ~50 lines rendered as one code span
+and `## Revisions` appeared twice. Repaired, and the Log now precedes Revisions.
 
 Verified: `go build ./...`, `go vet ./...`, `go vet -tags conformance`, `gofmt -l`
-clean, `go test ./...` green, `go test -tags conformance -run Ldflags` green, and
-`bash scripts/run-merge-checks.sh` green.
+clean, `go test ./...` green, `bash scripts/run-merge-checks.sh` green.
 
 ## Revisions
 

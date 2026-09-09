@@ -347,3 +347,206 @@ Coverage on the code this window ships is strong and, unusually, *demonstrated* 
 
 - **`## Revisions` — "Done-when #1/#4 remain unticked until `v0.1.1` exists."** Reason: the Revisions entry already says #1 is satisfied by `v0.1.1`, but the checkboxes above it still claim satisfaction, and only `v0.1.0` is tagged. Delta: untick #1 and #4, add `- [ ] Tag v0.1.1 on main after merge; bump url + sha256 in xianxu/homebrew-tools; reinstall from the tap to verify` to `## Plan`, and keep that claim out of `sdlc close --verified`.
 - **`## Revisions` — "the mode enumeration is derived at every consumer except `TestRunRefusesTwoModes`."** Reason: the round-2 Log states the enumeration problem as solved ("an eighth mode is covered the day its row is added"), which is true of the word half and the pair half in `modeCollision`, but not of the through-`run()` pair table — and this window added rows to it by hand. Delta: record the remaining consumer and the rule that covers it (Important IV), so the next mode does not have to rediscover which half was derived.
+
+---
+
+## Re-review — 2026-09-09T15:31:16-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 49 — publish define through a homebrew tap |
+| repo | tools |
+| issue file | workshop/issues/000049-publish-define-through-a-homebrew-tap.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 12aacfb887f7c58401aa0fa5b164b8ef00973ea0..efd8392e70b8bcab3e1071fddaa8f37460840048 |
+| command | sdlc close --issue 49 |
+| reviewer | claude |
+| timestamp | 2026-09-09T15:31:16-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All eight prior findings are genuinely fixed, and I verified each by reversion in a scratch copy rather than by reading the commit messages: dropping `{"-version", *versionFlag}` now reddens `TestEveryDispatchedModeIsInTheCollisionList` (it did not before), renaming `main.version` leaves the unit tests green but reddens `TestLdflagsStampReachesTheBinary` *and* the merge gate, renaming the conformance test itself fails the gate on the missing `--- PASS` line, moving `--version` below `withStore` reddens `TestVersionAnswersWithNoDictionaryOrDeck`, deleting the `-version` word-arm reddens exactly that subtest of the derived word matrix, and replanting blob `b1fc21e3` at a new path is now caught by the index guard. The shipped behaviour is correct on the built binary — all six mode-pairs with `-version` exit 2, and both `-version cat` and `-llm-check cat` refuse. `go build`, `go vet` (both tag sets), `gofmt`, the full `go test ./...` and `scripts/run-merge-checks.sh` are green. What keeps this off SHIP is three pins, all in the same shape as the findings this round was closing: two guards added or extended this window report green while the invariant they name is violated (I demonstrated both), and `--llm-check`'s "answers above `withStore`" — the enumerable sibling named in the very sentence that fixed `--version` — is still pinned by nothing.
+
+### 1. Strengths
+
+- **`TestEveryDispatchedModeIsInTheCollisionList` is now genuinely shape-independent** (`cmd/define/harvest_test.go:1055-1078`). Accepting *any* single-result `return` in a bare-flag-ident `if` is the right generalisation, and the over-match argument holds: `if *harvest && fs.NArg() != 0` is a `BinaryExpr` and never reaches the body walk. The mutual floor (`len(dispatched) < len(listed)`) is the correct fix for the #8 BR-11 failure mode where a hand-typed floor certified its own gap.
+- **The word-refusal matrix is derived, and `argvForMode` derives argv shape from `fs.String` declarations** (`harvest_test.go:764-800`) rather than special-casing `-forget` by memory. Deleting the `-version` arm reddens `TestEveryModeRefusesATrailingWord/-version` specifically. Setting the three `DEFINE_LLM_*` vars so a `-llm-check` regression cannot reach the network is a genuinely good instinct — a failing test that spends tokens is a test people disable.
+- **The merge check asserts that it ran** (`scripts/merge-checks.d/10-release-stamp.sh:50-55`). Requiring the test's own `--- PASS` line, rather than trusting `go test`'s exit code, is the correct answer to `-run <no match>` exiting 0, and I confirmed the rename fails it. The "ignores `$BASE $HEAD` and always runs" decision is right and well-argued.
+- **`acceptedCompiledBlobs` as a parameter, not a global** (`repo_guard_test.go:205-212`), with `nil` at the index. The justification is scoped to history, so scoping the waiver to history is the honest structure — and `TestAcceptedCompiledBlobsAreStillReachable` closes the stale-waiver hole.
+- **The version number has no third copy.** `stampedVersion = "v9.9.9-conformance"` (`version_conformance_test.go:38`) deliberately refuses to restate the release number. The shadow-sweep finds no hand-maintained copy of the version anywhere — README, atlas and tests all describe the mechanism without naming a number (ARCH-PURPOSE: pass).
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-A — `TestAtlasListsEveryConformanceCheck` passes when the table row it names is deleted** (`cmd/define/doc_sync_test.go:735-741`).
+
+The assertion is `strings.Contains(atlas, "`"+name+"`")` — filename mentioned *anywhere*, not "has a table row". `atlas/define.md:2066` mentions `` `version_conformance_test.go` `` in prose above the table, so that one file's row is unprotected. Demonstrated at `efd8392`: deleting only line 2085 (the table row) leaves the test green; deleting line 2084 (the harvest row, which has no prose mention) fails it. The unprotected row is the *one* row for the check the merge gate depends on. The error message — "atlas/define.md has no row for X" — states a claim the test cannot make.
+
+Fix: scan only the table region, or require the row form: match `regexp.MustCompile("(?m)^\\| `"+regexp.QuoteMeta(name)+"` \\|")`.
+
+**I-B — `scanForExecutables` fails open when a compiled blob is also tracked under a non-compiled extension** (`cmd/define/repo_guard_test.go:274-278`, with `main_test`-adjacent `want` construction at `repo_guard_test.go:313`).
+
+Conviction is now `isExecutableImage(head) || compiledExtensions[filepath.Ext(want[f[0]])]` — but `want` is `sha -> ONE path`, and the comment justifying that collapse ("identical content at two paths collapses; either name locates it") was true only while conviction was content-only. It stopped being true the moment conviction became path-dependent. Demonstrated in a clone at `efd8392`: staging a 504-byte fake `.pyc` at `cmd/define/zz_art.pyc` alone fails the guard; staging the *same blob* additionally as `cmd/define/zz_art.txt` makes it pass, because `.txt` wins the map. The magic-byte half is unaffected (content-only), so this is a hole specific to the `.pyc`/`.class`/`.wasm` half added this round.
+
+Fix: `want map[string][]string` (sha → every path), convict if `isExecutableImage(head)` or *any* path carries a compiled extension; `seen != len(want)` accounting is unchanged since it is keyed on shas.
+
+> **These two are the 1st and 2nd findings in family `guard-fails-open`, which I am coining.** Per the class rule, do not fix only these two sites — the rule they share is: **a guard must be mutation-verified against the invariant it *names*, in its general form, not against the single reproduction that motivated it.** Both guards were verified against the exact case in the finding they closed (the missing harvest row; the replanted `.pyc` at one path) and both pass that case while failing the general statement in their own error message. The cheap enforcement is procedural — the `## Log` already records mutation verification per fix; it should record the *general* mutation, and where the general form has more than one shape (row-vs-mention, one-path-vs-many), each shape gets its own red.
+
+**I-C — `--llm-check` "answers above `withStore`" is asserted three times and pinned by nothing** (`cmd/define/main.go:713-721`, `main.go:752`, `atlas/define.md:2626`).
+
+Round 2's I-3 fixed exactly this for `--version` by injecting a `newStore` that `t.Error`s if built. The sibling was named in the same breath — the new comment reads *"'what am I running' and 'is the model configured' must **both** answer on a machine where the rest of the program cannot"* — and got no pin. Verified by mutation: moving `if *llmCheck { return runLLMCheck(...) }` below `d = d.withStore(opt, stderr)` builds clean and leaves the entire `cmd/define` package green (the only failure in my scratch copy was the unrelated `TestAcceptedCompiledBlobsAreStillReachable`, expected because the scratch history has no `.pyc`). This is ARCH-PURPOSE at review: the instance was fixed, the class was enumerable and two-long, and the second member is still open.
+
+Fix: table both modes over the failing-`newStore` deps — `for _, mode := range []string{"-version", "-llm-check"}` — so an eighth store-independent mode joins by adding a row. `-llm-check` returns non-zero when unconfigured, so assert "the store was not built" rather than `code == 0`.
+
+### 4. Minor findings
+
+- `README.md:11-15` and `cmd/define/README.md:11-15` carry the same three `brew` commands verbatim with nothing keeping them in sync — **2nd in family `doc-restates-itself`**, so the rule rather than the instance: *a user-facing recipe present in two docs needs a doc-sync pin*, and `doc_sync_test.go` already has the machinery (assert the two fenced blocks are byte-identical, or that the root's block is a substring of the canonical one). The root README's own text claims cmd/define's is "the one copy that does" — true of the *why*, not of the commands.
+- `workshop/issues/000049-…md:274` has an unterminated inline code span (`Recorded under \``) that swallows round 3's `### 2026-09-09 — boundary review round 3` heading and closes at a phantom `` ## Revisions`. `` on line 324. Round 3's Log entry is not a heading, ~50 lines render as one code span, and `## Revisions` appears twice with the first being an artefact. The intended sentence is "Recorded under `## Revisions`."
+- `cmd/define/version_conformance_test.go:79` runs the built binary with cwd inherited from `go test` (= `cmd/define/`). Harmless today because `--version` returns above `withStore`, but this repo's own history is "three deck files reached commits because `go test` runs with cwd set to `cmd/define/`". Set `cmd.Dir = t.TempDir()` on the *run* (the `build` needs the package dir).
+- `cmd/define/main.go:600` is 127 characters — prose was inserted into the `-harvest` comment block without re-wrapping, and the file wraps at ~80 everywhere else. Also `main.go:488`: the merged usage sentence prints as ~100 columns and will wrap in an 80-column terminal, unlike the lines around it.
+- ARCH-DRY: the four-line `if len(modes) < 7 { t.Fatalf("derived %d modes; …") }` floor is byte-identical in `TestRunRefusesTwoModes` (`harvest_test.go:684`) and `TestEveryModeRefusesATrailingWord` (`harvest_test.go:826`) — one `declaredModesOrFail(t)` helper. Relatedly, `TestAtlasListsEveryConformanceCheck`'s floor is `< 7` against 9 files on disk, so the glob could lose two and still certify.
+
+### 5. Test coverage notes
+
+Coverage of the bug class this diff could ship is now genuinely good, and I confirmed the reds rather than trusting them: mode×mode (21 derived pairs), mode×word (7 derived), dispatch-shape independence, the linker boundary, the store-independence of `--version`, the index/history waiver split, and the merge gate's own execution proof. Three gaps remain, all named above: the atlas table row (I-A), the multi-path blob (I-B), and `--llm-check`'s dispatch position (I-C). One cross-repo contract is knowingly untested and was already recorded by round 3: the conformance test's `-ldflags -X main.version=` string is a hand restatement of `Formula/define.rb`'s, verified only from the formula's side by its own `test do`. That is acceptable for a peer-repo artifact, but it is the last un-derived copy in the release chain and worth naming in the atlas rather than only in a code comment.
+
+### 6. Architectural notes for upcoming work
+
+- **ARCH-DRY** — pass with the Minor above; `flagsDeclaredWith(t, kind)` collapsing the two AST walkers is exactly right.
+- **ARCH-PURE** — pass. `versionLine()` is pure and tested without IO; `runVersion(io.Writer)` is a two-line shell. No business logic moved into a handler.
+- **ARCH-PURPOSE** — flagged (I-C). The shadow-sweep on the version number itself is clean: no consumer restates it. The `## Plan`'s unchecked post-merge `v0.1.1` row and the two untickable Done-whens are correctly annotated rather than optimistically ticked, which is the right answer to round 3's finding V.
+- **ARCH-MOCK** — pass, with a note. The Go toolchain is the external dependency and the conformance test drives the *real* one at the *same seam the formula uses*, which is the correct instrument here (a fake linker would prove nothing). The dependency with no seam at all is Homebrew: nothing in this repo can exercise `brew trust`/`tap`/`install`, so the install path is verified only by hand on a VM. That is defensible for one formula; if a second `cmd/X` ships, the tap deserves a scripted install-in-a-clean-VM check rather than a second manual pass — the `lessons.md` entry already writes down why the *dev* VM cannot serve as that check.
+- **ARCH-CONSTRAINTS** — pass. The merge gate's cost is stated (~3s) and I measured 3.95s; the always-run decision is argued rather than assumed; the `-run` anchor keeps live model and dictionary calls out of the gate. Confirmed the conformance test set compiles and vets for `GOOS=linux` (`dict_stub.go` covers the darwin-only path), so the gate will not false-fail on `ubuntu-latest`.
+- **ARCH-SECURE** — pass, with the cwd Minor. No credentials in the diff; the `-ldflags` value is a literal, not interpolated from input; `git cat-file --batch` output is parsed with a field-count guard and both `cmd.Wait()` and the `seen != len(want)` completeness check are asserted, so a truncated stream cannot report clean. The blob-keyed waiver is content-addressed, which is the right trust anchor for "this exact debt".
+- **ARCH-ORDER** — pass. Nothing here carries state between external events. The one shared-state hazard is the package-level `version` mutated by `TestVersionIsHonestAboutUnstampedBuilds`, whose `t.Parallel` dependency is now recorded in a comment; a `t.Setenv`-style helper that fails if any test in the package calls `t.Parallel` would make it mechanical, but the comment is proportionate today.
+
+### 7. Plan revision recommendations
+
+None. The `## Plan` and Done-when already match the code after round 3's revision: the post-merge `v0.1.1` row is explicitly unchecked with the reason recorded, and the `## Revisions` entry correctly documents that Done-when #1 is satisfied by `v0.1.1` rather than `v0.1.0`. The only issue-file defect is the malformed markup noted in §4, which is a repair, not a revision.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      All six -version mode pairs exit 2 on the built binary; dropping the list row now reddens the guard.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Renaming main.version keeps units green and reddens TestLdflagsStampReachesTheBinary plus the merge gate.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Root README.md now leads with an Install section carrying the three brew lines.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Both -version cat and -llm-check cat exit 2; the word matrix is derived from declaredModes.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      The define() shadow trap is now a workshop/lessons.md entry with the generalisation stated.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      One macOS paragraph, CoreServices reasoning kept, no stray blank pair.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      fs.Usage prose now names --version (see the separate Minor about its printed width).
+  - id: BR-8
+    disposition: addressed
+    note: |
+      The t.Parallel dependency is recorded in a comment at the mutation site.
+findings:
+  - id: new
+    severity: Important
+    family: guard-fails-open
+    title: |
+      TestAtlasListsEveryConformanceCheck matches the filename anywhere, so the one table row the merge gate depends on can be deleted while it stays green
+    detail: |
+      Demonstrated at efd8392: deleting only atlas/define.md:2085 (the version_conformance_test.go
+      table row) leaves the test green, because the prose mention at atlas/define.md:2066 satisfies
+      strings.Contains; deleting the harvest row, which has no prose mention, does fail it. Require
+      the row form (a line matching "^\| `<name>` \|") instead of a bare Contains.
+  - id: new
+    severity: Important
+    family: guard-fails-open
+    title: |
+      scanForExecutables convicts by extension but want maps a blob to only ONE path, so the same blob tracked as x.pyc and x.txt is not caught
+    detail: |
+      The comment "identical content at two paths collapses; either name locates it"
+      (repo_guard_test.go:313) was true only while conviction was content-only; it stopped being
+      true when filepath.Ext(want[sha]) became half the predicate. Reproduced in a clone of efd8392:
+      cmd/define/zz_art.pyc alone fails TestNoCommittedBinaries, the same blob also staged as
+      zz_art.txt passes. Make want a sha -> []string and convict if ANY path carries a compiled
+      extension. This is the 2nd finding in the family I am coining: the RULE is that a guard must
+      be mutation-verified against the invariant it NAMES in its general form, not against the
+      single reproduction that motivated it.
+  - id: new
+    severity: Important
+    family: asserted-invariant-unpinned
+    title: |
+      --llm-check's "answers above withStore" is asserted in main.go twice and in the atlas, and pinned by nothing
+    detail: |
+      Round 2's I-3 pinned exactly this for --version with a newStore that t.Errors if built, and
+      the fix's own comment at main.go:713 names BOTH modes in one sentence. Verified by mutation:
+      moving `if *llmCheck { return runLLMCheck(...) }` below `d = d.withStore(opt, stderr)` builds
+      clean and leaves the whole cmd/define package green. ARCH-PURPOSE — the class was enumerable
+      and two long, and the second member is still open. Table both modes over the failing-newStore
+      deps, asserting "the store was not built" rather than exit 0.
+  - id: new
+    severity: Minor
+    family: doc-restates-itself
+    title: |
+      the three brew commands are duplicated verbatim in README.md and cmd/define/README.md with nothing keeping them in sync
+    detail: |
+      2nd in this family, so the rule rather than the instance: a user-facing recipe present in two
+      docs needs a doc-sync pin, and doc_sync_test.go already has the machinery. The root README
+      claims cmd/define's is "the one copy that does" — true of the explanation, not of the commands.
+  - id: new
+    severity: Minor
+    family: artifact-record-malformed
+    title: |
+      the issue file has an unterminated inline code span that swallows round 3's Log heading and emits a phantom second "## Revisions"
+    detail: |
+      workshop/issues/000049-…md:274 ends "Recorded under `" and the span closes only at line 324
+      ("## Revisions`."), so round 3's ### heading is not a heading, ~50 lines render as one code
+      span, and a naive ^## section split finds Revisions at 324 rather than 339. The intended
+      sentence is "Recorded under `## Revisions`."
+  - id: new
+    severity: Minor
+    family: test-touches-real-state
+    title: |
+      version_conformance_test.go runs the built binary with cwd inherited from go test (= cmd/define/)
+    detail: |
+      Harmless while --version returns above withStore, but this repo's own history is "three deck
+      files reached commits because go test runs with cwd set to cmd/define/". Set cmd.Dir =
+      t.TempDir() on the run; the build still needs the package dir.
+  - id: new
+    severity: Minor
+    family: comment-wrap-drift
+    title: |
+      main.go:600 is 127 chars after prose was inserted without re-wrapping, and the merged usage line at main.go:488 prints ~100 columns
+    detail: |
+      The file wraps at ~80 everywhere else, and the usage line will soft-wrap in an 80-column
+      terminal unlike the lines around it.
+  - id: new
+    severity: Minor
+    family: derived-set-floor-duplicated
+    title: |
+      the "derived %d modes; run() declares at least seven" floor is byte-identical in two tests, and the atlas guard's floor is 7 against 9 files
+    detail: |
+      harvest_test.go:684 and :826 should share one declaredModesOrFail(t) helper (ARCH-DRY);
+      doc_sync_test.go:727 could lose two conformance files to a broken glob and still certify.
+```

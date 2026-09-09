@@ -688,11 +688,7 @@ func TestModeCollision(t *testing.T) {
 // subset that happened to miss it.
 func TestRunRefusesTwoModes(t *testing.T) {
 	strFlags := stringFlagNames(t)
-	modes := declaredModes(t)
-	if len(modes) < 7 {
-		t.Fatalf("derived %d modes; run() declares at least seven, so this check is "+
-			"under-deriving and would certify a set nobody chose", len(modes))
-	}
+	modes := declaredModesOrFail(t)
 	for i, a := range modes {
 		for _, b := range modes[i+1:] {
 			args := append(argvForMode(strFlags, a.name), argvForMode(strFlags, b.name)...)
@@ -753,6 +749,22 @@ func flagsDeclaredWith(t *testing.T, kind string) map[string]string {
 	return out
 }
 
+// declaredModesOrFail is declaredModes plus the floor both set-enumerating tests
+// need, in one place rather than two byte-identical copies (#49 minor, ARCH-DRY).
+//
+// The floor is the #12 BR-17 rule: an extraction finding FEWER members than the
+// code declares is under-deriving, and every check built on it is then certifying
+// a set nobody chose.
+func declaredModesOrFail(t *testing.T) []mode {
+	t.Helper()
+	modes := declaredModes(t)
+	if len(modes) < 7 {
+		t.Fatalf("derived %d modes; run() declares at least seven, so this check is "+
+			"under-deriving and would certify a set nobody chose", len(modes))
+	}
+	return modes
+}
+
 // argvForMode is one mode as a user would type it: a string flag needs a value,
 // a bool flag is the name alone. Derived, so `-forget` is not special-cased by
 // memory in the two tests that build argv.
@@ -798,11 +810,7 @@ func TestEveryModeRefusesATrailingWord(t *testing.T) {
 	t.Setenv("DEFINE_LLM_BASE_URL", "https://api.anthropic.com")
 
 	strFlags := stringFlagNames(t)
-	modes := declaredModes(t)
-	if len(modes) < 7 {
-		t.Fatalf("derived %d modes; run() declares at least seven, so this check is "+
-			"under-deriving and would certify a set nobody chose", len(modes))
-	}
+	modes := declaredModesOrFail(t)
 	for _, m := range modes {
 		t.Run(m.name, func(t *testing.T) {
 			args := append(argvForMode(strFlags, m.name), "cat")

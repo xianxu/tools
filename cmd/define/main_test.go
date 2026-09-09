@@ -495,32 +495,53 @@ func TestVersionIsHonestAboutUnstampedBuilds(t *testing.T) {
 	}
 }
 
-// IT ANSWERS BEFORE ANYTHING ELSE CAN FAIL. --version must work on a machine
-// where the dictionary, the directory and the model are all unavailable, which
-// is exactly the machine whose owner is trying to report a bug.
-func TestVersionAnswersWithNoDictionaryOrDeck(t *testing.T) {
-	var out, errb bytes.Buffer
-	// A STORE THAT FAILS IF IT IS TOUCHED, which is what makes this a pin on the
-	// dispatch's POSITION rather than only on its result.
-	//
-	// `deps{}` alone could not do that: withStore calls newStore only when it is
-	// non-nil, so with an empty deps the whole of withStore is a no-op and the
-	// dispatch could move below it with every test still green — the review
-	// measured exactly that mutation and found nothing failed (#49 I-3). The
-	// invariant is stated in main.go and in atlas/define.md; this is what makes it
-	// true rather than asserted.
-	d := deps{ // no dict, no clock, no audio — and a store that must not be built
-		newStore: func(options, io.Writer) storeDeps {
-			t.Error("--version built the store. It must answer ABOVE withStore: the " +
-				"machine whose owner is running --version is the one where the " +
-				"directory, the dictionary and the model may all be unavailable.")
-			return storeDeps{}
-		},
-	}
-	if code := run(t.Context(), []string{"-version"}, d, strings.NewReader(""), &out, &errb); code != 0 {
-		t.Errorf("exit = %d, want 0; stderr %q", code, errb.String())
-	}
-	if !strings.Contains(out.String(), "define") {
-		t.Errorf("stdout = %q, want the program to name itself", out.String())
+// IT ANSWERS BEFORE ANYTHING ELSE CAN FAIL. --version and --llm-check must both
+// work on a machine where the dictionary, the directory and the model are all
+// unavailable — which is exactly the machine whose owner is trying to report a
+// bug.
+//
+// TABLED OVER BOTH MODES, because the class is enumerable and was two long
+// (#49 I-C). Round 2 pinned --version this way and named --llm-check in the same
+// breath — main.go's comment says "both answer on a machine where the rest of the
+// program cannot" — but only one got a test, so moving the --llm-check dispatch
+// below withStore left the whole package green. An eighth store-independent mode
+// joins by adding a row.
+func TestStoreIndependentModesAnswerAboveTheStore(t *testing.T) {
+	for _, mode := range []string{"-version", "-llm-check"} {
+		t.Run(mode, func(t *testing.T) {
+			// A REMOTE provider with no key, so -llm-check reports unavailable
+			// without reaching the network (llmcheck_test.go:135 states the rule).
+			t.Setenv("DEFINE_LLM_API_KEY", "")
+			t.Setenv("ANTHROPIC_API_KEY", "")
+			t.Setenv("DEFINE_LLM_BASE_URL", "https://api.anthropic.com")
+
+			var out, errb bytes.Buffer
+			built := false
+			// A STORE THAT RECORDS BEING BUILT, which is what makes this a pin on
+			// the dispatch's POSITION rather than only on its result. `deps{}`
+			// alone cannot: withStore calls newStore only when it is non-nil, so
+			// with an empty deps the whole of withStore is a no-op and the
+			// dispatch could move below it with every test still green — the
+			// review measured exactly that mutation (#49 I-3, I-C).
+			d := deps{ // no dict, no clock, no audio
+				newStore: func(options, io.Writer) storeDeps {
+					built = true
+					return storeDeps{}
+				},
+			}
+			run(t.Context(), []string{mode}, d, strings.NewReader(""), &out, &errb)
+
+			// The EXIT CODE is deliberately not asserted: --version returns 0 and
+			// --llm-check returns non-zero when unconfigured, and the shared claim
+			// is about what the mode TOUCHES, not what it concludes.
+			if built {
+				t.Errorf("%s built the store. It must answer ABOVE withStore: the machine "+
+					"whose owner is running it is the one where the directory, the "+
+					"dictionary and the model may all be unavailable.", mode)
+			}
+			if out.Len() == 0 && errb.Len() == 0 {
+				t.Errorf("%s wrote nothing to either stream; it is supposed to answer", mode)
+			}
+		})
 	}
 }
