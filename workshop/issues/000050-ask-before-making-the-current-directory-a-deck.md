@@ -1,11 +1,12 @@
 ---
 id: 000050
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-10
 updated: 2026-09-10
 estimate_hours:
+started: 2026-09-10T09:41:40-07:00
 ---
 
 # ask before making the current directory a deck
