@@ -4218,3 +4218,30 @@ wins" upstream of it — those comments are premises, and yours may have just be
 **Origin:** #49 round 4, after rounds 1–3 had each found the previous round's fix
 incomplete in the same way. Related: [[smoke-testing-a-published-binary-in-a-dev-vm]] and
 this file's thesis — I validate my model of the system instead of the system.
+
+## An unasserted string replacement that matches nothing is a silent no-op — and it reports success
+
+**Pattern:** Three times in one session I ran `s.replace(old, new)` with no assertion on
+`s.count(old)`, the pattern did not match, the file was written back unchanged, and the
+script printed its cheerful "done" line. Each time the *next* observation was the thing
+that lied: a plan risk stayed marked OPEN after I "corrected" it (`confirm at Task 4` vs
+my `confirm before Task 4`); a mutation test "passed" having never applied the mutation
+(`Forget(key string) (bool, error)` vs the real `(removed bool, err error)`). The green
+result was not evidence the code was right — it was evidence the edit never happened.
+
+**Rule:** **Every programmatic string replacement asserts its match count before writing.**
+`assert s.count(old) == 1` — not `>= 1`, because two matches means the edit is ambiguous
+and one of them is wrong. This costs one line and converts the entire class from "silently
+did nothing, reported success" into "stopped and said which pattern missed". The same rule
+holds for `sed -i` (check the file changed) and for any edit expressed as a pattern rather
+than a position.
+
+**Corollary for mutation testing specifically.** A mutation that fails to apply looks
+*exactly* like a mutation the test caught: both end with a green suite. So a mutation run
+must confirm the mutation landed — grep the mutated file, or assert the replacement — before
+reading the test result. Otherwise "I verified this guard" means "I verified nothing, twice."
+
+**Origin:** #50 M1. Related: [[mutation-verify-a-guard-against-the-invariant-it-names]] —
+that lesson says mutate the general form; this one says make sure you mutated anything at
+all. Both are the same failure at different depths: I read the outcome I expected instead
+of the outcome that happened.

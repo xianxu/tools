@@ -208,12 +208,12 @@ Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-de
 
 - [x] M1 — `store.IsDeck`, derived from `RuntimeDirs` + `RuntimeFiles`, not from a
       hardcoded `words/`.
-- [ ] M1 — `gatedStore`: all 15 `Store` methods, 8 gated writes, 7 ungated reads;
+- [x] M1 — `gatedStore`: all 15 `Store` methods, 8 gated writes, 7 ungated reads;
       denial swaps to `store.Mem`.
-- [ ] M1 — the write set is DERIVED from the `Store` interface by AST, so a 16th
+- [x] M1 — the write set is DERIVED from the `Store` interface by AST, so a 16th
       method cannot be added ungated; mutated in all FOUR shapes (#49
       `guard-fails-open`).
-- [ ] M1 — `gatedStore` runs through `storetest.Suite`, allowed and denied.
+- [x] M1 — `gatedStore` runs through `storetest.Suite`, allowed and denied.
 - [ ] M1 — `openStore` wraps the deck; gate allows always. Whole suite still green.
 - [ ] M2 — `--here` and `deckGate`: already-a-deck / `--here` / no-tty / ask,
       defaulting to no.
@@ -258,3 +258,43 @@ Three mutations, each red on its own:
 A fourth was attempted (`strings.HasPrefix` instead of `Match`) and **cannot
 compile**: it orphans the `filepath` import. Recorded because "the compiler
 refuses it" is a stronger guarantee than a red test, not a skipped check.
+
+### 2026-09-10 — M1 Tasks 2–4, 6: the decision, the wrapper, the guard
+
+`deckPermission` holds the decision for the PROCESS, not per wrapper (PQ-2). A
+session builds two YAML stores and `/lang` rebuilds more; a per-wrapper state
+would ask once per wrapper, so the learner answers, switches language, and is
+asked again. `saving()` reads `(allowed, decided)` **without** resolving —
+mutation-verified: making it call `allowed()` reddens with *"reading whether
+anything is being saved must not ASK whether to start saving"*.
+
+`gatedStore` classifies by **what a method does to the disk**, not by being
+write-shaped (PQ-8). `Forget` is `os.Remove`/`os.RemoveAll` only, so it is
+ungated: gating it would make `define --forget x` in a non-deck directory ask
+permission to CREATE a deck in order to delete nothing.
+
+`storetest.Suite` runs over the wrapper **allowed and denied** — 74 subtests, 0
+skips, confirmed with `-v` rather than assumed from a green line. Denied conforms
+too, which is the evidence that "a declined store is empty, not broken".
+
+**The four guard shapes, each red on its own:**
+
+| shape | result |
+|---|---|
+| a 16th `Store` method | *"store.Store.Ping is in neither createsOnDisk nor doesNotCreate"* |
+| a method moved buckets | `TestNoNonCreatingMethodConsultsThePermission/SetItems` reddens |
+| a creating method skips the permission | `TestEveryCreatingMethodConsultsThePermission/SetAudio` reddens |
+| the parse returns a hardcoded list | *"derived 2 Store methods … at least fifteen"* |
+
+**Shape 1 took three attempts, and the first two were my error, not the guard's.**
+Attempt one edited `Forget(key string) (bool, error)` — the real signature is
+`(removed bool, err error)`, so an unasserted `replace` silently did nothing and
+the "passing" result was a test that never saw a 16th method. Attempt two added
+the method without implementing it, so the package would not compile and the
+guard never got to speak. The realistic form — add it AND implement it on all
+four implementations (`Mem`, `YAML`, `gatedStore`, and the `failingStore` test
+double) — is the only one that reaches the guard, and it reddens.
+
+That is the third unasserted string replacement to silently no-op in this session.
+Every one produced a green result that meant nothing. Recorded in
+`workshop/lessons.md`.
