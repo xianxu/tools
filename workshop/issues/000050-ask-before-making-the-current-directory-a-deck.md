@@ -206,7 +206,7 @@ before any policy rides on it. M2 supplies the policy.
 
 Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-deck-plan.md`
 
-- [ ] M1 — `store.IsDeck`, derived from `RuntimeDirs` + `RuntimeFiles`, not from a
+- [x] M1 — `store.IsDeck`, derived from `RuntimeDirs` + `RuntimeFiles`, not from a
       hardcoded `words/`.
 - [ ] M1 — `gatedStore`: all 15 `Store` methods, 8 gated writes, 7 ungated reads;
       denial swaps to `store.Mem`.
@@ -228,3 +228,33 @@ Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-de
 ## Log
 
 ### 2026-09-10
+
+### 2026-09-10 — M1 Task 1: `store.IsDeck`
+
+Derived from `RuntimeDirs` + `RuntimeFiles`; `os.ReadDir` once, then
+`filepath.Match` against entry **names**, so the working directory never enters a
+pattern (PQ-5). `tmpPattern` is skipped — the atomic-write shadow is debris from a
+crashed write, and counting it would skip the question in exactly the case where
+something already went wrong.
+
+**A test I wrote to catch PQ-5 did not catch PQ-5, and the mutation is what said
+so.** The bracket-named-directory row created `words/` — a *directory* — but the
+directory branch is a map lookup with no pattern in it, so the row never reached
+the globbing it was written about. Restoring the `filepath.Glob(filepath.Join(dir,
+pat))` form left it green. Corrected to place a runtime **file** in the
+bracket-named directory; the same mutation now reddens with *"a real deck in a
+directory named \"br[acket\" read as NOT a deck"*. This is #49's
+`guard-fails-open` rule earning its keep one issue later: a guard verified against
+the case that motivated it is verified against nothing.
+
+Three mutations, each red on its own:
+
+| mutation | result |
+|---|---|
+| `Match(pat, name)` → `Glob(Join(dir, pat))` | reddens the bracket rows (the PQ-5 defect) |
+| `Match` → exact equality via `filepath.Clean` | reddens `user-model.en.md` and `.es.md`, the `??` family; literal names stay green |
+| append `"scratch"` to `RuntimeDirs` | a 7th subtest appears and PASSES with no edit to `isdeck.go` — the derivation is real |
+
+A fourth was attempted (`strings.HasPrefix` instead of `Match`) and **cannot
+compile**: it orphans the `filepath` import. Recorded because "the compiler
+refuses it" is a stronger guarantee than a red test, not a skipped check.
