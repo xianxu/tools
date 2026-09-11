@@ -2077,6 +2077,9 @@ somewhere you never meant and you find out later.
 
 The third state **still answers lookups**. It is an empty deck, not a missing one.
 
+`--here` is the fourth input and the only one automation has: with no terminal to
+ask, `define` creates nothing, so a script that wants a deck has to say so.
+
 **Why an empty `store.Mem` rather than a nil deck.** A `nil` deck is checked in
 eleven places: eight REFUSE with `noDeckMessage` and exit 1, three quietly do
 less. Teaching all of them a new "empty but absent" meaning would be the

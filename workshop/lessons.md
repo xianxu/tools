@@ -4245,3 +4245,37 @@ reading the test result. Otherwise "I verified this guard" means "I verified not
 that lesson says mutate the general form; this one says make sure you mutated anything at
 all. Both are the same failure at different depths: I read the outcome I expected instead
 of the outcome that happened.
+
+## Run the program. A green suite is a statement about the tests, not about the software
+
+**Pattern:** #50 shipped a feature whose whole purpose was to stop `define` promising a
+deck it would never create. Every test passed — including tests written specifically about
+that promise. Then I ran the binary: `define --stats`, piped, in a non-deck directory
+printed *"Nothing yet — look a word up and it joins your deck."* The exact lie. The cause
+was a real design conflation — `saving()` correctly refused to PROMPT, and I had extended
+that into refusing to RESOLVE, so it reported "undecided" and the render fell back to the
+optimistic message. But that answer needed nobody: no terminal means no deck. No unit test
+caught it because every unit test passed the flag in explicitly; only the assembled program
+had the wiring that produced the wrong value.
+
+This was the third thing in one issue that only running or mutating revealed, not reading:
+two tests passed while asserting nothing (one drove `history.Add`, which never writes to
+disk; one put a *directory* in a bracket-named path when only the *file* branch globs), and
+the boundary review measured a bug where a declined session forgot itself across a `/lang`
+switch.
+
+**Rule:** **Before calling a user-facing feature done, run it as the user will — including
+the paths that are awkward to automate** (a pipe, a redirect, a non-tty, the wrong
+directory). Budget it as a step, not as a courtesy. The specific class this catches is a
+value that is correct at every seam and wrong once assembled, which is invisible to tests
+that supply the value directly. A test that hands `renderStats` a `saving` flag asserts
+what `renderStats` does with it; only the program asserts what the flag actually IS.
+
+**Corollary:** when a test and a smoke test disagree, the smoke test is the one describing
+the software. Fix the code, then add the pin the tests were missing — in that order, so the
+pin is written against observed behaviour rather than against the model that already failed.
+
+**Origin:** #50 M2. Siblings: [[mutation-verify-a-guard-against-the-invariant-it-names]]
+(the guard version), [[an-unasserted-string-replacement-that-matches-nothing-is-a-silent-no-op]]
+(the tooling version), and this file's thesis — I validate my model of the system instead of
+the system.

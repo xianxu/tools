@@ -527,7 +527,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"still definitions. Force either way: ? asks, \\ defines.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
-			"it in. A word that was found is added to the deck; a word that was\n"+
+			"it in. Because the directory IS the deck, it ASKS before making a new\n"+
+			"one, and declining still answers the lookup -- nothing is written and\n"+
+			"everything that reads history reports empty. -here says yes without\n"+
+			"asking, and is the only way a script can create a deck: with no\n"+
+			"terminal to ask, define creates nothing.\n"+
+			"A word that was found is added to the deck; a word that was\n"+
 			"not is kept as history only, so typos never become vocabulary. -raw\n"+
 			"records nothing, because it is for scripts.\n"+
 			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+

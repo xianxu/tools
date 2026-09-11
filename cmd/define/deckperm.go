@@ -178,21 +178,26 @@ func deckPolicy(dir string, opt options, stdinIsTerminal func() bool) deckDecisi
 // with no visible cause.
 func deckAsker(dir string, opt options, in io.Reader, out io.Writer, stdinIsTerminal func() bool) func() bool {
 	return func() bool {
-		if store.IsDeck(dir) {
+		// ONE ENCODING OF THE PRECEDENCE (#50 BR-12). This used to re-implement
+		// already-a-deck / --here / no-terminal alongside deckPolicy's copy. They
+		// agreed, and nothing made them: the observable consequence was that only
+		// this copy printed the "nothing will be saved" explanation, so whether a
+		// piped learner was told depended on which encoding settled the state
+		// first — `echo word | define` printed it and `define --forget cat` piped
+		// did not.
+		switch deckPolicy(dir, opt, stdinIsTerminal) {
+		case deckAllow:
 			return true
-		}
-		if opt.here {
-			return true
-		}
-		if stdinIsTerminal == nil || !stdinIsTerminal() {
+		case deckDeny:
 			// SAID, not silent. Someone piping into define in a fresh directory
-			// gets a working lookup and no deck; without this line they would
-			// never learn why nothing was saved.
+			// gets a working lookup and no deck; without this they never learn why
+			// nothing was saved.
 			fmt.Fprintf(out, "define: %s is not a deck and there is no terminal to ask; "+
 				"nothing will be saved (use --here to create one)\n", dir)
 			return false
 		}
-		fmt.Fprintf(out, "define: %s is not a deck yet. Create one here? [y/N] ", dir)
+
+		fmt.Fprintf(out, deckPrompt, dir)
 		answer, err := readLineUnbuffered(in)
 		if err != nil && answer == "" {
 			// EOF mid-question declines, for the same reason a bare Enter does:
@@ -209,6 +214,10 @@ func deckAsker(dir string, opt options, in io.Reader, out io.Writer, stdinIsTerm
 		}
 	}
 }
+
+// deckPrompt is the question, in ONE place so the READMEs can be pinned against
+// it rather than quoting a string nothing keeps in step (#50 BR-11).
+const deckPrompt = "define: %s is not a deck yet. Create one here? [y/N] "
 
 // readLineUnbuffered reads one line WITHOUT buffering ahead (#50 BR-6).
 //

@@ -147,54 +147,107 @@ func TestGatedStoreAsksOnceAcrossManyWrites(t *testing.T) {
 	}
 }
 
-// NOTHING REACHES A DECLINED DIRECTORY — for EVERY creating method, on a REAL
-// filesystem (#50 BR-1).
+// sampleCall is one creating method with arguments that ACTUALLY WRITE.
 //
-// An earlier version pinned this for Upsert alone against an in-memory backing
-// store, which is two gaps at once: six of the seven creating methods were
-// unasserted, and an in-memory backing store cannot show whether a DIRECTORY was
-// made. The set is iterated from createsOnDisk — the same derived list the
-// classification guard checks — so a method added tomorrow is covered the day it
-// joins the bucket.
-func TestNoCreatingMethodTouchesADeclinedDirectory(t *testing.T) {
-	for name := range createsOnDisk {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			disk := store.NewYAML(dir, store.DefaultLang, io.Discard)
-			s := newGatedStore(disk, store.NewMem(),
-				newDeckPermission(func() bool { return false }))
+// Zero values are not good enough and that is the whole finding (#50 BR-1/BR-10):
+// under reflect-built zero arguments only AppendEvent and SetUserModel write
+// anything at all, so five of seven "nothing was created" subtests were asserting
+// that a call which does nothing creates nothing. The reviewer proved it by
+// making SetItems dual-write to the disk AND route through the gate — the entire
+// suite stayed green while a declined directory grew an items/ tree.
+type sampleCall struct {
+	name string
+	call func(store.Store) error
+}
 
-			callStoreMethod(t, s, name)
-
-			if names := lsNames(t, dir); len(names) != 0 {
-				t.Errorf("%s created %v in a directory the learner declined", name, names)
-			}
-		})
+// sampleCalls covers every createsOnDisk method with real arguments.
+//
+// KEYED BY NAME AND CHECKED AGAINST THE INTERFACE, so a method added to
+// createsOnDisk without a sample here FAILS rather than silently going
+// unexercised — which is the same derive-don't-remember rule the classification
+// guard enforces one level up.
+func sampleCalls() []sampleCall {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	return []sampleCall{
+		{"Upsert", func(s store.Store) error {
+			return s.Upsert(store.Word{Text: "alpha", FirstSeen: now, LastSeen: now, Lookups: 1})
+		}},
+		{"AppendEvent", func(s store.Store) error {
+			return s.AppendEvent(store.ReviewEvent{Kind: store.EventLookedUp, Word: "alpha", At: now, Found: true})
+		}},
+		{"SetUserModel", func(s store.Store) error { return s.SetUserModel("a learner model") }},
+		{"SetNewsItems", func(s store.Store) error {
+			return s.SetNewsItems("alpha", []store.NewsItem{{Title: "t", URL: "u"}}, now)
+		}},
+		{"SetWordFacts", func(s store.Store) error {
+			return s.SetWordFacts("alpha", store.WordFacts{At: now})
+		}},
+		{"SetItems", func(s store.Store) error {
+			return s.SetItems("alpha", []store.Item{{Word: "alpha", Stem: "s", Answer: "a", At: now}})
+		}},
+		{"SetAudio", func(s store.Store) error {
+			return s.SetAudio(store.AudioKey{Word: "alpha", Digest: "d0"}, []byte("RIFFsound"),
+				store.AudioRecord{From: "https://example.invalid/a.mp3", At: now})
+		}},
 	}
 }
 
-// And the other direction: allowed, each one DOES reach the disk — so the test
-// above cannot pass merely because the call did nothing at all.
-func TestCreatingMethodsDoReachAnAllowedDirectory(t *testing.T) {
-	reaches := map[string]bool{}
+// EVERY createsOnDisk METHOD HAS A SAMPLE. Derived, so the table cannot silently
+// fall behind the classification it is supposed to exercise.
+func TestEveryCreatingMethodHasASample(t *testing.T) {
+	have := map[string]bool{}
+	for _, c := range sampleCalls() {
+		have[c.name] = true
+	}
 	for name := range createsOnDisk {
-		dir := t.TempDir()
-		disk := store.NewYAML(dir, store.DefaultLang, io.Discard)
-		s := newGatedStore(disk, store.NewMem(), newDeckPermission(func() bool { return true }))
-		callStoreMethod(t, s, name)
-		reaches[name] = len(lsNames(t, dir)) > 0
+		if !have[name] {
+			t.Errorf("%s is classified createsOnDisk but has no entry in sampleCalls, so "+
+				"the tests that assert it cannot write into a declined directory would "+
+				"call it with nothing and prove nothing", name)
+		}
 	}
-	// Not every method writes on a ZERO-valued call (SetAudio refuses an empty
-	// recording by design, SetItems an empty list), so this asserts the SET is
-	// non-trivial rather than demanding all seven — the point is that the denial
-	// test above is measuring a real difference somewhere.
-	any := false
-	for _, ok := range reaches {
-		any = any || ok
-	}
-	if !any {
-		t.Errorf("no creating method wrote to an ALLOWED directory (%v) — so the "+
-			"denial test proves nothing: it would pass with the gate removed", reaches)
+}
+
+// PER-INSTANCE CONTROL, WHICH IS THE RULE (#50 BR-10).
+//
+// For each method, BOTH halves are asserted on the same real filesystem:
+// allowed, the call MUST change the directory (the positive control), and denied,
+// the directory MUST be byte-identical. Without the positive control per method,
+// a negative result means nothing — the call might simply do nothing, which is
+// exactly what five of seven were doing.
+//
+// An aggregate control cannot substitute. A previous version asserted only that
+// SOME method wrote when allowed, and explicitly waived the per-method check in a
+// comment; that waiver is what let the five vacuous subtests through. An absence
+// claim needs its own control, one per instance.
+func TestCreatingMethodsWriteWhenAllowedAndNotWhenDenied(t *testing.T) {
+	for _, c := range sampleCalls() {
+		t.Run(c.name, func(t *testing.T) {
+			// Positive control FIRST: if this call writes nothing even when
+			// allowed, the denial half below is vacuous and the subtest says so.
+			allowedDir := t.TempDir()
+			allowed := newGatedStore(store.NewYAML(allowedDir, store.DefaultLang, io.Discard),
+				store.NewMem(), newDeckPermission(func() bool { return true }))
+			if err := c.call(allowed); err != nil {
+				t.Fatalf("allowed %s: %v", c.name, err)
+			}
+			if names := lsNames(t, allowedDir); len(names) == 0 {
+				t.Fatalf("%s wrote NOTHING even when allowed, so the denial assertion "+
+					"below would prove nothing. Give it arguments that actually write.",
+					c.name)
+			}
+
+			deniedDir := t.TempDir()
+			denied := newGatedStore(store.NewYAML(deniedDir, store.DefaultLang, io.Discard),
+				store.NewMem(), newDeckPermission(func() bool { return false }))
+			if err := c.call(denied); err != nil {
+				t.Errorf("denied %s returned %v — a declined write is an answer, not a "+
+					"failure", c.name, err)
+			}
+			if names := lsNames(t, deniedDir); len(names) != 0 {
+				t.Errorf("%s created %v in a directory the learner declined", c.name, names)
+			}
+		})
 	}
 }
 

@@ -34,7 +34,6 @@ Stated so a later round does not reopen them (PQ-10):
 
 | Name | Lives in | Status |
 |------|----------|--------|
-| `store.IsDeck` | `cmd/define/store/isdeck.go` | new |
 | `deckDecision` | `cmd/define/deckperm.go` | new |
 | `deckPermission` | `cmd/define/deckperm.go` | new |
 | `renderStats` | `cmd/define/stats.go` | modified |
@@ -63,6 +62,7 @@ Stated so a later round does not reopen them (PQ-10):
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
+| `store.IsDeck` | `cmd/define/store/isdeck.go` | new | the filesystem |
 | `gatedStore` | `cmd/define/gated_store.go` | new | `store.Store` |
 | `deckAsker` | `cmd/define/deckperm.go` | new | stdin + stderr |
 | `openStore` | `cmd/define/main.go:269` | modified | working directory |
@@ -260,3 +260,17 @@ Both were mine, and both are now checked against the code rather than argued:
 - **RESOLVED — `MigrateToLanguages` creates nothing in a non-deck directory.** `migrate.go:44-48` returns before any `MkdirAll`. Pinned by a test in Task 5 rather than left as prose.
 - **OPEN — the question goes to stderr while lookups go to stdout.** A prompt in a redirected stream is a hang with no visible cause. Task 7's table covers the non-tty case; verify by hand that `define word > out.txt` on a terminal still shows the question.
 - **OPEN — `/lang` rebuilds `langDeps`.** Task 5 wraps inside `newLangDeps` so the rebuild is covered, but the *test* must actually perform a switch; asserting only the first build would pass while a switched language writes ungated.
+
+## Revisions
+
+**2026-09-10 — `store.IsDeck` moved from Pure entities to Integration points (BR-4).**
+*Reason:* it calls `os.ReadDir` and its tests need a real mutable filesystem, which is
+this skill's own definition of an integration point. The row's "PURE-with-IO note"
+conceded the substance while the table kept claiming otherwise, and that mislabel
+survived two review rounds.
+*Delta:* listed under Integration points, wrapping the filesystem. Its tests still need
+no mocks — which is why it looked pure.
+
+**2026-09-10 — the gated set is 7 creates / 8 non-creates, not 8 writes / 7 reads
+(BR-4).** *Reason:* PQ-8. `Forget` only removes, so it is ungated. *Delta:* the counts
+above are corrected and derived from the interface by test.

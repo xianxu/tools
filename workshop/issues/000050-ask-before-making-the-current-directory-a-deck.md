@@ -191,9 +191,11 @@ is the case nobody has test coverage for today.
 - [x] `--here` creates without asking, on a terminal or not.
 - [x] An existing deck is never asked about — no prompt appears in a directory
       that already has any runtime dir or file.
-- [x] Every write-shaped method on `store.Store` consults the gate, asserted
-      mechanically against the interface so a 16th method cannot be added
-      ungated.
+- [x] Every `store.Store` method that can CREATE on disk consults the gate,
+      asserted mechanically against the interface so a 16th method cannot be
+      added unclassified. **Not "write-shaped"** — see Revisions: `Forget` only
+      removes, so gating it would ask permission to create a deck in order to
+      delete nothing.
 - [x] `--stats` in an unsaved directory does not claim a word will "join your
       deck".
 
@@ -208,8 +210,9 @@ Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-de
 
 - [x] M1 — `store.IsDeck`, derived from `RuntimeDirs` + `RuntimeFiles`, not from a
       hardcoded `words/`.
-- [x] M1 — `gatedStore`: all 15 `Store` methods, 8 gated writes, 7 ungated reads;
-      denial swaps to `store.Mem`.
+- [x] M1 — `gatedStore`: all 15 `Store` methods — **7 gated (creates on disk), 8
+      ungated (reads, plus `Forget`, which only removes)**; denial swaps to
+      `store.Mem`.
 - [x] M1 — the write set is DERIVED from the `Store` interface by AST, so a 16th
       method cannot be added ungated; mutated in all FOUR shapes (#49
       `guard-fails-open`).
@@ -370,3 +373,81 @@ and asks nothing; `--stats` says nothing is being saved; `--here` creates
 nothing; and `define --forget cat` in an empty directory refuses the word without
 offering to create a deck — PQ-8's false alarm, confirmed absent in the shipped
 path.
+
+## Revisions
+
+**2026-09-10 — the gated set is "creates on disk", not "write-shaped" (7/8, not 8/7).**
+*Reason:* plan-quality PQ-8 measured that `YAML.Forget` is `os.Remove`/`os.RemoveAll`
+only. Gating it would make `define --forget x` in a non-deck directory ask permission
+to CREATE a deck in order to delete nothing — the false alarm the lazy design exists to
+prevent.
+*Delta:* the buckets are `createsOnDisk` (7) and `doesNotCreate` (8); Done-when and the
+M1 Plan row above are corrected. The classification is derived from the `Store`
+interface, so the counts are the code's, not this file's.
+
+**2026-09-10 — `store.IsDeck` is not a PURE entity.**
+*Reason:* the plan's Core-concepts table lists it under Pure entities, but it calls
+`os.ReadDir` and its tests need a real mutable filesystem (`t.TempDir`), which is the
+plan skill's own definition of an integration point rather than a pure one.
+*Delta:* it is an integration point that wraps the filesystem. The plan's own
+"PURE-with-IO note" already conceded the substance; the table row was the part that
+claimed otherwise. Its tests genuinely need no mocks, which is why the mislabel
+survived review twice.
+
+### 2026-09-10 — close review round 2: 9 disposed, and the guard family caught me a third time
+
+The gate's verdict was the useful part: *"Not converging: fix rules, not
+instances."* Two findings I believed fixed came back **not-addressed**, and the
+reviewer proved both by mutation in a scratch worktree rather than by reading.
+
+**BR-1/BR-10 — my absence claims had no controls, and I had WAIVED the check that
+would have caught it.** Under `callStoreMethod`'s reflect-built zero arguments,
+only `AppendEvent` and `SetUserModel` write anything at all — so five of seven
+"nothing was created in a declined directory" subtests were asserting that a call
+which does nothing creates nothing. Worse, my positive control was an aggregate
+("some method wrote"), and I had written a comment explaining why per-method
+checking was unnecessary. That comment is the defect: I noticed the asymmetry,
+rationalised it, and shipped the hole. The reviewer's mutation — `SetItems`
+dual-writing to `g.disk` AND routing through the gate — left the whole suite
+green while a declined directory grew an `items/` tree.
+
+Fixed as the rule the review states: **an absence or ordering claim needs a
+PER-INSTANCE control.** `sampleCalls` gives every creating method arguments that
+really write; each subtest asserts the positive control FIRST and fails loudly if
+the call writes nothing even when allowed. `TestEveryCreatingMethodHasASample`
+derives the table from `createsOnDisk` so it cannot fall behind. The reviewer's
+own mutation now reddens.
+
+**The same rule applied to the ordering claim, which was the third instance.**
+`TestBothLoopShellsResolveBeforeReading` sampled `saving()` AFTER `repl` returned
+— by which time the answer is settled either way — so moving `resolve()` below
+both shells left it green. An `observingReader` now records whether the question
+was settled at the moment the shell first READ stdin, and it fails if the shell
+never read at all. Moving `resolve()` down now reddens both shells.
+
+**BR-12 — two encodings of one precedence.** `deckPolicy` and `deckAsker` each
+implemented already-a-deck / `--here` / no-terminal. They agreed, and nothing made
+them: the observable consequence was that only one printed the "nothing will be
+saved" line, so whether a piped learner was told depended on which encoding
+settled first. `deckAsker` now switches on `deckPolicy`.
+
+**BR-11 — the surfaces were swept one at a time, so one was always left.**
+`--help` still promised unconditional recording after the READMEs and atlas were
+updated. Fixed as a rule: `TestEverySurfaceDescribingCaptureMentionsTheQuestion`
+enumerates the four surfaces, and it immediately found a fifth gap I had also
+missed — `atlas/define.md` never mentioned `--here`. The prompt string now lives
+in one `deckPrompt` const the README is pinned against.
+
+**BR-6** now has a test that fails without `readLineUnbuffered`, asserted on the
+unread REMAINDER — the observable difference — rather than on the answer, which
+passes under either implementation.
+
+**BR-4** corrected in both artifacts with `## Revisions` sections: the gated set is
+7 creates / 8 non-creates (not 8 writes / 7 reads), and `store.IsDeck` is an
+integration point, not a pure entity — it calls `os.ReadDir`. That mislabel
+survived two rounds because its tests genuinely need no mocks.
+
+**A self-inflicted loss worth recording:** an index-based slice while editing the
+test file deleted two passing tests along with the block I meant to replace
+(`TestStatsDoesNotPromiseToSaveWhenItCannot`, `TestStatsNeverAsks`). Caught by an
+unused-import error, not by noticing. Both restored.

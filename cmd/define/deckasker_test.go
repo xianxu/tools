@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,11 +84,36 @@ func TestDeckAskerTreatsANilPredicateAsNoTerminal(t *testing.T) {
 	}
 }
 
+// observingReader records whether the deck question was already settled at the
+// moment the shell first READ from stdin.
+//
+// THE ORDERING CLAIM NEEDS AN OBSERVATION DURING THE LOOP, NOT AFTER IT
+// (#50 BR-10). A previous version asserted saving() once repl had returned — by
+// which time the permission is resolved whether it was settled before the shell
+// started or during it. The reviewer proved the hole: moving resolve() BELOW both
+// shells left that test green. The claim is about ORDER, so the control has to
+// sample the order.
+type observingReader struct {
+	perm           *deckPermission
+	decidedAtFirst bool
+	sawRead        bool
+}
+
+func (r *observingReader) Read(p []byte) (int, error) {
+	if !r.sawRead {
+		r.sawRead = true
+		_, r.decidedAtFirst = r.perm.saving()
+	}
+	return 0, io.EOF
+}
+
 // BOTH LOOP SHELLS SETTLE THE QUESTION BEFORE THEY READ A KEY (#50 PQ-3).
 //
-// One test per shell, not one test for "the loop": a single test covers only the
+// One test per shell, not one for "the loop": a single test covers only the
 // branch it happened to take, and replRaw additionally FALLS BACK to replLines
-// twice. The claim is about the choice point, so both sides of it are driven.
+// twice. Both shells read stdin on their own goroutine, so a question put from
+// inside a store write mid-session would race that reader for the answer — the
+// learner types `y` and the loop consumes it as a lookup.
 func TestBothLoopShellsResolveBeforeReading(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -102,77 +128,29 @@ func TestBothLoopShellsResolveBeforeReading(t *testing.T) {
 			perm := newDeckPermission(func() bool { asked++; return false })
 
 			// testDeps loads the fixture corpus by a path relative to the package
-			// directory, so it is built BEFORE chdir — the same ordering
-			// lang_cmd_test.go documents.
+			// directory, so it is built BEFORE chdir.
 			d := testDeps(t)
 			t.Chdir(dir)
 			d.deckPermission = perm
 			d.stdinIsTerminal = func() bool { return true }
 
+			in := &observingReader{perm: perm}
 			var out, errb bytes.Buffer
-			// An empty stdin: the loop reads EOF and exits immediately. If the
-			// permission were not resolved above the choice, it would still be
-			// undecided here.
-			repl(t.Context(), d, options{tty: tc.tty}, strings.NewReader(""), &out, &errb)
+			repl(t.Context(), d, options{tty: tc.tty}, in, &out, &errb)
 
-			if _, decided := perm.saving(); !decided {
-				t.Errorf("the loop started without settling whether this directory may " +
-					"become a deck. A question put mid-session races the shell's own " +
-					"stdin reader for the answer.")
+			if !in.sawRead {
+				t.Fatal("the shell never read stdin, so this test observed no ordering " +
+					"at all — it would pass with the resolution removed entirely")
+			}
+			if !in.decidedAtFirst {
+				t.Errorf("the shell read its first byte of stdin with the deck question " +
+					"still unsettled. A question put mid-session races the shell's own " +
+					"reader for the answer.")
 			}
 			if asked != 1 {
 				t.Errorf("asked %d times, want exactly 1", asked)
 			}
 		})
-	}
-}
-
-// THE EMPTY SCREEN MUST NOT PROMISE A DECK THAT WILL NOT EXIST (#50 PQ-6).
-//
-// "Nothing yet — look a word up and it joins your deck" is true of a new deck and
-// FALSE in a directory define was told not to write to. This screen is precisely
-// where the person who ran define in the wrong place ends up, so it is the worst
-// place in the program to make that promise.
-func TestStatsDoesNotPromiseToSaveWhenItCannot(t *testing.T) {
-	notSaving := strings.Join(renderStats(schedule.Stats{}, time.Now(), false), "\n")
-	if strings.Contains(notSaving, "joins your deck") {
-		t.Errorf("the empty screen promises a word will join the deck, in a directory "+
-			"nothing is written to:\n%s", notSaving)
-	}
-	if !strings.Contains(notSaving, "--here") {
-		t.Errorf("the empty screen does not say how to fix it:\n%s", notSaving)
-	}
-
-	// And the ordinary empty screen is UNCHANGED — an undecided directory is one
-	// where "look a word up and it joins your deck" is still true.
-	saving := strings.Join(renderStats(schedule.Stats{}, time.Now(), true), "\n")
-	if !strings.Contains(saving, "joins your deck") {
-		t.Errorf("the ordinary empty screen lost its call to action:\n%s", saving)
-	}
-}
-
-// --stats NEVER PUTS THE QUESTION. Reading your figures must not become a
-// request to create a deck — that is the false alarm the lazy design exists to
-// prevent, and false alarms train people to answer yes.
-func TestStatsNeverAsks(t *testing.T) {
-	dir := t.TempDir()
-	d := testDeps(t)
-	t.Chdir(dir)
-
-	asked := 0
-	d.deckPermission = newDeckPermission(func() bool { asked++; return true })
-	d.newStore = openStore
-
-	var out, errb bytes.Buffer
-	if code := run(t.Context(), []string{"-stats"}, d, strings.NewReader(""), &out, &errb); code != 0 {
-		t.Fatalf("exit = %d: %s", code, errb.String())
-	}
-	if asked != 0 {
-		t.Errorf("--stats put the deck question %d time(s). It creates nothing, so "+
-			"asking permission to create is a false alarm.", asked)
-	}
-	if names := lsNames(t, dir); len(names) != 0 {
-		t.Errorf("--stats created %v in a directory it only read", names)
 	}
 }
 
@@ -218,5 +196,138 @@ func TestStatsIsHonestWhereTheAnswerNeedsNobody(t *testing.T) {
 					"answers are free precisely because nobody is asked", asked)
 			}
 		})
+	}
+}
+
+// THE EMPTY SCREEN MUST NOT PROMISE A DECK THAT WILL NOT EXIST (#50 PQ-6).
+//
+// "Nothing yet — look a word up and it joins your deck" is true of a new deck and
+// FALSE in a directory define was told not to write to. This screen is precisely
+// where the person who ran define in the wrong place ends up.
+func TestStatsDoesNotPromiseToSaveWhenItCannot(t *testing.T) {
+	notSaving := strings.Join(renderStats(schedule.Stats{}, time.Now(), false), "\n")
+	if strings.Contains(notSaving, "joins your deck") {
+		t.Errorf("the empty screen promises a word will join the deck, in a directory "+
+			"nothing is written to:\n%s", notSaving)
+	}
+	if !strings.Contains(notSaving, "--here") {
+		t.Errorf("the empty screen does not say how to fix it:\n%s", notSaving)
+	}
+
+	// And the ordinary empty screen is UNCHANGED — a directory that may still
+	// become a deck is one where "it joins your deck" is still true.
+	saving := strings.Join(renderStats(schedule.Stats{}, time.Now(), true), "\n")
+	if !strings.Contains(saving, "joins your deck") {
+		t.Errorf("the ordinary empty screen lost its call to action:\n%s", saving)
+	}
+}
+
+// --stats NEVER PUTS THE QUESTION. Reading your figures must not become a request
+// to create a deck — that is the false alarm the lazy design exists to prevent,
+// and false alarms train people to answer yes.
+func TestStatsNeverAsks(t *testing.T) {
+	dir := t.TempDir()
+	d := testDeps(t)
+	t.Chdir(dir)
+
+	asked := 0
+	d.deckPermission = newDeckPermission(func() bool { asked++; return true })
+	d.newStore = openStore
+
+	var out, errb bytes.Buffer
+	if code := run(t.Context(), []string{"-stats"}, d, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit = %d: %s", code, errb.String())
+	}
+	if asked != 0 {
+		t.Errorf("--stats put the deck question %d time(s). It creates nothing, so "+
+			"asking permission to create is a false alarm.", asked)
+	}
+	if names := lsNames(t, dir); len(names) != 0 {
+		t.Errorf("--stats created %v in a directory it only read", names)
+	}
+}
+
+// EVERY SURFACE THAT DESCRIBES CAPTURE MENTIONS THE QUESTION (#50 BR-11).
+//
+// The rule the review stated, taken as a rule rather than an instance: when
+// behaviour changes, enumerate every place the OLD behaviour is asserted and
+// sweep them in one round. --help is the first surface a user types, and it was
+// still promising unconditional recording after the READMEs and the atlas had
+// been updated — the gap was that nothing enumerated the surfaces.
+func TestEverySurfaceDescribingCaptureMentionsTheQuestion(t *testing.T) {
+	surfaces := map[string]string{
+		"--help (fs.Usage)":    usageText(t),
+		"README.md":            readFileForTest(t, filepath.Join("..", "..", "README.md")),
+		"cmd/define/README.md": readFileForTest(t, "README.md"),
+		"atlas/define.md":      readFileForTest(t, filepath.Join("..", "..", "atlas", "define.md")),
+	}
+	for name, text := range surfaces {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(text, "--here") && !strings.Contains(text, "-here") {
+				t.Errorf("%s describes what define writes but never mentions -here, so a "+
+					"reader learns the old unconditional behaviour", name)
+			}
+		})
+	}
+}
+
+// THE READMEs QUOTE THE PROMPT, so the quote cannot drift from the program.
+func TestTheREADMEQuotesTheRealPrompt(t *testing.T) {
+	// The prompt is a format string; the stable half is what a reader recognises.
+	stable := "Create one here? [y/N]"
+	if !strings.Contains(deckPrompt, stable) {
+		t.Fatalf("deckPrompt = %q, which no longer contains %q — update this test AND "+
+			"the READMEs together", deckPrompt, stable)
+	}
+	doc := readFileForTest(t, "README.md")
+	if !strings.Contains(doc, stable) {
+		t.Errorf("cmd/define/README.md shows a prompt that is not the one the program "+
+			"prints; it must quote %q", stable)
+	}
+}
+
+func readFileForTest(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	return string(b)
+}
+
+// usageText captures what `define --help` actually prints.
+func usageText(t *testing.T) string {
+	t.Helper()
+	var out, errb bytes.Buffer
+	run(t.Context(), []string{"-h"}, testDeps(t), strings.NewReader(""), &out, &errb)
+	return out.String() + errb.String()
+}
+
+// THE ANSWER IS READ WITHOUT BUFFERING AHEAD (#50 BR-6).
+//
+// bufio.Reader is the obvious choice and the wrong one: `in` is the program's
+// shared stdin, and a buffered reader pulls as much as it can get. Bytes it
+// swallowed past the newline are lost to whoever reads stdin next — which, since
+// the loop shells settle this question before they start, is the loop itself. The
+// learner would answer "y" and watch their next line vanish.
+//
+// Asserted on the REMAINDER, because that is the observable difference; a test on
+// the answer alone passes under either implementation.
+func TestTheAnswerDoesNotSwallowTheRestOfStdin(t *testing.T) {
+	in := strings.NewReader("y\nsycophantic\narrondissement\n")
+	var out bytes.Buffer
+
+	if !deckAsker(t.TempDir(), options{}, in, &out, func() bool { return true })() {
+		t.Fatal("y did not allow")
+	}
+
+	rest, err := io.ReadAll(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(rest) != "sycophantic\narrondissement\n" {
+		t.Errorf("after reading the answer, stdin holds %q — the question consumed "+
+			"input meant for the loop. Everything past the newline belongs to whoever "+
+			"reads stdin next.", string(rest))
 	}
 }
