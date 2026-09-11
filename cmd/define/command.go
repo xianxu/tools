@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -153,12 +154,15 @@ func editDistance(a, b string) int {
 // cmds is here so /help can list the table it was dispatched from, which keeps
 // the fixture set in tests honest — help lists what dispatch would actually run.
 type commandCtx struct {
-	cmds   []command
-	deck   store.Store // nil when there is nowhere to read
-	clock  store.Clock
-	stdout io.Writer
-	stderr io.Writer
-	width  int
+	cmds []command
+	deck store.Store // nil when there is nowhere to read
+	// deckPermission answers "is anything written here going to survive", WITHOUT
+	// asking. /stats needs to say so and must not turn reading into a question.
+	deckPermission *deckPermission
+	clock          store.Clock
+	stdout         io.Writer
+	stderr         io.Writer
+	width          int
 	// times is the current playback count, and setTimes changes it for the rest
 	// of the session. A func rather than a *options: a command has no business
 	// reaching the rest of the options, and nil is the honest representation of
@@ -220,7 +224,7 @@ type commandCtx struct {
 // with opt.width across a resize.
 func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 	return commandCtx{
-		deck: d.deck, clock: d.clock,
+		deck: d.deck, clock: d.clock, deckPermission: d.deckPermission,
 		stdout: stdout, stderr: stderr,
 		width: opt.width, noCapture: opt.noCapture,
 		times:    opt.times,
@@ -366,11 +370,19 @@ func sessionSetLang(d *deps, opt *options, persist func(store.Lang) error, vocPt
 		return nil
 	}
 	return func(l store.Lang) error {
-		if err := persist(l); err != nil {
+		err := persist(l)
+		// A DECLINE IS NOT A FAILURE, and the two halves part company here
+		// (#50 BR-18). Persisting is the DURABLE half; applyLang is the SESSION
+		// half, and a directory the learner declined stops only the first. An
+		// earlier version returned on any error, so a declined /lang left the
+		// session still in English while the command printed a switch — the same
+		// lie in the other direction, caught by
+		// TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage.
+		if err != nil && !errors.Is(err, errDeckDeclined) {
 			return err
 		}
 		applyLang(d, opt, l, vocPtr, warn)
-		return nil
+		return err // nil, or the decline for the caller to report honestly
 	}
 }
 

@@ -41,6 +41,36 @@ go build -o ~/bin/define ./cmd/define    # from the repo root
 `define --version` names the release you installed, and says `built from source`
 when it was not built by the formula.
 
+## The directory is the deck, so it asks first
+
+The directory you run `define` in **is** the deck. That makes running it in the
+wrong shell a quiet accident, so the first time it would write somewhere new it
+asks:
+
+```
+$ cd /tmp && define sycophantic
+define: /tmp is not a deck yet. Create one here? [y/N]
+```
+
+**A bare Enter declines**, because the cost of a wrong *yes* is a stray deck in
+your home directory and the cost of a wrong *no* is re-running one command.
+
+Declining does not stop the lookup — you still get the definition, the IPA and
+the audio. Nothing is written, and everything that reads history reports **empty**
+rather than refusing: `--stats` says so plainly, `--play` finds nothing due.
+
+**When it cannot ask** — piped input, a script, CI — it does not create anything
+and does not hang waiting for an answer nobody can give. The lookup still works.
+
+```sh
+define --here sycophantic     # yes, make THIS directory a deck; never asks
+```
+
+`--here` is the path for scripts, and it is the only one: since a non-terminal
+never creates a deck, automation that wants one has to say so.
+
+A directory that is already a deck is never asked about.
+
 ## Using it
 
 ```sh
@@ -553,9 +583,11 @@ first silently won.
 
 ## What it writes, where you run it
 
-**`define` reads and writes the current directory.** *Every* successful lookup —
-one-shot, piped, or in the editor — records the word where you started `define`,
-so your deck and history build themselves. **Every question that reaches the model
+**`define` reads and writes the current directory — once you have said it may.**
+In a directory that is already a deck, *every* successful lookup — one-shot, piped,
+or in the editor — records the word where you started `define`, so your deck and
+history build themselves. In a directory that is not one yet, it asks first, and
+records nothing until you answer yes (see [The directory is the deck, so it asks first](#the-directory-is-the-deck-so-it-asks-first)). **Every question that reaches the model
 is recorded too, by its text** — whatever became of the answer, since what you
 asked is the signal, not whether it arrived. (What decides it is whether a request
 was actually sent: with no model configured nothing is, so nothing is recorded.
@@ -614,10 +646,13 @@ truncated to nothing is re-fetched instead of played as silence.
 
 ## Languages
 
-**One language at a time.** `/lang` says which one, `/lang es` switches, and the
-setting stays with the directory — unlike `/sound`, which lasts one session.
-It has to persist: a one-shot `define madrugar` has no session to inherit from,
-and re-declaring the language at every lookup is the friction the mode removes.
+**One language at a time.** `/lang` says which one, `/lang es` switches, and in a
+deck the setting stays with the directory — unlike `/sound`, which lasts one
+session. It has to persist: a one-shot `define madrugar` has no session to
+inherit from, and re-declaring the language at every lookup is the friction the
+mode removes. In a directory that is not a deck, the switch applies to the
+session and `/lang` says it was not saved, because a one-shot `/lang` there would
+otherwise report a change it had not made.
 Everything follows it — the deck a word files into, the words `--play` offers,
 and the recording that is fetched, unless `-pron` asked otherwise for one
 lookup. `-lang es` is the one-run form, for scripts that should not have to

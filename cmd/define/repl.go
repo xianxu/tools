@@ -227,6 +227,23 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 	// whether a failed lookup should set the exit code.
 	terminalUI := interactive && opt.tty
 
+	// THE DECK QUESTION IS SETTLED HERE, ABOVE THE CHOICE, and the placement is
+	// the whole point (#50).
+	//
+	// Both shells read stdin on their OWN goroutine — replRaw owns the key
+	// channel, replLines reads through scanLines — so a question put from inside
+	// a store write, mid-session, would race that reader for the answer: the
+	// learner types `y` and the loop consumes it as a lookup. Settling it before
+	// either shell starts means no store call can ever prompt during one.
+	//
+	// ABOVE the branch rather than inside replRaw, because replRaw FALLS BACK to
+	// replLines twice (a non-file stdin, and a terminal it cannot put into raw
+	// mode). A fix inside the raw shell would miss both fallbacks.
+	//
+	// A session is going to write, so asking up front is also the kinder order:
+	// the question arrives before the screen is taken, not in the middle of it.
+	d.deckPermission.resolve()
+
 	if terminalUI {
 		// Raw mode: keystrokes, a rendered frame, no terminal echo. Everything
 		// #2 did with cursor arithmetic against an echoed Enter is gone.

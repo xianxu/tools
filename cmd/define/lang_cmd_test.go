@@ -143,6 +143,14 @@ func TestRunLang(t *testing.T) {
 // /sound does not.
 func TestLangCommandPersistsFromAOneShotRun(t *testing.T) {
 	dir := t.TempDir()
+	// ALREADY A DECK, because since #50 a directory is not written to until
+	// someone says so — and this test is about whether the setting PERSISTS, not
+	// about whether the directory may become a deck. Without this the run is a
+	// one-shot with no terminal, which correctly declines and writes nothing;
+	// TestPersistLangIsGated covers that path deliberately.
+	if err := os.MkdirAll(filepath.Join(dir, "words"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	// testDeps loads the fixture corpus by a path relative to the package
 	// directory, so it is built BEFORE chdir, not after.
 	d := testDeps(t)

@@ -144,7 +144,7 @@ func TestOneShotQuestionHasNoCurrentWord(t *testing.T) {
 	st := store.NewYAML(dir, store.DefaultLang, nil)
 	d := testDeps(t)
 	cap := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
-	d.newStore = func(options, io.Writer) storeDeps {
+	d.newStore = func(options, io.Writer, *deckPermission) storeDeps {
 		return storeDeps{
 			history:  &memHistory{},
 			langDeps: langDeps{capture: cap, deck: st},

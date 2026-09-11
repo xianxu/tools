@@ -44,7 +44,7 @@ func runStats(d deps, opt options, out, errOut io.Writer) int {
 		return 1
 	}
 
-	return printStats(d.deck, d.clock, "--stats", out, errOut)
+	return printStats(d.deck, d.clock, "--stats", d.deckPermission, out, errOut)
 }
 
 // printStats reads, folds and renders — the whole of the screen below the door.
@@ -59,7 +59,7 @@ func runStats(d deps, opt options, out, errOut io.Writer) int {
 // `who` names the caller in a diagnostic, because "define: --stats: …" and
 // "define: /stats: …" tell a reader which door they came through — the only
 // thing the two genuinely differ in besides where the deck comes from.
-func printStats(deckStore store.Store, clock store.Clock, who string, out, errOut io.Writer) int {
+func printStats(deckStore store.Store, clock store.Clock, who string, perm *deckPermission, out, errOut io.Writer) int {
 	deck, err := deckStore.Deck()
 	if err != nil {
 		fmt.Fprintf(errOut, "define: %s: could not read the deck: %v\n", who, err)
@@ -79,7 +79,12 @@ func printStats(deckStore store.Store, clock store.Clock, who string, out, errOu
 	// against — and the one a test controls. A screen whose "today" disagrees
 	// with the sitting's is a screen whose streak disagrees.
 	now := clock.Now()
-	for _, line := range renderStats(schedule.Summarise(events, deck, now), now) {
+	// READ, NEVER RESOLVE. saving() reports what has already been settled; asking
+	// via allowed() would make putting the question a side effect of --stats, so
+	// reading your figures in the wrong directory would offer to create a deck
+	// there (#50 PQ-6).
+	allowed, decided := perm.saving()
+	for _, line := range renderStats(schedule.Summarise(events, deck, now), now, !decided || allowed) {
 		fmt.Fprintln(out, line)
 	}
 	return 0
@@ -90,8 +95,23 @@ func printStats(deckStore store.Store, clock store.Clock, who string, out, errOu
 // SEPARATE FROM THE FOLD so the numbers are testable without parsing a screen —
 // the Spec asks for exactly this split, and it is why every assertion in
 // stats_test.go reads a field rather than a substring.
-func renderStats(s schedule.Stats, now time.Time) []string {
+// `saving` says whether anything written here will survive the process. It
+// changes ONE thing — the empty screen's call to action — because that sentence
+// is the only part of this render that makes a promise.
+func renderStats(s schedule.Stats, now time.Time, saving bool) []string {
 	if s.Known == 0 && s.ActiveDays == 0 {
+		if !saving {
+			// NOT "look a word up and it joins your deck", which is FALSE here:
+			// nothing will join anything. This screen is exactly where the person
+			// who ran define in the wrong directory ends up, so it is the worst
+			// possible place to promise a deck that will not exist.
+			return []string{
+				"Nothing yet, and nothing is being saved here — this directory is not a deck.",
+				"",
+				"  cd somewhere/else      and run it there",
+				"  define --here          make THIS directory a deck",
+			}
+		}
 		// NOT A SCREEN OF ZEROES. Seven figures all reading 0 says "this is
 		// broken" to the one person guaranteed to see it — someone who has just
 		// installed it. A sentence says the same thing truthfully and points
@@ -237,5 +257,5 @@ func runStatsCommand(c commandCtx, args []string) int {
 		fmt.Fprintln(c.stderr, noDeckMessage(c.noCapture))
 		return 1
 	}
-	return printStats(c.deck, c.clock, "/stats", c.stdout, c.stderr)
+	return printStats(c.deck, c.clock, "/stats", c.deckPermission, c.stdout, c.stderr)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -58,6 +59,17 @@ func runLang(c commandCtx, args []string) int {
 		return 2
 	}
 	if err := c.setLang(lang); err != nil {
+		if errors.Is(err, errDeckDeclined) {
+			// THE CONFIRMATION IS DERIVED FROM THE EFFECT (#50 BR-18). A one-shot
+			// /lang has only a durable effect, so in a directory nobody agreed to
+			// write to it is a no-op — and announcing "now defining in es" there
+			// was the command reporting a switch it had not made. The session
+			// language still changes, which is the honest half, and the sentence
+			// says exactly that much.
+			fmt.Fprintf(c.stdout, "  defining in %s for this session only, not saved "+
+				"(this directory is not a deck)\n", lang)
+			return 0
+		}
 		fmt.Fprintf(c.stderr, "define: /lang: %v\n", err)
 		return 2
 	}

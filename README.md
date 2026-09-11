@@ -24,6 +24,10 @@ copy that does — this section is deliberately just the commands.
 macOS only. For contributors, or for a binary not yet tapped, `make build` /
 `make install` build everything here from source.
 
+The directory you run `define` in *is* its deck, so it asks before writing to a
+new one (`--here` to skip the question; declining still answers the lookup). See
+[cmd/define/README.md](cmd/define/README.md).
+
 ## Layout
 
 ```

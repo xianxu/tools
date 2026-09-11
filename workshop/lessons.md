@@ -4218,3 +4218,91 @@ wins" upstream of it — those comments are premises, and yours may have just be
 **Origin:** #49 round 4, after rounds 1–3 had each found the previous round's fix
 incomplete in the same way. Related: [[smoke-testing-a-published-binary-in-a-dev-vm]] and
 this file's thesis — I validate my model of the system instead of the system.
+
+## An unasserted string replacement that matches nothing is a silent no-op — and it reports success
+
+**Pattern:** Three times in one session I ran `s.replace(old, new)` with no assertion on
+`s.count(old)`, the pattern did not match, the file was written back unchanged, and the
+script printed its cheerful "done" line. Each time the *next* observation was the thing
+that lied: a plan risk stayed marked OPEN after I "corrected" it (`confirm at Task 4` vs
+my `confirm before Task 4`); a mutation test "passed" having never applied the mutation
+(`Forget(key string) (bool, error)` vs the real `(removed bool, err error)`). The green
+result was not evidence the code was right — it was evidence the edit never happened.
+
+**Rule:** **Every programmatic string replacement asserts its match count before writing.**
+`assert s.count(old) == 1` — not `>= 1`, because two matches means the edit is ambiguous
+and one of them is wrong. This costs one line and converts the entire class from "silently
+did nothing, reported success" into "stopped and said which pattern missed". The same rule
+holds for `sed -i` (check the file changed) and for any edit expressed as a pattern rather
+than a position.
+
+**Corollary for mutation testing specifically.** A mutation that fails to apply looks
+*exactly* like a mutation the test caught: both end with a green suite. So a mutation run
+must confirm the mutation landed — grep the mutated file, or assert the replacement — before
+reading the test result. Otherwise "I verified this guard" means "I verified nothing, twice."
+
+**Origin:** #50 M1. Related: [[mutation-verify-a-guard-against-the-invariant-it-names]] —
+that lesson says mutate the general form; this one says make sure you mutated anything at
+all. Both are the same failure at different depths: I read the outcome I expected instead
+of the outcome that happened.
+
+## Run the program. A green suite is a statement about the tests, not about the software
+
+**Pattern:** #50 shipped a feature whose whole purpose was to stop `define` promising a
+deck it would never create. Every test passed — including tests written specifically about
+that promise. Then I ran the binary: `define --stats`, piped, in a non-deck directory
+printed *"Nothing yet — look a word up and it joins your deck."* The exact lie. The cause
+was a real design conflation — `saving()` correctly refused to PROMPT, and I had extended
+that into refusing to RESOLVE, so it reported "undecided" and the render fell back to the
+optimistic message. But that answer needed nobody: no terminal means no deck. No unit test
+caught it because every unit test passed the flag in explicitly; only the assembled program
+had the wiring that produced the wrong value.
+
+This was the third thing in one issue that only running or mutating revealed, not reading:
+two tests passed while asserting nothing (one drove `history.Add`, which never writes to
+disk; one put a *directory* in a bracket-named path when only the *file* branch globs), and
+the boundary review measured a bug where a declined session forgot itself across a `/lang`
+switch.
+
+**Rule:** **Before calling a user-facing feature done, run it as the user will — including
+the paths that are awkward to automate** (a pipe, a redirect, a non-tty, the wrong
+directory). Budget it as a step, not as a courtesy. The specific class this catches is a
+value that is correct at every seam and wrong once assembled, which is invisible to tests
+that supply the value directly. A test that hands `renderStats` a `saving` flag asserts
+what `renderStats` does with it; only the program asserts what the flag actually IS.
+
+**Corollary:** when a test and a smoke test disagree, the smoke test is the one describing
+the software. Fix the code, then add the pin the tests were missing — in that order, so the
+pin is written against observed behaviour rather than against the model that already failed.
+
+**Origin:** #50 M2. Siblings: [[mutation-verify-a-guard-against-the-invariant-it-names]]
+(the guard version), [[an-unasserted-string-replacement-that-matches-nothing-is-a-silent-no-op]]
+(the tooling version), and this file's thesis — I validate my model of the system instead of
+the system.
+
+## A test that pins BEHAVIOUR passes under a restatement; only a disagreeing case pins the DERIVATION
+
+**Pattern:** #50 replaced `if opt.raw` with `decideCapture(true, opt) == captureNothing`,
+so the "does this invocation record anything" decision was consumed from its owner rather
+than re-tested. The behaviour was right and tested. But reverting the line left the entire
+package green — because `-raw` is the one input the two forms *agree* about, and every test
+used `-raw`. The derivation was pinned by nothing. The discriminator was `DEFINE_NO_CAPTURE`:
+a `captureNothing` member a bare `opt.raw` check cannot see. Same shape one round earlier:
+`printStats` has two callers and only the one a Done-when row happened to name was driven,
+so the other door was unpinned while the screen it renders was "tested".
+
+**Rule:** When you refactor a decision to DERIVE from its owner instead of restating it, the
+test must exercise a case where **derived and restated disagree** — otherwise you have pinned
+the behaviour you already had, not the derivation you just built. Concretely: enumerate the
+owner's cases, find one the old form gets wrong, and make that a row. If no such case exists
+yet, the refactor is currently unfalsifiable; say so rather than claiming coverage.
+
+**Corollary — pin count comes from the caller set.** When the claim is about a shared renderer
+or decision, the number of pins is derived from *that function's callers*, not from the single
+entry point named in the requirement. `printStats` has two doors; a requirement written about
+`--stats` leaves `/stats` free to regress.
+
+**Origin:** #50 close review rounds 4-5 (BR-19, BR-20). Siblings:
+[[mutation-verify-a-guard-against-the-invariant-it-names]] and
+[[run-the-program-a-green-suite-is-a-statement-about-the-tests]]. All three are the same
+error at different depths: I check the thing I was thinking about, not the thing I claimed.

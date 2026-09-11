@@ -149,7 +149,7 @@ func TestOpenStoreSharesOneHighlightSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	var warn bytes.Buffer
 
-	sd := openStore(options{}, &warn)
+	sd := openStore(options{}, &warn, nil)
 	sd.capture.Capture("obsequious", true, options{})
 
 	if !sd.vocab.Has(store.Key("obsequious")) {

@@ -71,7 +71,7 @@ type deps struct {
 	// get in-memory defaults. Tests that DO want the real wiring set it to
 	// openStore and t.Chdir into a t.TempDir first — several do, so this seam is
 	// what keeps the real filesystem opt-in, not unreachable.
-	newStore func(options, io.Writer) storeDeps
+	newStore func(options, io.Writer, *deckPermission) storeDeps
 	// clock is what a command reads to answer "now". Injected for the same
 	// reason storeCapturer's is: /history's window is a local-DAY computation,
 	// so a test has to be able to stand at a chosen instant in a chosen zone.
@@ -93,6 +93,10 @@ type deps struct {
 	// which would make the interactive path unwritable. Note this is a different
 	// question from the stdout check that drives colour.
 	stdinIsTerminal func() bool
+	// deckPermission is the one decision about whether this directory may become
+	// a deck, shared by every store and by persistLang. Nil means allow, which is
+	// what lets every seam that predates the policy behave exactly as before.
+	deckPermission *deckPermission
 }
 
 func realDeps() deps {
@@ -165,7 +169,7 @@ type storeDeps struct {
 func (d deps) withStore(opt options, warn io.Writer) deps {
 	var sd storeDeps
 	if d.newStore != nil {
-		sd = d.newStore(opt, warn)
+		sd = d.newStore(opt, warn, d.deckPermission)
 	}
 	if d.history == nil {
 		d.history = orElse[History](sd.history, &memHistory{})
@@ -266,7 +270,7 @@ func sessionUsage(lang store.Lang, clk store.Clock, warn io.Writer) UsageSource 
 // A store that cannot be opened must not break define: warn and fall back,
 // exactly as a missing recording degrades rather than fails. Someone in a
 // read-only directory still gets a dictionary.
-func openStore(opt options, warn io.Writer) storeDeps {
+func openStore(opt options, warn io.Writer, perm *deckPermission) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides
 	// whether a given lookup counts.
@@ -320,10 +324,35 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// here is necessarily re-derived there. Adding a member cannot be half done.
 	// A store whose language is irrelevant to it: history reads events/ and the
 	// usage cache reads usage/, neither of which is language-scoped.
-	flat := store.NewYAML(dir, store.DefaultLang, warn)
+	// GATED, and `flat` as much as the per-language store. It backs
+	// newStoreHistory and the news cache, and cachingFeed.SetNewsItems reaches
+	// MkdirAll(usageDir) — so wrapping only the language store would leave a
+	// write path that creates a deck without asking (#50 PQ-2).
+	// THE FALLBACK STORES ARE PROCESS-SCOPED, keyed by language (#50 BR-2).
+	//
+	// newLangDeps rebuilds its wrapper on every /lang, so a fallback allocated
+	// inside the wrapper would be discarded by a language switch: a declined
+	// session would remember its words until the learner typed /lang es, then
+	// silently forget them. The real stores are keyed by language; so are these.
+	fallbacks := map[store.Lang]store.Store{}
+	fallbackFor := func(l store.Lang) store.Store {
+		if m, ok := fallbacks[l]; ok {
+			return m
+		}
+		m := store.NewMem()
+		fallbacks[l] = m
+		return m
+	}
+
+	flat := newGatedStore(store.NewYAML(dir, store.DefaultLang, warn), fallbackFor(store.DefaultLang), perm)
 
 	newLangDeps := func(l store.Lang) langDeps {
-		st := store.NewYAML(dir, l, warn)
+		// INSIDE newLangDeps, not one level up, because this closure is what
+		// /lang re-invokes — the comment above states the rule: "anything
+		// constructed here is necessarily re-derived there. Adding a member
+		// cannot be half done." Wrapping in withStore would hand a switched
+		// language an UNGATED deck: decline, type /lang es, and it starts writing.
+		st := newGatedStore(store.NewYAML(dir, l, warn), fallbackFor(l), perm)
 		// ONE highlight set, handed to both the capturer that grows it and the
 		// renderers that read it. Two instances would mean lookups landing in a
 		// set nothing draws from — TestOpenStoreSharesOneHighlightSet is the
@@ -347,7 +376,20 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		clock:       clk,
 		lang:        lang,
 		newLangDeps: newLangDeps,
-		persistLang: func(l store.Lang) error { return store.WriteLang(dir, l) },
+		// GATED SEPARATELY, because a Store wrapper structurally cannot reach it:
+		// store.WriteLang is a free function, not a Store method (#50 PQ-1).
+		// Ungated, `define /lang es` writes lang.txt into a directory nobody
+		// confirmed — and so does /lang after a decline. Declining means the
+		// language applies to this session and is not persisted, which is what
+		// everything else in this state already does.
+		persistLang: func(l store.Lang) error {
+			if !perm.allowed() {
+				// REPORTED, not swallowed. Returning nil made the caller announce a
+				// switch it had not performed (#50 BR-18).
+				return errDeckDeclined
+			}
+			return store.WriteLang(dir, l)
+		},
 	}
 	sd.langDeps = ld
 	return sd
@@ -382,6 +424,12 @@ type options struct {
 	// mechanism beside it. Note it also drops history to session-only, because
 	// persisted history IS the event log (#3) — documented beside the flag.
 	noCapture bool
+	// here means "yes, make this directory a deck", without asking.
+	//
+	// LOAD-BEARING RATHER THAN A CONVENIENCE: a non-terminal no longer gets a
+	// deck at all, so this is the ONLY way a script can create one. Without it
+	// the feature would silently break every automated first run.
+	here bool
 	// width is the terminal width for wrapping; 0 on a pipe, where a consumer
 	// re-wraps for itself and baked-in breaks cannot be undone.
 	width int
@@ -441,6 +489,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
 	versionFlag := fs.Bool("version", false, "print the version and exit")
+	hereFlag := fs.Bool("here", false, "make this directory a deck without asking")
 	// Names the artifact, not the file: the filename is per-language and this
 	// help text is printed before any language is resolved.
 	reflect := fs.Bool("reflect", false, "read the deck and write the learner model")
@@ -480,7 +529,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"still definitions. Force either way: ? asks, \\ defines.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
-			"it in. A word that was found is added to the deck; a word that was\n"+
+			"it in. Because the directory IS the deck, it ASKS before making a new\n"+
+			"one, and declining still answers the lookup -- nothing is written and\n"+
+			"everything that reads history reports empty. -here says yes without\n"+
+			"asking, and is the only way a script can create a deck: with no\n"+
+			"terminal to ask, define creates nothing.\n"+
+			"A word that was found is added to the deck; a word that was\n"+
 			"not is kept as history only, so typos never become vocabulary. -raw\n"+
 			"records nothing, because it is for scripts.\n"+
 			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+
@@ -567,6 +621,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// both paths instead of depending on which line you are on.
 		noAudio:   *noAudio || *raw,
 		noCapture: os.Getenv("DEFINE_NO_CAPTURE") != "",
+		here:      *hereFlag,
 		times:     *times,
 		locale:    *locale,
 		count:     *count,
@@ -734,6 +789,33 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// deps.clock is supplied here, so the exemption stranded it as nil. The cost
 	// it was avoiding is gone at the source instead: opening a store no longer
 	// reads the log (History.Load does, when a loop is about to recall).
+	// THE DECISION IS BUILT HERE, where stdin, stderr and the terminal predicate
+	// are all in scope — openStore has none of them, and the store package must
+	// not prompt at all (its only UI is a warn io.Writer).
+	//
+	// Built but NOT resolved: nothing has asked to write yet, and resolving now
+	// would make `define --stats` in the wrong directory offer to create a deck
+	// it will never write to. The two REPL shells resolve it before they start
+	// reading stdin (repl.go); a one-shot resolves it on its first write.
+	//
+	// DEFINE_NO_CAPTURE is left alone: it already opens nothing, and an explicit
+	// instruction deserves its own direct answer rather than this question.
+	//
+	// AN INJECTED PERMISSION WINS, like every other member of deps (see
+	// withStore's `if d.history == nil`). Overwriting it unconditionally made a
+	// test that injected a counting permission silently measure nothing — the
+	// mutation that should have reddened it passed, which is how this was found.
+	if d.deckPermission == nil && !opt.noCapture {
+		if dir, err := os.Getwd(); err == nil {
+			d.deckPermission = newDeckPermission(
+				deckAsker(ctx, dir, opt, stdin, stderr, d.stdinIsTerminal)).
+				withQuiet(
+					func() (deckDecision, deckReason) {
+						return deckPolicy(dir, opt, d.stdinIsTerminal)
+					},
+					func(r deckReason) { explainDenial(r, dir, stderr) })
+		}
+	}
 	d = d.withStore(opt, stderr)
 	// The language is known only after the store has resolved it, so the voice is
 	// derived here rather than at flag parse. Through applyVoice, the same
