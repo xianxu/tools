@@ -282,7 +282,13 @@ func deckAsker(ctx context.Context, dir string, opt options, in io.Reader, out i
 			// means no — and it prints a newline first, because the cursor is
 			// parked after the prompt.
 			fmt.Fprintln(out)
-			fmt.Fprintln(out, "define: not saving in this directory; the lookup still works.")
+			// IT DOES NOT PROMISE A LOOKUP (#50 BR-18 residual). On the one-shot
+			// path the lookup does still run — but in the REPL the same SIGINT also
+			// fires the session's own cancellation, so the session exits with no
+			// lookup at all. A message that is true on one path and false on the
+			// other is worse than one that only says what it knows: nothing was
+			// saved.
+			fmt.Fprintln(out, "define: not saving in this directory.")
 			return false
 		}
 		if err != nil && answer == "" {

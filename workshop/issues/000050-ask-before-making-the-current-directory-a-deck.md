@@ -1,12 +1,13 @@
 ---
 id: 000050
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-11
 estimate_hours: 4.19
 started: 2026-09-10T09:41:40-07:00
+actual_hours: 5.64
 ---
 
 # ask before making the current directory a deck
@@ -231,6 +232,8 @@ Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-de
 
 ## Log
 
+
+- 2026-09-11: closed — Round 5. Operator verified the interactive path on a real terminal. Round 4s two findings are fixed, both mutation-verified through PRODUCTION WIRING. BR-17, the sharpest of the issue: the Done-when row for the exact defect smoke testing found was pinned by NOTHING — rendering the saving screen unconditionally, or handing both doors a nil permission, each left the whole package green, because my e2e test asserted "Nothing yet" which BOTH screens print. It now asserts the discriminating half and both of the reviews mutations redden; row 2s other half (--play, /history) was pinned only structurally and now runs both under a declined permission; the full seven-row pin table with mutations and observed reds is written into the Log. BR-18: fixing PQ-1 I made persistLang return nil on a decline, so its only caller announced a switch it had not made — define /lang es printed "now defining in es" having written nothing. errDeckDeclined now travels to the caller, which says the language applies to this session and was not saved, pinned on STDOUT, the half the old test never read; swallowing it again reddens. AND FIXING THAT CAUSED A REGRESSION AN EXISTING TEST CAUGHT — sessionSetLang returned early on any persist error, so the session stayed English while the message said Spanish, the same lie inverted; a decline is not a persist failure, so the session half succeeds and only the durable half is skipped. BR-19: deckPolicy now consumes decideCapture rather than re-testing opt.raw, with reasonRaw renamed reasonRecordsNothing for the class. Still reported honestly: the pty test covering the raw shell SKIPs here ("no pty available: operation not permitted") and is routed through conformance.SkipOrFail so CONFORMANCE_STRICT=1 turns the skip into a failure; I have not executed it. go build/vet, vet -tags conformance, gofmt clean, go test ./... green, run-merge-checks.sh green.; review verdict: FIX-THEN-SHIP
 ### 2026-09-10
 
 ### 2026-09-10 — M1 Task 1: `store.IsDeck`
@@ -557,3 +560,49 @@ reach the question through this site.
 | an existing deck is never asked about | `TestAnExistingDeckIsNeverAskedAbout` | — | yes |
 | every creating method consults the gate | `TestCreatingMethodsWriteWhenAllowedAndNotWhenDenied` (7), `TestNonCreatingMethodsCreateNothing` (8) | dual-write `SetItems`; `Forget` MkdirAll | yes, both |
 | `--stats` does not claim a word will join | `TestStatsInAnUnsavedDirectoryReportsEmpty` | unconditional saving screen; nil permission | yes, both |
+
+### 2026-09-11 — close finalized (round 5, FIX-THEN-SHIP), and three last rules
+
+The close is recorded; these landed in the same commit per the FIX-THEN-SHIP
+protocol.
+
+**BR-20 — 5th `guard-fails-open`, and the rule is about CALLER SETS.**
+`printStats` has exactly two callers, `--stats` and `/stats`, and only the one the
+Done-when row named was driven. Handing the `/stats` door a nil permission left the
+whole package green, so the IN-REPL route into the screen this issue exists for was
+pinned by nothing. The rule: *when a claim is about a shared renderer or decision,
+the pin count is derived from that function's caller set, not from the entry point
+a Done-when row happens to name.* Both doors now run; the mutation reddens only the
+`/stats` subtest, which is how I know it was the unpinned one.
+
+**BR-19 — the behaviour was fixed and the DERIVATION was not pinned.** Reverting
+`decideCapture(true, opt) == captureNothing` to `if opt.raw` left the package green,
+because `-raw` is the only member the two forms agree on. `DEFINE_NO_CAPTURE` is the
+discriminator — a `captureNothing` member a bare `opt.raw` check cannot see — and it
+now reddens the revert. This is the shape worth remembering: a test that pins
+BEHAVIOUR passes under a restatement; only a case the two forms DISAGREE about pins
+the derivation.
+
+**BR-21 — 3rd `readme-gate`, and the enumeration was reactive.** The `superseded`
+array in the surface guard IS the enumeration, and both of its entries had been
+added one per review round, after the fact. This round narrowed a third promise
+(`/lang` persists) and added nothing — so `cmd/define/README.md` still said "the
+setting stays with the directory" and `atlas/define.md` "persists when given". Both
+corrected, both added to the array, and the rule written where the array lives:
+*every change that narrows a documented promise adds its superseded sentence in the
+same commit that narrows it.*
+
+**BR-18 residual:** the Ctrl-C message said "the lookup still works", which is true
+on the one-shot path and FALSE in the REPL, where the same SIGINT fires the
+session's own cancellation and it exits with no lookup. It now says only what it
+knows.
+
+**Final check on the real binary:** piped lookup explains itself and creates
+nothing; `/lang es` says session-only, not saved; `/stats` renders the honest
+screen; `-raw` asks nothing and advises nothing; the directory stays empty.
+
+**Unverified, and stated as such:** `TestPTYDeckQuestionArrivesBeforeTheEditor`
+covers the raw shell and has never run here — `no pty available: operation not
+permitted`. It is routed through `conformance.SkipOrFail`, so
+`CONFORMANCE_STRICT=1` turns that skip into a failure. Its first real run will be
+on an unsandboxed machine.

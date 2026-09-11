@@ -587,7 +587,7 @@ first silently won.
 In a directory that is already a deck, *every* successful lookup — one-shot, piped,
 or in the editor — records the word where you started `define`, so your deck and
 history build themselves. In a directory that is not one yet, it asks first, and
-records nothing until you answer yes (see [Install](#install) and `--here`). **Every question that reaches the model
+records nothing until you answer yes (see [The directory is the deck, so it asks first](#the-directory-is-the-deck-so-it-asks-first)). **Every question that reaches the model
 is recorded too, by its text** — whatever became of the answer, since what you
 asked is the signal, not whether it arrived. (What decides it is whether a request
 was actually sent: with no model configured nothing is, so nothing is recorded.
@@ -646,10 +646,13 @@ truncated to nothing is re-fetched instead of played as silence.
 
 ## Languages
 
-**One language at a time.** `/lang` says which one, `/lang es` switches, and the
-setting stays with the directory — unlike `/sound`, which lasts one session.
-It has to persist: a one-shot `define madrugar` has no session to inherit from,
-and re-declaring the language at every lookup is the friction the mode removes.
+**One language at a time.** `/lang` says which one, `/lang es` switches, and in a
+deck the setting stays with the directory — unlike `/sound`, which lasts one
+session. It has to persist: a one-shot `define madrugar` has no session to
+inherit from, and re-declaring the language at every lookup is the friction the
+mode removes. In a directory that is not a deck, the switch applies to the
+session and `/lang` says it was not saved, because a one-shot `/lang` there would
+otherwise report a change it had not made.
 Everything follows it — the deck a word files into, the words `--play` offers,
 and the recording that is fetched, unless `-pron` asked otherwise for one
 lookup. `-lang es` is the one-run form, for scripts that should not have to

@@ -531,3 +531,119 @@ findings:
     detail: |
       This is the 3rd finding in family policy-restated-not-derived (BR-12, BR-14). The rule: a decision this codebase already owns is consumed by calling its owner, never by re-testing the owner's inputs at a new site. BR-14's behaviour is fixed, but deckperm.go:210 re-tests opt.raw instead of asking decideCapture (capture.go:26), which capture.go:198 already consults for the same question. A third captureNothing member would reach the REPL's up-front question again. Enumerated: this is the only site in the diff restating decideCapture. main.go:806's noCapture check mirrors openStore's "anywhere to read at all" and is correct as is. One line: decideCapture(true, opt) == captureNothing, with reasonRaw renamed for the class.
 ```
+
+---
+
+## Re-review — 2026-09-11T00:52:19-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 50 — ask before making the current directory a deck |
+| repo | tools |
+| issue file | workshop/issues/000050-ask-before-making-the-current-directory-a-deck.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 3ce76e8b43d4995f8d78e70523c671327763d75a..bee3767e27e7072a25f8d569c05fc69b0e32c710 |
+| command | sdlc close --issue 50 |
+| reviewer | claude |
+| timestamp | 2026-09-11T00:52:19-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+I ran the pinned range, the issue/plan artifacts, and mutation-verified every claimed fix in a scratch worktree (now removed).
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 5. The two Important fixes this round are real and I confirmed both by reversion: making `printStats` render the saving screen unconditionally *and* handing `--stats` a nil permission each redden `TestStatsInAnUnsavedDirectoryReportsEmpty` (BR-17), and reverting `persistLang` to `return nil` reddens `TestLangInADeclinedDirectoryDoesNotClaimASwitch` on stdout (BR-18's behavioural half). What blocks SHIP is that both fixes stopped at the site the finding named. `printStats` has **two** callers and only `--stats` is pinned — handing `/stats` (`stats.go:260`) a nil permission leaves the whole `cmd/define` package green on a 110s full run, so the in-REPL door into the exact screen this issue exists for is pinned by nothing. And BR-18's own enumeration listed three residuals (the Ctrl-C message, two doc sites, one anchor); none was touched, and I measured the first: in a REPL, ^C at the deck question prints *"the lookup still works"* and then the session exits with no lookup, `run` returns 0. Everything else — the gated seam, the AST-derived classification, the per-instance controls, the e2e filesystem assertions — is in good shape and I found no new correctness bug in shipped behaviour.
+
+## 1. Strengths
+
+- **`deckDecision` as a tagged enum with the reasoning written down** (`deckperm.go:12-26`) — "THREE VALUES, NOT A BOOL PLUS A BOOL" is exactly the ARCH-ORDER collapse, done before the bug rather than after it.
+- **`resolve()` runs the quiet half first, unconditionally** (`deckperm.go:118-131`), so every path that settles the state runs the same two steps in the same order. That is BR-12's residual fixed as a rule, not as a site.
+- **`store.IsDeck` never lets the cwd enter a pattern** (`store/isdeck.go:49-57`): `ReadDir` once, `filepath.Match` against entry *names*, `tmpPattern` skipped as debris, unreadable → `false` → ask. Fail-safe in the right direction (ARCH-SECURE).
+- **The e2e tests assert the filesystem, not the gate** (`deckperm_e2e_test.go:43`, `:87`, `:110`) and `e2eDeps` clears `d.capture` with the reason recorded — that comment is the difference between a test and a test-shaped no-op.
+- **`deckPolicy` now consumes `decideCapture`** (`deckperm.go:230-234`) rather than re-testing `opt.raw`. Right structure (see BR-19 on the missing pin).
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**A. `stats.go:260` — the `/stats` door into `printStats` is pinned by nothing. This is the 5th finding in family `guard-fails-open`.** Earlier rounds fixed instances (store methods, the `doesNotCreate` bucket, loop shells, the Done-when list). Do NOT fix this instance. The rule that covers all of them: *when a claim is about a shared renderer or decision, the number of pins is derived from that function's **caller set**, not from the one entry point the Done-when row happened to name.* Measured at the pinned head: `return printStats(c.deck, c.clock, "/stats", nil, c.stdout, c.stderr)` leaves `go test ./cmd/define/` green (110s). `printStats` has exactly two callers (`stats.go:47`, `stats.go:260`); `TestStatsInAnUnsavedDirectoryReportsEmpty` drives only the first. The behaviour is currently correct — I ran `/stats` in a declined session and it prints "nothing is being saved here" — so this is a coverage hole, not a live bug. The same enumeration applies to `--play`/`/play` and one-shot/REPL `/lang`; write the caller-set enumeration once and derive the subtests from it.
+
+**B. `cmd/define/README.md:648-651`, `atlas/define.md:1128` — the `superseded` claims list is hand-maintained, so the `/lang` persistence claims survived a behaviour change that falsified them. This is the 3rd finding in family `readme-gate`.** Earlier rounds fixed instances (`--help`, then "*Every* successful lookup"). Do NOT fix these two sentences only. The rule: *`deckasker_test.go:347`'s `superseded` array is the enumeration, and every behaviour change that narrows a documented promise must add its superseded sentence there in the same commit that narrows it.* Prevalence: the array has 2 entries and both were added reactively, one per round; this round's change narrowed a third promise and added nothing. Instances now stale — README `"the setting stays with the directory"` / `"It has to persist"`, and atlas `"/lang reports when bare and persists when given"`; all three are unconditional and false in a declined directory. Also in that README, `:590` links the question to `[Install](#install)` when the section that describes it is "## The directory is the deck, so it asks first".
+
+## 4. Minor findings
+
+- `deckperm.go:285` and `:298` repeat the decline sentence as a literal, and `errDeckDeclined`'s text is a third near-copy (ARCH-DRY).
+- `deckAsker`'s `case deckAllow` / `case deckDeny` arms (`deckperm.go:266-273`) are unreachable in production: `resolve()` runs `settleQuietly()` — the same `deckPolicy` — first, so `ask()` is only ever called in the `deckUndecided` case. Harmless insurance, but it costs a second `IsDeck`/`ReadDir`.
+- One-shot `define /lang es` in a declined directory prints "for this session only" when there is no session; only the "not saved" half is load-bearing there.
+
+## 5. Test coverage notes
+
+- Mutation-verified green→red this round: BR-17 (both mutations), BR-18 (persistLang reversion). Mutation-verified **green→green** (i.e. unpinned): the `/stats` door, and `deckPolicy`'s `decideCapture` derivation (BR-19).
+- `deckperm_test.go` never exercises `withQuiet`/`settleQuietly` directly — that path is covered only through `deckasker_test.go` and the e2e file. A unit test for "a quiet denial calls `explain` exactly once, from whichever of `saving()`/`resolve()` arrives first" would pin `sayWhy`'s once-ness cheaply.
+- `TestPTYDeckQuestionArrivesBeforeTheEditor` still SKIPs here; the Log records this honestly and routes it through `conformance.SkipOrFail`. Noted, not counted against the boundary.
+
+## 6. Architectural notes
+
+Marker by marker: **ARCH-DRY** pass (one duplicated literal, above) — `deckPrompt`, `RuntimeDirs`/`RuntimeFiles`, the AST-derived classification and `decideCapture` are all genuinely single-sourced. **ARCH-PURE** pass — `deckPermission`, `deckPolicy` and `renderStats` are pure and unit-tested without IO; `store.IsDeck` is the one IO leaf and is honestly reclassified in the issue's Revisions. **ARCH-PURPOSE** flag — the shadow sweep is clean for the code's single sources but not for the two *enumerations* (findings A and B): both are hand-maintained restatements of a model, which is the deferred-consumer shape. **ARCH-MOCK** pass — the filesystem is real (`t.TempDir`), the terminal is behind a pty conformance check; no stateless double stands in for a stateful interaction. **ARCH-CONSTRAINTS** flag — see BR-9 below; the cost is per-read-while-undecided, not once. **ARCH-SECURE** pass — no credentials; untrusted directory entries are matched as names, and the unreadable case degrades toward asking. **ARCH-ORDER** flag — `deckDecision` is the right tagged enum, but the *interrupt* ordering is unmodelled: `deckAsker` arms on `run()`'s outer ctx and never registers with the `interrupter` seam (`interrupt.go:20-44`) that exists precisely to say an interrupt was **consumed**. So one SIGINT is applied twice — as "decline" and as "quit the session" — and the sentence printed on that path asserts an outcome the code does not produce. That is the BR-18 residual.
+
+## 7. Plan revision recommendations
+
+The plan still needs the `## Revisions` entry BR-16 asked for (it is unchanged at the pinned head):
+
+- **"M2 added `deckPolicy`, `deckReason`, `errDeckDeclined`, `withQuiet` and `settleQuietly`, none of which are in Core concepts."** Reason: the table is the greppable contract a boundary review cross-checks; five entities the implementation added are absent, so the table certifies a set nobody chose. Delta: add `deckPolicy` and `deckReason` under Pure entities, `errDeckDeclined` beside them, and note `withQuiet`/`settleQuietly` as operations on `deckPermission` (the bullet at `plan:53` lists three operations and there are now five).
+- **"The `store.IsDeck` bullet is still filed under `### Pure entities`."** BR-4's revision moved the table *row* to Integration points but left the descriptive bullet at `plan:41` under the Pure heading, so the plan files it in both sections.
+
+```findings
+dispose:
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      gated_store_test.go:54-57 still reads only m.Names, and the floor at :75 is still a literal 15.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      isdeck.go:34 unchanged; and it is not once per process - settleQuietly does not memoize deckUndecided, so every gatedStore.reading() re-runs deckPolicy. Measured 3 ReadDir calls for one declined terminal one-shot.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      stats.go:101 still takes a bare positional bool, read as a literal at 9 call sites.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Plan unchanged at the pinned head - no Revisions entry, no deckPolicy/deckReason/errDeckDeclined/withQuiet/settleQuietly rows, and the IsDeck bullet still sits under the Pure entities heading at plan:41.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      Both mutations verified red in a scratch worktree, and the Done-when pin table is written. The sibling door it did not sweep is raised separately.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      The /lang half is fixed and mutation-verified, but the enumeration this finding named is incomplete - the Ctrl-C message residual is measured below, and the two doc sites plus the :590 anchor are untouched.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      The code change landed and is correct, but reverting deckperm.go:232 to `if opt.raw` leaves the whole cmd/define package green on a full 110s run - nothing pins the derivation.
+findings:
+  - id: new
+    severity: Important
+    family: guard-fails-open
+    title: |
+      5th guard-fails-open: printStats has two doors and only the one the Done-when row named is pinned
+    detail: |
+      Measured at the pinned head: replacing stats.go:260 with printStats(c.deck, c.clock, "/stats", nil, c.stdout, c.stderr) leaves `go test ./cmd/define/` entirely green (110s), so the in-REPL door into the exact screen this issue exists for is pinned by nothing. Do NOT fix this instance. The rule: when a claim is about a shared renderer or decision, the pin count is DERIVED FROM THAT FUNCTION'S CALLER SET, not from the single entry point a Done-when row happens to name. printStats has exactly two callers (stats.go:47 and :260) and TestStatsInAnUnsavedDirectoryReportsEmpty drives only the first. Behaviour is currently correct - I ran /stats in a declined session and it renders the honest screen - so this is a coverage hole, not a live bug. The same caller-set enumeration applies to --play vs /play and to one-shot vs REPL /lang; write it once and derive the subtests.
+  - id: new
+    severity: Important
+    family: readme-gate
+    title: |
+      3rd readme-gate: the superseded-claims enumeration is hand-maintained, so the /lang persistence promise went stale
+    detail: |
+      Earlier rounds fixed --help, then "Every successful lookup". Do NOT fix these two sentences only. The rule: deckasker_test.go:347's `superseded` array IS the enumeration, and every behaviour change that narrows a documented promise adds its superseded sentence there in the same commit that narrows it. Prevalence - the array has 2 entries, both added reactively one per round; this round narrowed a third promise and added nothing. Now stale and unconditional: cmd/define/README.md:648-649 "`/lang es` switches, and the setting stays with the directory", :651 "It has to persist", and atlas/define.md:1128 "`/lang` reports when bare and persists when given" - all false in a declined directory, which is the state persistLang now reports with errDeckDeclined. Also cmd/define/README.md:590 links the question to [Install](#install) rather than to "## The directory is the deck, so it asks first", the section that actually describes it.
+```

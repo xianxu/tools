@@ -344,9 +344,16 @@ func TestEverySurfaceDescribingCaptureMentionsTheQuestion(t *testing.T) {
 	// the old unconditional behaviour in another — which is exactly what
 	// cmd/define/README.md did after the first pass at this family. Presence is
 	// not enough; the superseded claim has to be ABSENT.
+	// THIS ARRAY IS THE ENUMERATION (#50 BR-21), and the rule it enforces is:
+	// every behaviour change that NARROWS a documented promise adds its superseded
+	// sentence here in the SAME commit that narrows it. Both original entries were
+	// added reactively, one per review round — which is exactly how the third
+	// promise (/lang's persistence) got narrowed with nothing added at all.
 	superseded := []string{
-		"*Every* successful lookup",      // true only in a directory already a deck
-		"records what you look up under", // the usage prose's old promise
+		"*Every* successful lookup",            // true only in a directory already a deck
+		"records what you look up under",       // the usage prose's old promise
+		"the setting stays with the directory", // /lang persists only in a deck
+		"persists when\ngiven.",                // the atlas's unconditional form
 	}
 	for name, text := range surfaces {
 		t.Run(name, func(t *testing.T) {
@@ -362,7 +369,8 @@ func TestEverySurfaceDescribingCaptureMentionsTheQuestion(t *testing.T) {
 				// sentence has to carry the condition with it.
 				idx := strings.Index(text, claim)
 				window := text[idx:min(len(text), idx+400)]
-				if !strings.Contains(window, "not one yet") && !strings.Contains(window, "ASKS before") {
+				if !strings.Contains(window, "not one yet") && !strings.Contains(window, "ASKS before") &&
+					!strings.Contains(window, "in a deck") && !strings.Contains(window, "not a deck") {
 					t.Errorf("%s still asserts %q without the condition. Mentioning -here "+
 						"elsewhere in the file does not repair a sentence that promises "+
 						"unconditional recording where a reader will meet it.", name, claim)
@@ -464,5 +472,36 @@ func TestInterruptAtTheQuestionDeclines(t *testing.T) {
 		t.Fatal("the question did not return after the context was cancelled — it " +
 			"blocks forever, and since the question is put before the loop's reader " +
 			"exists there is nothing else watching the terminal")
+	}
+}
+
+// THE DERIVATION IS PINNED, not just the behaviour (#50 BR-19).
+//
+// deckPolicy asks decideCapture "does this invocation record anything" rather
+// than re-testing opt.raw. Reverting it to `if opt.raw` left the whole package
+// green, because -raw is the only captureNothing member the old form and the new
+// one disagree about... nowhere. DEFINE_NO_CAPTURE is the discriminator: it is a
+// captureNothing member that a bare opt.raw check cannot see, so this row fails
+// the moment the derivation is replaced by a restatement.
+func TestDeckPolicyConsumesDecideCaptureRatherThanRestatingIt(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opt  options
+	}{
+		{"-raw", options{raw: true}},
+		{"DEFINE_NO_CAPTURE", options{noCapture: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, why := deckPolicy(t.TempDir(), tc.opt, func() bool { return true })
+			if d != deckDeny {
+				t.Errorf("decision = %v, want deckDeny: decideCapture calls this "+
+					"captureNothing, so there is nothing to create a deck for", d)
+			}
+			if why != reasonRecordsNothing {
+				t.Errorf("reason = %v, want reasonRecordsNothing — every captureNothing "+
+					"member reaches this one reason, which is what makes a THIRD member "+
+					"arrive here without a code change", why)
+			}
+		})
 	}
 }

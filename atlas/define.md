@@ -1126,7 +1126,9 @@ Argument forms are documented with each command rather than in the summary: the
 summary is what `/help` prints, and a table that padded it with syntax would stop
 matching the screen. `/history [N]` takes `N`, `--days N` or `--days=N`;
 `/sound [N]` reports when bare; `/lang` reports when bare and persists when
-given.
+given — in a deck. In a directory nobody agreed to write to it applies to the
+session and says so, because its only durable effect is the one it cannot have
+there (#50).
 
 `/pron`'s own rule is code-owned rather than restated here, because this is the
 third prose site to state it and the first two went stale:

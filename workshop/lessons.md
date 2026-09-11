@@ -4279,3 +4279,30 @@ pin is written against observed behaviour rather than against the model that alr
 (the guard version), [[an-unasserted-string-replacement-that-matches-nothing-is-a-silent-no-op]]
 (the tooling version), and this file's thesis — I validate my model of the system instead of
 the system.
+
+## A test that pins BEHAVIOUR passes under a restatement; only a disagreeing case pins the DERIVATION
+
+**Pattern:** #50 replaced `if opt.raw` with `decideCapture(true, opt) == captureNothing`,
+so the "does this invocation record anything" decision was consumed from its owner rather
+than re-tested. The behaviour was right and tested. But reverting the line left the entire
+package green — because `-raw` is the one input the two forms *agree* about, and every test
+used `-raw`. The derivation was pinned by nothing. The discriminator was `DEFINE_NO_CAPTURE`:
+a `captureNothing` member a bare `opt.raw` check cannot see. Same shape one round earlier:
+`printStats` has two callers and only the one a Done-when row happened to name was driven,
+so the other door was unpinned while the screen it renders was "tested".
+
+**Rule:** When you refactor a decision to DERIVE from its owner instead of restating it, the
+test must exercise a case where **derived and restated disagree** — otherwise you have pinned
+the behaviour you already had, not the derivation you just built. Concretely: enumerate the
+owner's cases, find one the old form gets wrong, and make that a row. If no such case exists
+yet, the refactor is currently unfalsifiable; say so rather than claiming coverage.
+
+**Corollary — pin count comes from the caller set.** When the claim is about a shared renderer
+or decision, the number of pins is derived from *that function's callers*, not from the single
+entry point named in the requirement. `printStats` has two doors; a requirement written about
+`--stats` leaves `/stats` free to regress.
+
+**Origin:** #50 close review rounds 4-5 (BR-19, BR-20). Siblings:
+[[mutation-verify-a-guard-against-the-invariant-it-names]] and
+[[run-the-program-a-green-suite-is-a-statement-about-the-tests]]. All three are the same
+error at different depths: I check the thing I was thinking about, not the thing I claimed.

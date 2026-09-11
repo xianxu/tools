@@ -387,6 +387,52 @@ rounds:
           family: policy-restated-not-derived
           round: 4
       blocked: true
+    - "n": 5
+      timestamp: "2026-09-11T00:52:19-07:00"
+      agent: claude
+      dispose:
+        - id: BR-8
+          disposition: not-addressed
+          note: gated_store_test.go:54-57 still reads only m.Names, and the floor at :75 is still a literal 15.
+          round: 5
+        - id: BR-9
+          disposition: not-addressed
+          note: isdeck.go:34 unchanged; and it is not once per process - settleQuietly does not memoize deckUndecided, so every gatedStore.reading() re-runs deckPolicy. Measured 3 ReadDir calls for one declined terminal one-shot.
+          round: 5
+        - id: BR-13
+          disposition: not-addressed
+          note: stats.go:101 still takes a bare positional bool, read as a literal at 9 call sites.
+          round: 5
+        - id: BR-16
+          disposition: not-addressed
+          note: Plan unchanged at the pinned head - no Revisions entry, no deckPolicy/deckReason/errDeckDeclined/withQuiet/settleQuietly rows, and the IsDeck bullet still sits under the Pure entities heading at plan:41.
+          round: 5
+        - id: BR-17
+          disposition: addressed
+          note: Both mutations verified red in a scratch worktree, and the Done-when pin table is written. The sibling door it did not sweep is raised separately.
+          round: 5
+        - id: BR-18
+          disposition: not-addressed
+          note: The /lang half is fixed and mutation-verified, but the enumeration this finding named is incomplete - the Ctrl-C message residual is measured below, and the two doc sites plus the :590 anchor are untouched.
+          round: 5
+        - id: BR-19
+          disposition: not-addressed
+          note: The code change landed and is correct, but reverting deckperm.go:232 to `if opt.raw` leaves the whole cmd/define package green on a full 110s run - nothing pins the derivation.
+          round: 5
+      findings:
+        - id: BR-20
+          severity: Important
+          title: '5th guard-fails-open: printStats has two doors and only the one the Done-when row named is pinned'
+          detail: 'Measured at the pinned head: replacing stats.go:260 with printStats(c.deck, c.clock, "/stats", nil, c.stdout, c.stderr) leaves `go test ./cmd/define/` entirely green (110s), so the in-REPL door into the exact screen this issue exists for is pinned by nothing. Do NOT fix this instance. The rule: when a claim is about a shared renderer or decision, the pin count is DERIVED FROM THAT FUNCTION''S CALLER SET, not from the single entry point a Done-when row happens to name. printStats has exactly two callers (stats.go:47 and :260) and TestStatsInAnUnsavedDirectoryReportsEmpty drives only the first. Behaviour is currently correct - I ran /stats in a declined session and it renders the honest screen - so this is a coverage hole, not a live bug. The same caller-set enumeration applies to --play vs /play and to one-shot vs REPL /lang; write it once and derive the subtests.'
+          family: guard-fails-open
+          round: 5
+        - id: BR-21
+          severity: Important
+          title: '3rd readme-gate: the superseded-claims enumeration is hand-maintained, so the /lang persistence promise went stale'
+          detail: 'Earlier rounds fixed --help, then "Every successful lookup". Do NOT fix these two sentences only. The rule: deckasker_test.go:347''s `superseded` array IS the enumeration, and every behaviour change that narrows a documented promise adds its superseded sentence there in the same commit that narrows it. Prevalence - the array has 2 entries, both added reactively one per round; this round narrowed a third promise and added nothing. Now stale and unconditional: cmd/define/README.md:648-649 "`/lang es` switches, and the setting stays with the directory", :651 "It has to persist", and atlas/define.md:1128 "`/lang` reports when bare and persists when given" - all false in a declined directory, which is the state persistLang now reports with errDeckDeclined. Also cmd/define/README.md:590 links the question to [Install](#install) rather than to "## The directory is the deck, so it asks first", the section that actually describes it.'
+          family: readme-gate
+          round: 5
+      blocked: false
 ---
 
 # Gate ledger — tools#50 (boundary-review)
@@ -604,12 +650,32 @@ up shows ordinary figures with no hint they are session-only.
 - **BR-19** [Minor] `policy-restated-not-derived` deckPolicy re-tests opt.raw instead of consuming decideCapture, the single owner of "this invocation writes nothing"
   This is the 3rd finding in family policy-restated-not-derived (BR-12, BR-14). The rule: a decision this codebase already owns is consumed by calling its owner, never by re-testing the owner's inputs at a new site. BR-14's behaviour is fixed, but deckperm.go:210 re-tests opt.raw instead of asking decideCapture (capture.go:26), which capture.go:198 already consults for the same question. A third captureNothing member would reach the REPL's up-front question again. Enumerated: this is the only site in the diff restating decideCapture. main.go:806's noCapture check mirrors openStore's "anywhere to read at all" and is correct as is. One line: decideCapture(true, opt) == captureNothing, with reasonRaw renamed for the class.
 
+## Round 5 — 2026-09-11T00:52:19-07:00 (claude) — passed
+
+### Disposed
+
+- BR-8 — not-addressed — gated_store_test.go:54-57 still reads only m.Names, and the floor at :75 is still a literal 15.
+- BR-9 — not-addressed — isdeck.go:34 unchanged; and it is not once per process - settleQuietly does not memoize deckUndecided, so every gatedStore.reading() re-runs deckPolicy. Measured 3 ReadDir calls for one declined terminal one-shot.
+- BR-13 — not-addressed — stats.go:101 still takes a bare positional bool, read as a literal at 9 call sites.
+- BR-16 — not-addressed — Plan unchanged at the pinned head - no Revisions entry, no deckPolicy/deckReason/errDeckDeclined/withQuiet/settleQuietly rows, and the IsDeck bullet still sits under the Pure entities heading at plan:41.
+- BR-17 — addressed — Both mutations verified red in a scratch worktree, and the Done-when pin table is written. The sibling door it did not sweep is raised separately.
+- BR-18 — not-addressed — The /lang half is fixed and mutation-verified, but the enumeration this finding named is incomplete - the Ctrl-C message residual is measured below, and the two doc sites plus the :590 anchor are untouched.
+- BR-19 — not-addressed — The code change landed and is correct, but reverting deckperm.go:232 to `if opt.raw` leaves the whole cmd/define package green on a full 110s run - nothing pins the derivation.
+
+### Raised
+
+- **BR-20** [Important] `guard-fails-open` 5th guard-fails-open: printStats has two doors and only the one the Done-when row named is pinned
+  Measured at the pinned head: replacing stats.go:260 with printStats(c.deck, c.clock, "/stats", nil, c.stdout, c.stderr) leaves `go test ./cmd/define/` entirely green (110s), so the in-REPL door into the exact screen this issue exists for is pinned by nothing. Do NOT fix this instance. The rule: when a claim is about a shared renderer or decision, the pin count is DERIVED FROM THAT FUNCTION'S CALLER SET, not from the single entry point a Done-when row happens to name. printStats has exactly two callers (stats.go:47 and :260) and TestStatsInAnUnsavedDirectoryReportsEmpty drives only the first. Behaviour is currently correct - I ran /stats in a declined session and it renders the honest screen - so this is a coverage hole, not a live bug. The same caller-set enumeration applies to --play vs /play and to one-shot vs REPL /lang; write it once and derive the subtests.
+- **BR-21** [Important] `readme-gate` 3rd readme-gate: the superseded-claims enumeration is hand-maintained, so the /lang persistence promise went stale
+  Earlier rounds fixed --help, then "Every successful lookup". Do NOT fix these two sentences only. The rule: deckasker_test.go:347's `superseded` array IS the enumeration, and every behaviour change that narrows a documented promise adds its superseded sentence there in the same commit that narrows it. Prevalence - the array has 2 entries, both added reactively one per round; this round narrowed a third promise and added nothing. Now stale and unconditional: cmd/define/README.md:648-649 "`/lang es` switches, and the setting stays with the directory", :651 "It has to persist", and atlas/define.md:1128 "`/lang` reports when bare and persists when given" - all false in a declined directory, which is the state persistLang now reports with errDeckDeclined. Also cmd/define/README.md:590 links the question to [Install](#install) rather than to "## The directory is the deck, so it asks first", the section that actually describes it.
+
 ## Open findings
 
 - **BR-8** [Minor] `derivation-under-derives` storeInterfaceMethods ignores embedded interfaces and the "< 15" floor is hand-bumped
 - **BR-9** [Minor] `startup-path-cost` IsDeck uses os.ReadDir, which reads and sorts every entry in the working directory
 - **BR-13** [Minor] `positional-bool-parameter` renderStats gained a bare positional bool, read at six call sites as a literal true
 - **BR-16** [Minor] `artifact-claims-what-code-does-not` the plan's Core concepts never gained deckPolicy, and still lists IsDeck under Pure entities
-- **BR-17** [Important] `guard-fails-open` 4th guard-fails-open: the issue's Done-when list is the enumeration never written, and its --stats row is pinned by nothing
 - **BR-18** [Important] `confirmation-not-derived-from-effect` /lang reports a switch and "now on the record" in a declined directory, because persistLang swallows the write its only caller reports
 - **BR-19** [Minor] `policy-restated-not-derived` deckPolicy re-tests opt.raw instead of consuming decideCapture, the single owner of "this invocation writes nothing"
+- **BR-20** [Important] `guard-fails-open` 5th guard-fails-open: printStats has two doors and only the one the Done-when row named is pinned
+- **BR-21** [Important] `readme-gate` 3rd readme-gate: the superseded-claims enumeration is hand-maintained, so the /lang persistence promise went stale

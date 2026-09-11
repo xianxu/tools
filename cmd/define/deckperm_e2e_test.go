@@ -255,3 +255,41 @@ func TestLangInADeclinedDirectoryDoesNotClaimASwitch(t *testing.T) {
 		t.Errorf("/lang did not say it was not saved; stdout was %q", out.String())
 	}
 }
+
+// BOTH DOORS INTO THE STATS SCREEN, because there are two (#50 BR-20).
+//
+// The rule: when a claim is about a SHARED renderer or decision, the number of
+// pins is derived from that function's CALLER SET — not from the single entry
+// point a Done-when row happens to name. printStats has exactly two callers,
+// `--stats` (the flag) and `/stats` (the REPL command), and only the flag was
+// driven. Handing the /stats door a nil permission left the whole package green,
+// so the in-REPL route into the exact screen this issue exists for was pinned by
+// nothing.
+func TestBothStatsDoorsAreHonestWhenNothingIsSaved(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"--stats (the flag)", []string{"-stats"}},
+		{"/stats (the REPL command)", []string{"/stats"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			d := e2eDeps(t, dir)
+			d.stdinIsTerminal = func() bool { return false }
+
+			var out, errb bytes.Buffer
+			if code := run(t.Context(), tc.args, d, strings.NewReader(""), &out, &errb); code != 0 {
+				t.Fatalf("exit = %d: %s", code, errb.String())
+			}
+			if !strings.Contains(out.String(), "nothing is being saved here") {
+				t.Errorf("%s rendered the SAVING screen where nothing is written; stdout "+
+					"was %q", tc.name, out.String())
+			}
+			if strings.Contains(out.String(), "joins your deck") {
+				t.Errorf("%s promised a word would join the deck; stdout was %q",
+					tc.name, out.String())
+			}
+		})
+	}
+}
