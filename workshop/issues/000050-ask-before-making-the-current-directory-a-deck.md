@@ -49,13 +49,22 @@ gives "as if empty" with **no consumer changes**: `--stats` folds an empty deck,
 memory and evaporate.
 
 **This is why the design avoids the `nil` deck rather than extending it.** A nil
-deck is checked in ELEVEN places (`play_loop.go:29`, `play_cmd.go:44`,
-`ask.go:267`, `stats.go:37`, `stats.go:236`, `history_cmd.go:219`,
-`harvest.go:110`, `reflect.go:339`, `cloze.go:190`, `main.go:176`,
-`main.go:1223`) and every one of them REFUSES with `noDeckMessage` and exit 1.
-"No deck" today means *refuse*, not *empty*. Threading a new "empty but absent"
-meaning through eleven refusals would be the expensive version of this feature;
-handing over a real empty store is the cheap one.
+deck is checked in eleven places, and — measured per site, not assumed — **eight
+of them REFUSE** with `noDeckMessage` and exit 1 (`play_loop.go:29`,
+`play_cmd.go:44`, `stats.go:37`, `stats.go:236`, `history_cmd.go:219`,
+`harvest.go:110`, `reflect.go:339`, `main.go:1223`) while **three DEGRADE**:
+`ask.go:267` returns a context without the learner model, `cloze.go:190` returns a
+nil question, and `main.go:176` is an assignment inside `withStore` rather than a
+check at all.
+
+So "no deck" today means *refuse* at eight sites and *quietly do less* at two more.
+Threading a new "empty but absent" meaning through all of them is the expensive
+version of this feature; handing over a real empty store is the cheap one — and it
+makes the three degraders strictly better, since `ask.go` gets a `UserModel` call
+that succeeds and `cloze.go` an empty item list instead of a nil question.
+
+(An earlier draft of this Spec said all eleven refused. That was wrong, and the
+plan-quality gate caught it — PQ-7.)
 
 ### It asks LAZILY, at the first write
 
@@ -116,15 +125,32 @@ saved and how to fix it.
       deck".
 
 
-## Spec
-
-## Done when
-
--
-
 ## Plan
 
-- [ ]
+Two boundaries, genuinely closed apart (AGENTS.md §3): **M1 lands the seam with a
+gate that always allows — no behaviour change at all** — so the plumbing is proven
+before any policy rides on it. M2 supplies the policy.
+
+Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-deck-plan.md`
+
+- [ ] M1 — `store.IsDeck`, derived from `RuntimeDirs` + `RuntimeFiles`, not from a
+      hardcoded `words/`.
+- [ ] M1 — `gatedStore`: all 15 `Store` methods, 8 gated writes, 7 ungated reads;
+      denial swaps to `store.Mem`.
+- [ ] M1 — the write set is DERIVED from the `Store` interface by AST, so a 16th
+      method cannot be added ungated; mutated in all three shapes (#49
+      `guard-fails-open`).
+- [ ] M1 — `gatedStore` runs through `storetest.Suite`, allowed and denied.
+- [ ] M1 — `openStore` wraps the deck; gate allows always. Whole suite still green.
+- [ ] M2 — `--here` and `deckGate`: already-a-deck / `--here` / no-tty / ask,
+      defaulting to no.
+- [ ] M2 — the raw loop resolves the gate BEFORE entering raw mode, so no store
+      write can ever prompt against the loop's own key reader.
+- [ ] M2 — the empty `--stats` screen stops promising a word will "join your deck"
+      when nothing is being saved.
+- [ ] M2 — end-to-end on a real directory: declining leaves it byte-identical
+      (verified by listing it), the lookup still prints, exit 0.
+- [ ] M2 — atlas: the three states, and that `IsDeck` derives.
 
 ## Log
 
