@@ -175,3 +175,48 @@ func TestStatsNeverAsks(t *testing.T) {
 		t.Errorf("--stats created %v in a directory it only read", names)
 	}
 }
+
+// --stats IS HONEST WITHOUT BEING INTRUSIVE, which is the whole point of
+// splitting deckPolicy out of deckAsker.
+//
+// FOUND BY SMOKE TESTING, not by a test: `define --stats` piped in a non-deck
+// directory printed "look a word up and it joins your deck" — the exact promise
+// this feature exists to stop making — because saving() refused to resolve and so
+// reported "undecided". But the answer there needs NOBODY: no terminal means no
+// deck. The free cases settle; the one that would prompt does not.
+func TestStatsIsHonestWhereTheAnswerNeedsNobody(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		deck      bool
+		tty       bool
+		wantSaved bool
+	}{
+		{"piped, not a deck: says so", false, false, false},
+		{"piped, already a deck: ordinary screen", true, false, true},
+		{"a terminal, not a deck: stays undecided rather than prompting", false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tc.deck {
+				if err := os.MkdirAll(filepath.Join(dir, "words"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			asked := 0
+			perm := newDeckPermission(func() bool { asked++; return true }).
+				withQuiet(func() deckDecision {
+					return deckPolicy(dir, options{}, func() bool { return tc.tty })
+				})
+
+			allowed, decided := perm.saving()
+			saving := !decided || allowed
+			if saving != tc.wantSaved {
+				t.Errorf("saving = %v, want %v", saving, tc.wantSaved)
+			}
+			if asked != 0 {
+				t.Errorf("settling for --stats put the question %d time(s); the free "+
+					"answers are free precisely because nobody is asked", asked)
+			}
+		})
+	}
+}

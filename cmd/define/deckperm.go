@@ -43,12 +43,38 @@ const (
 type deckPermission struct {
 	// ask puts the question. A nil ask allows, which is what makes a permission
 	// optional at every seam that has not been told about the policy yet.
-	ask   func() bool
+	ask func() bool
+	// quiet settles the decision when it needs nobody — an existing deck, --here,
+	// or no terminal at all. It returns deckUndecided when only a question can
+	// settle it. Optional: a nil quiet simply never settles anything early.
+	quiet func() deckDecision
 	state deckDecision
 }
 
 func newDeckPermission(ask func() bool) *deckPermission {
 	return &deckPermission{ask: ask}
+}
+
+// withQuiet attaches the no-question half of the policy.
+func (p *deckPermission) withQuiet(quiet func() deckDecision) *deckPermission {
+	p.quiet = quiet
+	return p
+}
+
+// settleQuietly resolves the decision ONLY if doing so asks nobody anything.
+//
+// It is what makes `--stats` honest without making it intrusive. Reading your
+// figures in a piped, non-deck directory should say "nothing is being saved",
+// because that is TRUE and knowable — no terminal means no deck, and no question
+// was needed to learn it. What it must never do is settle the one case that would
+// put a prompt on screen, which is why this is separate from allowed().
+func (p *deckPermission) settleQuietly() {
+	if p == nil || p.state != deckUndecided || p.quiet == nil {
+		return
+	}
+	if d := p.quiet(); d != deckUndecided {
+		p.state = d
+	}
 }
 
 // allowed resolves the decision, at most once, and answers it.
@@ -98,6 +124,8 @@ func (p *deckPermission) saving() (allowed, decided bool) {
 	if p == nil {
 		return true, true
 	}
+	// Free answers only — never the one that would prompt.
+	p.settleQuietly()
 	switch p.state {
 	case deckAllow:
 		return true, true
@@ -106,6 +134,26 @@ func (p *deckPermission) saving() (allowed, decided bool) {
 	default:
 		return false, false
 	}
+}
+
+// deckPolicy answers what can be answered WITHOUT putting a question, and
+// returns deckUndecided when only the learner can settle it.
+//
+// SPLIT OUT OF deckAsker because three of the four inputs need nobody: an
+// existing deck, --here, and the absence of a terminal are all facts about the
+// world. Only the fourth is a question. Separating them is what lets --stats be
+// HONEST without becoming intrusive: it settles the free cases and leaves the
+// one that would prompt alone (#50, found in smoke testing — `--stats` in a
+// piped non-deck directory was printing "look a word up and it joins your deck",
+// which is exactly the promise this feature exists to stop making).
+func deckPolicy(dir string, opt options, stdinIsTerminal func() bool) deckDecision {
+	if store.IsDeck(dir) || opt.here {
+		return deckAllow
+	}
+	if stdinIsTerminal == nil || !stdinIsTerminal() {
+		return deckDeny
+	}
+	return deckUndecided
 }
 
 // deckAsker builds the question this directory needs, or the answer it already

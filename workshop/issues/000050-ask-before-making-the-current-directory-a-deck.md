@@ -330,3 +330,43 @@ Four wiring mutations, each red on its own: ungate `persistLang` → *"declining
 still wrote [lang.txt]"*; ungate `flat` → *"backed by \*store.YAML"*; ungate the
 language deck → *"deck is \*store.YAML"*; and `MigrateToLanguages` is pinned as
 creating nothing in a non-deck directory, since it is UNGATED on that claim.
+
+### 2026-09-10 — M2, and a lie smoke testing caught that no test did
+
+The policy is in: `deckPolicy` answers the three cases that need nobody (already
+a deck / `--here` / no terminal), `deckAsker` puts the question for the fourth,
+`deckPermission` settles it once for the process, and both loop shells settle it
+before they read a key.
+
+**Smoke testing found a defect the whole suite was green on.** `define --stats`,
+piped, in a non-deck directory printed *"Nothing yet — look a word up and it joins
+your deck"* — the exact promise this feature exists to stop making. My `saving()`
+refused to resolve (correct: it must not prompt) and therefore reported
+"undecided", so the render fell back to the ordinary message. But the answer there
+needs **nobody**: no terminal means no deck. I had conflated "resolving might
+prompt" with "resolving is off limits".
+
+Fixed by splitting `deckPolicy` out of `deckAsker`: the free answers settle
+quietly, the one that would prompt does not. `TestStatsIsHonestWhereTheAnswerNeeds
+Nobody` pins all three cases including that settling asks nobody. This is the
+second time this issue that running the program taught me something the tests
+could not — the first was two tests that passed while asserting nothing.
+
+**M1 boundary review (5 findings) folded in.** BR-2 was a real bug the review
+MEASURED: I applied PQ-2's rule to the decision but not to the store it swaps in,
+so `newLangDeps` rebuilt the fallback and a declined session forgot itself the
+moment the learner typed `/lang`. Fallbacks are now keyed by language in
+`openStore`; the mutation reddens. BR-1: "nothing reaches a declined directory"
+was pinned for one of seven creating methods against an in-memory backing store
+that cannot show whether a directory was made — now iterated from `createsOnDisk`
+on a real filesystem, with a companion test so the denial cannot pass by the call
+doing nothing at all. BR-6: the answer was read through a `bufio.Reader` over
+shared stdin, which reads ahead and would have swallowed the loop's next line.
+BR-5: both READMEs document the question, the decline and `--here`.
+
+**Verified on the real binary**, not only in tests: piped lookup creates nothing
+and asks nothing; `--stats` says nothing is being saved; `--here` creates
+`words/ events/ audio/` unasked; a second lookup in the now-real deck asks
+nothing; and `define --forget cat` in an empty directory refuses the word without
+offering to create a deck — PQ-8's false alarm, confirmed absent in the shipped
+path.

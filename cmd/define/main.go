@@ -801,7 +801,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	if d.deckPermission == nil && !opt.noCapture {
 		if dir, err := os.Getwd(); err == nil {
 			d.deckPermission = newDeckPermission(
-				deckAsker(dir, opt, stdin, stderr, d.stdinIsTerminal))
+				deckAsker(dir, opt, stdin, stderr, d.stdinIsTerminal)).
+				withQuiet(func() deckDecision {
+					return deckPolicy(dir, opt, d.stdinIsTerminal)
+				})
 		}
 	}
 	d = d.withStore(opt, stderr)
