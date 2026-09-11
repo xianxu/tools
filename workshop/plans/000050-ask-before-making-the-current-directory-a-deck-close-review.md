@@ -382,3 +382,152 @@ findings:
       bullet describing it (plan:41) still sits under the "### Pure entities" heading, so the plan
       files it in both sections.
 ```
+
+---
+
+## Re-review — 2026-09-11T00:28:01-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 50 — ask before making the current directory a deck |
+| repo | tools |
+| issue file | workshop/issues/000050-ask-before-making-the-current-directory-a-deck.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 3ce76e8b43d4995f8d78e70523c671327763d75a..6b512c04fb75fc9e0ef6722772fca0c744f11e82 |
+| command | sdlc close --issue 50 |
+| reviewer | claude |
+| timestamp | 2026-09-11T00:28:01-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The feature works on the real binary. In a fresh directory, piped and redirected lookups each explain once and create nothing, `-raw` stays silent, `--stats` shows the honest screen, and `--here` creates `events/`. All five Important findings from round 3 (BR-10, BR-11, BR-12, BR-14, BR-15) are fixed, and I checked each by reverting the fix in a scratch worktree: every one goes red. The full `cmd/define` suite passes at the pinned head (111s). Two new Important findings stand between this and SHIP. Both are cheap to fix:
+- **`--stats` isn't pinned.** The ticked Done-when row "`--stats` in an unsaved directory does not claim a word will join your deck" has no test behind it. Two mutations of the `--stats` wiring leave the whole package green.
+- **`/lang` claims a save that never happened.** In a declined directory it reports a switch, or "now on the record", when nothing was written. The Spec names this exact kind of message ("The message that would become a lie"), and only `--stats` got fixed.
+
+### 1. Strengths
+- **Every store method now has its own check.** Each creating method's test first proves the call really writes when allowed, then proves nothing appears when denied (`gated_store_test.go:223-252`). The non-creating methods got the same treatment in reverse (`:509-528`). Making `YAML.Forget` call `MkdirAll` now reddens `TestNonCreatingMethodsCreateNothing/Forget`.
+- **The ordering test watches the right moment.** `observingReader` (`deckasker_test.go:168-234`) records whether the question was settled when the shell first reads stdin, not after the loop ends. Removing `resolve()` reddens both subtests.
+- **The explanation follows the decision, not the path.** The reason now travels with the decision (`deckReason`), and the permission says why exactly once, whichever path settles it (`deckperm.go:79-140`). Both explanation mutations redden. On the real binary, `define cat </dev/null` and `echo cat | define` now print the same explanation.
+- **BR-11's guard checks that old claims are gone.** It doesn't just look for "-here". Exact reverts of the `--help` prose and the README paragraph each redden it.
+- **The stdin readers are sound.** `readLineUnbuffered` is pinned on what's left unread afterwards. `readLineCancellable`'s channel is buffered, so the abandoned goroutine can't block on send.
+
+### 2. Critical findings
+None.
+
+### 3. Important findings
+- **Done-when row 7 is pinned by nothing (4th `guard-fails-open`).** I tried two mutations, and each left the whole package green (110s):
+  - making `printStats` always render the "saving" screen (`stats.go:87`);
+  - passing a nil permission at both doors (`stats.go:47`, `:260`).
+
+  Two reasons nothing catches this:
+  - `deckperm_e2e_test.go:174` checks for "Nothing yet", which both screens print.
+  - `TestStatsIsHonestWhereTheAnswerNeedsNobody` computes its own copy of `!decided || allowed` (`deckasker_test.go:269`) instead of calling `printStats`.
+
+  **The rule:** a ticked Done-when row is only pinned by a test that fails when that row is made false through the production wiring. The fix is to add a table to the Log (row → test → wiring mutation → observed red) for all seven rows. My sweep of those rows:
+  - Rows 1, 3, 5 and 6 already have tests that would catch a regression.
+  - Row 7 has none.
+  - Row 2's `--play` and `/history` half is pinned only structurally: the deck is always a non-nil `gatedStore`, but no test runs either command under a declined permission.
+- **`/lang` claims an effect that was discarded.** `persistLang` returns nil when declined (`main.go:385-389`), and `TestPersistLangIsGated` asserts that nil. So `lang_cmd.go:72` and `:69` report success. On the real binary:
+  - `define /lang es` prints "now defining in es", exits 0 and writes nothing; the next `define /lang` still says `en`.
+  - `define /lang en` prints "still defining in en, now on the record".
+  - The pre-#50 binary wrote `lang.txt`.
+
+  Everything else that could claim this:
+  - The other "saved / wrote / removed" messages all need a non-empty deck, which a declined one-shot can't have.
+  - Ctrl-C at the REPL's opening question prints "the lookup still works" (`deckperm.go:263`). In a scratch test the session then exited (run returned 0) with no lookup, because the same SIGINT also fires the loop's own cancel.
+  - Docs: `cmd/define/README.md:649-651` ("the setting stays with the directory") and `atlas/define.md:1128` ("persists when given").
+
+  **Fix:** have `persistLang` return a "not saved" sentinel instead of nil, and have `/lang` say the language applies to this session only. The one-shot form can reuse the existing no-directory wording at `lang_cmd.go:57`. Pin the stdout.
+
+### 4. Minor findings
+- **`-raw` is restated rather than derived (3rd `policy-restated-not-derived`).** `deckperm.go:210` checks `opt.raw` directly. It should ask `decideCapture(true, opt) == captureNothing`, which `capture.go:198` already does for the same question.
+- **Wrong README link.** `cmd/define/README.md:590` points to `#install`, not the section that describes the question.
+- **`deckAsker`'s doc comment is stale.** It says "FOUR INPUTS" (there are five now, with `-raw`), "no, with a warning" (the warning moved out), and cites `deckPermission.settle`, which doesn't exist.
+- BR-8, BR-9 and BR-13 are unchanged.
+
+### 5. Test coverage notes
+- **The raw-shell ordering pin has never run.** `TestPTYDeckQuestionArrivesBeforeTheEditor` can't run here either: `openpty` fails with EPERM even outside the sandbox. It has never been seen red or green. Before merge, run on a machine with a pty: `CONFORMANCE_STRICT=1 go test -tags conformance -run TestPTYDeckQuestion ./cmd/define/`
+- The in-process ordering test only reaches `replLines`, so moving `resolve()` into `replLines` would still pass in-process.
+- Lookups on the real binary said "no dictionary entry" because no dictionary is installed here. That's unrelated to #50; the deck behaviour could still be checked.
+
+### 6. Architectural notes
+- **ARCH-DRY: pass.** `deckAsker` now delegates to `deckPolicy`. On the ask path `deckPolicy` runs twice, so `IsDeck` reads the directory twice.
+- **ARCH-PURE: pass, with a note.** `deckPolicy` calls `store.IsDeck` itself. Taking an `isDeck` input instead would make the five-input policy a pure table test.
+- **ARCH-PURPOSE: flag.** The "lying message" class was swept for `--stats` only (Important #2).
+- **ARCH-MOCK: pass, with a caveat.** The terminal is covered through the pty seam, which hasn't been executed.
+- **ARCH-CONSTRAINTS:** BR-9 is still open. The cost is bounded at a few directory reads per invocation.
+- **ARCH-SECURE: pass.** The working directory never becomes part of a pattern, and answers are parsed strictly.
+- **ARCH-ORDER: pass, with a note.** The decision is an explicit three-value type, and ordering is sampled at the first read. The abandoned reader goroutine is only safe in the REPL because the same SIGINT also ends the session. Nothing states or tests that link.
+
+### 7. Plan revision recommendations
+- **Core concepts:** add `deckPolicy`, `deckReason`, `explainDenial`, `readLineUnbuffered`/`readLineCancellable`, and `withQuiet`/`settleQuietly`. Move the `IsDeck` bullet out of Pure entities. Give `deckAsker` its `ctx` parameter and five inputs.
+- **Issue `## Revisions`:** the REPL resolves the question at session start, which contradicts the Spec's "Not at startup". `-raw` is a fifth input.
+
+```findings
+dispose:
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      Still only m.Names and a hand-typed "< 15" floor; latent, since store.Store embeds nothing today.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Still os.ReadDir, and deckPolicy runs twice on the ask path (quiet, then ask), so two ReadDirs there.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      Revert-verified: Forget->MkdirAll reddens TestNonCreatingMethodsCreateNothing/Forget; removing resolve() reddens both TestTheLineShellResolvesBeforeReading subtests. The raw-shell pty pin could not run here either (openpty EPERM, unsandboxed), so it has never been observed; run it with CONFORMANCE_STRICT=1 on a pty-capable machine before merge.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Exact literal reverts of the fs.Usage prose and the README paragraph each redden TestEverySurfaceDescribingCaptureMentionsTheQuestion; deckPrompt is pinned against the README. The /lang surfaces belong to the new confirmation finding.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Both explanation mutations (no sayWhy on settle; resolve skipping the quiet half) redden; real binary: redirected and piped lookups each explain once. The non-empty /stats "second face" is outside the Spec, which asked only for the empty message.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Still renderStats(s, now, true) at every call site.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Reverting the -raw branch reddens TestRawNeitherAsksNorAdvises; real binary: -raw piped and one-shot print no advice and create nothing. The derivation the finding asked for was not done; raised below as a Minor.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      Reverting readLineCancellable hangs TestInterruptAtTheQuestionDeclines 5s and reddens; reachable, because deckAsker holds run()'s NotifyContext ctx, which SIGINT still cancels. The post-cancel message is part of the new confirmation finding.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Plan untouched since a30cb79: deckPolicy, deckReason, explainDenial, readLineCancellable, withQuiet, settleQuietly absent; IsDeck bullet still under Pure entities; plan's deckAsker lacks ctx and says four inputs (five now), and deckAsker's own doc comment says FOUR INPUTS and cites a nonexistent deckPermission.settle.
+findings:
+  - id: new
+    severity: Important
+    family: guard-fails-open
+    title: |
+      4th guard-fails-open: the issue's Done-when list is the enumeration never written, and its --stats row is pinned by nothing
+    detail: |
+      This is the 4th finding in family guard-fails-open. Earlier rounds applied the per-instance rule to components (store methods, buckets, loop shells), and those now hold. The enumeration never written is the issue's own Done-when list, where the feature's claims live. Measured at the pinned head: making printStats render the saving screen unconditionally (stats.go:87), or handing both doors a nil permission (stats.go:47 and :260), each leaves the whole cmd/define package green (110s). So the ticked row "--stats in an unsaved directory does not claim a word will join your deck", the exact defect smoke testing found, is pinned by nothing through production wiring. deckperm_e2e_test.go:174 asserts "Nothing yet", which both screens print, and TestStatsIsHonestWhereTheAnswerNeedsNobody computes its own copy of the formula (deckasker_test.go:269) instead of calling printStats. The rule: a ticked Done-when row is pinned only by a test that fails when the row is made false through production wiring. Write a Log table for all seven rows: row, test, wiring mutation, observed red. Sweep result: rows 1, 3, 5 and 6 have discriminating controls; row 7 has none; row 2's --play and /history half is pinned only structurally (non-nil gatedStore), with no test running either under a declined permission.
+  - id: new
+    severity: Important
+    family: confirmation-not-derived-from-effect
+    title: |
+      /lang reports a switch and "now on the record" in a declined directory, because persistLang swallows the write its only caller reports
+    detail: |
+      The Spec names this class ("The message that would become a lie") and --stats was fixed; /lang was not. persistLang returns nil when declined (main.go:385-389), and TestPersistLangIsGated pins that nil, so lang_cmd.go:72 and :69 report success. Real binary, fresh directory, stdin redirected: define /lang es prints "now defining in es", exit 0, writes nothing, and the next define /lang says en. define /lang en prints "still defining in en, now on the record". A one-shot /lang has only a durable effect, so in the third state it is a no-op reporting a switch. The pre-#50 binary wrote lang.txt, and the no-directory case already refuses honestly (lang_cmd.go:57). TestLangAfterADeclineWritesNothing never reads stdout. Enumeration: lang_cmd.go:69 and :72 are reachable. The harvest, reflect, forget and play "saved/wrote/removed" messages all need a non-empty deck, which a declined one-shot cannot have. deckperm.go:263 prints "the lookup still works" on Ctrl-C, but in the REPL the same SIGINT fires detachedInterrupts' default cancel and the session exits with no lookup (scratch test: run returned 0). Docs asserting the old behaviour: cmd/define/README.md:649-651 and atlas/define.md:1128. Fix: persistLang reports a declined sentinel instead of nil; /lang says the language applies to this session only and was not saved; pin it on stdout. While in that README, :590 links the question to the Install anchor instead of the section that describes it.
+  - id: new
+    severity: Minor
+    family: policy-restated-not-derived
+    title: |
+      deckPolicy re-tests opt.raw instead of consuming decideCapture, the single owner of "this invocation writes nothing"
+    detail: |
+      This is the 3rd finding in family policy-restated-not-derived (BR-12, BR-14). The rule: a decision this codebase already owns is consumed by calling its owner, never by re-testing the owner's inputs at a new site. BR-14's behaviour is fixed, but deckperm.go:210 re-tests opt.raw instead of asking decideCapture (capture.go:26), which capture.go:198 already consults for the same question. A third captureNothing member would reach the REPL's up-front question again. Enumerated: this is the only site in the diff restating decideCapture. main.go:806's noCapture check mirrors openStore's "anywhere to read at all" and is correct as is. One line: decideCapture(true, opt) == captureNothing, with reasonRaw renamed for the class.
+```

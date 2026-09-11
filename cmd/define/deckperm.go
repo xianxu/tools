@@ -168,6 +168,19 @@ func (p *deckPermission) saving() (allowed, decided bool) {
 	}
 }
 
+// errDeckDeclined is what a write reports when the learner said no.
+//
+// NOT nil, which is what it used to be, and that was a lie the CALLER then told:
+// persistLang swallowed the decline and returned success, so /lang printed "now
+// defining in es" in a directory where it had written nothing — and since a
+// one-shot /lang has only a durable effect, the whole command was a no-op
+// reporting a switch (#50 BR-18). A confirmation must be DERIVED FROM THE EFFECT,
+// so the effect has to be reportable.
+//
+// It is deliberately NOT an error in the store sense: nothing failed. Callers
+// test for it with errors.Is and say what actually happened.
+var errDeckDeclined = errors.New("not saving in this directory")
+
 // deckReason is WHY the decision came out the way it did.
 //
 // It exists because the decision alone is not enough to act on: a denial because
@@ -181,7 +194,7 @@ const (
 	reasonMustAsk deckReason = iota
 	reasonAlreadyDeck
 	reasonHere
-	reasonRaw
+	reasonRecordsNothing
 	reasonNoTerminal
 )
 
@@ -207,8 +220,17 @@ func deckPolicy(dir string, opt options, stdinIsTerminal func() bool) (deckDecis
 	if opt.here {
 		return deckAllow, reasonHere
 	}
-	if opt.raw {
-		return deckDeny, reasonRaw
+	// ASKED OF ITS OWNER, not re-derived here (#50 BR-19). decideCapture is the
+	// one place that answers "does this invocation record anything", and -raw is
+	// one of its cases, not a fact this file gets to re-test. A third
+	// captureNothing member added there would otherwise reach the question again
+	// through this site — which is the third time this issue that a decision was
+	// restated instead of consumed.
+	//
+	// found=true because this asks about the invocation's CAPABILITY to record,
+	// not about one lookup's outcome; a failed lookup still belongs to a deck.
+	if decideCapture(true, opt) == captureNothing {
+		return deckDeny, reasonRecordsNothing
 	}
 	if stdinIsTerminal == nil || !stdinIsTerminal() {
 		return deckDeny, reasonNoTerminal
@@ -292,9 +314,10 @@ func explainDenial(r deckReason, dir string, out io.Writer) {
 	case reasonNoTerminal:
 		fmt.Fprintf(out, "define: %s is not a deck and there is no terminal to ask; "+
 			"nothing will be saved (use --here to create one)\n", dir)
-	case reasonRaw:
-		// Silence is correct: -raw records nothing by design, so nothing is being
-		// lost and there is nothing to act on.
+	case reasonRecordsNothing:
+		// Silence is correct: this invocation records nothing by design (-raw, or
+		// DEFINE_NO_CAPTURE), so nothing is being lost and there is nothing to
+		// act on. Advising --here would point at a deck it would never write to.
 	}
 }
 

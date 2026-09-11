@@ -171,10 +171,87 @@ func TestStatsInAnUnsavedDirectoryReportsEmpty(t *testing.T) {
 	if code != 0 {
 		t.Errorf("exit = %d, want 0 — an empty deck is not an error; %s", code, errb.String())
 	}
-	if !strings.Contains(out.String(), "Nothing yet") {
-		t.Errorf("--stats did not report an empty deck; stdout was %q", out.String())
+	// THE DISCRIMINATING HALF, not "Nothing yet" — BOTH screens print that, so
+	// asserting it passes whichever one rendered (#50 BR-17). Making printStats
+	// render the saving screen unconditionally left the whole package green
+	// against the old assertion; the row this test exists for is exactly the
+	// defect smoke testing found.
+	if !strings.Contains(out.String(), "nothing is being saved here") {
+		t.Errorf("--stats rendered the SAVING screen in a directory nothing is written "+
+			"to; stdout was %q", out.String())
+	}
+	if strings.Contains(out.String(), "joins your deck") {
+		t.Errorf("--stats promised a word would join the deck here; stdout was %q", out.String())
 	}
 	if names := lsNames(t, dir); len(names) != 0 {
 		t.Errorf("--stats created %v", names)
+	}
+}
+
+// ROW 2's OTHER HALF: --play and /history report EMPTY under a declined
+// permission, rather than refusing (#50 BR-17).
+//
+// The Done-when row says "--stats / --play / /history report EMPTY rather than
+// refusing", and only --stats had a control. The other two were pinned
+// STRUCTURALLY — the deck is a non-nil *gatedStore, so the eight nil-deck
+// refusals cannot fire — which is an argument, not a test. These run them.
+func TestPlayAndHistoryReportEmptyWhenDeclined(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"--play", []string{"-play"}, ""},
+		{"/history", []string{"/history"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			d := e2eDeps(t, dir)
+			d.stdinIsTerminal = func() bool { return false }
+
+			var out, errb bytes.Buffer
+			code := run(t.Context(), tc.args, d, strings.NewReader(""), &out, &errb)
+
+			// The REFUSAL is what must not happen: noDeckMessage plus exit 1 is how
+			// a nil deck reports, and the whole design is that this state has a real
+			// empty deck instead.
+			if strings.Contains(errb.String(), "no deck in this directory") {
+				t.Errorf("%s REFUSED with the nil-deck message. A declined directory has "+
+					"an empty deck, not a missing one; stderr was %q", tc.name, errb.String())
+			}
+			if code == 1 && strings.Contains(errb.String(), "no deck") {
+				t.Errorf("%s exited 1 for an empty deck", tc.name)
+			}
+			if names := lsNames(t, dir); len(names) != 0 {
+				t.Errorf("%s created %v", tc.name, names)
+			}
+		})
+	}
+}
+
+// /lang IN A DECLINED DIRECTORY SAYS WHAT IT ACTUALLY DID (#50 BR-18).
+//
+// Pinned on STDOUT, which is the half that was wrong. TestLangAfterADeclineWrites
+// Nothing asserted the filesystem and never read the message — so the command
+// wrote nothing and announced a switch, and both tests passed.
+func TestLangInADeclinedDirectoryDoesNotClaimASwitch(t *testing.T) {
+	dir := t.TempDir()
+	d := e2eDeps(t, dir)
+	d.stdinIsTerminal = func() bool { return false }
+
+	var out, errb bytes.Buffer
+	run(t.Context(), []string{"/lang", "es"}, d, strings.NewReader(""), &out, &errb)
+
+	if strings.Contains(out.String(), "now defining in es") {
+		t.Errorf("/lang announced a switch it did not persist. A one-shot /lang has "+
+			"ONLY a durable effect, so here it is a no-op reporting success; stdout "+
+			"was %q", out.String())
+	}
+	if strings.Contains(out.String(), "on the record") {
+		t.Errorf("/lang said the language is on the record, having written nothing; "+
+			"stdout was %q", out.String())
+	}
+	if !strings.Contains(out.String(), "not saved") {
+		t.Errorf("/lang did not say it was not saved; stdout was %q", out.String())
 	}
 }

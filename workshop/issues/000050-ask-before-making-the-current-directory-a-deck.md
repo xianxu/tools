@@ -499,3 +499,61 @@ checked that each surface CONTAINED "-here" — which a document satisfies while
 asserting the old behaviour two sections later. `cmd/define/README.md` still
 promised *"Every successful lookup … records the word"*. The guard now also
 requires the superseded claim to be ABSENT or carry its condition.
+
+### 2026-09-11 — close review round 4: the Done-when list was itself the unwritten enumeration
+
+**BR-17 is the sharpest finding of this issue, and it is about the row I was
+proudest of.** The Done-when row *"--stats in an unsaved directory does not claim
+a word will join your deck"* — the exact defect smoke testing caught — was pinned
+by **nothing** through production wiring. Measured: making `printStats` render the
+saving screen unconditionally, or handing both doors a nil permission, each left
+the whole package green. My e2e test asserted `"Nothing yet"`, which BOTH screens
+print, and `TestStatsIsHonestWhereTheAnswerNeedsNobody` recomputed the formula
+itself instead of calling `printStats`.
+
+So: I found the bug by running the program, fixed it, wrote a test for it, and the
+test could not tell the two screens apart. Fixed by asserting the DISCRIMINATING
+half; both of the review's mutations now redden. Row 2's other half (`--play`,
+`/history`) was pinned only structurally — "the deck is a non-nil `*gatedStore`,
+so the nil-deck refusals cannot fire", which is an argument, not a test — and now
+runs both under a declined permission.
+
+**The rule this family has converged on, fourth round:** *a ticked Done-when row
+is pinned only by a test that fails when the row is made false through PRODUCTION
+WIRING.* Earlier rounds applied per-instance controls to components — store
+methods, buckets, loop shells. The enumeration never written was the claim list
+itself.
+
+**BR-18 — I introduced a lie fixing PQ-1.** Making `persistLang` return nil on a
+decline meant its only caller reported success: `define /lang es` in a declined
+directory printed *"now defining in es"*, exit 0, and wrote nothing; the next
+`/lang` said `en`. A one-shot `/lang` has ONLY a durable effect, so there it was a
+no-op announcing a switch. `errDeckDeclined` now travels to the caller, which says
+the language applies to this session and was not saved — pinned on **stdout**, the
+half the old test never read.
+
+**And fixing that caused a regression an EXISTING test caught** — the first time
+this issue that happened. `sessionSetLang` returned early on any persist error, so
+my sentinel skipped `applyLang` and the session stayed English while the message
+said Spanish: the same lie in the other direction.
+`TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage` went red. A decline is
+not a persist failure: the SESSION half succeeds, only the DURABLE half is
+skipped.
+
+**BR-19** (Minor, 3rd in `policy-restated-not-derived`): `deckPolicy` re-tested
+`opt.raw` instead of asking `decideCapture`, the one owner of "does this
+invocation record anything". Now consumed, with `reasonRaw` renamed
+`reasonRecordsNothing` for the class — so a third `captureNothing` member cannot
+reach the question through this site.
+
+**Done-when pin table** (the enumeration BR-17 asked to be written):
+
+| row | pinned by | wiring mutation | red |
+|---|---|---|---|
+| asks before creating | `TestDecliningCreatesNothingOnDisk` | ungate the deck | yes |
+| declining still prints; others report empty | `TestDecliningCreatesNothingOnDisk`, `TestPlayAndHistoryReportEmptyWhenDeclined` | — | yes |
+| no terminal → nothing created, nothing asked | `TestPipedLookupCreatesNothingAndAsksNothing` | — | yes |
+| `--here` creates unasked | `TestHereCreatesWithoutAsking` | — | yes |
+| an existing deck is never asked about | `TestAnExistingDeckIsNeverAskedAbout` | — | yes |
+| every creating method consults the gate | `TestCreatingMethodsWriteWhenAllowedAndNotWhenDenied` (7), `TestNonCreatingMethodsCreateNothing` (8) | dual-write `SetItems`; `Forget` MkdirAll | yes, both |
+| `--stats` does not claim a word will join | `TestStatsInAnUnsavedDirectoryReportsEmpty` | unconditional saving screen; nil permission | yes, both |

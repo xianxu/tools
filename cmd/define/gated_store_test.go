@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -370,8 +371,13 @@ func TestPersistLangIsGated(t *testing.T) {
 	t.Chdir(dir)
 	sd := openStore(options{}, io.Discard, newDeckPermission(func() bool { return false }))
 
-	if err := sd.persistLang(store.Lang("es")); err != nil {
-		t.Errorf("persistLang returned %v — declining is an answer, not a failure", err)
+	// IT REPORTS THE DECLINE rather than returning nil (#50 BR-18). An earlier
+	// version pinned the nil, and that nil is what let /lang announce a switch it
+	// had not made: a confirmation has to be derived from the effect, so the
+	// effect must be reportable.
+	if err := sd.persistLang(store.Lang("es")); !errors.Is(err, errDeckDeclined) {
+		t.Errorf("persistLang returned %v, want errDeckDeclined — swallowing it makes "+
+			"the caller announce a switch it did not perform", err)
 	}
 	if names := lsNames(t, dir); len(names) != 0 {
 		t.Errorf("declining still wrote %v; store.WriteLang is a free function and a "+

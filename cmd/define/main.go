@@ -384,7 +384,9 @@ func openStore(opt options, warn io.Writer, perm *deckPermission) storeDeps {
 		// everything else in this state already does.
 		persistLang: func(l store.Lang) error {
 			if !perm.allowed() {
-				return nil
+				// REPORTED, not swallowed. Returning nil made the caller announce a
+				// switch it had not performed (#50 BR-18).
+				return errDeckDeclined
 			}
 			return store.WriteLang(dir, l)
 		},

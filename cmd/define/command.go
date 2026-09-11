@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -369,11 +370,19 @@ func sessionSetLang(d *deps, opt *options, persist func(store.Lang) error, vocPt
 		return nil
 	}
 	return func(l store.Lang) error {
-		if err := persist(l); err != nil {
+		err := persist(l)
+		// A DECLINE IS NOT A FAILURE, and the two halves part company here
+		// (#50 BR-18). Persisting is the DURABLE half; applyLang is the SESSION
+		// half, and a directory the learner declined stops only the first. An
+		// earlier version returned on any error, so a declined /lang left the
+		// session still in English while the command printed a switch — the same
+		// lie in the other direction, caught by
+		// TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage.
+		if err != nil && !errors.Is(err, errDeckDeclined) {
 			return err
 		}
 		applyLang(d, opt, l, vocPtr, warn)
-		return nil
+		return err // nil, or the decline for the caller to report honestly
 	}
 }
 

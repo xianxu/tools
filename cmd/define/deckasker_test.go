@@ -130,8 +130,8 @@ func TestRawNeitherAsksNorAdvises(t *testing.T) {
 			if d != deckDeny {
 				t.Errorf("-raw decision = %v, want deckDeny; it records nothing", d)
 			}
-			if why != reasonRaw {
-				t.Errorf("-raw reason = %v, want reasonRaw", why)
+			if why != reasonRecordsNothing {
+				t.Errorf("-raw reason = %v, want reasonRecordsNothing", why)
 			}
 
 			var out bytes.Buffer
