@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-10
 updated: 2026-09-10
-estimate_hours:
+estimate_hours: 4.19
 started: 2026-09-10T09:41:40-07:00
 ---
 
@@ -105,6 +105,67 @@ your deck."* In the third state nothing will join anything, and that sentence
 lands in front of exactly the confused user this feature exists for. The empty
 RENDERING is right; this empty MESSAGE needs a variant that says nothing is being
 saved and how to fix it.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Calibration tagged **stale** (#127), so the table hours are
+treated as provisional and one family is corrected against local actuals — said
+out loud below rather than folded in silently.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.60 impl=0.08
+item: smaller-go-module        design=0.05 impl=0.12
+item: smaller-go-module        design=0.05 impl=0.12
+item: greenfield-go-module     design=0.15 impl=0.28
+item: cross-cutting-refactor   design=0.05 impl=0.18
+item: smaller-go-module        design=0.05 impl=0.16
+item: smaller-go-module        design=0.05 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.20
+item: atlas-docs               design=0.02 impl=0.06
+item: milestone-review         design=0.0  impl=0.70
+item: milestone-review         design=0.0  impl=0.85
+design-buffer: 0.15
+total: 4.19
+```
+
+| row | the work |
+|---|---|
+| `issue-spec` 0.60/0.08 | high in the 0.5–1.5 design band: the operator settled the shape ("as if there's empty history"), but the design still had to find that the `nil` deck is refused at eight sites and degrades at three, that `store.Mem` makes the third state nearly free, and then survive **two plan-quality rounds** whose nine findings changed five design decisions. |
+| `smaller-go-module` 0.05/0.12 | `store.IsDeck` — derive from `RuntimeDirs`/`RuntimeFiles`, `ReadDir`+`Match` so the cwd never enters a pattern. Fully specced, so design ≈ 0. |
+| `smaller-go-module` 0.05/0.12 | `deckPermission` — three states, three operations, the third of which (`saving`) must not resolve. |
+| `greenfield-go-module` 0.15/0.28 | `gatedStore`: 15 interface methods, the `createsOnDisk`/`doesNotCreate` split, plus the AST classification guard and its **four** mutation shapes. The biggest single piece and the only one with a genuinely new concern. |
+| `cross-cutting-refactor` 0.05/0.18 | the wiring: `newStore`/`openStore` arity, `withStore`, both YAML stores, inside `newLangDeps`, and `persistLang`. Mechanical but it touches the one file everything runs through. |
+| `smaller-go-module` 0.05/0.16 | `deckAsker` + `--here` — a four-input policy with an eight-row table. |
+| `smaller-go-module` 0.05/0.14 | pre-resolution above the loop-shell choice, pinned **per shell** (one test per shell, since a single test covers only the branch it took). |
+| `smaller-go-module` 0.02/0.08 | the honest empty `--stats` screen. |
+| `smaller-go-module` 0.02/0.20 | the end-to-end tests, which list the directory rather than trust the gate — the Done-when says so explicitly, and that is where the real bugs will be. |
+| `atlas-docs` 0.02/0.06 | three states, `IsDeck` derives, `persistLang` is the one non-`Store` path. |
+| `milestone-review` ×2 | **0.70 and 0.85, well above the table's 0.2–0.5 — the one deliberate departure.** |
+
+**The review rows are corrected against local actuals, not the stale table.**
+`#49` closed at **est 1.41 / actual 3.62 (ratio 0.4×)** and the entire overrun was
+boundary review: four rounds, each finding real defects in the previous round's
+fix. Two more data points agree — `#8` (3.71/2.98) and `#48` (3.60/3.40). Using
+0.2–0.5 here would reproduce exactly the error `#49` just measured, so the two
+boundaries are costed at roughly two rounds each. That is the largest single
+component of this estimate and it is the one I would revise first if it proves
+wrong in either direction.
+
+**Reconciliation.** Σdesign = 1.06, Σimpl = 2.97.
+1.06 × 1.15 + 2.97 = **4.19**.
+
+**Design buffer 0.15, not 0.30**, per v3.1 step 4: there is a thorough plan doc
+(`workshop/plans/000050-…-plan.md`, cleared plan-quality in 2 rounds).
+
+**Why this is bigger than `#49`'s 3.62 actual.** `#49` was one flag, a tag and a
+formula. This adds a new seam every write in the program passes through, a
+mechanically-derived guard over an interface, and a policy with four inputs — plus
+it changes what happens in a directory the user has never run `define` in, which
+is the case nobody has test coverage for today.
 
 ## Done when
 
