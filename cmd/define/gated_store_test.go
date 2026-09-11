@@ -460,3 +460,69 @@ func TestADeniedSessionSurvivesALanguageSwitch(t *testing.T) {
 			"declined session silently forgets itself", deck)
 	}
 }
+
+// nonCreatingCalls covers every doesNotCreate method with real arguments.
+//
+// THE ABSENCE CLAIM ON THIS BUCKET HAD NO CONTROL AT ALL (#50 BR-10). The
+// classification says these methods cannot create a directory, and the gate
+// trusts that by letting them through ungated — but nothing checked it. The
+// reviewer measured the hole: making YAML.Forget call MkdirAll left the entire
+// suite green while a declined directory grew words/en/. A bucket whose whole
+// meaning is "this cannot create" needs the same per-instance control the other
+// bucket has, pointed the other way.
+func nonCreatingCalls() []sampleCall {
+	return []sampleCall{
+		{"Deck", func(s store.Store) error { _, err := s.Deck(); return err }},
+		{"Events", func(s store.Store) error { _, err := s.Events(time.Time{}); return err }},
+		{"UserModel", func(s store.Store) error { _, err := s.UserModel(); return err }},
+		{"NewsItems", func(s store.Store) error { _, _, err := s.NewsItems("alpha"); return err }},
+		{"WordFacts", func(s store.Store) error { _, err := s.WordFacts("alpha"); return err }},
+		{"Items", func(s store.Store) error { _, err := s.Items("alpha"); return err }},
+		{"Audio", func(s store.Store) error {
+			_, _, err := s.Audio(store.AudioKey{Word: "alpha", Digest: "d0"})
+			return err
+		}},
+		{"Forget", func(s store.Store) error { _, err := s.Forget("alpha"); return err }},
+	}
+}
+
+func TestEveryNonCreatingMethodHasASample(t *testing.T) {
+	have := map[string]bool{}
+	for _, c := range nonCreatingCalls() {
+		have[c.name] = true
+	}
+	for name := range doesNotCreate {
+		if !have[name] {
+			t.Errorf("%s is classified doesNotCreate but has no entry in "+
+				"nonCreatingCalls, so the claim that it cannot create a directory is "+
+				"untested — and the gate lets it through on that claim", name)
+		}
+	}
+}
+
+// A doesNotCreate METHOD CREATES NOTHING, EVEN UNGATED.
+//
+// These run against a store whose permission would DENY, and they are not gated —
+// so if one of them creates, it creates in a directory the learner declined, with
+// nothing in the way. That is precisely the risk the classification takes on, and
+// this is the control for it.
+func TestNonCreatingMethodsCreateNothing(t *testing.T) {
+	for _, c := range nonCreatingCalls() {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := newGatedStore(store.NewYAML(dir, store.DefaultLang, io.Discard),
+				store.NewMem(), newDeckPermission(func() bool { return false }))
+
+			// Errors are fine — reading an empty deck may well fail. What must not
+			// happen is a directory appearing.
+			_ = c.call(s)
+
+			if names := lsNames(t, dir); len(names) != 0 {
+				t.Errorf("%s created %v. It is classified doesNotCreate, so the gate "+
+					"lets it through UNGATED — a method in this bucket that creates "+
+					"does so in a directory nobody confirmed, with nothing in the way.",
+					c.name, names)
+			}
+		})
+	}
+}

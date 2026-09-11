@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -45,19 +47,25 @@ type deckPermission struct {
 	// optional at every seam that has not been told about the policy yet.
 	ask func() bool
 	// quiet settles the decision when it needs nobody — an existing deck, --here,
-	// or no terminal at all. It returns deckUndecided when only a question can
-	// settle it. Optional: a nil quiet simply never settles anything early.
-	quiet func() deckDecision
-	state deckDecision
+	// -raw, or no terminal at all. It returns deckUndecided when only a question
+	// can settle it. Optional: a nil quiet simply never settles anything early.
+	quiet func() (deckDecision, deckReason)
+	// explain says WHY, once, when the state settles to a denial nobody was asked
+	// about. It lives here rather than in deckAsker because either path can settle
+	// first, and a learner should be told the same thing regardless of which did.
+	explain   func(deckReason)
+	explained bool
+	state     deckDecision
 }
 
 func newDeckPermission(ask func() bool) *deckPermission {
 	return &deckPermission{ask: ask}
 }
 
-// withQuiet attaches the no-question half of the policy.
-func (p *deckPermission) withQuiet(quiet func() deckDecision) *deckPermission {
-	p.quiet = quiet
+// withQuiet attaches the no-question half of the policy and the explanation that
+// belongs to it.
+func (p *deckPermission) withQuiet(quiet func() (deckDecision, deckReason), explain func(deckReason)) *deckPermission {
+	p.quiet, p.explain = quiet, explain
 	return p
 }
 
@@ -72,9 +80,23 @@ func (p *deckPermission) settleQuietly() {
 	if p == nil || p.state != deckUndecided || p.quiet == nil {
 		return
 	}
-	if d := p.quiet(); d != deckUndecided {
+	if d, why := p.quiet(); d != deckUndecided {
 		p.state = d
+		if d == deckDeny {
+			p.sayWhy(why)
+		}
 	}
+}
+
+// sayWhy emits the explanation at most once per process, whichever path settled
+// the state. Twice would mean a lookup that reads and then writes tells the
+// learner the same thing two ways.
+func (p *deckPermission) sayWhy(r deckReason) {
+	if p.explained || p.explain == nil {
+		return
+	}
+	p.explained = true
+	p.explain(r)
 }
 
 // allowed resolves the decision, at most once, and answers it.
@@ -98,6 +120,16 @@ func (p *deckPermission) allowed() bool {
 // consumed by the loop's reader, and the two would race for the answer.
 func (p *deckPermission) resolve() {
 	if p == nil || p.state != deckUndecided {
+		return
+	}
+	// THE QUIET HALF FIRST, ALWAYS. Every path that settles the state runs the
+	// same two steps in the same order, so a denial nobody was asked about is
+	// explained identically whether a read, a write or the loop's pre-resolution
+	// got there first. An earlier version had allowed() call settleQuietly and
+	// resolve() not, which made the explanation depend on which path arrived —
+	// the exact shape of the bug this was fixing (#50 BR-12).
+	p.settleQuietly()
+	if p.state != deckUndecided {
 		return
 	}
 	if p.ask == nil || p.ask() {
@@ -136,24 +168,52 @@ func (p *deckPermission) saving() (allowed, decided bool) {
 	}
 }
 
-// deckPolicy answers what can be answered WITHOUT putting a question, and
-// returns deckUndecided when only the learner can settle it.
+// deckReason is WHY the decision came out the way it did.
 //
-// SPLIT OUT OF deckAsker because three of the four inputs need nobody: an
-// existing deck, --here, and the absence of a terminal are all facts about the
-// world. Only the fourth is a question. Separating them is what lets --stats be
-// HONEST without becoming intrusive: it settles the free cases and leaves the
-// one that would prompt alone (#50, found in smoke testing — `--stats` in a
-// piped non-deck directory was printing "look a word up and it joins your deck",
-// which is exactly the promise this feature exists to stop making).
-func deckPolicy(dir string, opt options, stdinIsTerminal func() bool) deckDecision {
-	if store.IsDeck(dir) || opt.here {
-		return deckAllow
+// It exists because the decision alone is not enough to act on: a denial because
+// there is no terminal deserves an explanation ("nothing will be saved, use
+// --here"), and a denial because -raw writes nothing at all deserves silence. The
+// same three-valued answer needs two different behaviours, so the reason travels
+// with it (#50 BR-12, BR-14).
+type deckReason int
+
+const (
+	reasonMustAsk deckReason = iota
+	reasonAlreadyDeck
+	reasonHere
+	reasonRaw
+	reasonNoTerminal
+)
+
+// deckPolicy answers what can be answered WITHOUT putting a question, and returns
+// deckUndecided when only the learner can settle it.
+//
+// SPLIT OUT OF deckAsker because four of the five inputs need nobody: an existing
+// deck, --here, -raw and the absence of a terminal are all facts about the world.
+// Only the fifth is a question. Separating them is what lets --stats be HONEST
+// without becoming intrusive: it settles the free cases and leaves the one that
+// would prompt alone.
+//
+// -raw NEVER ASKS, because -raw RECORDS NOTHING — the usage text has said so
+// since #2. Asking permission to create a deck that this invocation will not
+// write to is the false alarm the lazy design exists to prevent, and it was
+// reaching real users: `define -raw word` in a fresh directory put a question on
+// screen, and piped it advised scripts to pass --here for a deck it would never
+// have made (#50 BR-14).
+func deckPolicy(dir string, opt options, stdinIsTerminal func() bool) (deckDecision, deckReason) {
+	if store.IsDeck(dir) {
+		return deckAllow, reasonAlreadyDeck
+	}
+	if opt.here {
+		return deckAllow, reasonHere
+	}
+	if opt.raw {
+		return deckDeny, reasonRaw
 	}
 	if stdinIsTerminal == nil || !stdinIsTerminal() {
-		return deckDeny
+		return deckDeny, reasonNoTerminal
 	}
-	return deckUndecided
+	return deckUndecided, reasonMustAsk
 }
 
 // deckAsker builds the question this directory needs, or the answer it already
@@ -176,29 +236,33 @@ func deckPolicy(dir string, opt options, stdinIsTerminal func() bool) deckDecisi
 // The QUESTION goes to `out` (stderr) rather than stdout: a lookup's output is
 // data someone may be redirecting, and a prompt in a redirected stream is a hang
 // with no visible cause.
-func deckAsker(dir string, opt options, in io.Reader, out io.Writer, stdinIsTerminal func() bool) func() bool {
+func deckAsker(ctx context.Context, dir string, opt options, in io.Reader, out io.Writer, stdinIsTerminal func() bool) func() bool {
 	return func() bool {
-		// ONE ENCODING OF THE PRECEDENCE (#50 BR-12). This used to re-implement
-		// already-a-deck / --here / no-terminal alongside deckPolicy's copy. They
-		// agreed, and nothing made them: the observable consequence was that only
-		// this copy printed the "nothing will be saved" explanation, so whether a
-		// piped learner was told depended on which encoding settled the state
-		// first — `echo word | define` printed it and `define --forget cat` piped
-		// did not.
-		switch deckPolicy(dir, opt, stdinIsTerminal) {
+		switch d, _ := deckPolicy(dir, opt, stdinIsTerminal); d {
 		case deckAllow:
 			return true
 		case deckDeny:
-			// SAID, not silent. Someone piping into define in a fresh directory
-			// gets a working lookup and no deck; without this they never learn why
-			// nothing was saved.
-			fmt.Fprintf(out, "define: %s is not a deck and there is no terminal to ask; "+
-				"nothing will be saved (use --here to create one)\n", dir)
+			// The EXPLANATION is not printed here — see deckPermission.settle. A
+			// read can settle the state before any write asks, in which case this
+			// function is never called, and only one of the two paths said why.
 			return false
 		}
 
 		fmt.Fprintf(out, deckPrompt, dir)
-		answer, err := readLineUnbuffered(in)
+		answer, err := readLineCancellable(ctx, in)
+		if errors.Is(err, context.Canceled) {
+			// CTRL-C AT THE QUESTION DECLINES AND SAYS SO (#50 BR-15).
+			//
+			// Without an arm on ctx this read blocks forever: the question is put
+			// before the loop's own reader exists, so there is nothing else
+			// watching the terminal, and ^C left the program sitting there. An
+			// interrupt is the clearest possible "no" a person can give, so it
+			// means no — and it prints a newline first, because the cursor is
+			// parked after the prompt.
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "define: not saving in this directory; the lookup still works.")
+			return false
+		}
 		if err != nil && answer == "" {
 			// EOF mid-question declines, for the same reason a bare Enter does:
 			// the safe answer is the one that writes nothing.
@@ -212,6 +276,25 @@ func deckAsker(dir string, opt options, in io.Reader, out io.Writer, stdinIsTerm
 			fmt.Fprintln(out, "define: not saving in this directory; the lookup still works.")
 			return false
 		}
+	}
+}
+
+// explainDenial is what a learner is told when the answer was settled without
+// them, and it is keyed on the REASON rather than on the decision.
+//
+// ONE PLACE, reached from wherever the state settles (#50 BR-12). The
+// explanation used to live in deckAsker, so it was printed only when a WRITE
+// resolved the question — and a READ settling it quietly first meant the same
+// invocation said nothing at all. Measured on the real binary: `echo word |
+// define` explained itself, `define word` with stdin redirected did not.
+func explainDenial(r deckReason, dir string, out io.Writer) {
+	switch r {
+	case reasonNoTerminal:
+		fmt.Fprintf(out, "define: %s is not a deck and there is no terminal to ask; "+
+			"nothing will be saved (use --here to create one)\n", dir)
+	case reasonRaw:
+		// Silence is correct: -raw records nothing by design, so nothing is being
+		// lost and there is nothing to act on.
 	}
 }
 
@@ -244,5 +327,30 @@ func readLineUnbuffered(in io.Reader) (string, error) {
 		if err != nil {
 			return string(b), err
 		}
+	}
+}
+
+// readLineCancellable is readLineUnbuffered with an arm on the context.
+//
+// The read runs on its own goroutine so ctx.Done can win. The goroutine is
+// ABANDONED rather than joined when the context fires — it is blocked in a read
+// on the program's stdin, which cannot be interrupted, and the process is on its
+// way out. What matters is that it writes only to its own channel, so nothing it
+// does later can be observed by a caller that has already moved on.
+func readLineCancellable(ctx context.Context, in io.Reader) (string, error) {
+	type result struct {
+		line string
+		err  error
+	}
+	ch := make(chan result, 1) // buffered: the abandoned goroutine must not leak on send
+	go func() {
+		line, err := readLineUnbuffered(in)
+		ch <- result{line, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.line, r.err
+	case <-ctx.Done():
+		return "", ctx.Err()
 	}
 }

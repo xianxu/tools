@@ -200,6 +200,133 @@ rounds:
           family: positional-bool-parameter
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-10T23:56:17-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'Verified by mutation: a dual-writing SetItems now reddens TestCreatingMethodsWriteWhenAllowedAndNotWhenDenied/SetItems.'
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: Both artifacts gained "## Revisions"; the residual Pure-entities bullet for IsDeck is a new Minor.
+          round: 3
+        - id: BR-6
+          disposition: addressed
+          note: 'Verified by reversion to bufio: the remainder assertion goes red.'
+          round: 3
+        - id: BR-7
+          disposition: addressed
+          note: 'Verified: moving SetItems to doesNotCreate plus routing via reading() reddens, because sampleCalls is independent of the buckets.'
+          round: 3
+        - id: BR-8
+          disposition: not-addressed
+          note: Still only m.Names, and the floor is still a hand-typed "< 15".
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: 'Still os.ReadDir. Measured cost: 2 calls per terminal one-shot, 3 per terminal --stats, 1 piped.'
+          round: 3
+        - id: BR-10
+          disposition: not-addressed
+          note: |-
+            The rule holds for the 7 creating methods only. Measured at the pinned head in a scratch
+            worktree: (1) moving repl.go:245's resolve() into replLines leaves the entire suite green,
+            so the "both loop shells" ordering claim is still pinned for 0 of 1 raw shells — both
+            subtests of TestBothLoopShellsResolveBeforeReading reach replLines, the "raw" one via
+            replRaw's non-file-stdin fallback, as its own name concedes; (2) making YAML.Forget call
+            MkdirAll(wordsDir) leaves the entire suite green while a declined directory grows words/en/,
+            so the doesNotCreate bucket's absence claim has no control at all — only "does not consult
+            the permission" is asserted. The enumeration BR-1 asked for was storeInterfaceMethods, and
+            what shipped enumerates sampleCalls, whose completeness is checked only against createsOnDisk.
+            Write it once, for the class: a sample per INTERFACE method with a per-method positive
+            control and a byte-identical denied directory, and a raw-path ordering observation in the
+            existing pty conformance seam.
+          round: 3
+        - id: BR-11
+          disposition: not-addressed
+          note: |-
+            --help was fixed, the sweep was not. cmd/define/README.md:586-587 still reads "Every
+            successful lookup - one-shot, piped, or in the editor - records the word where you started
+            define, so your deck and history build themselves", which is false in the third state and
+            names the piped case by name; :702 "-raw records nothing ... and neither does it ask" is now
+            contradicted by the program (see the new finding). The test written to close this family
+            asserts only that each surface contains the substring "-here", which a document can satisfy
+            while asserting the old behaviour elsewhere in the same file. The rule, restated so it can
+            catch the next instance: a surface test must assert the OLD claim is GONE, not that a new
+            word is present - enumerate the sentences that assert the superseded behaviour and pin their
+            absence.
+          round: 3
+        - id: BR-12
+          disposition: not-addressed
+          note: |-
+            The duplicate encoding is genuinely gone (deckAsker switches on deckPolicy), but the
+            consequence the finding cited survives. Measured with the real wiring: `define sycophantic`
+            with stdin not a terminal in a fresh directory prints NO explanation (stderr is only the
+            pronunciation warning), while `echo sycophantic | define` prints "nothing will be saved (use
+            --here to create one)". Traced: the one-shot path has a READ settle the state to deckDeny
+            through settleQuietly - silently - so the later write finds it decided and deckAsker, the
+            only thing that says why, is never invoked. The effect belongs to the TRANSITION into
+            deckDeny, not to one of the paths that can cause it; deckPermission should emit it once when
+            it settles to deny, whichever path settles it. The same gap has a second face: only the EMPTY
+            --stats screen says nothing is being saved, so a declined session that has looked three words
+            up shows ordinary figures with no hint they are session-only.
+          round: 3
+        - id: BR-13
+          disposition: not-addressed
+          note: Still a bare positional bool; six call sites read renderStats(s, now, true).
+          round: 3
+      findings:
+        - id: BR-14
+          severity: Important
+          title: -raw prompts to create a deck, and tells piped scripts to use --here, though it writes nothing
+          detail: |-
+            This is the 2nd finding in family policy-restated-not-derived (BR-12 is the 1st, and it is
+            re-raised above). Do NOT fix this instance alone. The rule: a policy this codebase already
+            owns in one place must be DERIVED at every new site - including the site that decides whether
+            to build the permission at all. decideCapture (capture.go:26-33) is the single source of "this
+            invocation writes nothing", and capture.go:192 already states that DEFINE_NO_CAPTURE and -raw
+            are one class; main.go:806 restates half of it as `!opt.noCapture`, so -raw falls through into
+            the gate. Measured at the pinned head with the real wiring: `define -raw` on a terminal in a
+            fresh directory prints "... is not a deck yet. Create one here? [y/N]", answering y creates
+            nothing at all, and the question consumes the session's first line of stdin as its answer;
+            piped, every run prints "nothing will be saved (use --here to create one)" to stderr,
+            recommending a flag that would not make -raw save anything. The Spec forbids exactly this
+            ("a prompt for a command that would not have written anything is a false alarm"), and
+            cmd/define/README.md:702 already documents -raw as never asking. Enumerate the members of the
+            write-nothing class from decideCapture and gate on the class.
+          family: policy-restated-not-derived
+          round: 3
+        - id: BR-15
+          severity: Important
+          title: Ctrl-C at the deck question does nothing - the prompt blocks with no cancellation arm
+          detail: |-
+            main.go:401 installs signal.NotifyContext, and repl.go calls detachedInterrupts BEFORE
+            repl.go:245's resolve(), so by the time the question is on screen SIGINT is intercepted
+            process-wide and delivered to a context nobody is watching. deckAsker (deckperm.go:179) takes
+            no context and blocks in readLineUnbuffered until a newline or EOF, so Ctrl-C at the prompt
+            leaves the question up; the only exits are Enter, which silently declines, and Ctrl-D. The
+            program otherwise owns what Ctrl-C means, which is why a reader will expect it to work here.
+            Give the asker the cancellation channel and treat a cancelled context as an explicit,
+            printed decline.
+          family: blocking-prompt-ignores-cancellation
+          round: 3
+        - id: BR-16
+          severity: Minor
+          title: the plan's Core concepts never gained deckPolicy, and still lists IsDeck under Pure entities
+          detail: |-
+            This is the 2nd finding in family artifact-claims-what-code-does-not (BR-4 was the 1st and is
+            disposed addressed). Do NOT fix only this row. The rule: the Core-concepts table is the
+            greppable contract a boundary review cross-checks, so any entity the implementation ADDS or
+            RECLASSIFIES lands in the table with a "## Revisions" entry in the same commit that adds it.
+            Instances: deckPolicy, withQuiet and settleQuietly - introduced in M2 after smoke testing -
+            appear in no table; and while BR-4 moved the store.IsDeck table row to Integration points, the
+            bullet describing it (plan:41) still sits under the "### Pure entities" heading, so the plan
+            files it in both sections.
+          family: artifact-claims-what-code-does-not
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#50 (boundary-review)
@@ -313,15 +440,95 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   stats.go:101's `saving bool` appears as renderStats(s, now, true) in stats_test.go
   and deckasker_test.go. A named type or a field makes the call sites self-describing.
 
+## Round 3 — 2026-09-10T23:56:17-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Verified by mutation: a dual-writing SetItems now reddens TestCreatingMethodsWriteWhenAllowedAndNotWhenDenied/SetItems.
+- BR-4 — addressed — Both artifacts gained "## Revisions"; the residual Pure-entities bullet for IsDeck is a new Minor.
+- BR-6 — addressed — Verified by reversion to bufio: the remainder assertion goes red.
+- BR-7 — addressed — Verified: moving SetItems to doesNotCreate plus routing via reading() reddens, because sampleCalls is independent of the buckets.
+- BR-8 — not-addressed — Still only m.Names, and the floor is still a hand-typed "< 15".
+- BR-9 — not-addressed — Still os.ReadDir. Measured cost: 2 calls per terminal one-shot, 3 per terminal --stats, 1 piped.
+- BR-10 — not-addressed — The rule holds for the 7 creating methods only. Measured at the pinned head in a scratch
+worktree: (1) moving repl.go:245's resolve() into replLines leaves the entire suite green,
+so the "both loop shells" ordering claim is still pinned for 0 of 1 raw shells — both
+subtests of TestBothLoopShellsResolveBeforeReading reach replLines, the "raw" one via
+replRaw's non-file-stdin fallback, as its own name concedes; (2) making YAML.Forget call
+MkdirAll(wordsDir) leaves the entire suite green while a declined directory grows words/en/,
+so the doesNotCreate bucket's absence claim has no control at all — only "does not consult
+the permission" is asserted. The enumeration BR-1 asked for was storeInterfaceMethods, and
+what shipped enumerates sampleCalls, whose completeness is checked only against createsOnDisk.
+Write it once, for the class: a sample per INTERFACE method with a per-method positive
+control and a byte-identical denied directory, and a raw-path ordering observation in the
+existing pty conformance seam.
+- BR-11 — not-addressed — --help was fixed, the sweep was not. cmd/define/README.md:586-587 still reads "Every
+successful lookup - one-shot, piped, or in the editor - records the word where you started
+define, so your deck and history build themselves", which is false in the third state and
+names the piped case by name; :702 "-raw records nothing ... and neither does it ask" is now
+contradicted by the program (see the new finding). The test written to close this family
+asserts only that each surface contains the substring "-here", which a document can satisfy
+while asserting the old behaviour elsewhere in the same file. The rule, restated so it can
+catch the next instance: a surface test must assert the OLD claim is GONE, not that a new
+word is present - enumerate the sentences that assert the superseded behaviour and pin their
+absence.
+- BR-12 — not-addressed — The duplicate encoding is genuinely gone (deckAsker switches on deckPolicy), but the
+consequence the finding cited survives. Measured with the real wiring: `define sycophantic`
+with stdin not a terminal in a fresh directory prints NO explanation (stderr is only the
+pronunciation warning), while `echo sycophantic | define` prints "nothing will be saved (use
+--here to create one)". Traced: the one-shot path has a READ settle the state to deckDeny
+through settleQuietly - silently - so the later write finds it decided and deckAsker, the
+only thing that says why, is never invoked. The effect belongs to the TRANSITION into
+deckDeny, not to one of the paths that can cause it; deckPermission should emit it once when
+it settles to deny, whichever path settles it. The same gap has a second face: only the EMPTY
+--stats screen says nothing is being saved, so a declined session that has looked three words
+up shows ordinary figures with no hint they are session-only.
+- BR-13 — not-addressed — Still a bare positional bool; six call sites read renderStats(s, now, true).
+
+### Raised
+
+- **BR-14** [Important] `policy-restated-not-derived` -raw prompts to create a deck, and tells piped scripts to use --here, though it writes nothing
+  This is the 2nd finding in family policy-restated-not-derived (BR-12 is the 1st, and it is
+  re-raised above). Do NOT fix this instance alone. The rule: a policy this codebase already
+  owns in one place must be DERIVED at every new site - including the site that decides whether
+  to build the permission at all. decideCapture (capture.go:26-33) is the single source of "this
+  invocation writes nothing", and capture.go:192 already states that DEFINE_NO_CAPTURE and -raw
+  are one class; main.go:806 restates half of it as `!opt.noCapture`, so -raw falls through into
+  the gate. Measured at the pinned head with the real wiring: `define -raw` on a terminal in a
+  fresh directory prints "... is not a deck yet. Create one here? [y/N]", answering y creates
+  nothing at all, and the question consumes the session's first line of stdin as its answer;
+  piped, every run prints "nothing will be saved (use --here to create one)" to stderr,
+  recommending a flag that would not make -raw save anything. The Spec forbids exactly this
+  ("a prompt for a command that would not have written anything is a false alarm"), and
+  cmd/define/README.md:702 already documents -raw as never asking. Enumerate the members of the
+  write-nothing class from decideCapture and gate on the class.
+- **BR-15** [Important] `blocking-prompt-ignores-cancellation` Ctrl-C at the deck question does nothing - the prompt blocks with no cancellation arm
+  main.go:401 installs signal.NotifyContext, and repl.go calls detachedInterrupts BEFORE
+  repl.go:245's resolve(), so by the time the question is on screen SIGINT is intercepted
+  process-wide and delivered to a context nobody is watching. deckAsker (deckperm.go:179) takes
+  no context and blocks in readLineUnbuffered until a newline or EOF, so Ctrl-C at the prompt
+  leaves the question up; the only exits are Enter, which silently declines, and Ctrl-D. The
+  program otherwise owns what Ctrl-C means, which is why a reader will expect it to work here.
+  Give the asker the cancellation channel and treat a cancelled context as an explicit,
+  printed decline.
+- **BR-16** [Minor] `artifact-claims-what-code-does-not` the plan's Core concepts never gained deckPolicy, and still lists IsDeck under Pure entities
+  This is the 2nd finding in family artifact-claims-what-code-does-not (BR-4 was the 1st and is
+  disposed addressed). Do NOT fix only this row. The rule: the Core-concepts table is the
+  greppable contract a boundary review cross-checks, so any entity the implementation ADDS or
+  RECLASSIFIES lands in the table with a "## Revisions" entry in the same commit that adds it.
+  Instances: deckPolicy, withQuiet and settleQuietly - introduced in M2 after smoke testing -
+  appear in no table; and while BR-4 moved the store.IsDeck table row to Integration points, the
+  bullet describing it (plan:41) still sits under the "### Pure entities" heading, so the plan
+  files it in both sections.
+
 ## Open findings
 
-- **BR-1** [Important] `guard-fails-open` "nothing reaches a declined directory" is pinned for 2 of 7 creating methods, and the guard fails open
-- **BR-4** [Important] `artifact-claims-what-code-does-not` Done-when, the M1 Plan row, and the plan's Core-concepts table each state what the code deliberately does not do
-- **BR-6** [Minor] `stdin-over-read` deckAsker reads the answer through a throwaway bufio.Reader over shared stdin
-- **BR-7** [Minor] `guard-fails-open` the createsOnDisk/doesNotCreate split is hand-maintained; a coordinated reclassification is invisible
 - **BR-8** [Minor] `derivation-under-derives` storeInterfaceMethods ignores embedded interfaces and the "< 15" floor is hand-bumped
 - **BR-9** [Minor] `startup-path-cost` IsDeck uses os.ReadDir, which reads and sorts every entry in the working directory
 - **BR-10** [Important] `guard-fails-open` third round of guard-fails-open — the rule is that an absence or ordering claim needs a per-instance control, not an aggregate one
 - **BR-11** [Important] `readme-gate` second round of readme-gate — --help still promises unconditional recording, and the README quotes a prompt string nothing keeps in step
 - **BR-12** [Important] `policy-restated-not-derived` deckPolicy and deckAsker independently encode the same three-way precedence
 - **BR-13** [Minor] `positional-bool-parameter` renderStats gained a bare positional bool, read at six call sites as a literal true
+- **BR-14** [Important] `policy-restated-not-derived` -raw prompts to create a deck, and tells piped scripts to use --here, though it writes nothing
+- **BR-15** [Important] `blocking-prompt-ignores-cancellation` Ctrl-C at the deck question does nothing - the prompt blocks with no cancellation arm
+- **BR-16** [Minor] `artifact-claims-what-code-does-not` the plan's Core concepts never gained deckPolicy, and still lists IsDeck under Pure entities

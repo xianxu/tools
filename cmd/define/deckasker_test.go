@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ func TestDeckAskerPolicy(t *testing.T) {
 				}
 			}
 			var out bytes.Buffer
-			got := deckAsker(dir, options{here: tc.here}, strings.NewReader(tc.typed), &out,
+			got := deckAsker(t.Context(), dir, options{here: tc.here}, strings.NewReader(tc.typed), &out,
 				func() bool { return tc.tty })()
 
 			if got != tc.wantAllow {
@@ -64,13 +65,84 @@ func TestDeckAskerPolicy(t *testing.T) {
 	}
 }
 
-// A PIPE IS TOLD WHY, because otherwise someone scripting define in a fresh
-// directory gets a working lookup, no deck, and no explanation.
-func TestDeckAskerSaysWhyWhenItCannotAsk(t *testing.T) {
+// A PIPE IS TOLD WHY, and it is told by the PERMISSION rather than by the asker.
+//
+// The explanation used to live in deckAsker, so it was printed only when a WRITE
+// resolved the question. A READ settling the state quietly first meant the same
+// invocation said nothing — measured on the real binary, `echo word | define`
+// explained itself and `define word` with stdin redirected did not (#50 BR-12).
+func TestADeniedSessionIsToldWhyOnEitherPath(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		drive func(*deckPermission)
+	}{
+		{"a read settles it first", func(p *deckPermission) { p.saving() }},
+		{"a write settles it first", func(p *deckPermission) { p.allowed() }},
+		{"resolve settles it first", func(p *deckPermission) { p.resolve() }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var out bytes.Buffer
+			perm := newDeckPermission(func() bool { return true }).
+				withQuiet(func() (deckDecision, deckReason) {
+					return deckPolicy(dir, options{}, func() bool { return false })
+				}, func(r deckReason) { explainDenial(r, dir, &out) })
+
+			tc.drive(perm)
+
+			if !strings.Contains(out.String(), "--here") {
+				t.Errorf("the learner was not told why nothing is being saved; said %q", out.String())
+			}
+		})
+	}
+}
+
+// AND ONLY ONCE. A lookup reads and then writes; saying it twice is noise.
+func TestTheExplanationIsGivenOnce(t *testing.T) {
+	dir := t.TempDir()
 	var out bytes.Buffer
-	deckAsker(t.TempDir(), options{}, strings.NewReader(""), &out, func() bool { return false })()
-	if !strings.Contains(out.String(), "--here") {
-		t.Errorf("the no-terminal path did not name the way out; said %q", out.String())
+	perm := newDeckPermission(func() bool { return true }).
+		withQuiet(func() (deckDecision, deckReason) {
+			return deckPolicy(dir, options{}, func() bool { return false })
+		}, func(r deckReason) { explainDenial(r, dir, &out) })
+
+	perm.saving()
+	perm.allowed()
+	perm.resolve()
+
+	if n := strings.Count(out.String(), "--here"); n != 1 {
+		t.Errorf("explained %d times, want exactly 1:\n%s", n, out.String())
+	}
+}
+
+// -raw NEVER ASKS AND NEVER EXPLAINS, because -raw RECORDS NOTHING (#50 BR-14).
+//
+// The usage text has said "-raw records nothing, because it is for scripts" since
+// #2. Asking permission to create a deck this invocation will not write to is
+// exactly the false alarm the lazy design exists to prevent — and it was reaching
+// users: `define -raw word` in a fresh directory put a question on screen, and
+// piped it advised scripts to pass --here for a deck it would never have made.
+func TestRawNeitherAsksNorAdvises(t *testing.T) {
+	for _, tty := range []bool{true, false} {
+		t.Run(map[bool]string{true: "on a terminal", false: "piped"}[tty], func(t *testing.T) {
+			dir := t.TempDir()
+			d, why := deckPolicy(dir, options{raw: true}, func() bool { return tty })
+			if d != deckDeny {
+				t.Errorf("-raw decision = %v, want deckDeny; it records nothing", d)
+			}
+			if why != reasonRaw {
+				t.Errorf("-raw reason = %v, want reasonRaw", why)
+			}
+
+			var out bytes.Buffer
+			explainDenial(why, dir, &out)
+			if out.Len() != 0 {
+				t.Errorf("-raw was explained to the user (%q). Nothing is being lost — "+
+					"-raw records nothing by design — so there is nothing to act on and "+
+					"advising --here points at a deck it would never have written to.",
+					out.String())
+			}
+		})
 	}
 }
 
@@ -78,7 +150,7 @@ func TestDeckAskerSaysWhyWhenItCannotAsk(t *testing.T) {
 // about the terminal must not create a deck.
 func TestDeckAskerTreatsANilPredicateAsNoTerminal(t *testing.T) {
 	var out bytes.Buffer
-	if deckAsker(t.TempDir(), options{}, strings.NewReader("y\n"), &out, nil)() {
+	if deckAsker(t.Context(), t.TempDir(), options{}, strings.NewReader("y\n"), &out, nil)() {
 		t.Error("a nil terminal predicate allowed creation; absent information about " +
 			"the terminal must not be read as permission")
 	}
@@ -107,20 +179,27 @@ func (r *observingReader) Read(p []byte) (int, error) {
 	return 0, io.EOF
 }
 
-// BOTH LOOP SHELLS SETTLE THE QUESTION BEFORE THEY READ A KEY (#50 PQ-3).
+// THE LINE SHELL SETTLES THE QUESTION BEFORE IT READS A KEY (#50 PQ-3).
 //
-// One test per shell, not one for "the loop": a single test covers only the
-// branch it happened to take, and replRaw additionally FALLS BACK to replLines
-// twice. Both shells read stdin on their own goroutine, so a question put from
-// inside a store write mid-session would race that reader for the answer — the
-// learner types `y` and the loop consumes it as a lookup.
-func TestBothLoopShellsResolveBeforeReading(t *testing.T) {
+// NAMED FOR WHAT IT COVERS, which is the correction (#50 BR-10). This used to be
+// called "both loop shells" and ran two cases — but BOTH land in replLines: the
+// second reaches it through replRaw's non-file-stdin fallback, because nothing
+// short of a terminal satisfies replRaw's two requirements (stdin must be an
+// *os.File AND enterRaw must succeed on it). The raw shell was pinned zero times
+// while the test's name claimed otherwise; its subtest name even said so in
+// parentheses, which is a thing to notice rather than to write down.
+//
+// The raw shell is covered by TestPTYDeckQuestionArrivesBeforeTheEditor
+// (pty_conformance_test.go), which drives the real binary through a pty. Both
+// cases are kept here because the two ENTRY POINTS still differ — one is chosen
+// directly, one via the fallback — and both must settle before reading.
+func TestTheLineShellResolvesBeforeReading(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		tty  bool // opt.tty picks replRaw vs replLines
+		tty  bool // opt.tty picks the entry point; both land in replLines here
 	}{
-		{"line shell", false},
-		{"raw shell (falls back to lines on a non-file stdin)", true},
+		{"chosen directly", false},
+		{"reached through replRaw's non-file-stdin fallback", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -182,9 +261,9 @@ func TestStatsIsHonestWhereTheAnswerNeedsNobody(t *testing.T) {
 			}
 			asked := 0
 			perm := newDeckPermission(func() bool { asked++; return true }).
-				withQuiet(func() deckDecision {
+				withQuiet(func() (deckDecision, deckReason) {
 					return deckPolicy(dir, options{}, func() bool { return tc.tty })
-				})
+				}, nil)
 
 			allowed, decided := perm.saving()
 			saving := !decided || allowed
@@ -261,11 +340,33 @@ func TestEverySurfaceDescribingCaptureMentionsTheQuestion(t *testing.T) {
 		"cmd/define/README.md": readFileForTest(t, "README.md"),
 		"atlas/define.md":      readFileForTest(t, filepath.Join("..", "..", "atlas", "define.md")),
 	}
+	// TWO HALVES, because a document can mention -here in one section and assert
+	// the old unconditional behaviour in another — which is exactly what
+	// cmd/define/README.md did after the first pass at this family. Presence is
+	// not enough; the superseded claim has to be ABSENT.
+	superseded := []string{
+		"*Every* successful lookup",      // true only in a directory already a deck
+		"records what you look up under", // the usage prose's old promise
+	}
 	for name, text := range surfaces {
 		t.Run(name, func(t *testing.T) {
 			if !strings.Contains(text, "--here") && !strings.Contains(text, "-here") {
 				t.Errorf("%s describes what define writes but never mentions -here, so a "+
 					"reader learns the old unconditional behaviour", name)
+			}
+			for _, claim := range superseded {
+				if !strings.Contains(text, claim) {
+					continue
+				}
+				// Present is only a failure when it stands UNQUALIFIED — the
+				// sentence has to carry the condition with it.
+				idx := strings.Index(text, claim)
+				window := text[idx:min(len(text), idx+400)]
+				if !strings.Contains(window, "not one yet") && !strings.Contains(window, "ASKS before") {
+					t.Errorf("%s still asserts %q without the condition. Mentioning -here "+
+						"elsewhere in the file does not repair a sentence that promises "+
+						"unconditional recording where a reader will meet it.", name, claim)
+				}
 			}
 		})
 	}
@@ -317,7 +418,7 @@ func TestTheAnswerDoesNotSwallowTheRestOfStdin(t *testing.T) {
 	in := strings.NewReader("y\nsycophantic\narrondissement\n")
 	var out bytes.Buffer
 
-	if !deckAsker(t.TempDir(), options{}, in, &out, func() bool { return true })() {
+	if !deckAsker(t.Context(), t.TempDir(), options{}, in, &out, func() bool { return true })() {
 		t.Fatal("y did not allow")
 	}
 
@@ -329,5 +430,39 @@ func TestTheAnswerDoesNotSwallowTheRestOfStdin(t *testing.T) {
 		t.Errorf("after reading the answer, stdin holds %q — the question consumed "+
 			"input meant for the loop. Everything past the newline belongs to whoever "+
 			"reads stdin next.", string(rest))
+	}
+}
+
+// CTRL-C AT THE QUESTION DECLINES, RATHER THAN BLOCKING FOREVER (#50 BR-15).
+//
+// The question is put BEFORE the loop's own stdin reader exists, so nothing else
+// is watching the terminal — an unarmed read simply sat there and ^C did nothing.
+// An interrupt is the clearest "no" a person can give.
+func TestInterruptAtTheQuestionDeclines(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	var out bytes.Buffer
+
+	// blockingReader (repl_test.go) never returns — the learner has been asked and
+	// is not typing. Reused rather than redeclared: it models exactly this.
+	done := make(chan bool, 1)
+	go func() {
+		done <- deckAsker(ctx, t.TempDir(), options{}, blockingReader{}, &out,
+			func() bool { return true })()
+	}()
+
+	cancel()
+
+	select {
+	case allowed := <-done:
+		if allowed {
+			t.Error("an interrupt allowed the deck to be created; ^C is a no")
+		}
+		if !strings.Contains(out.String(), "not saving") {
+			t.Errorf("the interrupt was silent; said %q", out.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the question did not return after the context was cancelled — it " +
+			"blocks forever, and since the question is put before the loop's reader " +
+			"exists there is nothing else watching the terminal")
 	}
 }

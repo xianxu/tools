@@ -1124,3 +1124,47 @@ func wordAt(line string, col int) string {
 	}
 	return rest
 }
+
+// THE DECK QUESTION ON A REAL TERMINAL, IN THE RAW SHELL (#50 BR-10).
+//
+// The in-process test (deckasker_test.go) drives repl twice and BOTH times lands
+// in replLines — the "raw" case via replRaw's non-file-stdin fallback, as its own
+// name concedes. So the raw shell, the one a person actually uses, was pinned
+// zero times. Only a pty reaches it: replRaw needs stdin to be a *os.File that
+// enterRaw can put into raw mode, and nothing short of a terminal satisfies both.
+//
+// What this asserts is the ORDER that matters: the question arrives BEFORE the
+// full-screen editor takes the terminal, so the learner is not answering a prompt
+// drawn over a frame, and the loop's key reader is not competing for the answer.
+func TestPTYDeckQuestionArrivesBeforeTheEditor(t *testing.T) {
+	dir := t.TempDir() // a fresh directory: not a deck, so the question is due
+	_, f := startDefineInDir(t, dir, nil)
+	out := watch(f)
+
+	got := out.take(5 * time.Second)
+	if !strings.Contains(got, "Create one here?") {
+		t.Fatalf("the raw shell never asked; it showed:\n%s", got)
+	}
+
+	// DECLINE, and the session must carry on rather than exit.
+	if _, err := f.Write([]byte("n\n")); err != nil {
+		t.Fatal(err)
+	}
+	after := out.take(3 * time.Second)
+	if !strings.Contains(after, "not saving") {
+		t.Errorf("declining was not acknowledged on a real terminal; saw:\n%s", after)
+	}
+
+	// AND NOTHING WAS WRITTEN, which is the claim the whole issue rests on.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("declining on a real terminal still created %v", names)
+	}
+}

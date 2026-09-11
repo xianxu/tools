@@ -583,9 +583,11 @@ first silently won.
 
 ## What it writes, where you run it
 
-**`define` reads and writes the current directory.** *Every* successful lookup —
-one-shot, piped, or in the editor — records the word where you started `define`,
-so your deck and history build themselves. **Every question that reaches the model
+**`define` reads and writes the current directory — once you have said it may.**
+In a directory that is already a deck, *every* successful lookup — one-shot, piped,
+or in the editor — records the word where you started `define`, so your deck and
+history build themselves. In a directory that is not one yet, it asks first, and
+records nothing until you answer yes (see [Install](#install) and `--here`). **Every question that reaches the model
 is recorded too, by its text** — whatever became of the answer, since what you
 asked is the signal, not whether it arrived. (What decides it is whether a request
 was actually sent: with no model configured nothing is, so nothing is recorded.

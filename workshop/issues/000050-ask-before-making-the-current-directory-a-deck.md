@@ -451,3 +451,51 @@ survived two rounds because its tests genuinely need no mocks.
 test file deleted two passing tests along with the block I meant to replace
 (`TestStatsDoesNotPromiseToSaveWhenItCannot`, `TestStatsNeverAsks`). Caught by an
 unused-import error, not by noticing. Both restored.
+
+### 2026-09-11 — close review round 3: two real user-facing bugs, and three residuals
+
+Round 3 disposed BR-1, BR-4, BR-6 and BR-7 as addressed, and found **two defects a
+user would hit**:
+
+**BR-14 — `-raw` prompted to create a deck it would never write to**, and piped it
+advised scripts to pass `--here`. The usage text has said *"-raw records nothing"*
+since #2, and `cmd/define/README.md` said *"neither does it ask"* — the program had
+been contradicting its own documentation. `deckPolicy` now returns `deckDeny` with
+`reasonRaw`, silently. Confirmed on the binary: no question, no advice, nothing
+created.
+
+**BR-15 — Ctrl-C at the question did nothing.** The prompt is put BEFORE the
+loop's own stdin reader exists, so nothing else was watching the terminal and the
+read blocked forever. `readLineCancellable` arms it on the context; an interrupt
+declines and says so. Mutation-verified: unarming it hangs 5s and reddens.
+
+**BR-12's residual was the sharper finding.** The duplicate encoding was genuinely
+gone, but the CONSEQUENCE survived: a READ settling the state through
+`settleQuietly` meant `deckAsker` — the only thing that said why — was never
+invoked, so `define word` with stdin redirected explained nothing while `echo word
+| define` did. The reason now travels with the decision (`deckReason`), the
+permission emits it once from wherever the state settles, and `resolve()` and
+`allowed()` run the same two steps in the same order. Confirmed on the binary.
+
+**BR-10's residual was two more holes in my own controls.** (1) The
+`doesNotCreate` bucket had NO control at all — the classification lets those
+methods through ungated on the claim that they cannot create, and nothing checked
+it; making `YAML.Forget` call `MkdirAll` left the suite green while a declined
+directory grew `words/en/`. There is now a per-instance control for all eight, and
+the reviewer's mutation reddens. (2) Both subtests of the "both loop shells" test
+land in `replLines` — the second through `replRaw`'s fallback — so the raw shell
+was pinned zero times **while the subtest's own name said so in parentheses**. I
+wrote the concession down instead of noticing it. Renamed to what it covers, and
+the raw shell is now covered by `TestPTYDeckQuestionArrivesBeforeTheEditor`.
+
+**Reported honestly: I have not executed that pty test.** It SKIPs here — `no pty
+available: operation not permitted`, the sandbox limitation this repo already
+records — and it is routed through `conformance.SkipOrFail`, so
+`CONFORMANCE_STRICT=1` turns the skip into a failure. The pin exists; its first
+real run will be on an unsandboxed machine.
+
+**BR-11's residual:** `--help` was fixed but the sweep was not, and my guard only
+checked that each surface CONTAINED "-here" — which a document satisfies while
+asserting the old behaviour two sections later. `cmd/define/README.md` still
+promised *"Every successful lookup … records the word"*. The guard now also
+requires the superseded claim to be ABSENT or carry its condition.
