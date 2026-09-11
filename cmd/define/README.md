@@ -41,6 +41,36 @@ go build -o ~/bin/define ./cmd/define    # from the repo root
 `define --version` names the release you installed, and says `built from source`
 when it was not built by the formula.
 
+## The directory is the deck, so it asks first
+
+The directory you run `define` in **is** the deck. That makes running it in the
+wrong shell a quiet accident, so the first time it would write somewhere new it
+asks:
+
+```
+$ cd /tmp && define sycophantic
+define: /tmp is not a deck yet. Create one here? [y/N]
+```
+
+**A bare Enter declines**, because the cost of a wrong *yes* is a stray deck in
+your home directory and the cost of a wrong *no* is re-running one command.
+
+Declining does not stop the lookup — you still get the definition, the IPA and
+the audio. Nothing is written, and everything that reads history reports **empty**
+rather than refusing: `--stats` says so plainly, `--play` finds nothing due.
+
+**When it cannot ask** — piped input, a script, CI — it does not create anything
+and does not hang waiting for an answer nobody can give. The lookup still works.
+
+```sh
+define --here sycophantic     # yes, make THIS directory a deck; never asks
+```
+
+`--here` is the path for scripts, and it is the only one: since a non-terminal
+never creates a deck, automation that wants one has to say so.
+
+A directory that is already a deck is never asked about.
+
 ## Using it
 
 ```sh

@@ -95,7 +95,7 @@ func TestEveryCreatingMethodConsultsThePermission(t *testing.T) {
 	for name := range createsOnDisk {
 		t.Run(name, func(t *testing.T) {
 			c := &counter{allow: true}
-			s := newGatedStore(store.NewMem(), newDeckPermission(c.ask))
+			s := newGatedStore(store.NewMem(), store.NewMem(), newDeckPermission(c.ask))
 			callStoreMethod(t, s, name)
 			if c.calls == 0 {
 				t.Errorf("%s did not consult the permission — it would create in a "+
@@ -109,7 +109,7 @@ func TestNoNonCreatingMethodConsultsThePermission(t *testing.T) {
 	for name := range doesNotCreate {
 		t.Run(name, func(t *testing.T) {
 			c := &counter{allow: true}
-			s := newGatedStore(store.NewMem(), newDeckPermission(c.ask))
+			s := newGatedStore(store.NewMem(), store.NewMem(), newDeckPermission(c.ask))
 			callStoreMethod(t, s, name)
 			if c.calls != 0 {
 				t.Errorf("%s put the question to the learner. It creates nothing, so "+
@@ -138,7 +138,7 @@ func callStoreMethod(t *testing.T, s store.Store, name string) {
 // ONE DIRECTORY, ONE QUESTION, across a whole lookup's worth of writes.
 func TestGatedStoreAsksOnceAcrossManyWrites(t *testing.T) {
 	c := &counter{allow: true}
-	s := newGatedStore(store.NewMem(), newDeckPermission(c.ask))
+	s := newGatedStore(store.NewMem(), store.NewMem(), newDeckPermission(c.ask))
 	_ = s.Upsert(store.Word{Text: "alpha"})
 	_ = s.AppendEvent(store.ReviewEvent{Word: "alpha", At: time.Now()})
 	_ = s.SetItems("alpha", nil)
@@ -147,26 +147,71 @@ func TestGatedStoreAsksOnceAcrossManyWrites(t *testing.T) {
 	}
 }
 
-// DENIAL REACHES THE BACKING STORE NOT AT ALL — asserted against the BACKING
-// store, not through the wrapper, because the wrapper is the thing under test.
-func TestDeniedWritesNeverReachTheDisk(t *testing.T) {
-	backing := store.NewMem()
-	s := newGatedStore(backing, newDeckPermission(func() bool { return false }))
+// NOTHING REACHES A DECLINED DIRECTORY — for EVERY creating method, on a REAL
+// filesystem (#50 BR-1).
+//
+// An earlier version pinned this for Upsert alone against an in-memory backing
+// store, which is two gaps at once: six of the seven creating methods were
+// unasserted, and an in-memory backing store cannot show whether a DIRECTORY was
+// made. The set is iterated from createsOnDisk — the same derived list the
+// classification guard checks — so a method added tomorrow is covered the day it
+// joins the bucket.
+func TestNoCreatingMethodTouchesADeclinedDirectory(t *testing.T) {
+	for name := range createsOnDisk {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			disk := store.NewYAML(dir, store.DefaultLang, io.Discard)
+			s := newGatedStore(disk, store.NewMem(),
+				newDeckPermission(func() bool { return false }))
 
-	if err := s.Upsert(store.Word{Text: "alpha"}); err != nil {
-		t.Errorf("Upsert returned %v — a declined write is an ANSWER, not a failure; "+
-			"an error would put 'could not save' in front of someone who said not to", err)
+			callStoreMethod(t, s, name)
+
+			if names := lsNames(t, dir); len(names) != 0 {
+				t.Errorf("%s created %v in a directory the learner declined", name, names)
+			}
+		})
 	}
-	if deck, _ := backing.Deck(); len(deck) != 0 {
-		t.Errorf("the backing store holds %d word(s); nothing may reach a directory "+
-			"the learner declined", len(deck))
+}
+
+// And the other direction: allowed, each one DOES reach the disk — so the test
+// above cannot pass merely because the call did nothing at all.
+func TestCreatingMethodsDoReachAnAllowedDirectory(t *testing.T) {
+	reaches := map[string]bool{}
+	for name := range createsOnDisk {
+		dir := t.TempDir()
+		disk := store.NewYAML(dir, store.DefaultLang, io.Discard)
+		s := newGatedStore(disk, store.NewMem(), newDeckPermission(func() bool { return true }))
+		callStoreMethod(t, s, name)
+		reaches[name] = len(lsNames(t, dir)) > 0
+	}
+	// Not every method writes on a ZERO-valued call (SetAudio refuses an empty
+	// recording by design, SetItems an empty list), so this asserts the SET is
+	// non-trivial rather than demanding all seven — the point is that the denial
+	// test above is measuring a real difference somewhere.
+	any := false
+	for _, ok := range reaches {
+		any = any || ok
+	}
+	if !any {
+		t.Errorf("no creating method wrote to an ALLOWED directory (%v) — so the "+
+			"denial test proves nothing: it would pass with the gate removed", reaches)
+	}
+}
+
+// A declined write is an ANSWER, not a failure: an error would put "could not
+// save" in front of someone who just said not to.
+func TestDeniedWritesAreNotErrors(t *testing.T) {
+	s := newGatedStore(store.NewMem(), store.NewMem(),
+		newDeckPermission(func() bool { return false }))
+	if err := s.Upsert(store.Word{Text: "alpha"}); err != nil {
+		t.Errorf("Upsert returned %v", err)
 	}
 }
 
 // A DENIED SESSION STILL REMEMBERS ITSELF, which is what memHistory already does
 // on the no-capture path — the two degraded modes agree.
 func TestDeniedSessionKeepsItselfInMemory(t *testing.T) {
-	s := newGatedStore(store.NewMem(), newDeckPermission(func() bool { return false }))
+	s := newGatedStore(store.NewMem(), store.NewMem(), newDeckPermission(func() bool { return false }))
 	if err := s.Upsert(store.Word{Text: "alpha"}); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +231,7 @@ func TestDeniedSessionKeepsItselfInMemory(t *testing.T) {
 // failure mode.
 func TestGatedStoreConformsWhenAllowed(t *testing.T) {
 	storetest.Suite(t, func(t *testing.T) store.Store {
-		return newGatedStore(store.NewMem(), newDeckPermission(func() bool { return true }))
+		return newGatedStore(store.NewMem(), store.NewMem(), newDeckPermission(func() bool { return true }))
 	})
 }
 
@@ -197,7 +242,7 @@ func TestGatedStoreConformsWhenAllowed(t *testing.T) {
 func TestGatedStoreConformsWhenDenied(t *testing.T) {
 	storetest.Suite(t, func(t *testing.T) store.Store {
 		disk := store.NewYAML(t.TempDir(), store.DefaultLang, io.Discard)
-		return newGatedStore(disk, newDeckPermission(func() bool { return false }))
+		return newGatedStore(disk, store.NewMem(), newDeckPermission(func() bool { return false }))
 	})
 }
 
@@ -250,7 +295,7 @@ func TestOpenStoreGatesTheFlatStoreToo(t *testing.T) {
 func TestTheNewsCacheCannotCreateWhenDenied(t *testing.T) {
 	dir := t.TempDir()
 	perm := newDeckPermission(func() bool { return false })
-	gated := newGatedStore(store.NewYAML(dir, store.DefaultLang, io.Discard), perm)
+	gated := newGatedStore(store.NewYAML(dir, store.DefaultLang, io.Discard), store.NewMem(), perm)
 
 	if err := gated.SetNewsItems("k", []store.NewsItem{{Title: "x"}}, time.Now()); err != nil {
 		t.Fatalf("SetNewsItems: %v", err)
@@ -318,4 +363,47 @@ func lsNames(t *testing.T, dir string) []string {
 		out = append(out, e.Name())
 	}
 	return out
+}
+
+// A DENIED SESSION SURVIVES A LANGUAGE SWITCH (#50 BR-2).
+//
+// newLangDeps rebuilds the wrapper on every /lang, so a fallback allocated inside
+// the wrapper is thrown away by a switch. The boundary review MEASURED it:
+// allowed kept a word across a rebuild, denied dropped to zero — so "a denied
+// session still recalls itself" was true right up until the learner changed
+// language, and then quietly stopped being true.
+//
+// Driven through newLangDeps, because that closure is what /lang re-invokes; a
+// test on one wrapper cannot see this at all.
+func TestADeniedSessionSurvivesALanguageSwitch(t *testing.T) {
+	t.Chdir(t.TempDir())
+	sd := openStore(options{}, io.Discard, newDeckPermission(func() bool { return false }))
+
+	if err := sd.deck.Upsert(store.Word{Text: "alpha"}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if deck, _ := sd.deck.Deck(); len(deck) != 1 {
+		t.Fatalf("before the switch the session holds %d words, want 1", len(deck))
+	}
+
+	// The switch, exactly as /lang performs it, and back again.
+	es := sd.newLangDeps(store.Lang("es"))
+	if deck, _ := es.deck.Deck(); len(deck) != 0 {
+		t.Errorf("the Spanish deck starts with %d words; the fallbacks are keyed by "+
+			"language, so a switch must not inherit another language's words", len(deck))
+	}
+	if err := es.deck.Upsert(store.Word{Text: "bravo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	back := sd.newLangDeps(store.DefaultLang)
+	deck, err := back.deck.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck) != 1 || deck[0].Text != "alpha" {
+		t.Errorf("after /lang es and back the session holds %v, want just alpha — a "+
+			"fallback allocated per wrapper is discarded by every switch, so a "+
+			"declined session silently forgets itself", deck)
+	}
 }

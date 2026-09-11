@@ -181,20 +181,20 @@ is the case nobody has test coverage for today.
 
 ## Done when
 
-- [ ] In a non-deck directory on a terminal, `define <word>` asks before creating
+- [x] In a non-deck directory on a terminal, `define <word>` asks before creating
       anything, and answering no leaves the directory untouched — verified by
       listing it afterwards, not by reading the code.
-- [ ] Answering no still prints the definition, and `--stats` / `--play` /
+- [x] Answering no still prints the definition, and `--stats` / `--play` /
       `/history` report EMPTY rather than refusing.
-- [ ] With stdin not a terminal, nothing is created, nothing is asked, the
+- [x] With stdin not a terminal, nothing is created, nothing is asked, the
       lookup still prints, and the exit code is unchanged from today.
-- [ ] `--here` creates without asking, on a terminal or not.
-- [ ] An existing deck is never asked about — no prompt appears in a directory
+- [x] `--here` creates without asking, on a terminal or not.
+- [x] An existing deck is never asked about — no prompt appears in a directory
       that already has any runtime dir or file.
-- [ ] Every write-shaped method on `store.Store` consults the gate, asserted
+- [x] Every write-shaped method on `store.Store` consults the gate, asserted
       mechanically against the interface so a 16th method cannot be added
       ungated.
-- [ ] `--stats` in an unsaved directory does not claim a word will "join your
+- [x] `--stats` in an unsaved directory does not claim a word will "join your
       deck".
 
 
@@ -215,15 +215,16 @@ Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-de
       `guard-fails-open`).
 - [x] M1 — `gatedStore` runs through `storetest.Suite`, allowed and denied.
 - [x] M1 — `openStore` wraps the deck; gate allows always. Whole suite still green.
-- [ ] M2 — `--here` and `deckGate`: already-a-deck / `--here` / no-tty / ask,
+- [x] M2 — `--here` and `deckGate`: already-a-deck / `--here` / no-tty / ask,
       defaulting to no.
-- [ ] M2 — the raw loop resolves the gate BEFORE entering raw mode, so no store
+- [x] M2 — the raw loop resolves the gate BEFORE entering raw mode, so no store
       write can ever prompt against the loop's own key reader.
-- [ ] M2 — the empty `--stats` screen stops promising a word will "join your deck"
+- [x] M2 — the empty `--stats` screen stops promising a word will "join your deck"
       when nothing is being saved.
-- [ ] M2 — end-to-end on a real directory: declining leaves it byte-identical
+- [x] M2 — end-to-end on a real directory: declining leaves it byte-identical
       (verified by listing it), the lookup still prints, exit 0.
-- [ ] M2 — atlas: the three states, and that `IsDeck` derives.
+- [x] M2 — atlas: the three states, and that `IsDeck` derives.
+- [x] M2 — README: the question, the decline, and `--here` (BR-5; the plan had no README row, which is why it was missed).
 
 ## Log
 

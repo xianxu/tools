@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"strings"
@@ -146,7 +145,7 @@ func deckAsker(dir string, opt options, in io.Reader, out io.Writer, stdinIsTerm
 			return false
 		}
 		fmt.Fprintf(out, "define: %s is not a deck yet. Create one here? [y/N] ", dir)
-		answer, err := bufio.NewReader(in).ReadString('\n')
+		answer, err := readLineUnbuffered(in)
 		if err != nil && answer == "" {
 			// EOF mid-question declines, for the same reason a bare Enter does:
 			// the safe answer is the one that writes nothing.
@@ -159,6 +158,34 @@ func deckAsker(dir string, opt options, in io.Reader, out io.Writer, stdinIsTerm
 		default:
 			fmt.Fprintln(out, "define: not saving in this directory; the lookup still works.")
 			return false
+		}
+	}
+}
+
+// readLineUnbuffered reads one line WITHOUT buffering ahead (#50 BR-6).
+//
+// bufio.Reader would be the obvious choice and is the wrong one here: `in` is the
+// program's shared stdin, and a buffered reader pulls as much as it can get. The
+// bytes it swallowed past the newline would be lost to whoever reads stdin next —
+// which, since the loop shells resolve this question before they start, is the
+// loop itself. The learner would answer "y" and watch the next line of input
+// vanish.
+//
+// One byte at a time is cheap: this reads a single short answer, once per
+// process, from a human.
+func readLineUnbuffered(in io.Reader) (string, error) {
+	var b []byte
+	buf := make([]byte, 1)
+	for {
+		n, err := in.Read(buf)
+		if n > 0 {
+			if buf[0] == '\n' {
+				return string(b), nil
+			}
+			b = append(b, buf[0])
+		}
+		if err != nil {
+			return string(b), err
 		}
 	}
 }

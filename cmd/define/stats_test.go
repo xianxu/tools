@@ -19,7 +19,7 @@ func statsAt(y int, m time.Month, d int) time.Time {
 // state every new learner is in. Seven figures all reading 0 says "this is
 // broken" to the one person guaranteed to see it.
 func TestStatsOnAnEmptyDeckSaysSoRatherThanPrintingZeros(t *testing.T) {
-	lines := renderStats(schedule.Summarise(nil, nil, statsAt(2026, time.June, 10)), statsAt(2026, time.June, 10))
+	lines := renderStats(schedule.Summarise(nil, nil, statsAt(2026, time.June, 10)), statsAt(2026, time.June, 10), true)
 	joined := strings.Join(lines, "\n")
 	if len(lines) == 0 {
 		t.Fatal("an empty deck rendered nothing at all")
@@ -51,7 +51,7 @@ func TestEveryStatsFieldIsRendered(t *testing.T) {
 		FirstDay: statsAt(2026, time.January, 3),
 		LastDay:  statsAt(2026, time.June, 9),
 	}
-	got := strings.Join(renderStats(full, now), "\n")
+	got := strings.Join(renderStats(full, now, true), "\n")
 
 	// LastDay is deliberately not on the screen: "since <first>" answers the
 	// question a learner asks, and the last active day is the streak's job.
@@ -110,7 +110,7 @@ func TestAFormNameCannotCarryEscapes(t *testing.T) {
 			"":                     {Attempts: 1, Correct: 0},
 		},
 	}
-	got := strings.Join(renderStats(s, statsAt(2026, time.June, 10)), "\n")
+	got := strings.Join(renderStats(s, statsAt(2026, time.June, 10), true), "\n")
 	if strings.ContainsAny(got, "\x1b\a") {
 		t.Errorf("a control rune reached the screen: %q", got)
 	}
@@ -132,9 +132,9 @@ func TestAccuracyRowsAreOrdered(t *testing.T) {
 		"board":   {Attempts: 1, Correct: 1},
 		"cloze":   {Attempts: 1, Correct: 1},
 	}}
-	first := strings.Join(renderStats(s, statsAt(2026, time.June, 10)), "\n")
+	first := strings.Join(renderStats(s, statsAt(2026, time.June, 10), true), "\n")
 	for i := 0; i < 20; i++ {
-		if again := strings.Join(renderStats(s, statsAt(2026, time.June, 10)), "\n"); again != first {
+		if again := strings.Join(renderStats(s, statsAt(2026, time.June, 10), true), "\n"); again != first {
 			t.Fatalf("the screen changed between runs:\n%s\n---\n%s", first, again)
 		}
 	}
@@ -254,13 +254,13 @@ func TestStatsRefusesAWord(t *testing.T) {
 // README invites editing that directory.
 func TestTheRateIsHiddenWhenNothingWasEverAdded(t *testing.T) {
 	noAdds := schedule.Stats{Known: 10, ActiveDays: 1, CurrentStreak: 1}
-	if got := strings.Join(renderStats(noAdds, statsAt(2026, time.June, 10)), "\n"); strings.Contains(got, "words/day") {
+	if got := strings.Join(renderStats(noAdds, statsAt(2026, time.June, 10), true), "\n"); strings.Contains(got, "words/day") {
 		t.Errorf("a deck with no recorded adds shows a rate:\n%s", got)
 	}
 	// AND A SLOW LEARNER STILL SEES IT: gated on the COUNT, not the rate, so a
 	// rate that rounds to 0.0 is still shown.
 	slow := schedule.Stats{Known: 10, ActiveDays: 200, Added: 3, AddedPerDay: 0.015}
-	if got := strings.Join(renderStats(slow, statsAt(2026, time.June, 10)), "\n"); !strings.Contains(got, "words/day") {
+	if got := strings.Join(renderStats(slow, statsAt(2026, time.June, 10), true), "\n"); !strings.Contains(got, "words/day") {
 		t.Errorf("a slow learner's rate was hidden:\n%s", got)
 	}
 }

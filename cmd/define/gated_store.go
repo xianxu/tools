@@ -28,8 +28,18 @@ type gatedStore struct {
 	perm *deckPermission
 }
 
-func newGatedStore(disk store.Store, perm *deckPermission) *gatedStore {
-	return &gatedStore{disk: disk, mem: store.NewMem(), perm: perm}
+// newGatedStore wraps `disk`, falling back to `mem` when the learner declines.
+//
+// THE FALLBACK IS PASSED IN, NOT ALLOCATED HERE, and that is #50 BR-2: an earlier
+// version called store.NewMem() per wrapper, and newLangDeps rebuilds the wrapper
+// on every /lang. Measured by the boundary review: allowed kept a word across a
+// switch, denied dropped to zero — so "a denied session still recalls itself"
+// held until the learner changed language, then silently stopped. That is PQ-2's
+// rule (one decision for the process) applied to the decision but not to the
+// store it swaps in. The caller owns the fallback's lifetime and keys it by
+// language, exactly as it keys the real store.
+func newGatedStore(disk, mem store.Store, perm *deckPermission) *gatedStore {
+	return &gatedStore{disk: disk, mem: mem, perm: perm}
 }
 
 // creating is where a write that CREATES goes, resolving the decision first.
