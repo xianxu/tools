@@ -1,5 +1,14 @@
 package main
 
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
+)
+
 // deckDecision is the three-valued answer to "may define write here".
 //
 // THREE VALUES, NOT A BOOL PLUS A BOOL. "Not yet asked" is a real state with its
@@ -97,5 +106,59 @@ func (p *deckPermission) saving() (allowed, decided bool) {
 		return false, true
 	default:
 		return false, false
+	}
+}
+
+// deckAsker builds the question this directory needs, or the answer it already
+// has.
+//
+// FOUR INPUTS, IN THIS ORDER, AND THE ORDER IS THE DESIGN:
+//
+//   - ALREADY A DECK -> yes, silently. There is nothing to ask about: define has
+//     written here before, so the directory is already its own.
+//   - --here -> yes, silently. This is the automation path, and it is
+//     load-bearing rather than a nicety: since a non-terminal no longer gets a
+//     deck, --here is the ONLY way a script can make one.
+//   - NOT A TERMINAL -> no, with a warning. The accident this exists for is a
+//     human in the wrong shell; a script names its directory deliberately. A
+//     question nobody can answer must never become a hang.
+//   - otherwise -> ask, and DEFAULT TO NO. A bare Enter declines, because the
+//     cost of a wrong yes is a stray deck in someone's home directory and the
+//     cost of a wrong no is re-running one command.
+//
+// The QUESTION goes to `out` (stderr) rather than stdout: a lookup's output is
+// data someone may be redirecting, and a prompt in a redirected stream is a hang
+// with no visible cause.
+func deckAsker(dir string, opt options, in io.Reader, out io.Writer, stdinIsTerminal func() bool) func() bool {
+	return func() bool {
+		if store.IsDeck(dir) {
+			return true
+		}
+		if opt.here {
+			return true
+		}
+		if stdinIsTerminal == nil || !stdinIsTerminal() {
+			// SAID, not silent. Someone piping into define in a fresh directory
+			// gets a working lookup and no deck; without this line they would
+			// never learn why nothing was saved.
+			fmt.Fprintf(out, "define: %s is not a deck and there is no terminal to ask; "+
+				"nothing will be saved (use --here to create one)\n", dir)
+			return false
+		}
+		fmt.Fprintf(out, "define: %s is not a deck yet. Create one here? [y/N] ", dir)
+		answer, err := bufio.NewReader(in).ReadString('\n')
+		if err != nil && answer == "" {
+			// EOF mid-question declines, for the same reason a bare Enter does:
+			// the safe answer is the one that writes nothing.
+			fmt.Fprintln(out)
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "y", "yes":
+			return true
+		default:
+			fmt.Fprintln(out, "define: not saving in this directory; the lookup still works.")
+			return false
+		}
 	}
 }

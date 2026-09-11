@@ -2060,6 +2060,59 @@ It rides on `replCommand` instead, beside `literal`, because a per-line modifier
 is what it is — which is also why `-pron` with no word is refused rather than
 quietly made session-wide.
 
+## Becoming a deck: one decision, carried everywhere (`#50`)
+
+The directory you run `define` in **is** the deck, which makes running it in the
+wrong shell a quiet accident: six `MkdirAll` calls scattered through
+`store/yaml.go` each fire on their own first write, so a stray deck appears
+somewhere you never meant and you find out later.
+
+**Three states, and the third is the new one:**
+
+| state | the deck reads | writes | exit |
+|---|---|---|---|
+| already a deck | the deck | to disk | as before |
+| not a deck, allowed | the deck | to disk | as before |
+| not a deck, declined or unaskable | **empty** | discarded | **0** |
+
+The third state **still answers lookups**. It is an empty deck, not a missing one.
+
+**Why an empty `store.Mem` rather than a nil deck.** A `nil` deck is checked in
+eleven places: eight REFUSE with `noDeckMessage` and exit 1, three quietly do
+less. Teaching all of them a new "empty but absent" meaning would be the
+expensive version of this feature. Handing over a real, empty `Store` costs them
+no changes at all — and `Mem` is not a lookalike, because `storetest.Suite` runs
+over it and over `YAML`.
+
+**`store.IsDeck`** answers "has define written here before", derived from
+`RuntimeDirs` + `RuntimeFiles` so a seventh runtime artifact joins it for free.
+It reads entry NAMES with `filepath.Match` and never puts the working directory
+into a pattern — a cwd containing `[` would otherwise make an established deck
+read as *not* a deck, and a "yes" would then `MkdirAll` over a live one. The
+atomic-write shadow is skipped: it is debris from a crashed write, not an
+artifact.
+
+**`deckPermission` is ONE decision for the process**, not one per store. A
+session builds two YAML stores — the flat one backing history and the news cache,
+and the per-language one — and `/lang` rebuilds more. Held per-wrapper, the
+learner would answer, switch language, and be asked again about the same
+directory. It exposes `allowed()` (resolves, memoized), `resolve()` (force it
+now) and `saving()` — which reads the state **without** resolving, because
+`--stats` has to say whether anything is being saved and learning that by asking
+would make putting the question a side effect of reading.
+
+**`gatedStore` classifies by what a method does to the DISK**, not by being
+write-shaped. `Forget` only removes, so it is ungated: gating it would make
+`define --forget x` in a non-deck directory ask permission to *create* a deck in
+order to delete nothing. The split is derived from the `Store` interface by an
+AST guard, so a sixteenth method cannot be added unclassified.
+
+**`persistLang` is gated separately**, and it is the one write path a `Store`
+wrapper structurally cannot reach: `store.WriteLang` is a free function. Ungated,
+`define /lang es` writes `lang.txt` into a directory nobody confirmed — and so
+does `/lang` after a decline. `MigrateToLanguages` needs no gate and is pinned as
+creating nothing in a non-deck directory, which is why.
+
 ## Conformance
 
 Live checks sit behind `//go:build conformance`. Most run **on demand, not in CI**;

@@ -406,6 +406,12 @@ type options struct {
 	// mechanism beside it. Note it also drops history to session-only, because
 	// persisted history IS the event log (#3) — documented beside the flag.
 	noCapture bool
+	// here means "yes, make this directory a deck", without asking.
+	//
+	// LOAD-BEARING RATHER THAN A CONVENIENCE: a non-terminal no longer gets a
+	// deck at all, so this is the ONLY way a script can create one. Without it
+	// the feature would silently break every automated first run.
+	here bool
 	// width is the terminal width for wrapping; 0 on a pipe, where a consumer
 	// re-wraps for itself and baked-in breaks cannot be undone.
 	width int
@@ -465,6 +471,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
 	versionFlag := fs.Bool("version", false, "print the version and exit")
+	hereFlag := fs.Bool("here", false, "make this directory a deck without asking")
 	// Names the artifact, not the file: the filename is per-language and this
 	// help text is printed before any language is resolved.
 	reflect := fs.Bool("reflect", false, "read the deck and write the learner model")
@@ -591,6 +598,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// both paths instead of depending on which line you are on.
 		noAudio:   *noAudio || *raw,
 		noCapture: os.Getenv("DEFINE_NO_CAPTURE") != "",
+		here:      *hereFlag,
 		times:     *times,
 		locale:    *locale,
 		count:     *count,
