@@ -330,7 +330,7 @@ func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 // Half of a Done-when lived here untested: DEFINE_NO_CAPTURE must not merely
 // suppress writes, it must leave history session-only rather than half-persisting.
 func TestOpenStoreUnderOptOut(t *testing.T) {
-	sd := openStore(options{noCapture: true}, nil)
+	sd := openStore(options{noCapture: true}, nil, nil)
 	h, c, deck := sd.history, sd.capture, sd.deck
 	if _, ok := h.(*memHistory); !ok {
 		t.Errorf("history = %T, want *memHistory — session-only", h)
@@ -379,7 +379,7 @@ func TestOpenStoreWithoutOptOut(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	sd := openStore(options{}, nil)
+	sd := openStore(options{}, nil, nil)
 	h, c, deck := sd.history, sd.capture, sd.deck
 	if _, ok := h.(*storeHistory); !ok {
 		t.Errorf("history = %T, want *storeHistory", h)
@@ -525,7 +525,7 @@ func TestOpenStoreSuppliesOneClock(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Chdir(t.TempDir())
-			sd := openStore(tc.opt, io.Discard)
+			sd := openStore(tc.opt, io.Discard, nil)
 			if sd.clock == nil {
 				t.Error("clock is nil; a command that reads the log would panic")
 			}

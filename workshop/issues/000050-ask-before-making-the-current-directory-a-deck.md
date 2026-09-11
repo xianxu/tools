@@ -214,7 +214,7 @@ Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-de
       method cannot be added ungated; mutated in all FOUR shapes (#49
       `guard-fails-open`).
 - [x] M1 — `gatedStore` runs through `storetest.Suite`, allowed and denied.
-- [ ] M1 — `openStore` wraps the deck; gate allows always. Whole suite still green.
+- [x] M1 — `openStore` wraps the deck; gate allows always. Whole suite still green.
 - [ ] M2 — `--here` and `deckGate`: already-a-deck / `--here` / no-tty / ask,
       defaulting to no.
 - [ ] M2 — the raw loop resolves the gate BEFORE entering raw mode, so no store
@@ -298,3 +298,34 @@ double) — is the only one that reaches the guard, and it reddens.
 That is the third unasserted string replacement to silently no-op in this session.
 Every one produced a green result that meant nothing. Recorded in
 `workshop/lessons.md`.
+
+### 2026-09-10 — M1 Task 5: the wiring, and two tests that proved nothing first
+
+`deps.newStore` and `openStore` changed signature together, so the 22 sites that
+ASSIGN `openStore` were untouched. The plan said that was the whole story; it was
+not. Five sites needed edits the plan did not predict — four **direct calls** to
+`openStore` (`vocab_test.go:152`, `capture_test.go:333/382/528`) and two inline
+`func(options, io.Writer) storeDeps` **literals** (`askrun_test.go:147`,
+`main_test.go:527`). Found by fixing `go vet` one error at a time until I stopped
+and grepped for the shapes instead, which took one command and would have taken
+one command at the start.
+
+**Whole suite green with the seam in: M1 is a genuine no-op**, which is the
+property it was split out to prove.
+
+**Two of the five wiring tests passed while asserting nothing, and mutation is
+what said so.**
+
+- `TestOpenStoreGatesTheFlatStoreToo` called `sd.history.Add("alpha")` and then
+  listed the directory. It passed under the ungated mutation because
+  `storeHistory.Add` only appends to an in-memory slice (`history_store.go:77`)
+  and never writes at all. Replaced with an assertion on the actual wiring — the
+  store backing `storeHistory` must be a `*gatedStore` — plus
+  `TestTheNewsCacheCannotCreateWhenDenied`, which drives the write path `flat`
+  really owns without needing a network.
+- The `IsDeck` bracket-directory row, earlier today, had the same shape.
+
+Four wiring mutations, each red on its own: ungate `persistLang` → *"declining
+still wrote [lang.txt]"*; ungate `flat` → *"backed by \*store.YAML"*; ungate the
+language deck → *"deck is \*store.YAML"*; and `MigrateToLanguages` is pinned as
+creating nothing in a non-deck directory, since it is UNGATED on that claim.

@@ -524,7 +524,7 @@ func TestStoreIndependentModesAnswerAboveTheStore(t *testing.T) {
 			// dispatch could move below it with every test still green — the
 			// review measured exactly that mutation (#49 I-3, I-C).
 			d := deps{ // no dict, no clock, no audio
-				newStore: func(options, io.Writer) storeDeps {
+				newStore: func(options, io.Writer, *deckPermission) storeDeps {
 					built = true
 					return storeDeps{}
 				},

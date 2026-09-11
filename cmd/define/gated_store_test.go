@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -198,4 +199,123 @@ func TestGatedStoreConformsWhenDenied(t *testing.T) {
 		disk := store.NewYAML(t.TempDir(), store.DefaultLang, io.Discard)
 		return newGatedStore(disk, newDeckPermission(func() bool { return false }))
 	})
+}
+
+// --- the wiring, which is the feature -----------------------------------------
+//
+// gatedStore being correct is not the claim that openStore USES it. That gap is
+// already a recorded lesson in this repo (#72): a pure helper that is correct and
+// never called, with a green suite either way.
+
+func TestOpenStoreGatesTheLanguageDeck(t *testing.T) {
+	t.Chdir(t.TempDir())
+	sd := openStore(options{}, io.Discard, newDeckPermission(func() bool { return true }))
+	if _, ok := sd.deck.(*gatedStore); !ok {
+		t.Errorf("deck is %T, want *gatedStore — an ungated deck creates in a "+
+			"directory nobody confirmed", sd.deck)
+	}
+}
+
+// THE FLAT STORE TOO, not just the language one (#50 PQ-2).
+//
+// `flat` backs BOTH newStoreHistory and the news cache, and
+// cachingFeed.SetNewsItems reaches MkdirAll(usageDir) — so wrapping only the
+// language store leaves a live write path that creates a deck having asked
+// nothing.
+//
+// ASSERTED ON THE WIRING, not through history.Add, and that correction is worth
+// recording: a first version called sd.history.Add("alpha") and then listed the
+// directory. It passed under the ungated mutation, because storeHistory.Add only
+// appends to an in-memory slice (history_store.go:77) and never writes at all —
+// so the test exercised no write path and proved nothing. The write that matters
+// goes through the news cache, which needs a feed and a network; the honest
+// cheap assertion is that the store handed to these consumers IS the gated one.
+func TestOpenStoreGatesTheFlatStoreToo(t *testing.T) {
+	t.Chdir(t.TempDir())
+	sd := openStore(options{}, io.Discard, newDeckPermission(func() bool { return false }))
+
+	h, ok := sd.history.(*storeHistory)
+	if !ok {
+		t.Fatalf("history is %T, want *storeHistory", sd.history)
+	}
+	if _, gated := h.st.(*gatedStore); !gated {
+		t.Errorf("the history store is backed by %T, want *gatedStore — `flat` also "+
+			"backs the news cache, whose SetNewsItems reaches MkdirAll(usageDir), so "+
+			"an ungated `flat` creates a deck having asked nothing", h.st)
+	}
+}
+
+// And the write path `flat` actually owns: the news cache, driven directly so no
+// network is involved. This is the behavioural half of the pin above.
+func TestTheNewsCacheCannotCreateWhenDenied(t *testing.T) {
+	dir := t.TempDir()
+	perm := newDeckPermission(func() bool { return false })
+	gated := newGatedStore(store.NewYAML(dir, store.DefaultLang, io.Discard), perm)
+
+	if err := gated.SetNewsItems("k", []store.NewsItem{{Title: "x"}}, time.Now()); err != nil {
+		t.Fatalf("SetNewsItems: %v", err)
+	}
+	if names := lsNames(t, dir); len(names) != 0 {
+		t.Errorf("a denied news-cache write created %v; usage/ is a deck directory "+
+			"like any other", names)
+	}
+}
+
+// persistLang IS THE ONE WRITE PATH A Store WRAPPER CANNOT REACH (#50 PQ-1).
+//
+// store.WriteLang is a free function, so no amount of wrapping the Store
+// interface touches it. Ungated, `define /lang es` writes lang.txt into a
+// directory nobody confirmed — and so does /lang AFTER a decline, which a
+// one-shot lookup test would never see.
+func TestPersistLangIsGated(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	sd := openStore(options{}, io.Discard, newDeckPermission(func() bool { return false }))
+
+	if err := sd.persistLang(store.Lang("es")); err != nil {
+		t.Errorf("persistLang returned %v — declining is an answer, not a failure", err)
+	}
+	if names := lsNames(t, dir); len(names) != 0 {
+		t.Errorf("declining still wrote %v; store.WriteLang is a free function and a "+
+			"Store wrapper cannot reach it, so it needs the permission directly", names)
+	}
+}
+
+func TestPersistLangWritesWhenAllowed(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	sd := openStore(options{}, io.Discard, newDeckPermission(func() bool { return true }))
+	if err := sd.persistLang(store.Lang("es")); err != nil {
+		t.Fatalf("persistLang: %v", err)
+	}
+	if names := lsNames(t, dir); len(names) == 0 {
+		t.Error("an allowed persistLang wrote nothing")
+	}
+}
+
+// The Integration-points section claims MigrateToLanguages creates nothing in a
+// non-deck directory, which is why it is not gated. A claim about code is pinned
+// or it is folklore.
+func TestMigrateCreatesNothingInANonDeckDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.MigrateToLanguages(dir, io.Discard); err != nil {
+		t.Fatalf("MigrateToLanguages: %v", err)
+	}
+	if names := lsNames(t, dir); len(names) != 0 {
+		t.Errorf("migration created %v in a directory with no deck; it is UNGATED on "+
+			"the claim that it cannot, so this is the claim failing", names)
+	}
+}
+
+func lsNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
 }

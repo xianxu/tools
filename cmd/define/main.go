@@ -71,7 +71,7 @@ type deps struct {
 	// get in-memory defaults. Tests that DO want the real wiring set it to
 	// openStore and t.Chdir into a t.TempDir first — several do, so this seam is
 	// what keeps the real filesystem opt-in, not unreachable.
-	newStore func(options, io.Writer) storeDeps
+	newStore func(options, io.Writer, *deckPermission) storeDeps
 	// clock is what a command reads to answer "now". Injected for the same
 	// reason storeCapturer's is: /history's window is a local-DAY computation,
 	// so a test has to be able to stand at a chosen instant in a chosen zone.
@@ -93,6 +93,10 @@ type deps struct {
 	// which would make the interactive path unwritable. Note this is a different
 	// question from the stdout check that drives colour.
 	stdinIsTerminal func() bool
+	// deckPermission is the one decision about whether this directory may become
+	// a deck, shared by every store and by persistLang. Nil means allow, which is
+	// what lets every seam that predates the policy behave exactly as before.
+	deckPermission *deckPermission
 }
 
 func realDeps() deps {
@@ -165,7 +169,7 @@ type storeDeps struct {
 func (d deps) withStore(opt options, warn io.Writer) deps {
 	var sd storeDeps
 	if d.newStore != nil {
-		sd = d.newStore(opt, warn)
+		sd = d.newStore(opt, warn, d.deckPermission)
 	}
 	if d.history == nil {
 		d.history = orElse[History](sd.history, &memHistory{})
@@ -266,7 +270,7 @@ func sessionUsage(lang store.Lang, clk store.Clock, warn io.Writer) UsageSource 
 // A store that cannot be opened must not break define: warn and fall back,
 // exactly as a missing recording degrades rather than fails. Someone in a
 // read-only directory still gets a dictionary.
-func openStore(opt options, warn io.Writer) storeDeps {
+func openStore(opt options, warn io.Writer, perm *deckPermission) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides
 	// whether a given lookup counts.
@@ -320,10 +324,19 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// here is necessarily re-derived there. Adding a member cannot be half done.
 	// A store whose language is irrelevant to it: history reads events/ and the
 	// usage cache reads usage/, neither of which is language-scoped.
-	flat := store.NewYAML(dir, store.DefaultLang, warn)
+	// GATED, and `flat` as much as the per-language store. It backs
+	// newStoreHistory and the news cache, and cachingFeed.SetNewsItems reaches
+	// MkdirAll(usageDir) — so wrapping only the language store would leave a
+	// write path that creates a deck without asking (#50 PQ-2).
+	flat := newGatedStore(store.NewYAML(dir, store.DefaultLang, warn), perm)
 
 	newLangDeps := func(l store.Lang) langDeps {
-		st := store.NewYAML(dir, l, warn)
+		// INSIDE newLangDeps, not one level up, because this closure is what
+		// /lang re-invokes — the comment above states the rule: "anything
+		// constructed here is necessarily re-derived there. Adding a member
+		// cannot be half done." Wrapping in withStore would hand a switched
+		// language an UNGATED deck: decline, type /lang es, and it starts writing.
+		st := newGatedStore(store.NewYAML(dir, l, warn), perm)
 		// ONE highlight set, handed to both the capturer that grows it and the
 		// renderers that read it. Two instances would mean lookups landing in a
 		// set nothing draws from — TestOpenStoreSharesOneHighlightSet is the
@@ -347,7 +360,18 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		clock:       clk,
 		lang:        lang,
 		newLangDeps: newLangDeps,
-		persistLang: func(l store.Lang) error { return store.WriteLang(dir, l) },
+		// GATED SEPARATELY, because a Store wrapper structurally cannot reach it:
+		// store.WriteLang is a free function, not a Store method (#50 PQ-1).
+		// Ungated, `define /lang es` writes lang.txt into a directory nobody
+		// confirmed — and so does /lang after a decline. Declining means the
+		// language applies to this session and is not persisted, which is what
+		// everything else in this state already does.
+		persistLang: func(l store.Lang) error {
+			if !perm.allowed() {
+				return nil
+			}
+			return store.WriteLang(dir, l)
+		},
 	}
 	sd.langDeps = ld
 	return sd
