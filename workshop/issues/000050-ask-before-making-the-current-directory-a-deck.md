@@ -137,7 +137,7 @@ total: 4.19
 | `issue-spec` 0.60/0.08 | high in the 0.5–1.5 design band: the operator settled the shape ("as if there's empty history"), but the design still had to find that the `nil` deck is refused at eight sites and degrades at three, that `store.Mem` makes the third state nearly free, and then survive **two plan-quality rounds** whose nine findings changed five design decisions. |
 | `smaller-go-module` 0.05/0.12 | `store.IsDeck` — derive from `RuntimeDirs`/`RuntimeFiles`, `ReadDir`+`Match` so the cwd never enters a pattern. Fully specced, so design ≈ 0. |
 | `smaller-go-module` 0.05/0.12 | `deckPermission` — three states, three operations, the third of which (`saving`) must not resolve. |
-| `greenfield-go-module` 0.15/0.28 | `gatedStore`: 15 interface methods, the `createsOnDisk`/`doesNotCreate` split, plus the AST classification guard and its **four** mutation shapes. The biggest single piece and the only one with a genuinely new concern. |
+| `greenfield-go-module` 0.15/0.28 | `gatedStore`: 15 interface methods, the `createsOnDisk`/`doesNotCreate` split, the AST classification guard with its **four** mutation shapes, AND Task 6 (running the wrapper through `storetest.Suite` allowed and denied — cheap to write, but the place a delegation bug surfaces). Three plan tasks in one row, near the 0.32 ceiling because of it. |
 | `cross-cutting-refactor` 0.05/0.18 | the wiring: `newStore`/`openStore` arity, `withStore`, both YAML stores, inside `newLangDeps`, and `persistLang`. Mechanical but it touches the one file everything runs through. |
 | `smaller-go-module` 0.05/0.16 | `deckAsker` + `--here` — a four-input policy with an eight-row table. |
 | `smaller-go-module` 0.05/0.14 | pre-resolution above the loop-shell choice, pinned **per shell** (one test per shell, since a single test covers only the branch it took). |
@@ -154,6 +154,18 @@ fix. Two more data points agree — `#8` (3.71/2.98) and `#48` (3.60/3.40). Usin
 boundaries are costed at roughly two rounds each. That is the largest single
 component of this estimate and it is the one I would revise first if it proves
 wrong in either direction.
+
+**The repo-wide bias is acknowledged and deliberately NOT back-fitted.** The
+estimate-quality gate points out that across eight closes the est/actual ratio
+runs about 0.5 median with 6 of 8 under — so correcting only the review family
+leaves the general low bias standing. That is a fair criticism of the claim
+"corrected against local actuals". I am not scaling the total to match, because
+v3.1 forbids ad-hoc back-fitting and a number moved to hit a remembered ratio
+teaches the calibration nothing. The honest statement is: **this total is more
+likely to come in low than high, and the review rows are where I would look
+first.** If it lands near 4.19 that is evidence the review correction was the
+missing piece; if it lands near 8 the bias is systemic and belongs in #127's
+recalibration, not in this block.
 
 **Reconciliation.** Σdesign = 1.06, Σimpl = 2.97.
 1.06 × 1.15 + 2.97 = **4.19**.
@@ -199,7 +211,7 @@ Full design: `workshop/plans/000050-ask-before-making-the-current-directory-a-de
 - [ ] M1 — `gatedStore`: all 15 `Store` methods, 8 gated writes, 7 ungated reads;
       denial swaps to `store.Mem`.
 - [ ] M1 — the write set is DERIVED from the `Store` interface by AST, so a 16th
-      method cannot be added ungated; mutated in all three shapes (#49
+      method cannot be added ungated; mutated in all FOUR shapes (#49
       `guard-fails-open`).
 - [ ] M1 — `gatedStore` runs through `storetest.Suite`, allowed and denied.
 - [ ] M1 — `openStore` wraps the deck; gate allows always. Whole suite still green.
