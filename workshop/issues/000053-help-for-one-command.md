@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-12
 updated: 2026-09-12
-estimate_hours:
+estimate_hours: 0.49
 started: 2026-09-12T15:55:34-07:00
 ---
 
@@ -70,6 +70,31 @@ operator (2026-09-12). Start the README part after it lands, not over it.
 - [ ] The README and atlas quote each usage from the registry, pinned by a
       doc-sync test; `pronCommandHelp` is folded in, not duplicated.
 - [ ] Bare `/help` mentions `/help <command>`.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: smaller-go-module   design=0.03 impl=0.16
+item: atlas-docs          design=0.04 impl=0.11
+item: milestone-review    design=0.0 impl=0.14
+design-buffer: 0.15
+total: 0.49
+```
+
+- smaller-go-module: the registry fields and usages, `/help <command>`, the
+  `--help` routing and their tests. v2 design 0–0.3 at 0.15, × 0.2 because the
+  plan pre-resolves every decision = 0.03. v2 impl 0.2–0.5 at 0.4 (seven new
+  tests and a registry-wide sweep) × 0.4 = 0.16.
+- atlas-docs: two passes, Task 0's README restoration and Task 3's usage span in
+  two docs. Design 2 × (0.1 × 0.2) = 0.04; impl 2 × 0.14 × 0.4 ≈ 0.11.
+- milestone-review: one boundary, since this is single-pass work. v2 impl 0.2–0.5
+  at 0.35 × 0.4 = 0.14.
+- Design buffer +15% for a thorough plan doc. 0.07 × 1.15 + 0.41 = 0.49.
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
 
 ## Plan
 
