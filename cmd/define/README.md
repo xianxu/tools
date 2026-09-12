@@ -1,84 +1,66 @@
 # define
 
-Run `define`, type a word, and you get its dictionary definition with
-Google-style IPA and hear it pronounced. A learner's tool: every word you look
-up joins a deck, `define` asks you about it later, and it answers questions a
-dictionary cannot. Everything else is a `/` command away.
+`define` is a terminal app for dictionary definition with pronunciation
+integration. It is also a learner's tool: every word you look up joins a deck
+you can later play games to help you remember. Definition works without Internet; 
+pronunciation requires Internet; free form chat requires LLM subscription. 
 
-It reads the dictionaries already installed on the machine — no account, no
-index, no network for a lookup. The directory you run it in *is* the deck.
+## The Basics
 
-## Install
+### Examples
+
+```
+# Start the program at the directory you want to keep your deck
+
+./define
+
+# At the prompt, just type a word and return, definition is returned, and the 
+# word is pronounced three times. A bare return without any words repeats the 
+# the pronunciation of previous word.
+
+› sycophantic
+sycophantic  syc·o·phan·tic
+/ˌsikəˈfan(t)ik/
+...
+
+# Free form questions can be asked about nuances between words
+
+› what's the difference between sycophantic and obsequious<CR>
+Both mean "excessively flattering," but the motive and the method differ.
+...
+
+# Each day, play with words you need to remember with /play
+
+› /play
+
+epithelial
+
+1  not covered with varnish.
+2  adjective based on the first impression; accepted as correct until proved otherwise
+3  a person who refuses to strike or to join a labor union or who takes over the job responsibilities of a striking worker.
+4  relating to or denoting the thin tissue forming the outer layer of a body's surface and lining the alimentary canal and other hollow structures
+
+0 right, 0 wrong
+~18 reviews/day · 0.2 new words/day at 20 a sitting
+
+# There's extensive typeahead system, press / to see what command are availble.
+# Tyep first several chars of words you are learning to bring up auto completion.
+# E.g. /sound 1 to pronounce word once instead the default three times.
+
+› /sound 1
+
+```
+
+### Install
 
 ```sh
 brew trust xianxu/tools          # third-party taps are untrusted by default
 brew tap xianxu/tools
 brew install xianxu/tools/define
 ```
+macOS only, the definitions and the IPA come from Dictionary.app.
 
-The first and third lines are load-bearing, and neither is obvious:
-
-- **`brew trust`** — Homebrew refuses to load formulae from an untrusted tap and
-  reports it as `invalid syntax in tap!`, which sounds like a broken formula and
-  is not.
-- **the qualified `xianxu/tools/define`** — bare `brew install define` installs a
-  *different* program, since `define` also exists in homebrew-core. If both land
-  they collide on `PATH`.
-
-Both were found by installing on a clean machine, which is the only thing that
-tests a formula.
-
-macOS only, and deliberately: the definitions and the IPA come from
-Dictionary.app through `CoreServices`, which is where they actually live, and
-pronunciation plays with `afplay`. Nothing else is required — no account, no API
-key, no runtime.
-
-From a clone, for contributors:
-
-```sh
-go build -o ~/bin/define ./cmd/define    # from the repo root
-```
-
-`define --version` names the release you installed, and says `built from source`
-when it was not built by the formula.
-
-## Start it: `define`
-
-Run `define` with no arguments. It takes over the terminal as a session: type a
-word and press Enter to look it up. Ctrl-C quits, and everything the session
-showed is printed back into your scrollback when you do.
-
-### The directory is the deck, so it asks first
-
-The directory you run `define` in **is** the deck. That makes running it in the
-wrong shell a quiet accident, so the first time it would write somewhere new it
-asks:
-
-```
-$ cd /tmp && define sycophantic
-define: /tmp is not a deck yet. Create one here? [y/N]
-```
-
-**A bare Enter declines**, because the cost of a wrong *yes* is a stray deck in
-your home directory and the cost of a wrong *no* is re-running one command.
-
-Declining does not stop the lookup — you still get the definition, the IPA and
-the audio. Nothing is written, and everything that reads history reports **empty**
-rather than refusing: `--stats` says so plainly, `--play` finds nothing due.
-
-**When it cannot ask** — piped input, a script, CI — it does not create anything
-and does not hang waiting for an answer nobody can give. The lookup still works.
-
-```sh
-define --here sycophantic     # yes, make THIS directory a deck; never asks
-```
-
-`--here` is the path for scripts, and it is the only one: since a non-terminal
-never creates a deck, automation that wants one has to say so.
-
-A directory that is already a deck is never asked about.
-
-### Keys
+### Keyboard Shortcuts
 
 On a terminal, `define` with no word opens a line editor and draws the session
 itself:
@@ -93,58 +75,25 @@ itself:
 | PageUp / PageDown, wheel | scroll back through the session |
 | Ctrl-C | quit, including mid-playback |
 
-Definitions wrap to your terminal width at word boundaries, and follow it when
-you resize the window.
-
-Because `define` owns the screen while it runs, the mouse belongs to it too —
-**hold Option to select text** (Shift in some terminals). Everything the session
-showed is printed back into your terminal when you quit, so the words you looked
-up are in your scrollback to return to. The frame itself is not: the prompt you
-were typing at and the `♫ playing` indicator were ephemeral, and stay that way.
-
-### Clickable words
+### Clickable Words
 
 **Underlined words are clickable.** Click the headword to hear it again; click
 the language after `ORIGIN` to hear the word in *that* language — `concrete` in
-French, `jalapeño` in Spanish — without typing a command. Every language an
-etymology names as a source is its own target, so `piano`'s "either from French,
-or … Italian" gives you both: you point at the one you meant. Cognates and dead
-stages are not offered, because they are not something a speaker says today.
+French, `jalapeño` in Spanish — without typing a command. 
 
 It works on words you have scrolled back to, not just the last one. A click on
 ordinary text does nothing.
 
-### The words you already know
+### Coloring of Words
 
-**Words you have looked up show in green** — in the line you type, in definitions,
-and in answers — so the vocabulary you are building is visible rather than
-something you have to remember having met. Looking up `sycophantic` when you
-already know `obsequious` shows you the connection in the gloss itself. A word
-looked up in this session turns green the moment you next see it.
+**Words you have looked up show in green** in many different context: in the line
+you type, in definitions, and in answers, so to constantly remind you of them.
 
 Definition headwords and labels stay their own colour; the highlight marks
 vocabulary in prose, which is where noticing a word you know actually tells you
 something.
 
-**Green is for prose, and it stops where the text IS your deck.** A cloze
-question offers four words all drawn from your deck, so colouring them would mark
-everything and tell you nothing; the same is true of a board, where every cell is
-a word you are learning. Those stay plain. A multiple-choice question's options
-are definitions — prose — so a word you know shows up there, which is usually the
-most useful thing on the screen.
-
-**And the word you are being asked about is never green**, whichever form asks
-it. Marking it would tell you "you have looked this up before" while asking
-whether you know it — which is the answer, not a hint. Once the answer is on
-screen the rule lifts: the reveal marks it like any other word you know.
-
-**Clicking is not subject to that rule.** Every deck word is clickable wherever
-it appears, coloured or not, and plays its own recording — including a cloze's
-four options, which are the words you most want to hear before choosing between
-them. Turning colour off with `-no-color` does not take the click targets with
-it.
-
-### Completion
+### Auto Completion
 
 **The grey suggestion follows the word you are typing, anywhere in the line.** It
 completes from what you have looked up and asked before, so a long word you know
@@ -154,12 +103,10 @@ you want but not how to spell finishes itself in the middle of a question:
 you type:   what's the difference to obseq
 you see:    what's the difference to obseq|uious      (the tail in grey)
 ```
+This completion shows up as you type a sentence as well, though will only trigger
+with first three letters typed.
 
-Whole lines still win over single words — if you start retyping a question you
-have asked, the rest of it appears — and a short word mid-sentence is left alone,
-so `to` does not offer to become `torpid`.
-
-## Everything is a `/` command
+### `/` command
 
 Inside the session, everything besides looking a word up is a `/` command:
 
@@ -175,83 +122,48 @@ Inside the session, everything besides looking a word up is a `/` command:
 | `/pron` | replay this word in its source language, once |
 <!-- /command-list -->
 
-A line beginning with `/` is a command rather than a word — `/` is safe as a
-marker because no English headword starts with one, and `define` needs whole
-lines for multi-word headwords like `hot dog`. The same reasoning picks `?` and
-`\` for the two question hatches in [Asking questions](#asking-questions): no headword begins with either. Type `/` to see what there is,
-Tab to complete, `/help` to list them. It works the same from every entry mode:
-`define /help`, `echo /help | define`, and `/help` typed at the prompt are one
-thing.
-
 `/play` runs today's review without leaving the prompt. Answer the questions, or
 press Ctrl-C when you have had enough — either way you land back where you were,
-with the session's summary in the scrollback above you. `--play` still works as a
-command of its own, for a session that is only a review; both reach the same
-sitting, so anything true of one is true of the other.
+with the session's summary in the scrollback above you. 
 
-Ctrl-C inside a sitting ends the SITTING. At the prompt it still quits `define`.
+To check additional help for commands, type `/help [command]`.
 
-When there is no deck at all — `DEFINE_NO_CAPTURE` is set, or there is no
-working directory — both forms say which, and exit `1`, the same as `--forget`,
-`--harvest`, `--reflect` and `/history`. A directory that is not a deck yet, or
-one you told not to become one, has an EMPTY deck instead, and that exits `0`:
-having looked nothing up yet is not an error.
+> NOTE: while other languages are available, only English dictionary is well tested.
 
-`/stats` is the screen in [Is any of this working](#is-any-of-this-working), from the prompt — the same figures `--stats`
-prints, because both doors reach one fold. It takes no argument: it reads
-everything.
+### Asking Free-Form Questions
 
-`/history [N]` lists what you looked up in the last N days — two by default,
-counted as local calendar days rather than N×24 hours. `N` can be written three
-ways, so it reads the same whichever you reach for: `/history 7`,
-`/history --days 7`, `/history --days=7`. It works from every entry mode, so
-`define /history 7` and `echo '/history 7' | define` mean the same thing.
+**Type a question and it is answered instead of looked up.** There is no mode and
+no prefix to remember:
 
 ```
-  defenestrate  today
-  sycophantic   yesterday   2×
-  perennial     Aug 1       2×
+› sycophantic                            # a word: the dictionary entry
+› what's the difference to obsequious?   # a question: answered by the model
+› hot dog                                # still a word — two of them
 ```
+The word lookup vs free form chat can be deterministically triggered by `?` and `\\` prefixes. The question-answer is driven by LLM; the definition is driven by local
+dictionary.
 
-Deduped, and ordered by when each word was **first** seen, so one you keep
-returning to holds its place instead of jumping to the top; the count is how
-often you have looked it up. Words the dictionary could not find are kept for
-up-arrow recall but never listed here — a typo is not vocabulary.
+| prefix | means |
+|---|---|
+| `?` | ask, even if it is a word — `?why` asks about *why* instead of defining it |
+| `\` | define, even if it reads as a question — `\how so` answers `no dictionary entry` |
 
-`/sound N` changes how many times a pronunciation plays for the rest of the
-session; `/sound` on its own reports it, and `0` turns playback off. It is the
-in-session form of `--sound`, which sets it for one run. (`-times` is the older
-name for `--sound` and still works; passing both is a usage error rather than a
-guess at which you meant.)
+### Languages
 
-`/pron` replays the word you just looked up in its source language, once.
-With no argument it reads the language off the entry's `ORIGIN` and tells you
-which it chose — `ORIGIN says French` — and declines when `ORIGIN` names only a
-historical stage (`Old French`, `Latin`) or a cognate (*"related to Dutch…"*),
-because neither is a language anyone says the word in today. `/pron fr` names it
-explicitly. Either way it
-leaves nothing switched on — the next word is back to the session's own voice.
-It is an action, not a setting, which is the difference from both `/sound` and
-`/lang`: there is no `/pron` to undo. `-pron fr <word>` is the same thing for a
-one-shot lookup.
+The goal is to support multiple different languages, but only English is well tested.
+One interesting cross language feature is the ability to hear pronunciation in original
+language of a borrowed word. For example, try `arrondissement`, which is from French. 
+Click on the `French` link in the ORIGIN section to hear French pronunciation of it.
 
-`/lang` reports the language this directory is in; `/lang es` switches it and
-keeps it. That is the deliberate difference from `/sound`: a language has to
-survive the session, because a one-shot lookup has no session to inherit one
-from. `-lang es` is the same choice for a single run, without writing it down.
 
-## Reviewing what is due
+## Periodical Reviewing
 
-**`/play` reviews what is due today** — `define --play` from the shell. There
-are four kinds of question, and you never choose which you get: which one you
-meet depends on how well you already know the word, and on what material the
-tool has for it.
+**`/play` reviews what is due today**. There are four kinds of question.
 
 ### The sentence, once a word has one
 
 The word's own sentence with the word blanked out, and four words to choose
-from. `define --harvest` writes these ahead of time, so they cost nothing to
-show:
+from. 
 
 ```
 Judge Mehta noted that securities fraud claims lay outside his ___ and
@@ -261,40 +173,19 @@ transferred that portion of the case to the Southern District of New York.
 2  bailiwick
 3  ephemeral
 4  obsequious
-```
 
-**This is the form the tool prefers when it can**, because picking the word that
-fits a sentence is a harder and more useful test than picking a definition that
-matches a word. Reveal it and you see the sentence whole, which is the point:
-the word doing its work in the context it was written for.
-
-The line under the question tells you what works:
-
-```
 1-4 = pick the word, ? = bad question, d = remove from deck, Ctrl-C to stop
 ```
 
 **If a question is bad, press `?`.** That records it — with the four options you
 were shown, which is what makes it diagnosable later — and moves on WITHOUT
-marking you wrong. A broken question is not evidence about you, so it does not
-move the word's schedule in either direction.
-
-It stays offered after you have answered, which is usually when you notice:
-
-```
-any key = next word, ? = bad question, d = remove from deck, Ctrl-C to stop
-```
+marking you wrong. 
 
 ### Multiple choice, once your deck can supply distractors
 
-The word appears with up to four definitions, one of them right. This is the
-main form, because recognising a meaning among plausible alternatives is a
-harder and more useful test than deciding for yourself whether you knew it. A
-young deck gives two or three options rather than four — there is nothing to pad
-them with — and the prompt always names the digits that actually work.
+The word appears with up to four definitions, one of them right. 
 
 ```
-$ define --play
 sycophantic
 
 1  an isolated flat-topped hill with steep sides
@@ -304,31 +195,6 @@ sycophantic
 
 1-4 = pick the definition, d = remove from deck, Ctrl-C to stop
 ```
-
-**The keys line and the figures line are chrome, and they look like it.** Both
-are dimmed, and a blank row separates them from whatever you are reading — so the
-sitting is what you see and those two rows are the frame around it. On a board
-the keys line sits above the grid rather than below it, as the picture further
-down shows.
-
-**The wrong answers are your own words**, taken from your deck — never invented
-by a model, so this works offline and costs nothing. They are also chosen to
-differ from one another: where your deck allows, one is a specialist sense the
-dictionary labels (`Law`, `Grammar`, `Nautical`), one is marked for register
-(`informal`, `archaic`, `dated`), and one is ordinary vocabulary. Which one you
-pick is recorded, not just whether you were right — so "kept picking the archaic
-ones" is a thing your history can eventually tell you.
-
-A word is not offered as a distractor against a word whose dictionary definition
-mentions it. NOAD defines close synonyms through each other — `sycophantic` is
-glossed *"behaving or done in an obsequious way"* — and that cross-reference is
-exactly the case where two options could both be defensible. It is a filter, not
-a proof: it only matches headwords of six characters or more (shorter ones like
-"thing" appear in too many definitions by coincidence), and two words can be
-close in meaning without the dictionary ever linking them.
-
-Answer and the full entry appears, with the right answer and what you picked
-named above it.
 
 ### The board: settled words, and words no test can be built for
 
@@ -349,11 +215,6 @@ reasons:
   their base, so looking up *bargainer* returns *bargain*, and offering that
   definition as *bargainer*'s meaning would be wrong.
 
-That used to be its own form — the word alone, and you rated yourself —
-and it was the same instrument as the grid at sixteen times the cost: nothing was
-being checked either way. It was also the worst place for self-report, since a
-word you have just met is the one you are most likely to think you know.
-
 Sixteen at once, one keystroke or one click each: you are saying whether you still
 have it, not proving it.
 
@@ -369,65 +230,14 @@ sycophantic  behaving in an obsequious way to gain advantage
 12 of 41 · ~12 reviews/day · 3.2 new words/day at 20 a sitting
 ```
 
-**This is why a large deck stays affordable.** Most of a grown deck is words you
-mostly know, each costing a few reviews a year — and one at a time that is most
-of the day's work. On the grid it is a glance. A multiple choice puts a whole
-dictionary entry on screen for every word; a board puts one line up for the
-entire sweep.
-
-**Click a word, or press the key printed beside it** — `0`–`9` then `a`–`f`, in
-order and with no gaps. `Tab` cycles what a mark MEANS — yes, then no, then
-drop; the bracketed one on the prompt line is live, and that line is the last
-thing a short window gives up.
-
-**Drop mode removes a word from the deck** rather than answering it, which is how
-you throw away a typo or a word you never meant to keep without leaving the
-sitting. Its history is kept, so looking the word up again brings it back exactly
-where it was. It is two Tabs from the default deliberately: the destructive mode
-is never one press away from the one you start in.
-
-**A marked word turns green for yes, red for no, and struck-out for a drop, and
-keeps its key** — so you
-can still see what you answered and the grid still reads the same way. A word can
-only be marked once: the answer is written the moment it lands, so there is
-nothing to take back.
-
-**`Enter` takes everything still unmarked as "no"** — "I am out of time, ask me
-all of these again". `Ctrl-C` does the opposite and costs nothing: what you
-marked is saved, and what you did not is simply not reviewed today.
-
-**`Enter` is held if the window is too short to show the whole board**, and the
-prompt line says so. It would otherwise demote words that were never on screen —
-a short window drops the bottom rows of the grid. Marking what you can see still
-works, and `Ctrl-C` is still free; make the window taller, or stop.
-
 A word marked yes counts as a correct answer, never as a confident one — the
 grid is self-report, so it can never earn the double promotion a real retrieval
 test can. As a board closes it leaves one line naming the words you marked no.
 
-<!-- review-keys -->
-| key | does |
-|---|---|
-| `1`–`4` | multiple choice: pick the definition, or on a cloze pick the word |
-| `?` | on a cloze: bad question — records it with the options you were shown, and moves on without marking you wrong |
-| `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
-| click | board: mark that word. Anywhere else, a click plays the word — the headword, a language named in the ORIGIN, or any word already in your deck, wherever it appears |
-| Tab | board: cycle what a mark means — yes, no, then drop |
-| Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
-| space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
-| `d` | remove this word from the deck — its history is kept. On a board it is a cell's key instead, and `Tab` to drop mode is how you remove a word there: a grid has no single current word |
-| PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |
-| Ctrl-C | stop; everything you answered is already saved |
-<!-- /review-keys -->
-
 Ctrl-C stops whenever you like and keeps everything you answered — each answer
 is written as it happens, not at the end.
 
-After an `n` the definition is on screen and the prompt changes:
-
-```
-any key = next word, d = remove from deck, Ctrl-C to stop
-```
+### On a Schedule
 
 **Words come back on a widening schedule, and each correct recall multiplies the
 wait by 1.6** — so 1, 1, 2, 4, 6, 10, 16, 26, 42, 68, 109 days and onward. You see
@@ -444,9 +254,6 @@ interval falls back to 16 days, which is a real chance to relearn it; a word at
 known a word, relearning it is quicker than learning it was, and the schedule
 knows that.
 
-`-count` bounds a sitting (default 20). A bar pinned to the bottom of the screen
-shows how far in you are and what the deck costs, and it updates as you answer:
-
 ```
 7 of 18 · ~14 reviews/day · 0.9 new words/day at 20 a sitting
 ```
@@ -461,217 +268,9 @@ The same figures close the sitting, under the score:
 A brand-new deck looks expensive — every unreviewed word is due tomorrow — and
 gets cheaper fast as words climb.
 
-A sitting takes the screen the same way the interactive session does: the bar
-stays at the bottom, a definition longer than the window is scrolled rather than
-lost, resizing the window redraws — and wraps what comes after it to the new
-width — and everything you reviewed is printed back into your terminal when you
-quit.
+## Advanced
 
-**The words in a sitting are clickable too.** Click the word you are being asked
-about to hear it; after a reveal, click anything in the definition — the headword
-or the language after `ORIGIN` — exactly as in the interactive session. A click
-never answers: hearing the word is what `y`/`n` are answering *about*, so it plays
-and nothing else. Narrow the window and the links follow the text as it
-re-wraps; a link inside a line that had to be broken drops out rather than
-guessing, because one that played the word beside the one you pointed at would be
-worse than no link.
-
-Because it draws a whole screen, `--play` needs one. `define --play > file` and
-`define --play -no-color` both say so and stop rather than filling a file with
-escape sequences or painting control codes at a terminal that was asked not to
-receive any. No API key: the deck and the dictionary are
-enough, and the review loop never reaches for the model. Pronunciation audio is fetched over the network
-only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
-network call at all; `--no-audio` makes one fully offline either way.
-
-## Asking questions
-
-**Type a question and it is answered instead of looked up.** There is no mode and
-no prefix to remember:
-
-```
-› sycophantic                            # a word: the dictionary entry
-› what's the difference to obsequious?   # a question: answered by the model
-› hot dog                                # still a word — two of them
-```
-
-The dictionary decides which is which, and that is why multi-word headwords keep
-working: `define` asks it first, and only classifies what it does not have. So
-`hot dog` and `a priori` are definitions, while a line it has no entry for that
-reads as a question — a wh-word, a question mark, or a request like `use it in a
-sentence` — goes to the model. Anything else is still a miss, so a typo says
-`no dictionary entry` rather than starting a conversation.
-
-Both directions have a one-key escape, and neither is the only way to reach its
-outcome:
-
-| prefix | means |
-|---|---|
-| `?` | ask, even if it is a word — `?why` asks about *why* instead of defining it |
-| `\` | define, even if it reads as a question — `\how so` answers `no dictionary entry` |
-
-The answer is streamed, and **Ctrl-C stops the answer rather than the session** —
-you land back at the prompt with the word you were reading still current. (In a
-one-shot, `define "…?"`, there is no session to return to, so it ends the run.)
-
-What the model is told is the directory you are in: the word on screen and its
-dictionary entry, what you have looked up this session, your recent deck,
-the learner model if you keep one, and the earlier questions in this session — so a
-follow-up like `give me two more examples` resolves against the answer before it.
-Nothing is remembered between runs except the files, which means a fresh process
-answers as well as a long-running one and you can read the context with `cat`.
-
-## Is any of this working
-
-**`define --stats`** answers that in one screen: how many words you hold, how
-many have stopped needing attention, how many days you have actually used it,
-your current streak, how fast you are adding words, and how you do on each kind
-of question.
-
-```
-  words            41
-  mastered         17
-  active days      23
-  streak           5 days (longest 12)
-  words/day        3.7
-  since            Jan 3
-
-  cloze             78%  (14 of 18)
-  meaning           91%  (31 of 34)
-```
-
-**Every figure is folded out of the event log when you ask** — nothing is stored
-and nothing is counted twice, which is the second reason that log is
-append-only. A number that is merely wrong looks exactly like a number that is
-right, so there is no counter here to drift.
-
-Two things the figures deliberately do NOT do. **A question you flagged as broken
-is not an attempt** — bad material cannot lower your accuracy. And **your streak
-does not require today**: it counts back from the last day you missed, so
-reviewing yesterday and reading this at breakfast leaves it intact.
-
-An empty deck says so rather than printing a screen of zeroes.
-
-## Languages
-
-**One language at a time.** `/lang` says which one, `/lang es` switches, and in a
-deck the setting stays with the directory — unlike `/sound`, which lasts one
-session. It has to persist: a one-shot `define madrugar` has no session to
-inherit from, and re-declaring the language at every lookup is the friction the
-mode removes. In a directory that is not a deck, the switch applies to the
-session and `/lang` says it was not saved, because a one-shot `/lang` there would
-otherwise report a change it had not made.
-Everything follows it — the deck a word files into, the words `--play` offers,
-and the recording that is fetched, unless `-pron` asked otherwise for one
-lookup. `-lang es` is the one-run form, for scripts that should not have to
-change state to ask a question.
-
-### Which dictionary answers
-
-Lookup goes through macOS's CoreServices, and **the dictionary follows the
-language**. `/lang` says which books are answering.
-
-<!-- curated-languages -->
-- **English** — the New Oxford American Dictionary (hence the Google-matching
-  notation), plus Apple Dictionary, which is where `iPhone` comes from.
-- **Spanish** — the Larousse *Diccionario General*.
-- **Italian** — the *Devoto-Oli*. Note that Italian has **no recordings** in the
-  pronunciation CDN, so an Italian session gives you definitions and silence;
-  and the Devoto-Oli writes syllabification with stress, `(cià·o)`, rather than
-  a phonetic transcription.
-<!-- /curated-languages -->
-
-Each must be **monolingual** — indexed in its own language *and* defined in it.
-That rules out books like the bilingual Oxford Spanish and Oxford Italian, which
-are installed on many machines and would put English glosses in front of a
-learner who asked for the other language.
-
-So `mesa` is an isolated flat-topped hill in English and *"un tablero
-horizontal, sostenido por uno o varios pies"* in Spanish, and `sycophantic` in a
-Spanish session reports **no entry** — which is correct, and which this tool
-could not say about anything before.
-
-Two honest limits. The dictionaries are chosen from a short **curated list**,
-because nothing in the system's metadata distinguishes a general dictionary from
-a thesaurus; on a machine with a different set installed, nothing curated matches
-and `define` falls back to searching every active dictionary and says so. And the
-calls that select a dictionary are **private** — undocumented, and free to
-disappear on an OS update — so they are resolved at run time and the tool
-degrades to that same whole-set search rather than breaking. Only on that
-fallback path does the host's Dictionary.app configuration decide what you get —
-on the curated path it does not, which is the point.
-
-### Hearing a word in its source language
-
-**Hearing a borrowed word in its source language.** `define -pron fr
-arrondissement` plays the French recording and changes nothing else: the entry
-is still the English one, the word still files into the English deck, and the
-next lookup is English again.
-
-<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which; at the prompt /pron alone reads it for you. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
-
-You name the language; the tool never guesses it. That is a decision with
-measurements behind it — the dictionary writes `ORIGIN French` for
-*arrondissement* and for *police* alike, and the CDN serves `police_fr_fr`,
-`restaurant_fr_fr` and `machine_fr_fr` perfectly happily. Anything automatic
-would replace the English recording for a large class of ordinary words that
-merely came from French centuries ago. The entry prints its `ORIGIN` right
-above, so the answer is on screen when you need it.
-
-Coverage is partial and the tool says so rather than going quiet: `-pron fr
-hotel` prints `no fr recording for hotel; played the en one`. Italian and
-Japanese have no recordings in this CDN generation at all, so they always report.
-
-`-locale` picks the regional variant, and it works for **every** language:
-
-<!-- locale-help -->regional variant of the pronunciation, per language: en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). Others exist — the CDN decides, not a list here<!-- /locale-help -->
-
-For Spanish the choice is **phonemic, not an accent flavour**: `es_es` is
-Castilian, where *cazar* /θ/ and *casar* /s/ are different words; `es_us` is
-Latin American *seseo*, where both are /s/. Picking one picks which sound system
-you learn. Spanish entries carry no written pronunciation at all — the spelling
-already determines it — so the recording is the *only* place that information
-exists, which makes this choice matter more for Spanish than for English.
-
-Nothing here enumerates which combinations exist: a pair the CDN does not serve
-simply gets the same "no recording" warning as any other miss.
-
-The event log is deliberately *not* split by language: a review event names a
-word, and which deck it came from is the deck's business. "How much did I study
-today" stays one question rather than a join.
-
-A deck from before this existed is moved under `words/en/` the next time
-`define` runs — along with any `user-model.md`, which becomes
-`user-model.en.md` — and it says so. That move cannot tell languages apart — a Spanish
-word filed earlier lands in `words/en/` too — so it prints what it moved and
-leaves a `mv` to you. It never overwrites and never deletes.
-
-A failed lookup is recorded as history but never enters the deck, so typos are
-recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
-scripting a dictionary should not mutate a deck — and neither does it ask.
-
-```sh
-define --forget sycophantic   # drop a word and its material (history is kept)
-DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
-```
-
-`DEFINE_NO_CAPTURE=1` means *nothing at all*, and that includes the event log —
-which is what persists your history, so with it set, history is session-only. It
-also means the directory is not **read**: answers come back un-adapted, with no
-deck and no learner model behind them.
-
-The directory *is* the deck: run `define` somewhere else and you get a different
-one. If that directory happens to be synced, so is your vocabulary; `define`
-neither knows nor cares.
-
-With no word and no terminal, `define` reads stdin: a word defines and speaks it, a bare return
-replays the *pronunciation* of the current one — nothing is re-fetched, and the
-screen is left as it was provided you let the sound finish — and Ctrl-C quits
-silently. `-raw` prints the unparsed entry and never plays. The prompt appears
-only on a terminal, so piping stays clean. Flags are session settings — `define
---sound 1` opens the loop with single playback.
-
-## The learner model
+### The learner model
 
 **`define --reflect` writes down who it thinks you are.** It reads your deck and
 your lookup history and produces the learner model: a working level, the domains
@@ -694,7 +293,7 @@ says so and exits `1` rather than looking up a sentence.
 miss stays a miss, and an explicit `?` alongside it is a usage error (exit `2`)
 rather than a guess at which of the two contradicting flags you meant.
 
-## Practice material, written ahead of time
+### Practice material, written ahead of time
 
 **`define --harvest` prepares the material a review sitting will use.** It reads
 your deck and, for every word it has not seen before, records two facts that
@@ -773,7 +372,7 @@ checking the model configuration. Asking for two on one line and asking for two 
 `2`) rather than a guess at which you meant. Previously whichever dispatched
 first silently won.
 
-## What it writes, where you run it
+### What it writes, where you run it
 
 **`define` reads and writes the current directory — once you have said it may.**
 In a directory that is already a deck, *every* successful lookup — one-shot, piped,
@@ -836,7 +435,7 @@ safe rather than merely possible: a hand-edited file cannot forge a row in a
 grid, an escape sequence in a stem cannot reach the terminal, and a recording
 truncated to nothing is re-fetched instead of played as silence.
 
-## From the command line
+### From the command line
 
 Everything the session does is also reachable as a one-shot command or from a
 pipe, which is what scripts want. A word on the command line is looked up once,
@@ -871,7 +470,7 @@ A piped run exits `1` if any word failed and `2` if a command was malformed, so
 `echo "$w" | define || …` works in a script; an interactive typo does not fail
 the session.
 
-## Checking the model connection
+### Checking the LLM model connection
 
 `define` can use a language model for the parts a dictionary cannot do. Every one
 of those features **degrades silently by design** — no key or no network means
