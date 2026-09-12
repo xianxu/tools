@@ -1,14 +1,15 @@
 ---
 id: 000053
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-12
 updated: 2026-09-12
 estimate_hours:
+started: 2026-09-12T15:55:34-07:00
 ---
 
-# /help history prints the whole list, so no command explains its arguments
+# define: /help history prints the whole list, so no command explains its arguments
 
 ## Problem
 
@@ -72,8 +73,23 @@ operator (2026-09-12). Start the README part after it lands, not over it.
 
 ## Plan
 
-- [ ] Wait for the README rewrite in progress to land.
-- [ ] `sdlc claim`, then `sdlc start-plan`. Single pass: plain checkboxes, no Mx.
+Detailed plan: `workshop/plans/000053-help-for-one-command-plan.md`. Single pass:
+plain checkboxes, no Mx.
+
+- [ ] Task 0 — side-quest: the README rewrite (`6cf5414`, carried by this
+      branch) keeps the text the nine doc-sync tests pin; `go test ./cmd/define/`
+      green.
+- [ ] Task 1 — every `commands` row carries `args` and `usage`, each text beside
+      its parser, limits taken from the parsers' constants.
+- [ ] Task 2 — `/help <command>` explains one (`findCommand`, `unknownCommand`,
+      `usageText`); bare `/help` says so; `/help`'s summary and both command-list
+      spans updated.
+- [ ] Task 3 — `--help` and `-h` answered in `dispatchCommand` for every command,
+      one-shot included.
+- [ ] Task 4 — the README and atlas quote the generated `command-usage` span;
+      `pronCommandHelp`, its span and its test absorbed and removed.
+- [ ] Task 5 — mutation-verify each guard; full suite, vet, gofmt; run the binary
+      and record the output.
 
 ## Log
 
@@ -82,3 +98,30 @@ operator (2026-09-12). Start the README part after it lands, not over it.
 Asked whether `/help history` is supported. Built main and ran it in an empty
 directory: `define /help history` and `define /help` print identical output, and
 `define /history --help` exits 2 with the day-count error.
+
+Planning, after `sdlc claim` and `sdlc start-plan`. The branch starts from the
+operator's README rewrite (`6cf5414`, on `define-readme-rewrite`), which fails
+nine doc-sync tests in `go test ./cmd/define/`:
+`TestEverySurfaceDescribingCaptureMentionsTheQuestion` (no `-here`),
+`TestTheREADMEQuotesTheRealPrompt` (no `Create one here? [y/N]`),
+`TestEverySurfaceNamesEveryCuratedLanguage` (no curated-languages span),
+`TestREADMEQuotesThePromptsTheLoopActuallyPrints` (the two graded prompts),
+`TestDocsQuoteThePronHelp`, `TestDocsQuoteTheLocaleHelp`,
+`TestREADMEKeyTableNamesEveryLiveKey` (no review-keys span), and
+`TestREADMEAnchorsResolve` (1 in-page link, floor 3; its one link also points at
+a heading the rewrite removed). Task 0 fixes them.
+
+## Revisions
+
+### 2026-09-12 — planning
+
+- **The README constraint is met differently.** The Spec said to start the README
+  part after the operator's rewrite lands. The operator committed the rewrite on
+  `define-readme-rewrite` (`6cf5414`) and asked for #53 next. The rewrite fails
+  nine doc-sync tests, so it cannot land on its own: this branch carries it,
+  Task 0 makes it green, and one PR lands both.
+- **Argument completion stays out.** The Spec left `/help hi` + Tab open. The
+  purpose is a command that explains itself; completion is a separable extension.
+- **Two fields, not one.** Each row gets `args` (the synopsis) and `usage`
+  (prose), so the terminal and the docs build the synopsis the same way and the
+  docs can set it as code.
