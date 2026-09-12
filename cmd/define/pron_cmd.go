@@ -7,6 +7,15 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
+// pronUsage is /pron's row in the registry: THE statement of the command's
+// argument rule, which /help pron prints and the docs quote. It is not pronHelp,
+// and the distinction is the point: pronHelp documents the -pron FLAG, which
+// deliberately does NOT infer (#35 D6).
+const pronUsage = "Replay this word once in another language. With nothing, it reads the source " +
+	"language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names " +
+	"only historical stages (Old French, Latin) or cognates (\"related to Dutch …\"), because " +
+	"neither is a language anyone speaks the word in today."
+
 // parsePronArgs reads /pron's language. Pure, so the table is a unit test.
 //
 // A language is REQUIRED, which is where this differs from parseLangArgs and

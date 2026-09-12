@@ -95,10 +95,10 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
 
 **Files:** Modify `cmd/define/README.md`.
 
-- [ ] **Step 1: Confirm the failures.**
+- [x] **Step 1: Confirm the failures.**
   Run: `go test ./cmd/define/ -run 'TestEverySurfaceDescribingCaptureMentionsTheQuestion|TestTheREADMEQuotesTheRealPrompt|TestEverySurfaceNamesEveryCuratedLanguage|TestREADMEQuotesThePromptsTheLoopActuallyPrints|TestDocsQuoteThePronHelp|TestDocsQuoteTheLocaleHelp|TestREADMEKeyTableNamesEveryLiveKey|TestREADMEAnchorsResolve'`
   Expected: FAIL with the nine messages recorded in the issue Log.
-- [ ] **Step 2: Restore each piece.** Every insertion is anchored on text that occurs exactly once, and the script asserts the count before writing.
+- [x] **Step 2: Restore each piece.** Every insertion is anchored on text that occurs exactly once, and the script asserts the count before writing.
 
   | piece | where in the rewrite | fixes |
   |---|---|---|
@@ -109,8 +109,8 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
   | `curated-languages` span (main 574–582) with a one-line lead-in | end of `### Languages` | curated languages |
   | `-pron` and `-locale` spans (main 611 and 627) as two list items | after the `### From the command line` example block | pron-help, locale-help |
   | the two "see `--llm-check`" mentions become links to `#checking-the-llm-model-connection` | learner-model and practice-material sections | three in-page links |
-- [ ] **Step 3: Run the package.** `go test ./cmd/define/` → PASS, the plan guards included (eleven failures before: the nine above and the two plan-guard failures round 1 found).
-- [ ] **Step 4: Commit.** `#53: side-quest: README: the rewrite keeps the text the doc-sync tests pin`
+- [x] **Step 3: Run the package.** `go test ./cmd/define/` → PASS, the plan guards included (eleven failures before: the nine above and the two plan-guard failures round 1 found).
+- [x] **Step 4: Commit.** `#53: side-quest: README: the rewrite keeps the text the doc-sync tests pin`
 
 ## Task 1: every command carries its usage, and `/help <command>` explains one
 

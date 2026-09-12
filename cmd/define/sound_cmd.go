@@ -11,6 +11,11 @@ import (
 // minutes of playback with Ctrl-C as the only way out.
 const maxSoundTimes = 20
 
+// soundUsage is /sound's row in the registry, built from maxSoundTimes so the
+// text and the parser share one limit.
+var soundUsage = fmt.Sprintf("With nothing, how many times each pronunciation plays. With N, play it N times "+
+	"for the rest of this session; 0 turns playback off, and %d is the most.", maxSoundTimes)
+
 // parseSoundArgs reads /sound's optional count. The second return distinguishes
 // "set it to n" from "tell me what it is" — 0 is a legitimate value (playback
 // off), so a zero count cannot double as "no argument given".

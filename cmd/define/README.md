@@ -143,7 +143,7 @@ Inside the session, everything besides looking a word up is a `/` command:
 <!-- command-list -->
 | command | does |
 |---|---|
-| `/help` | list the commands |
+| `/help` | list the commands, or explain one |
 | `/history` | words looked up recently |
 | `/stats` | deck, streak and accuracy figures |
 | `/play` | review the words due today |

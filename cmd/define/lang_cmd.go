@@ -8,6 +8,13 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
+// langUsage is /lang's row in the registry. "Saved when this directory is a
+// deck, for this session otherwise" is #50's split, which runLang reports as it
+// happens.
+const langUsage = "With nothing, the language in effect and the dictionary answering it. With a " +
+	"two-letter tag like es, switch to that language: saved when this directory is a deck, " +
+	"for this session otherwise."
+
 // parseLangArgs reads /lang's optional tag. The second return distinguishes
 // "switch to l" from "tell me what it is", the same split parseSoundArgs makes —
 // and for the same reason: a report and a mutation are different commands

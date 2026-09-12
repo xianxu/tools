@@ -124,6 +124,11 @@ func TestEveryRegisteredCommandIsRunnable(t *testing.T) {
 		if c.summary == "" {
 			t.Errorf("command /%s has no summary; /help would print a blank line", c.name)
 		}
+		// /help <name> prints this, so an empty usage is a command whose help is
+		// its name and nothing else (#53).
+		if c.usage == "" {
+			t.Errorf("command /%s has no usage; /help %s would print only its name", c.name, c.name)
+		}
 	}
 }
 
@@ -267,5 +272,90 @@ func TestHelpNamesBothHatches(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("/help does not mention %q:\n%s", want, out.String())
 		}
+	}
+}
+
+// /help <name> prints that command's usage (#53), resolving the name the way
+// dispatch does — with or without the slash, in any case.
+func TestHelpExplainsOneCommand(t *testing.T) {
+	hist, _ := findCommand("history", commands)
+	for _, arg := range []string{"history", "/history", "HISTORY"} {
+		var out, errb bytes.Buffer
+		code := runHelp(commandCtx{cmds: commands, stdout: &out, stderr: &errb}, []string{arg})
+		if code != 0 || out.String() != commandUsage(hist, 0) {
+			t.Errorf("/help %s: exit %d, out %q", arg, code, out.String())
+		}
+		if !strings.Contains(out.String(), "/history [N | --days N | --days=N]") {
+			t.Errorf("/help %s does not show the synopsis: %q", arg, out.String())
+		}
+	}
+	// The disagreeing case: a different name must print a different usage, so a
+	// runHelp that ignored its argument cannot pass.
+	var out bytes.Buffer
+	runHelp(commandCtx{cmds: commands, stdout: &out, stderr: io.Discard}, []string{"sound"})
+	if strings.Contains(out.String(), "/history") || !strings.Contains(out.String(), "/sound [N]") {
+		t.Errorf("/help sound printed %q", out.String())
+	}
+}
+
+// Two routes to one mistake — /histry and /help histry — say the same thing.
+// Compared byte for byte against dispatch rather than against a restated
+// message, so a second wording cannot pass by also being plausible.
+func TestHelpForAnUnknownNameSaysWhatDispatchSays(t *testing.T) {
+	for _, name := range []string{"histry", "qqqqqq"} {
+		var viaHelp, viaDispatch bytes.Buffer
+		c1 := runHelp(commandCtx{cmds: commands, stdout: io.Discard, stderr: &viaHelp}, []string{name})
+		c2 := dispatchCommand(parseREPLLine("/"+name, false), commands, commandCtx{stdout: io.Discard, stderr: &viaDispatch})
+		if c1 != 2 || c2 != 2 || viaHelp.Len() == 0 || viaHelp.String() != viaDispatch.String() {
+			t.Errorf("%s: /help said %q (exit %d), dispatch said %q (exit %d)", name, viaHelp.String(), c1, viaDispatch.String(), c2)
+		}
+	}
+}
+
+func TestHelpTakesOneCommand(t *testing.T) {
+	var errb bytes.Buffer
+	if code := runHelp(commandCtx{cmds: commands, stdout: io.Discard, stderr: &errb}, []string{"history", "sound"}); code != 2 {
+		t.Errorf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "takes one command") {
+		t.Errorf("stderr = %q", errb.String())
+	}
+}
+
+// The renderer over every row and three widths. /stats and /play have no args,
+// so a synopsis with a trailing space would diverge silently from the doc span,
+// which sets it in backticks.
+func TestCommandUsageWraps(t *testing.T) {
+	for _, c := range commands {
+		for _, width := range []int{0, 20, 80} {
+			lines := strings.Split(strings.TrimSuffix(commandUsage(c, width), "\n"), "\n")
+			if lines[0] != "  "+c.synopsis() || strings.HasSuffix(c.synopsis(), " ") {
+				t.Errorf("/%s at %d: synopsis line %q", c.name, width, lines[0])
+			}
+			body := lines[1:]
+			if width == 0 && len(body) != 1 {
+				t.Errorf("/%s at width 0 wrapped into %d lines", c.name, len(body))
+			}
+			var words []string
+			for _, l := range body {
+				if width > 0 && visibleCells(l) > width && len(strings.Fields(l)) > 1 {
+					t.Errorf("/%s at %d: %q is %d cells wide", c.name, width, l, visibleCells(l))
+				}
+				words = append(words, strings.Fields(l)...)
+			}
+			if strings.Join(words, " ") != strings.Join(strings.Fields(c.usage), " ") {
+				t.Errorf("/%s at %d: wrapping changed the words", c.name, width)
+			}
+		}
+	}
+}
+
+// Bare /help says the per-command usage exists; otherwise it is as invisible as
+// the hatches TestHelpNamesBothHatches pins would be.
+func TestBareHelpSaysHowToExplainOne(t *testing.T) {
+	var out bytes.Buffer
+	runHelp(commandCtx{cmds: commands, stdout: &out, stderr: io.Discard}, nil)
+	if !strings.Contains(out.String(), "/help <command>") {
+		t.Errorf("bare /help never mentions /help <command>:\n%s", out.String())
 	}
 }
