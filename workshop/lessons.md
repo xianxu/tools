@@ -4306,3 +4306,48 @@ entry point named in the requirement. `printStats` has two doors; a requirement 
 [[mutation-verify-a-guard-against-the-invariant-it-names]] and
 [[run-the-program-a-green-suite-is-a-statement-about-the-tests]]. All three are the same
 error at different depths: I check the thing I was thinking about, not the thing I claimed.
+
+## A locator must match its pattern ONCE — "literal" is not "unique"
+
+**Pattern:** #51 reorganised the define README and argued, in its own Spec, that no doc-sync
+guard could be weakened by moving sections: "every guard locates content by a literal header
+or a marked span, not by position (checked: `keyTableIn` …)". It was checked by reading.
+`keyTableIn` did key on a literal header, `| key | does |` — through `strings.Index`, which
+returns the FIRST match, and the README has TWO tables with that header. It had always
+checked the review-key table only because "Reviewing what is due" happened to precede the
+session's section. Moving the session to the top made it silently check the wrong table.
+The plan gate flagged the same overstated claim for a second guard (a 400-character
+positional window) independently. Applying the move in a throwaway worktree and running
+the suite is what failed.
+
+**Rule:** A locator is safe to move only if the pattern it matches occurs **exactly once** —
+check the count, not the kind. `strings.Index`, `grep -m1`, "the first table after X" are
+all order-dependent the moment a second match exists, and nothing announces the second
+match arriving. Scope with a marked span (`<!-- name -->`, the repo's `markedSpan`) or
+assert uniqueness in the guard itself. And before claiming a mechanical move "cannot break"
+the guards, **apply it somewhere disposable and run them** — a worktree costs seconds and
+converts the claim from argued to measured.
+
+**Origin:** #51, caught by worktree pre-validation before the branch existed. Siblings:
+[[mutation-verify-a-guard-against-the-invariant-it-names]] and
+[[run-the-program-a-green-suite-is-a-statement-about-the-tests]].
+
+## A verification that cannot run can print a plausible ZERO instead of an error
+
+**Pattern:** #51's Spec gave the close review a command to prove the README change was a
+pure move: `diff <(git show BASE:README.md | … | sort) <(… | sort) | grep -c '^[<>]'`. In
+a sandboxed shell, process substitution fails on `/dev/fd` — and the pipeline still printed
+**0**, which reads as "no lines changed", the best possible result. The `mktemp` rewrite
+failed on the system temp directory and printed **0** again. Two different mechanisms, the
+same failure shape: the tool could not run, and the number it printed was a valid, reassuring
+answer rather than an error. Only reading stderr — not the count — showed it.
+
+**Rule:** A verification command must **fail loudly when it cannot run**, and a count is the
+worst possible output for that — zero is both a common real answer and what an empty or
+failed stream produces. Prefer pipe-only forms with no `/dev/fd` and no temp files when a
+command must run in someone else's shell; check exit status and stderr rather than trusting
+a summary number; and when a verification returns the ideal result, look once at *why* before
+reporting it.
+
+**Origin:** #51. The final command is pipes plus an `awk` count-difference, proven in the
+most restricted shell available (15 removed, 41 added, every line mapped to an edit).

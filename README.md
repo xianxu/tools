@@ -52,14 +52,15 @@ pronunciation — plus a spaced-repetition review loop, a learner model, and
 questions answered by a language model when a dictionary cannot.
 
 ```sh
-define                      # interactive: type a word, / for commands, ^C to quit
-define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
-define --play               # review what is due today
+define      # start here: type a word, / for commands, ^C to quit
 ```
 
-**[cmd/define/README.md](cmd/define/README.md)** is its documentation — the flags,
-the review loop, the clickable regions, what it writes in your directory, and the
-decisions behind each. `atlas/define.md` is the map of how it is built.
+Inside, `/play` reviews what is due, `/stats` shows whether any of it is working,
+and `/help` lists the rest.
+
+**[cmd/define/README.md](cmd/define/README.md)** is its documentation — the
+session, the review loop, the clickable regions, what it writes in your
+directory, the flags for scripting, and the decisions behind each. `atlas/define.md` is the map of how it is built.
 
 ## Build
 

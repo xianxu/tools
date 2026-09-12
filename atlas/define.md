@@ -1107,8 +1107,9 @@ performs the playback, in raw mode, where Ctrl-C can still reach the key reader.
 three of five commands for two releases — `/lang` (`#23`) and `/pron` (`#29`)
 were both added without it, 2 for 2 — so it is generated from `commands` and
 pinned by `TestDocsQuoteTheCommandList`, the mechanism `localeHelp` and
-`pronHelp` already use. Add a command and this page fails the build until it
-catches up.
+`pronHelp` already use. Since #51 the README quotes the same span for its `/`
+section and the test iterates `derivedDocs`, so adding a command fails the build
+until both pages catch up.
 
 <!-- command-list -->
 | command | does |
