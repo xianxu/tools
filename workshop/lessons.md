@@ -4351,3 +4351,29 @@ reporting it.
 
 **Origin:** #51. The final command is pipes plus an `awk` count-difference, proven in the
 most restricted shell available (15 removed, 41 added, every line mapped to an edit).
+
+## The plan is under test too, and a filtered post-commit run is not a post-commit run (`#53`)
+
+Three misses in one issue, all the same shape: a check aimed at the artifact I
+was looking at, while the tree checks more than that.
+
+- **A plan file is a current-truth artifact.** Seven guards read it (`grep -n
+  'currentTruthFiles(t\|"workshop", "plans"' cmd/define/repo_guard_test.go`), so
+  the plan reddened the suite before a line of code existed: a table row
+  backticked two fields that did not exist yet, a row marked `deleted` a symbol
+  still declared, and five unwritten tests were cited in backticks. The
+  plan-quality gate caught it, not me. **Before submitting a plan, run `go test
+  ./cmd/define/ -run 'TestPlan|TestNoArtifact|TestARemoved'` against it, and say
+  in the plan how each task's commit keeps those guards green.** A `modified`
+  row must be touched by the first commit that touches its file
+  (`TestPlanTableStatusMatchesTheChangeWindow`), so the table decides the task
+  split, not the other way round.
+- **A new name must be free in the package, tests included.** The renderer was
+  going to be `usageText`, which `deckasker_test.go` already declares. Grep every
+  new symbol with `-w` over `*.go` before it goes into a plan.
+- **After a commit, run the whole package, not a filter.** Guards that read the
+  committed window see a change only once it is committed, and they are not all
+  named for what they check. `TestARemovedDeclarationIsSweptOrRetired` flagged
+  the plan naming a test the window had removed; my post-commit run, filtered to
+  `TestPlan*`, skipped it, and only the whole-repo run at the end caught it.
+  "Commit, then run the guard" (`#40`) holds, with "the guard" meaning the suite.

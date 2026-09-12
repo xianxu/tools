@@ -326,7 +326,7 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
 
 ## Task 4: verify
 
-- [ ] **Step 1: Mutation-verify each guard** in a throwaway worktree, each mutation applied by a script that asserts its match count (lessons: "Mutation testing has to be done, and the tooling for it has to be safe"; "An unasserted string replacement … is a silent no-op"):
+- [x] **Step 1: Mutation-verify each guard** in a throwaway worktree, each mutation applied by a script that asserts its match count (lessons: "Mutation testing has to be done, and the tooling for it has to be safe"; "An unasserted string replacement … is a silent no-op"):
 
   | mutation | guard that must go red |
   |---|---|
@@ -339,8 +339,8 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
   | `synopsis` appends a space when `args` is empty | TestCommandUsageWraps |
 
   Plus a control run of the unmutated tree, all green.
-- [ ] **Step 2:** `gofmt -l cmd/define` (empty), `go vet ./...`, `go test ./...` → PASS.
-- [ ] **Step 3: Run the program.** Build, then in an empty directory: `define /help history`, `define /history --help`, `define /help nosuch`, `define /help a b`, `define /help`. Record the output in the Log. The operator smoke-tests the TUI.
+- [x] **Step 2:** `gofmt -l cmd/define` (empty), `go vet ./...`, `go test ./...` → PASS.
+- [x] **Step 3: Run the program.** Build, then in an empty directory: `define /help history`, `define /history --help`, `define /help nosuch`, `define /help a b`, `define /help`. Record the output in the Log. The operator smoke-tests the TUI.
 
 ## Operating envelope
 
