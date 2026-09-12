@@ -75,6 +75,13 @@ model connection.
   already held and named `keyTableIn` as checked; it did not hold (see "Found
   while mapping it"), and that guard is now scoped by a marker. `markedSpan` and
   the stale-artifact-name counts do not depend on position.
+  One guard is position-sensitive by design, at paragraph scale: the
+  superseded-claims check looks for a claim's qualifier within 400 characters
+  after it (`deckasker_test.go:364-376`). A move that separated a claim from its
+  qualifying sentence would fail it — and a stale claim placed beside unrelated
+  qualifying words would pass it. Neither happens here, because sections move whole: the check passes on the
+  reorganised README, and reverting the corrected no-deck sentence reddens
+  it (PQ-3).
 
 ### The expected diff (PQ-1)
 
@@ -82,9 +89,18 @@ Every line not listed here is carried over verbatim. Run from the repo root on t
 branch — `<` is a removed line, `>` an added one:
 
 ```sh
-diff <(git show "$(git merge-base main HEAD)":cmd/define/README.md | grep -v '^$' | sort) \
-     <(grep -v '^$' cmd/define/README.md | sort)
+{ git show "$(git merge-base main HEAD)":cmd/define/README.md | grep -v '^$' | sed 's/^/-/'
+  grep -v '^$' cmd/define/README.md | sed 's/^/+/'; } |
+awk '{ s = substr($0, 1, 1); l = substr($0, 2); n[l] += (s == "+") ? 1 : -1 }
+     END { for (l in n) { if (n[l] < 0) for (i = 0; i < -n[l]; i++) print "< " l
+                          else if (n[l] > 0) for (i = 0; i < n[l]; i++) print "> " l } }' | sort
 ```
+
+**Pipes only, on purpose.** An earlier version used `diff <(…) <(…)` and a second
+attempt used `mktemp`. In a sandboxed shell the first fails on `/dev/fd` and the
+second on the system temp directory — and both still print a count of zero, a
+false "no changes" rather than an error. This form needs neither, and was proven
+in the most restricted shell available.
 
 | # | edit | removed | added |
 |---|---|---|---|
@@ -92,7 +108,7 @@ diff <(git show "$(git merge-base main HEAD)":cmd/define/README.md | grep -v '^$
 | 2 | new section | — | `## Start it: \`define\`` and its 3-line lead |
 | 3 | deck question demoted | `## The directory is the deck, so it asks first` | the same text as `###` — anchor unchanged |
 | 4 | session folded into Start it | `## The interactive session` | `### Keys` |
-| 5 | new section | — | `## Everything is a \`/\` command`, a 1-line lead, and the 10-line command table quoted from the registry's marked span |
+| 5 | new section | — | `## Everything is a \`/\` command`, a 1-line lead, and the 11-line command table (two markers, header, separator, seven rows) quoted from the registry's marked span |
 | 6 | stale sentence corrected | the 4-line *"In a directory with no deck … exit `1`"* | a 5-line version: only `DEFINE_NO_CAPTURE` or no working directory exits `1` |
 | 7 | position word → link | *"…for the two question hatches above: …"* | the same line, linking `#asking-questions` |
 | 8 | position word → link | *"`/stats` is the screen above, from the prompt…"* | the same line, linking `#is-any-of-this-working` |
@@ -101,8 +117,8 @@ diff <(git show "$(git merge-base main HEAD)":cmd/define/README.md | grep -v '^$
 | 11 | new section | `## Using it` | `## From the command line` and its 3-line lead |
 | 12 | review key table gets a marked span | — | `<!-- review-keys -->` and `<!-- /review-keys -->` around the existing table |
 
-Plus the 10 command-table lines appearing in the README for the first time. Line
-counts: 874 → ~905.
+Plus the 11 command-table lines appearing in the README for the first time. Line
+counts: 873 → 906 (`wc -l`); verified 15 lines removed and 41 added, every one accounted for by the table.
 
 ### Non-goals
 
@@ -138,7 +154,7 @@ total: 1.24
 | `atlas-docs` 0.05/0.08 | the `cmd/define/README.md` reorganisation — scripted as a move by asserted content anchors and verified by a line-multiset diff, so the cost is the script, not hand-editing 873 lines. |
 | `atlas-docs` 0.02/0.04 | the root README's `define` block. |
 | `smaller-go-module` 0.02/0.10 | four guard edits: the command table pinned over `derivedDocs`, the stale phrase added to the superseded-claims list, a new anchor-resolution test, and `keyTableIn` scoped by a marked span — the last found by pre-validating the move in a worktree. |
-| `milestone-review` 0.0/0.60 | one close, above the table's 0.2–0.5 on local evidence: `#50`'s close review raised `readme-gate` three rounds running, and this diff is README-shaped end to end. |
+| `milestone-review` 0.0/0.60 | one close — a **deliberate 3× override of v3.1's scaled range (0.08–0.20)**, not a reading of it; an earlier version of this row compared it to v2's unscaled 0.2–0.5. Local evidence: `#50` closed at ratio 0.74 after a five-round review that raised `readme-gate` three rounds running, and this diff is README-shaped end to end. Stated as an override so a calibration pass can tell a model miss from a departure. |
 
 **Design buffer 0.30, not 0.15:** the plan is thorough but lives in the issue —
 there is no separate `workshop/plans/` document, which is v3.1's condition for the
@@ -148,43 +164,93 @@ lower buffer.
 
 ## Done when
 
-- [ ] The README's first usage section is the session (`define`), and the `/`
+- [x] The README's first usage section is the session (`define`), and the `/`
       commands come before any flag.
-- [ ] Flags and one-shot use live in one "From the command line" section.
-- [ ] No prose is lost: the diff command above shows exactly the twelve edits
+- [x] Flags and one-shot use live in one "From the command line" section.
+- [x] No prose is lost: the diff command above shows exactly the twelve edits
       enumerated in "The expected diff", and nothing else.
-- [ ] The stale no-deck sentence is corrected and added to the superseded-claims
+- [x] The stale no-deck sentence is corrected and added to the superseded-claims
       guard, so it cannot come back.
-- [ ] The README's command table is pinned against the registry.
-- [ ] Every in-page link in the README resolves, pinned by a test.
-- [ ] The review-key guard locates its table by a marked span, so section order
+- [x] The README's command table is pinned against the registry.
+- [x] Every in-page link in the README resolves, pinned by a test.
+- [x] The review-key guard locates its table by a marked span, so section order
       cannot change which table it checks.
-- [ ] The root README's `define` block leads with the session.
-- [ ] README doc-sync tests and the full suite are green.
+- [x] The root README's `define` block leads with the session.
+- [x] README doc-sync tests and the full suite are green.
 
 ## Plan
 
 Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
 
-- [ ] Reassemble `cmd/define/README.md` in the approved order by content anchors,
+- [x] Reassemble `cmd/define/README.md` in the approved order by content anchors,
       each asserted to match exactly once.
-- [ ] `## Start it` and `## Everything is a / command` built from the existing
+- [x] `## Start it` and `## Everything is a / command` built from the existing
       sections, with the command table quoted from the registry's marked span.
-- [ ] Exit codes to `## From the command line`; dictionary selection into
+- [x] Exit codes to `## From the command line`; dictionary selection into
       `## Languages`.
-- [ ] Correct the stale no-deck sentence; add it to the superseded-claims guard.
-- [ ] Extend `TestDocsQuoteTheCommandList` over `derivedDocs` (`dictselect_test.go:491`),
+- [x] Correct the stale no-deck sentence; add it to the superseded-claims guard.
+- [x] Extend `TestDocsQuoteTheCommandList` over `derivedDocs` (`dictselect_test.go:491`),
       which already holds both pages — not a second hand-typed list (ARCH-DRY).
-- [ ] The two position words that pointed across moved sections become links;
+- [x] The two position words that pointed across moved sections become links;
       `TestREADMEAnchorsResolve` pins every in-page link.
-- [ ] `keyTableIn` locates the review key table by a `<!-- review-keys -->` marked
+- [x] `keyTableIn` locates the review key table by a `<!-- review-keys -->` marked
       span (via `markedSpan`) instead of the first `| key | does |`.
-- [ ] Root README's `define` block leads with the session.
-- [ ] Verify: the diff command above, README doc-sync tests, full suite.
+- [x] Root README's `define` block leads with the session.
+- [x] Verify: the diff command above, README doc-sync tests, full suite.
 
 ## Log
 
 ### 2026-09-11
+
+### 2026-09-11 — reorganised, and a guard this issue declared safe was not
+
+The README now leads with the session. Twelve edits; every other line is carried
+over verbatim, and the diff command in the Spec shows exactly those and nothing
+else.
+
+**Pre-validating in a throwaway worktree caught what reading had cleared.** The
+Constraints section said every README doc-sync guard located its target by a
+literal header or a marked span, so moving sections could not weaken them — and
+named `keyTableIn` as checked. Applying the move and running the suite failed
+`TestREADMEKeyTableNamesEveryLiveKey`: `keyTableIn` used `strings.Index` on
+`| key | does |`, the README has two such tables, and the move put the session's
+first. The check had confirmed the header was *literal*, never that it was
+*unique*. Plan-quality's PQ-3 had flagged the same overstated claim for a second
+guard — the superseded-claims check's 400-character window — and both are now
+named in Constraints.
+
+**Two position words were broken by the move, which a line diff cannot see.**
+*"the two question hatches above"* and *"`/stats` is the screen above"* pointed at
+sections that now sit below them. Both became links, and
+`TestREADMEAnchorsResolve` pins every in-page link.
+
+**Every new guard mutation-verified in each shape its claim has** — 7 of 7 red,
+then a control run with all four green:
+
+| mutation | guard | result |
+|---|---|---|
+| rename `## Asking questions` | `TestREADMEAnchorsResolve` | red |
+| rename `## Is any of this working` | `TestREADMEAnchorsResolve` | red |
+| rename the deck-question heading | `TestREADMEAnchorsResolve` | red |
+| drop the `?` row from the review keys | `TestREADMEKeyTableNamesEveryLiveKey` | red — *does not name "bad question", which \*play.Cloze offers* |
+| delete the `review-keys` opening marker | `TestREADMEKeyTableNamesEveryLiveKey` | red (fatal) |
+| drift one README command-table row | `TestDocsQuoteTheCommandList` | red — names `README.md` |
+| revert the corrected no-deck sentence | superseded-claims guard | red |
+
+The last row reverts the *real* correction rather than inserting the stale
+sentence somewhere new: the window-based guard passes a stale claim placed beside
+unrelated qualifying words, and the correction itself contains "not a deck yet".
+
+The atlas's account of the command table now says both pages quote it.
+
+**The Spec's own verification command failed twice in my sandbox, silently.**
+`diff <(…) <(…)` failed on `/dev/fd`, and a `mktemp` rewrite failed on the system
+temp directory — and both still printed a count of **zero**, a false "no changes"
+rather than an error. The command the close review is told to run is now pipes
+only, and it was proven in the most restricted shell available: 15 lines removed,
+41 added, each mapped to one of the twelve edits.
+
+**Verified on the branch:** build and vet clean, gofmt clean; go test ./... fully green; the merge gate passed (run-merge-checks.sh, release-stamp check); the pipe-only diff in the Spec shows 15 lines removed and 41 added, every one mapped to the twelve listed edits; seven mutations each red, with a control run green; the stale no-deck claim is absent from the README, the root README and the atlas.
 
 ## Revisions
 

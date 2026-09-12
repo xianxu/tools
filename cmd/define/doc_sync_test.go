@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
@@ -361,15 +362,20 @@ func TestDocsQuoteTheCommandList(t *testing.T) {
 	}
 	b.WriteString("<!-- /command-list -->")
 
-	doc := "../../atlas/define.md"
-	raw, err := os.ReadFile(doc)
-	if err != nil {
-		t.Fatalf("%s unreadable: %v", doc, err)
-	}
-	if !strings.Contains(string(raw), b.String()) {
-		t.Errorf("%s does not quote the command list the registry produces.\nwant the "+
-			"marked span to read:\n%s\n`commands` owns this list; the page consumes it.",
-			doc, b.String())
+	// EVERY DERIVED PAGE QUOTES IT (#51). The README gained a `/` section that
+	// quotes this same marked span; pinning only the atlas would let the page a new
+	// user actually reads drift from the registry while this test stayed green.
+	// derivedDocs, not a second hand-typed list of paths — it already names both.
+	for _, doc := range derivedDocs {
+		raw, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc, err)
+		}
+		if !strings.Contains(string(raw), b.String()) {
+			t.Errorf("%s does not quote the command list the registry produces.\nwant the "+
+				"marked span to read:\n%s\n`commands` owns this list; the page consumes it.",
+				doc, b.String())
+		}
 	}
 }
 
@@ -564,11 +570,7 @@ func TestREADMEDrawsTheBoardTheFormActuallyDraws(t *testing.T) {
 // where a form writes "1-4", and a guard matching glyphs would be pinned to the
 // table's typography instead of to its content.
 func TestREADMEKeyTableNamesEveryLiveKey(t *testing.T) {
-	b, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatalf("README.md unreadable: %v", err)
-	}
-	table := keyTableIn(t, string(b))
+	table := keyTableIn(t)
 	for _, q := range docSyncForms(t) {
 		for _, pair := range strings.Split(q.Keys(), ", ") {
 			_, what, ok := strings.Cut(pair, " = ")
@@ -585,27 +587,31 @@ func TestREADMEKeyTableNamesEveryLiveKey(t *testing.T) {
 	}
 }
 
-// keyTableIn is the key table alone, so the guard above cannot be satisfied by
-// the same words appearing in prose elsewhere in the README — the mistake
-// TestAtlasDescribesEveryRegionKind's comment records ("that word occurs in the
-// atlas nineteen times for unrelated reasons, so a docs guard built on it passed
-// with the whole section deleted").
-func keyTableIn(t *testing.T, readme string) string {
+// keyTableIn is the REVIEW key table alone, located by a marked span.
+//
+// SCOPED BY MARKERS, NOT BY THE FIRST "| key | does |" (#51). The README has two
+// tables with that header — the session's keys and the review keys — and this
+// used strings.Index, which returns whichever comes first. It found the review
+// table only because "Reviewing what is due" happened to precede the session's
+// section; #51 moved the session to the top and this guard silently began
+// checking the wrong table. Running the suite on the reorganised README caught
+// it, after reading the code had concluded the guard was position-independent.
+// A locator has to be unique, so it is a marker — markedSpan, the helper
+// dictselect_test.go already uses for exactly this.
+//
+// It stays a table-only check, so the guard cannot be satisfied by the same
+// words appearing in prose elsewhere in the README — the mistake
+// TestAtlasDescribesEveryRegionKind's comment records.
+func keyTableIn(t *testing.T) string {
 	t.Helper()
-	const header = "| key | does |"
-	i := strings.Index(readme, header)
-	if i < 0 {
-		t.Fatalf("README.md has no %q table; this guard would certify nothing", header)
+	span := markedSpan(t, "README.md", "review-keys")
+	if !strings.Contains(span, "| key | does |") {
+		t.Fatalf("the review-keys span holds no key table; this guard would certify nothing")
 	}
-	rest := readme[i:]
-	// The table ends at the first blank line — markdown's own rule.
-	if j := strings.Index(rest, "\n\n"); j >= 0 {
-		rest = rest[:j]
+	if strings.Count(span, "\n") < 3 {
+		t.Fatalf("the key table has %d rows; this guard would certify nothing", strings.Count(span, "\n"))
 	}
-	if strings.Count(rest, "\n") < 3 {
-		t.Fatalf("the key table has %d rows; this guard would certify nothing", strings.Count(rest, "\n"))
-	}
-	return rest
+	return span
 }
 
 // THE STORE LAYOUT DERIVES FROM THE EVENT KINDS (#12 BR-18).
@@ -794,5 +800,51 @@ func TestBothREADMEsShipTheSameInstallRecipe(t *testing.T) {
 			"One recipe, two docs: a reader following the stale one gets a broken "+
 			"install. Keep the commands identical; the explanation can differ.",
 			root, tool)
+	}
+}
+
+// EVERY IN-PAGE LINK IN THE README RESOLVES (#51).
+//
+// #51 moved whole sections, and a move breaks two kinds of reference: position
+// words ("the screen above") and anchors. The position words that pointed across
+// moved sections became links for exactly that reason, so the links are what
+// have to hold — and a heading renamed by a later reorganisation would break
+// them silently, because a dead anchor renders as a link to nowhere without
+// complaint.
+func TestREADMEAnchorsResolve(t *testing.T) {
+	b, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("README.md unreadable: %v", err)
+	}
+	doc := string(b)
+	// GitHub's anchor rule: lower-case; spaces become hyphens; everything but
+	// letters, digits, hyphens and underscores is dropped.
+	slug := func(h string) string {
+		var out strings.Builder
+		for _, r := range strings.ToLower(strings.TrimSpace(h)) {
+			switch {
+			case r == ' ':
+				out.WriteRune('-')
+			case r == '-' || r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r):
+				out.WriteRune(r)
+			}
+		}
+		return out.String()
+	}
+	heads := map[string]bool{}
+	for _, line := range strings.Split(doc, "\n") {
+		if strings.HasPrefix(line, "#") {
+			heads[slug(strings.TrimLeft(line, "#"))] = true
+		}
+	}
+	links := regexp.MustCompile(`\]\(#([^)]+)\)`).FindAllStringSubmatch(doc, -1)
+	if len(links) < 3 {
+		t.Fatalf("README.md has %d in-page links; #51 added two to the one it had, so "+
+			"fewer means this guard is under-reading", len(links))
+	}
+	for _, m := range links {
+		if !heads[m[1]] {
+			t.Errorf("README.md links to #%s, which is no heading on the page", m[1])
+		}
 	}
 }

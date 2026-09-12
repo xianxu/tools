@@ -1,8 +1,9 @@
 # define
 
-Print a word's dictionary definition with Google-style IPA, and play its
-pronunciation. A learner's tool: it builds a deck out of what you look up, asks
-you about it later, and answers questions a dictionary cannot.
+Run `define`, type a word, and you get its dictionary definition with
+Google-style IPA and hear it pronounced. A learner's tool: every word you look
+up joins a deck, `define` asks you about it later, and it answers questions a
+dictionary cannot. Everything else is a `/` command away.
 
 It reads the dictionaries already installed on the machine — no account, no
 index, no network for a lookup. The directory you run it in *is* the deck.
@@ -41,7 +42,13 @@ go build -o ~/bin/define ./cmd/define    # from the repo root
 `define --version` names the release you installed, and says `built from source`
 when it was not built by the formula.
 
-## The directory is the deck, so it asks first
+## Start it: `define`
+
+Run `define` with no arguments. It takes over the terminal as a session: type a
+word and press Enter to look it up. Ctrl-C quits, and everything the session
+showed is printed back into your scrollback when you do.
+
+### The directory is the deck, so it asks first
 
 The directory you run `define` in **is** the deck. That makes running it in the
 wrong shell a quiet accident, so the first time it would write somewhere new it
@@ -71,29 +78,174 @@ never creates a deck, automation that wants one has to say so.
 
 A directory that is already a deck is never asked about.
 
-## Using it
+### Keys
 
-```sh
-define                      # interactive: type a word, / for commands, ^C to quit
-echo sycophantic | define   # or feed it words on stdin
-define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
-define /history             # a command works as an argument too
-define --sound 1 record     # play once instead of three times
-define -no-audio bank       # no fetch, no sound
-define -locale gb schedule  # British pronunciation
-define -lang es -locale us jalapeño   # Latin American, not Castilian
-define -lang es madrugar    # one lookup in Spanish, without switching
-define -lang it pizza       # and in Italian: the Devoto-Oli, not NOAD
-define -pron fr arrondissement  # the French recording, English everything else
-define -raw record          # the unparsed dictionary entry
-define -no-color bank       # never emit ANSI (also automatic when piped)
+On a terminal, `define` with no word opens a line editor and draws the session
+itself:
+
+| key | does |
+|---|---|
+| Up / Down | walk history — narrowed to what you have typed |
+| Right / End / Tab | accept the grey suggestion |
+| Enter | define what you typed (never the suggestion) |
+| Enter on an empty line | replay the pronunciation, without moving the screen |
+| Cmd+Delete (Ctrl-U) | clear the line |
+| PageUp / PageDown, wheel | scroll back through the session |
+| Ctrl-C | quit, including mid-playback |
+
+Definitions wrap to your terminal width at word boundaries, and follow it when
+you resize the window.
+
+Because `define` owns the screen while it runs, the mouse belongs to it too —
+**hold Option to select text** (Shift in some terminals). Everything the session
+showed is printed back into your terminal when you quit, so the words you looked
+up are in your scrollback to return to. The frame itself is not: the prompt you
+were typing at and the `♫ playing` indicator were ephemeral, and stay that way.
+
+### Clickable words
+
+**Underlined words are clickable.** Click the headword to hear it again; click
+the language after `ORIGIN` to hear the word in *that* language — `concrete` in
+French, `jalapeño` in Spanish — without typing a command. Every language an
+etymology names as a source is its own target, so `piano`'s "either from French,
+or … Italian" gives you both: you point at the one you meant. Cognates and dead
+stages are not offered, because they are not something a speaker says today.
+
+It works on words you have scrolled back to, not just the last one. A click on
+ordinary text does nothing.
+
+### The words you already know
+
+**Words you have looked up show in green** — in the line you type, in definitions,
+and in answers — so the vocabulary you are building is visible rather than
+something you have to remember having met. Looking up `sycophantic` when you
+already know `obsequious` shows you the connection in the gloss itself. A word
+looked up in this session turns green the moment you next see it.
+
+Definition headwords and labels stay their own colour; the highlight marks
+vocabulary in prose, which is where noticing a word you know actually tells you
+something.
+
+**Green is for prose, and it stops where the text IS your deck.** A cloze
+question offers four words all drawn from your deck, so colouring them would mark
+everything and tell you nothing; the same is true of a board, where every cell is
+a word you are learning. Those stay plain. A multiple-choice question's options
+are definitions — prose — so a word you know shows up there, which is usually the
+most useful thing on the screen.
+
+**And the word you are being asked about is never green**, whichever form asks
+it. Marking it would tell you "you have looked this up before" while asking
+whether you know it — which is the answer, not a hint. Once the answer is on
+screen the rule lifts: the reveal marks it like any other word you know.
+
+**Clicking is not subject to that rule.** Every deck word is clickable wherever
+it appears, coloured or not, and plays its own recording — including a cloze's
+four options, which are the words you most want to hear before choosing between
+them. Turning colour off with `-no-color` does not take the click targets with
+it.
+
+### Completion
+
+**The grey suggestion follows the word you are typing, anywhere in the line.** It
+completes from what you have looked up and asked before, so a long word you know
+you want but not how to spell finishes itself in the middle of a question:
+
 ```
+you type:   what's the difference to obseq
+you see:    what's the difference to obseq|uious      (the tail in grey)
+```
+
+Whole lines still win over single words — if you start retyping a question you
+have asked, the rest of it appears — and a short word mid-sentence is left alone,
+so `to` does not offer to become `torpid`.
+
+## Everything is a `/` command
+
+Inside the session, everything besides looking a word up is a `/` command:
+
+<!-- command-list -->
+| command | does |
+|---|---|
+| `/help` | list the commands |
+| `/history` | words looked up recently |
+| `/stats` | deck, streak and accuracy figures |
+| `/play` | review the words due today |
+| `/sound` | how many times to play a pronunciation |
+| `/lang` | the language this deck is in |
+| `/pron` | replay this word in its source language, once |
+<!-- /command-list -->
+
+A line beginning with `/` is a command rather than a word — `/` is safe as a
+marker because no English headword starts with one, and `define` needs whole
+lines for multi-word headwords like `hot dog`. The same reasoning picks `?` and
+`\` for the two question hatches in [Asking questions](#asking-questions): no headword begins with either. Type `/` to see what there is,
+Tab to complete, `/help` to list them. It works the same from every entry mode:
+`define /help`, `echo /help | define`, and `/help` typed at the prompt are one
+thing.
+
+`/play` runs today's review without leaving the prompt. Answer the questions, or
+press Ctrl-C when you have had enough — either way you land back where you were,
+with the session's summary in the scrollback above you. `--play` still works as a
+command of its own, for a session that is only a review; both reach the same
+sitting, so anything true of one is true of the other.
+
+Ctrl-C inside a sitting ends the SITTING. At the prompt it still quits `define`.
+
+When there is no deck at all — `DEFINE_NO_CAPTURE` is set, or there is no
+working directory — both forms say which, and exit `1`, the same as `--forget`,
+`--harvest`, `--reflect` and `/history`. A directory that is not a deck yet, or
+one you told not to become one, has an EMPTY deck instead, and that exits `0`:
+having looked nothing up yet is not an error.
+
+`/stats` is the screen in [Is any of this working](#is-any-of-this-working), from the prompt — the same figures `--stats`
+prints, because both doors reach one fold. It takes no argument: it reads
+everything.
+
+`/history [N]` lists what you looked up in the last N days — two by default,
+counted as local calendar days rather than N×24 hours. `N` can be written three
+ways, so it reads the same whichever you reach for: `/history 7`,
+`/history --days 7`, `/history --days=7`. It works from every entry mode, so
+`define /history 7` and `echo '/history 7' | define` mean the same thing.
+
+```
+  defenestrate  today
+  sycophantic   yesterday   2×
+  perennial     Aug 1       2×
+```
+
+Deduped, and ordered by when each word was **first** seen, so one you keep
+returning to holds its place instead of jumping to the top; the count is how
+often you have looked it up. Words the dictionary could not find are kept for
+up-arrow recall but never listed here — a typo is not vocabulary.
+
+`/sound N` changes how many times a pronunciation plays for the rest of the
+session; `/sound` on its own reports it, and `0` turns playback off. It is the
+in-session form of `--sound`, which sets it for one run. (`-times` is the older
+name for `--sound` and still works; passing both is a usage error rather than a
+guess at which you meant.)
+
+`/pron` replays the word you just looked up in its source language, once.
+With no argument it reads the language off the entry's `ORIGIN` and tells you
+which it chose — `ORIGIN says French` — and declines when `ORIGIN` names only a
+historical stage (`Old French`, `Latin`) or a cognate (*"related to Dutch…"*),
+because neither is a language anyone says the word in today. `/pron fr` names it
+explicitly. Either way it
+leaves nothing switched on — the next word is back to the session's own voice.
+It is an action, not a setting, which is the difference from both `/sound` and
+`/lang`: there is no `/pron` to undo. `-pron fr <word>` is the same thing for a
+one-shot lookup.
+
+`/lang` reports the language this directory is in; `/lang es` switches it and
+keeps it. That is the deliberate difference from `/sound`: a language has to
+survive the session, because a one-shot lookup has no session to inherit one
+from. `-lang es` is the same choice for a single run, without writing it down.
 
 ## Reviewing what is due
 
-**`define --play` reviews what is due today.** There are four kinds of question,
-and you never choose which you get: which one you meet depends on how well you
-already know the word, and on what material the tool has for it.
+**`/play` reviews what is due today** — `define --play` from the shell. There
+are four kinds of question, and you never choose which you get: which one you
+meet depends on how well you already know the word, and on what material the
+tool has for it.
 
 ### The sentence, once a word has one
 
@@ -253,6 +405,7 @@ A word marked yes counts as a correct answer, never as a confident one — the
 grid is self-report, so it can never earn the double promotion a real retrieval
 test can. As a board closes it leaves one line naming the words you marked no.
 
+<!-- review-keys -->
 | key | does |
 |---|---|
 | `1`–`4` | multiple choice: pick the definition, or on a cloze pick the word |
@@ -265,6 +418,7 @@ test can. As a board closes it leaves one line naming the words you marked no.
 | `d` | remove this word from the deck — its history is kept. On a board it is a cell's key instead, and `Tab` to drop mode is how you remove a word there: a grid has no single current word |
 | PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |
 | Ctrl-C | stop; everything you answered is already saved |
+<!-- /review-keys -->
 
 Ctrl-C stops whenever you like and keeps everything you answered — each answer
 is written as it happens, not at the end.
@@ -329,87 +483,6 @@ receive any. No API key: the deck and the dictionary are
 enough, and the review loop never reaches for the model. Pronunciation audio is fetched over the network
 only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
 network call at all; `--no-audio` makes one fully offline either way.
-
-## The interactive session
-
-On a terminal, `define` with no word opens a line editor and draws the session
-itself:
-
-| key | does |
-|---|---|
-| Up / Down | walk history — narrowed to what you have typed |
-| Right / End / Tab | accept the grey suggestion |
-| Enter | define what you typed (never the suggestion) |
-| Enter on an empty line | replay the pronunciation, without moving the screen |
-| Cmd+Delete (Ctrl-U) | clear the line |
-| PageUp / PageDown, wheel | scroll back through the session |
-| Ctrl-C | quit, including mid-playback |
-
-Definitions wrap to your terminal width at word boundaries, and follow it when
-you resize the window.
-
-Because `define` owns the screen while it runs, the mouse belongs to it too —
-**hold Option to select text** (Shift in some terminals). Everything the session
-showed is printed back into your terminal when you quit, so the words you looked
-up are in your scrollback to return to. The frame itself is not: the prompt you
-were typing at and the `♫ playing` indicator were ephemeral, and stay that way.
-
-### Clickable words
-
-**Underlined words are clickable.** Click the headword to hear it again; click
-the language after `ORIGIN` to hear the word in *that* language — `concrete` in
-French, `jalapeño` in Spanish — without typing a command. Every language an
-etymology names as a source is its own target, so `piano`'s "either from French,
-or … Italian" gives you both: you point at the one you meant. Cognates and dead
-stages are not offered, because they are not something a speaker says today.
-
-It works on words you have scrolled back to, not just the last one. A click on
-ordinary text does nothing.
-
-### The words you already know
-
-**Words you have looked up show in green** — in the line you type, in definitions,
-and in answers — so the vocabulary you are building is visible rather than
-something you have to remember having met. Looking up `sycophantic` when you
-already know `obsequious` shows you the connection in the gloss itself. A word
-looked up in this session turns green the moment you next see it.
-
-Definition headwords and labels stay their own colour; the highlight marks
-vocabulary in prose, which is where noticing a word you know actually tells you
-something.
-
-**Green is for prose, and it stops where the text IS your deck.** A cloze
-question offers four words all drawn from your deck, so colouring them would mark
-everything and tell you nothing; the same is true of a board, where every cell is
-a word you are learning. Those stay plain. A multiple-choice question's options
-are definitions — prose — so a word you know shows up there, which is usually the
-most useful thing on the screen.
-
-**And the word you are being asked about is never green**, whichever form asks
-it. Marking it would tell you "you have looked this up before" while asking
-whether you know it — which is the answer, not a hint. Once the answer is on
-screen the rule lifts: the reveal marks it like any other word you know.
-
-**Clicking is not subject to that rule.** Every deck word is clickable wherever
-it appears, coloured or not, and plays its own recording — including a cloze's
-four options, which are the words you most want to hear before choosing between
-them. Turning colour off with `-no-color` does not take the click targets with
-it.
-
-### Completion
-
-**The grey suggestion follows the word you are typing, anywhere in the line.** It
-completes from what you have looked up and asked before, so a long word you know
-you want but not how to spell finishes itself in the middle of a question:
-
-```
-you type:   what's the difference to obseq
-you see:    what's the difference to obseq|uious      (the tail in grey)
-```
-
-Whole lines still win over single words — if you start retyping a question you
-have asked, the rest of it appears — and a short word mid-sentence is left alone,
-so `to` does not offer to become `torpid`.
 
 ## Asking questions
 
@@ -478,6 +551,125 @@ does not require today**: it counts back from the last day you missed, so
 reviewing yesterday and reading this at breakfast leaves it intact.
 
 An empty deck says so rather than printing a screen of zeroes.
+
+## Languages
+
+**One language at a time.** `/lang` says which one, `/lang es` switches, and in a
+deck the setting stays with the directory — unlike `/sound`, which lasts one
+session. It has to persist: a one-shot `define madrugar` has no session to
+inherit from, and re-declaring the language at every lookup is the friction the
+mode removes. In a directory that is not a deck, the switch applies to the
+session and `/lang` says it was not saved, because a one-shot `/lang` there would
+otherwise report a change it had not made.
+Everything follows it — the deck a word files into, the words `--play` offers,
+and the recording that is fetched, unless `-pron` asked otherwise for one
+lookup. `-lang es` is the one-run form, for scripts that should not have to
+change state to ask a question.
+
+### Which dictionary answers
+
+Lookup goes through macOS's CoreServices, and **the dictionary follows the
+language**. `/lang` says which books are answering.
+
+<!-- curated-languages -->
+- **English** — the New Oxford American Dictionary (hence the Google-matching
+  notation), plus Apple Dictionary, which is where `iPhone` comes from.
+- **Spanish** — the Larousse *Diccionario General*.
+- **Italian** — the *Devoto-Oli*. Note that Italian has **no recordings** in the
+  pronunciation CDN, so an Italian session gives you definitions and silence;
+  and the Devoto-Oli writes syllabification with stress, `(cià·o)`, rather than
+  a phonetic transcription.
+<!-- /curated-languages -->
+
+Each must be **monolingual** — indexed in its own language *and* defined in it.
+That rules out books like the bilingual Oxford Spanish and Oxford Italian, which
+are installed on many machines and would put English glosses in front of a
+learner who asked for the other language.
+
+So `mesa` is an isolated flat-topped hill in English and *"un tablero
+horizontal, sostenido por uno o varios pies"* in Spanish, and `sycophantic` in a
+Spanish session reports **no entry** — which is correct, and which this tool
+could not say about anything before.
+
+Two honest limits. The dictionaries are chosen from a short **curated list**,
+because nothing in the system's metadata distinguishes a general dictionary from
+a thesaurus; on a machine with a different set installed, nothing curated matches
+and `define` falls back to searching every active dictionary and says so. And the
+calls that select a dictionary are **private** — undocumented, and free to
+disappear on an OS update — so they are resolved at run time and the tool
+degrades to that same whole-set search rather than breaking. Only on that
+fallback path does the host's Dictionary.app configuration decide what you get —
+on the curated path it does not, which is the point.
+
+### Hearing a word in its source language
+
+**Hearing a borrowed word in its source language.** `define -pron fr
+arrondissement` plays the French recording and changes nothing else: the entry
+is still the English one, the word still files into the English deck, and the
+next lookup is English again.
+
+<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which; at the prompt /pron alone reads it for you. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
+
+You name the language; the tool never guesses it. That is a decision with
+measurements behind it — the dictionary writes `ORIGIN French` for
+*arrondissement* and for *police* alike, and the CDN serves `police_fr_fr`,
+`restaurant_fr_fr` and `machine_fr_fr` perfectly happily. Anything automatic
+would replace the English recording for a large class of ordinary words that
+merely came from French centuries ago. The entry prints its `ORIGIN` right
+above, so the answer is on screen when you need it.
+
+Coverage is partial and the tool says so rather than going quiet: `-pron fr
+hotel` prints `no fr recording for hotel; played the en one`. Italian and
+Japanese have no recordings in this CDN generation at all, so they always report.
+
+`-locale` picks the regional variant, and it works for **every** language:
+
+<!-- locale-help -->regional variant of the pronunciation, per language: en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). Others exist — the CDN decides, not a list here<!-- /locale-help -->
+
+For Spanish the choice is **phonemic, not an accent flavour**: `es_es` is
+Castilian, where *cazar* /θ/ and *casar* /s/ are different words; `es_us` is
+Latin American *seseo*, where both are /s/. Picking one picks which sound system
+you learn. Spanish entries carry no written pronunciation at all — the spelling
+already determines it — so the recording is the *only* place that information
+exists, which makes this choice matter more for Spanish than for English.
+
+Nothing here enumerates which combinations exist: a pair the CDN does not serve
+simply gets the same "no recording" warning as any other miss.
+
+The event log is deliberately *not* split by language: a review event names a
+word, and which deck it came from is the deck's business. "How much did I study
+today" stays one question rather than a join.
+
+A deck from before this existed is moved under `words/en/` the next time
+`define` runs — along with any `user-model.md`, which becomes
+`user-model.en.md` — and it says so. That move cannot tell languages apart — a Spanish
+word filed earlier lands in `words/en/` too — so it prints what it moved and
+leaves a `mv` to you. It never overwrites and never deletes.
+
+A failed lookup is recorded as history but never enters the deck, so typos are
+recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
+scripting a dictionary should not mutate a deck — and neither does it ask.
+
+```sh
+define --forget sycophantic   # drop a word and its material (history is kept)
+DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
+```
+
+`DEFINE_NO_CAPTURE=1` means *nothing at all*, and that includes the event log —
+which is what persists your history, so with it set, history is session-only. It
+also means the directory is not **read**: answers come back un-adapted, with no
+deck and no learner model behind them.
+
+The directory *is* the deck: run `define` somewhere else and you get a different
+one. If that directory happens to be synced, so is your vocabulary; `define`
+neither knows nor cares.
+
+With no word and no terminal, `define` reads stdin: a word defines and speaks it, a bare return
+replays the *pronunciation* of the current one — nothing is re-fetched, and the
+screen is left as it was provided you let the sound finish — and Ctrl-C quits
+silently. `-raw` prints the unparsed entry and never plays. The prompt appears
+only on a terminal, so piping stays clean. Flags are session settings — `define
+--sound 1` opens the loop with single playback.
 
 ## The learner model
 
@@ -644,89 +836,40 @@ safe rather than merely possible: a hand-edited file cannot forge a row in a
 grid, an escape sequence in a stem cannot reach the terminal, and a recording
 truncated to nothing is re-fetched instead of played as silence.
 
-## Languages
+## From the command line
 
-**One language at a time.** `/lang` says which one, `/lang es` switches, and in a
-deck the setting stays with the directory — unlike `/sound`, which lasts one
-session. It has to persist: a one-shot `define madrugar` has no session to
-inherit from, and re-declaring the language at every lookup is the friction the
-mode removes. In a directory that is not a deck, the switch applies to the
-session and `/lang` says it was not saved, because a one-shot `/lang` there would
-otherwise report a change it had not made.
-Everything follows it — the deck a word files into, the words `--play` offers,
-and the recording that is fetched, unless `-pron` asked otherwise for one
-lookup. `-lang es` is the one-run form, for scripts that should not have to
-change state to ask a question.
-
-### Hearing a word in its source language
-
-**Hearing a borrowed word in its source language.** `define -pron fr
-arrondissement` plays the French recording and changes nothing else: the entry
-is still the English one, the word still files into the English deck, and the
-next lookup is English again.
-
-<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which; at the prompt /pron alone reads it for you. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
-
-You name the language; the tool never guesses it. That is a decision with
-measurements behind it — the dictionary writes `ORIGIN French` for
-*arrondissement* and for *police* alike, and the CDN serves `police_fr_fr`,
-`restaurant_fr_fr` and `machine_fr_fr` perfectly happily. Anything automatic
-would replace the English recording for a large class of ordinary words that
-merely came from French centuries ago. The entry prints its `ORIGIN` right
-above, so the answer is on screen when you need it.
-
-Coverage is partial and the tool says so rather than going quiet: `-pron fr
-hotel` prints `no fr recording for hotel; played the en one`. Italian and
-Japanese have no recordings in this CDN generation at all, so they always report.
-
-`-locale` picks the regional variant, and it works for **every** language:
-
-<!-- locale-help -->regional variant of the pronunciation, per language: en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). Others exist — the CDN decides, not a list here<!-- /locale-help -->
-
-For Spanish the choice is **phonemic, not an accent flavour**: `es_es` is
-Castilian, where *cazar* /θ/ and *casar* /s/ are different words; `es_us` is
-Latin American *seseo*, where both are /s/. Picking one picks which sound system
-you learn. Spanish entries carry no written pronunciation at all — the spelling
-already determines it — so the recording is the *only* place that information
-exists, which makes this choice matter more for Spanish than for English.
-
-Nothing here enumerates which combinations exist: a pair the CDN does not serve
-simply gets the same "no recording" warning as any other miss.
-
-The event log is deliberately *not* split by language: a review event names a
-word, and which deck it came from is the deck's business. "How much did I study
-today" stays one question rather than a join.
-
-A deck from before this existed is moved under `words/en/` the next time
-`define` runs — along with any `user-model.md`, which becomes
-`user-model.en.md` — and it says so. That move cannot tell languages apart — a Spanish
-word filed earlier lands in `words/en/` too — so it prints what it moved and
-leaves a `mv` to you. It never overwrites and never deletes.
-
-A failed lookup is recorded as history but never enters the deck, so typos are
-recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
-scripting a dictionary should not mutate a deck — and neither does it ask.
+Everything the session does is also reachable as a one-shot command or from a
+pipe, which is what scripts want. A word on the command line is looked up once,
+and flags set things for that one run.
 
 ```sh
-define --forget sycophantic   # drop a word and its material (history is kept)
-DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
+define                      # interactive: type a word, / for commands, ^C to quit
+echo sycophantic | define   # or feed it words on stdin
+define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
+define /history             # a command works as an argument too
+define --sound 1 record     # play once instead of three times
+define -no-audio bank       # no fetch, no sound
+define -locale gb schedule  # British pronunciation
+define -lang es -locale us jalapeño   # Latin American, not Castilian
+define -lang es madrugar    # one lookup in Spanish, without switching
+define -lang it pizza       # and in Italian: the Devoto-Oli, not NOAD
+define -pron fr arrondissement  # the French recording, English everything else
+define -raw record          # the unparsed dictionary entry
+define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
 
-`DEFINE_NO_CAPTURE=1` means *nothing at all*, and that includes the event log —
-which is what persists your history, so with it set, history is session-only. It
-also means the directory is not **read**: answers come back un-adapted, with no
-deck and no learner model behind them.
+Exit codes: `0` success; `1` the request failed; `2` usage error. What produces
+each is enumerated rather than sampled, because a list of examples goes stale the
+moment a new one is added and nothing says so:
 
-The directory *is* the deck: run `define` somewhere else and you get a different
-one. If that directory happens to be synced, so is your vocabulary; `define`
-neither knows nor cares.
+| code | produced by |
+|---|---|
+| `1` | no dictionary entry; a question with no model configured; a question whose model **was** configured and did not deliver (the message carries the cause); a model answer that could not be used; `--forget` found nothing to remove; `--llm-check` found no usable configuration; `--reflect` with too small a deck, with no deck at all, with no model, or with nothing in the answer left standing after the deck check |
+| `2` | an unknown `/command`; a bare `?` or `\` with nothing after it; `-raw` combined with an explicit `?`; `--reflect` combined with a word |
 
-With no word and no terminal, `define` reads stdin: a word defines and speaks it, a bare return
-replays the *pronunciation* of the current one — nothing is re-fetched, and the
-screen is left as it was provided you let the sound finish — and Ctrl-C quits
-silently. `-raw` prints the unparsed entry and never plays. The prompt appears
-only on a terminal, so piping stays clean. Flags are session settings — `define
---sound 1` opens the loop with single playback.
+A piped run exits `1` if any word failed and `2` if a command was malformed, so
+`echo "$w" | define || …` works in a script; an interactive typo does not fail
+the session.
 
 ## Checking the model connection
 
@@ -761,113 +904,3 @@ proxy's loopback handshake token itself, so questions work with nothing set at
 all. Point `DEFINE_LLM_BASE_URL` anywhere else and a key becomes required, since
 a token invented for a local proxy has no business being sent to a real
 provider.
-
-Exit codes: `0` success; `1` the request failed; `2` usage error. What produces
-each is enumerated rather than sampled, because a list of examples goes stale the
-moment a new one is added and nothing says so:
-
-| code | produced by |
-|---|---|
-| `1` | no dictionary entry; a question with no model configured; a question whose model **was** configured and did not deliver (the message carries the cause); a model answer that could not be used; `--forget` found nothing to remove; `--llm-check` found no usable configuration; `--reflect` with too small a deck, with no deck at all, with no model, or with nothing in the answer left standing after the deck check |
-| `2` | an unknown `/command`; a bare `?` or `\` with nothing after it; `-raw` combined with an explicit `?`; `--reflect` combined with a word |
-
-A piped run exits `1` if any word failed and `2` if a command was malformed, so
-`echo "$w" | define || …` works in a script; an interactive typo does not fail
-the session.
-
-A line beginning with `/` is a command rather than a word — `/` is safe as a
-marker because no English headword starts with one, and `define` needs whole
-lines for multi-word headwords like `hot dog`. The same reasoning picks `?` and
-`\` for the two question hatches above: no headword begins with either. Type `/` to see what there is,
-Tab to complete, `/help` to list them. It works the same from every entry mode:
-`define /help`, `echo /help | define`, and `/help` typed at the prompt are one
-thing.
-
-`/play` runs today's review without leaving the prompt. Answer the questions, or
-press Ctrl-C when you have had enough — either way you land back where you were,
-with the session's summary in the scrollback above you. `--play` still works as a
-command of its own, for a session that is only a review; both reach the same
-sitting, so anything true of one is true of the other.
-
-Ctrl-C inside a sitting ends the SITTING. At the prompt it still quits `define`.
-
-In a directory with no deck, both forms say which reason — nothing here yet, or
-`DEFINE_NO_CAPTURE` set — and exit `1`, the same as `--forget`, `--harvest`,
-`--reflect` and `/history`. An EMPTY deck is different and exits `0`: having
-looked nothing up yet is not an error.
-
-`/stats` is the screen above, from the prompt — the same figures `--stats`
-prints, because both doors reach one fold. It takes no argument: it reads
-everything.
-
-`/history [N]` lists what you looked up in the last N days — two by default,
-counted as local calendar days rather than N×24 hours. `N` can be written three
-ways, so it reads the same whichever you reach for: `/history 7`,
-`/history --days 7`, `/history --days=7`. It works from every entry mode, so
-`define /history 7` and `echo '/history 7' | define` mean the same thing.
-
-```
-  defenestrate  today
-  sycophantic   yesterday   2×
-  perennial     Aug 1       2×
-```
-
-Deduped, and ordered by when each word was **first** seen, so one you keep
-returning to holds its place instead of jumping to the top; the count is how
-often you have looked it up. Words the dictionary could not find are kept for
-up-arrow recall but never listed here — a typo is not vocabulary.
-
-`/sound N` changes how many times a pronunciation plays for the rest of the
-session; `/sound` on its own reports it, and `0` turns playback off. It is the
-in-session form of `--sound`, which sets it for one run. (`-times` is the older
-name for `--sound` and still works; passing both is a usage error rather than a
-guess at which you meant.)
-
-`/pron` replays the word you just looked up in its source language, once.
-With no argument it reads the language off the entry's `ORIGIN` and tells you
-which it chose — `ORIGIN says French` — and declines when `ORIGIN` names only a
-historical stage (`Old French`, `Latin`) or a cognate (*"related to Dutch…"*),
-because neither is a language anyone says the word in today. `/pron fr` names it
-explicitly. Either way it
-leaves nothing switched on — the next word is back to the session's own voice.
-It is an action, not a setting, which is the difference from both `/sound` and
-`/lang`: there is no `/pron` to undo. `-pron fr <word>` is the same thing for a
-one-shot lookup.
-
-`/lang` reports the language this directory is in; `/lang es` switches it and
-keeps it. That is the deliberate difference from `/sound`: a language has to
-survive the session, because a one-shot lookup has no session to inherit one
-from. `-lang es` is the same choice for a single run, without writing it down.
-
-Lookup goes through macOS's CoreServices, and **the dictionary follows the
-language**. `/lang` says which books are answering.
-
-<!-- curated-languages -->
-- **English** — the New Oxford American Dictionary (hence the Google-matching
-  notation), plus Apple Dictionary, which is where `iPhone` comes from.
-- **Spanish** — the Larousse *Diccionario General*.
-- **Italian** — the *Devoto-Oli*. Note that Italian has **no recordings** in the
-  pronunciation CDN, so an Italian session gives you definitions and silence;
-  and the Devoto-Oli writes syllabification with stress, `(cià·o)`, rather than
-  a phonetic transcription.
-<!-- /curated-languages -->
-
-Each must be **monolingual** — indexed in its own language *and* defined in it.
-That rules out books like the bilingual Oxford Spanish and Oxford Italian, which
-are installed on many machines and would put English glosses in front of a
-learner who asked for the other language.
-
-So `mesa` is an isolated flat-topped hill in English and *"un tablero
-horizontal, sostenido por uno o varios pies"* in Spanish, and `sycophantic` in a
-Spanish session reports **no entry** — which is correct, and which this tool
-could not say about anything before.
-
-Two honest limits. The dictionaries are chosen from a short **curated list**,
-because nothing in the system's metadata distinguishes a general dictionary from
-a thesaurus; on a machine with a different set installed, nothing curated matches
-and `define` falls back to searching every active dictionary and says so. And the
-calls that select a dictionary are **private** — undocumented, and free to
-disappear on an OS update — so they are resolved at run time and the tool
-degrades to that same whole-set search rather than breaking. Only on that
-fallback path does the host's Dictionary.app configuration decide what you get —
-on the curated path it does not, which is the point.

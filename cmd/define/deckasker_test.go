@@ -353,7 +353,8 @@ func TestEverySurfaceDescribingCaptureMentionsTheQuestion(t *testing.T) {
 		"*Every* successful lookup",            // true only in a directory already a deck
 		"records what you look up under",       // the usage prose's old promise
 		"the setting stays with the directory", // /lang persists only in a deck
-		"persists when\ngiven.",                // the atlas's unconditional form
+		"persists when\ngiven.",
+		"In a directory with no deck, both forms say which reason", // #50 made it false; #51 corrected it                // the atlas's unconditional form
 	}
 	for name, text := range surfaces {
 		t.Run(name, func(t *testing.T) {
