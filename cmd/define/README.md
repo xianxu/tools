@@ -60,6 +60,36 @@ brew install xianxu/tools/define
 ```
 macOS only, the definitions and the IPA come from Dictionary.app.
 
+### The directory is the deck, so it asks first
+
+The directory you run `define` in **is** the deck. That makes running it in the
+wrong shell a quiet accident, so the first time it would write somewhere new it
+asks:
+
+```
+$ cd /tmp && define sycophantic
+define: /tmp is not a deck yet. Create one here? [y/N]
+```
+
+**A bare Enter declines**, because the cost of a wrong *yes* is a stray deck in
+your home directory and the cost of a wrong *no* is re-running one command.
+
+Declining does not stop the lookup — you still get the definition, the IPA and
+the audio. Nothing is written, and everything that reads history reports **empty**
+rather than refusing: `--stats` says so plainly, `--play` finds nothing due.
+
+**When it cannot ask** — piped input, a script, CI — it does not create anything
+and does not hang waiting for an answer nobody can give. The lookup still works.
+
+```sh
+define --here sycophantic     # yes, make THIS directory a deck; never asks
+```
+
+`--here` is the path for scripts, and it is the only one: since a non-terminal
+never creates a deck, automation that wants one has to say so.
+
+A directory that is already a deck is never asked about.
+
 ### Keyboard Shortcuts
 
 On a terminal, `define` with no word opens a line editor and draws the session
@@ -155,6 +185,18 @@ One interesting cross language feature is the ability to hear pronunciation in o
 language of a borrowed word. For example, try `arrondissement`, which is from French. 
 Click on the `French` link in the ORIGIN section to hear French pronunciation of it.
 
+The dictionary follows the language, and `/lang` says which one is answering. The curated ones:
+
+<!-- curated-languages -->
+- **English** — the New Oxford American Dictionary (hence the Google-matching
+  notation), plus Apple Dictionary, which is where `iPhone` comes from.
+- **Spanish** — the Larousse *Diccionario General*.
+- **Italian** — the *Devoto-Oli*. Note that Italian has **no recordings** in the
+  pronunciation CDN, so an Italian session gives you definitions and silence;
+  and the Devoto-Oli writes syllabification with stress, `(cià·o)`, rather than
+  a phonetic transcription.
+<!-- /curated-languages -->
+
 
 ## Periodical Reviewing
 
@@ -181,6 +223,12 @@ transferred that portion of the case to the Southern District of New York.
 were shown, which is what makes it diagnosable later — and moves on WITHOUT
 marking you wrong. 
 
+It stays offered after you have answered, which is usually when you notice:
+
+```
+any key = next word, ? = bad question, d = remove from deck, Ctrl-C to stop
+```
+
 ### Multiple choice, once your deck can supply distractors
 
 The word appears with up to four definitions, one of them right. 
@@ -194,6 +242,12 @@ sycophantic
 4  an official report of the proceedings of a court
 
 1-4 = pick the definition, d = remove from deck, Ctrl-C to stop
+```
+
+Once you have answered, the prompt changes:
+
+```
+any key = next word, d = remove from deck, Ctrl-C to stop
 ```
 
 ### The board: settled words, and words no test can be built for
@@ -236,6 +290,23 @@ test can. As a board closes it leaves one line naming the words you marked no.
 
 Ctrl-C stops whenever you like and keeps everything you answered — each answer
 is written as it happens, not at the end.
+
+### Keys in a review
+
+<!-- review-keys -->
+| key | does |
+|---|---|
+| `1`–`4` | multiple choice: pick the definition, or on a cloze pick the word |
+| `?` | on a cloze: bad question — records it with the options you were shown, and moves on without marking you wrong |
+| `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
+| click | board: mark that word. Anywhere else, a click plays the word — the headword, a language named in the ORIGIN, or any word already in your deck, wherever it appears |
+| Tab | board: cycle what a mark means — yes, no, then drop |
+| Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
+| space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
+| `d` | remove this word from the deck — its history is kept. On a board it is a cell's key instead, and `Tab` to drop mode is how you remove a word there: a grid has no single current word |
+| PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |
+| Ctrl-C | stop; everything you answered is already saved |
+<!-- /review-keys -->
 
 ### On a Schedule
 
@@ -286,7 +357,7 @@ four lookups is a confident guess.
 `--reflect`: everything from that heading down comes back byte-for-byte, and a
 correction outranks anything inferred above it.
 
-Questions need a model configured (see `--llm-check` below); without one, `define`
+Questions need a model configured (see [Checking the LLM model connection](#checking-the-llm-model-connection)); without one, `define`
 says so and exits `1` rather than looking up a sentence.
 
 **`-raw` never asks**, on either route: it is the scripting form, so an unforced
@@ -362,7 +433,7 @@ correctness.** A model that gives the same wrong band every time scores a perfec
 assigned once is the band this model usually gives — and it cannot tell you the
 scale is right.
 
-`--harvest` needs a model configured (see `--llm-check`). Without one it says so
+`--harvest` needs a model configured (see [Checking the LLM model connection](#checking-the-llm-model-connection)). Without one it says so
 and exits `1`. If the model becomes unavailable mid-run, everything already
 banded is saved and only the harvesting stops.
 
@@ -456,6 +527,11 @@ define -pron fr arrondissement  # the French recording, English everything else
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
+
+Two of those flags, in the words `define -h` uses:
+
+- `-pron`: <!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which; at the prompt /pron alone reads it for you. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
+- `-locale`: <!-- locale-help -->regional variant of the pronunciation, per language: en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). Others exist — the CDN decides, not a list here<!-- /locale-help -->
 
 Exit codes: `0` success; `1` the request failed; `2` usage error. What produces
 each is enumerated rather than sampled, because a list of examples goes stale the
