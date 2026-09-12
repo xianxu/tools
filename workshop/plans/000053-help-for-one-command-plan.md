@@ -116,7 +116,7 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
 
 **Files:** Modify `cmd/define/command.go`, `history_cmd.go`, `stats.go`, `play_cmd.go`, `sound_cmd.go`, `lang_cmd.go`, `pron_cmd.go`, plus the `command-list` spans in `cmd/define/README.md` and `atlas/define.md`. Test `cmd/define/command_test.go`.
 
-- [ ] **Step 1: Write the failing tests.** Extend `TestEveryRegisteredCommandIsRunnable`:
+- [x] **Step 1: Write the failing tests.** Extend `TestEveryRegisteredCommandIsRunnable`:
   ```go
   if c.usage == "" {
   	t.Errorf("command /%s has no usage; /help %s would print only its name", c.name, c.name)
@@ -202,8 +202,8 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
   	}
   }
   ```
-- [ ] **Step 2: Run them.** `go test ./cmd/define/ -run 'TestEveryRegisteredCommandIsRunnable|TestHelp|TestBareHelp|TestCommandUsage'` → FAIL (no field `usage`; `findCommand` and `commandUsage` undefined).
-- [ ] **Step 3: Implement.** Add `args` and `usage` to `command`, and `command.synopsis`. Fill the rows:
+- [x] **Step 2: Run them.** `go test ./cmd/define/ -run 'TestEveryRegisteredCommandIsRunnable|TestHelp|TestBareHelp|TestCommandUsage'` → FAIL (no field `usage`; `findCommand` and `commandUsage` undefined).
+- [x] **Step 3: Implement.** Add `args` and `usage` to `command`, and `command.synopsis`. Fill the rows:
   ```go
   {name: "help", summary: "list the commands, or explain one", args: "[command]", usage: helpUsage, run: runHelp},
   {name: "history", summary: "words looked up recently", args: "[N | --days N | --days=N]", usage: historyUsage, run: runHistory},
@@ -227,8 +227,8 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
   `/help`'s summary becomes "list the commands, or explain one". It keeps "list the commands" as its prefix on purpose: eight assertions Contains-check that string (commandloop_test.go lines 77, 92, 181, 193, 202, 310; pty_conformance_test.go lines 288, 309), and all of them, the two absence checks included, stay green. The `command-list` span in `cmd/define/README.md` and `atlas/define.md` is updated to match (`TestDocsQuoteTheCommandList` enforces it).
 
   `pronCommandHelp` stays until Task 3, which moves every doc to the new span in one step.
-- [ ] **Step 4: Run.** The tests from Step 1 PASS; `go test ./cmd/define/` → PASS.
-- [ ] **Step 5: Commit.** `#53: every command carries its usage, and /help <command> explains one`
+- [x] **Step 4: Run.** The tests from Step 1 PASS; `go test ./cmd/define/` → PASS.
+- [x] **Step 5: Commit.** `#53: every command carries its usage, and /help <command> explains one`
 
 ## Task 2: `--help` and `-h` after any command
 

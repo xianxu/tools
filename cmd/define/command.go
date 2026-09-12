@@ -275,7 +275,22 @@ func dispatchCommand(c replCommand, cmds []command, cc commandCtx) int {
 	if !ok {
 		return unknownCommand(cc.stderr, c.name, cmds)
 	}
+	if asksForUsage(c.args) {
+		// Answered HERE, once, rather than in each command's parser: seven
+		// parsers are seven places to forget it, and /history used to read
+		// --help as a number of days.
+		fmt.Fprint(cc.stdout, commandUsage(cmd, cc.width))
+		return 0
+	}
 	return cmd.run(cc, c.args)
+}
+
+// asksForUsage reports whether a command's arguments ask for its usage rather
+// than being arguments to it: exactly one, `--help` or `-h`. That makes it a
+// contract — no command may take either as data. None does: /history wants a
+// number, /sound a count, /lang and /pron a two-letter tag.
+func asksForUsage(args []string) bool {
+	return len(args) == 1 && (args[0] == "--help" || args[0] == "-h")
 }
 
 // findCommand resolves a submitted name to its row. Case-INSENSITIVE: dispatch's
