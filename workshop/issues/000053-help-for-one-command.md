@@ -78,17 +78,17 @@ plain checkboxes, no Mx.
 
 - [ ] Task 0 — side-quest: the README rewrite (`6cf5414`, carried by this
       branch) keeps the text the nine doc-sync tests pin; `go test ./cmd/define/`
-      green.
-- [ ] Task 1 — every `commands` row carries `args` and `usage`, each text beside
-      its parser, limits taken from the parsers' constants.
-- [ ] Task 2 — `/help <command>` explains one (`findCommand`, `unknownCommand`,
-      `usageText`); bare `/help` says so; `/help`'s summary and both command-list
-      spans updated.
-- [ ] Task 3 — `--help` and `-h` answered in `dispatchCommand` for every command,
+      green, plan guards included.
+- [ ] Task 1 — every `commands` row carries `args` and `usage` (each text beside
+      its parser, limits from the parsers' constants), and `/help <command>`
+      explains one (`findCommand`, `unknownCommand`, `commandUsage`); bare `/help`
+      says so; `/help`'s summary and both command-list spans updated.
+- [ ] Task 2 — `--help` and `-h` answered in `dispatchCommand` for every command,
       one-shot included.
-- [ ] Task 4 — the README and atlas quote the generated `command-usage` span;
-      `pronCommandHelp`, its span and its test absorbed and removed.
-- [ ] Task 5 — mutation-verify each guard; full suite, vet, gofmt; run the binary
+- [ ] Task 3 — the README and atlas quote the generated `command-usage` span;
+      `pronCommandHelp`, its span and its test absorbed and removed, and the
+      retirement recorded.
+- [ ] Task 4 — mutation-verify each guard; full suite, vet, gofmt; run the binary
       and record the output.
 
 ## Log
@@ -110,6 +110,17 @@ nine doc-sync tests in `go test ./cmd/define/`:
 `TestREADMEKeyTableNamesEveryLiveKey` (no review-keys span), and
 `TestREADMEAnchorsResolve` (1 in-page link, floor 3; its one link also points at
 a heading the rewrite removed). Task 0 fixes them.
+
+Plan-quality round 1 blocked on two Important findings, and one of them is
+about the plan file itself: with it in `workshop/plans/`, two repo guards also
+fail. TestPlanTablesNameEntitiesThatExist read the `command` row's backticked
+new fields as symbols claimed to exist, and `pronCommandHelp` marked deleted
+while still declared; TestPlanCitesTestsThatExist found five unwritten tests
+cited in backticks. So Task 0's exit criterion is the package green INCLUDING
+the plan guards, eleven failures in all, not nine. The other finding:
+`usageText` is already taken by the `--help` capture helper in
+`deckasker_test.go`, so the renderer is `commandUsage`; every other new name was
+checked against the package, tests included, and is free.
 
 ## Revisions
 
