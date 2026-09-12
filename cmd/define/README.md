@@ -158,6 +158,16 @@ with the session's summary in the scrollback above you.
 
 To check additional help for commands, type `/help [command]`.
 
+<!-- command-usage -->
+- `/help [command]` — With nothing, list the commands. With a command's name, say how to use it, which --help after any command also does.
+- `/history [N | --days N | --days=N]` — The words looked up in the last N days. With nothing, the last 2; N is at most 3650.
+- `/stats` — The deck, streak and accuracy figures for this directory. Takes no arguments.
+- `/play` — Review the words due today; Ctrl-C stops and keeps every answer. Takes no arguments.
+- `/sound [N]` — With nothing, how many times each pronunciation plays. With N, play it N times for the rest of this session; 0 turns playback off, and 20 is the most.
+- `/lang [language]` — With nothing, the language in effect and the dictionary answering it. With a two-letter tag like es, switch to that language: saved when this directory is a deck, for this session otherwise.
+- `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
+<!-- /command-usage -->
+
 > NOTE: while other languages are available, only English dictionary is well tested.
 
 ### Asking Free-Form Questions

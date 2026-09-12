@@ -1156,6 +1156,9 @@ var retiredSymbolNames = map[string]string{
 	"deckDeps":        "newLangDeps",
 	"newDeck":         "newLangDeps",
 	"MigrateFlatDeck": "MigrateToLanguages",
+	// #53: /pron's argument rule became its registry row's usage, which /help
+	// pron prints and the docs quote through the command-usage span.
+	"pronCommandHelp": "pronUsage",
 	"dictChoice":      "dictMeta",
 	// #46 dissolved the decorator into the seam: deps.audio is a *audioSeam, so
 	// there is no unwrapped source to wrap and no wrap site to remember. Four

@@ -30,6 +30,7 @@
 | `soundUsage` | `cmd/define/sound_cmd.go` | new |
 | `langUsage` | `cmd/define/lang_cmd.go` | new |
 | `pronUsage` | `cmd/define/pron_cmd.go` | new |
+| `pronCommandHelp` | `cmd/define/pron_cmd.go` | deleted |
 
 - **`command`** gains `args` and `usage`: the one statement of how a command is used, 1:1 with a registry row.
   - **DRY rationale:** today the argument forms are written by hand in the atlas (`atlas/define.md` 1126–1131) and in `pronCommandHelp`; afterwards both derive from the row.
@@ -234,7 +235,7 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
 
 **Files:** Modify `cmd/define/command.go`. Test `cmd/define/commandloop_test.go`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```go
   // Over the WHOLE registry: without the routing, every one of these fails in its
   // own parser (/history reads --help as a number of days, /play and /stats
@@ -276,10 +277,10 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
   }
   ```
   The fixture rows in `dispatchCmds` gain a `usage`, so the fixture test has something to print.
-- [ ] **Step 2: Run them.** → FAIL.
-- [ ] **Step 3: Implement** `asksForUsage` and its branch in `dispatchCommand`.
-- [ ] **Step 4: Run.** → PASS; `go test ./cmd/define/` → PASS.
-- [ ] **Step 5: Commit.** `#53: --help after any command prints its usage`
+- [x] **Step 2: Run them.** → FAIL.
+- [x] **Step 3: Implement** `asksForUsage` and its branch in `dispatchCommand`.
+- [x] **Step 4: Run.** → PASS; `go test ./cmd/define/` → PASS.
+- [x] **Step 5: Commit.** `#53: --help after any command prints its usage`
 
 ## Task 3: the docs quote the usage from the registry
 
