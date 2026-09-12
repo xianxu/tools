@@ -1,12 +1,13 @@
 ---
 id: 000051
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-11
 updated: 2026-09-11
 estimate_hours: 1.24
 started: 2026-09-11T13:16:01-07:00
+actual_hours: 3.14
 ---
 
 # lead the define README with the TUI, not the flags
@@ -201,6 +202,7 @@ Single-pass: one boundary, plain checkboxes (AGENTS.md §3).
 ## Log
 
 ### 2026-09-11
+- 2026-09-11: closed — README reorganised TUI-first in the operator-approved order: Install, Start it (deck question, keys, clickable words, known words, completion), Everything is a / command, Reviewing what is due (quiz detail inline, operator choice), then the rest, ending with From the command line and Checking the model connection. VERIFIED AS A MOVE, not assumed: the pipe-only multiset diff in the Spec shows 15 lines removed and 41 added, every one mapped to the twelve enumerated edits, run in the most restricted shell available. That command is pipes only because both earlier forms (diff with process substitution, then mktemp) printed a false zero in a sandbox. PRE-VALIDATION IN A THROWAWAY WORKTREE caught a guard this issue had declared position-independent: keyTableIn took the first "| key | does |" in the README, there are two, and the move put the session table first, so it silently checked the wrong table. The review key table now has a review-keys marked span found via markedSpan, and Constraints names both position-sensitive guards (PQ-3). Two position words ("the question hatches above", "the screen above") pointed across moved sections and are now links, pinned by TestREADMEAnchorsResolve. The command table is quoted from the registry span and pinned over derivedDocs; the stale no-deck sentence #50 left is corrected and added to the superseded-claims guard; the root README and the atlas account of the command table are updated. MUTATION-VERIFIED in every shape each claim has, 7 of 7 red with a control run green: three link-target renames, dropping the ? row from the review keys, deleting the review-keys marker, drifting one README command-table row, and reverting the corrected no-deck sentence. build, vet, vet -tags conformance and gofmt clean; go test ./... fully green; run-merge-checks.sh passed.; review verdict: SHIP
 
 ### 2026-09-11 — reorganised, and a guard this issue declared safe was not
 
@@ -251,6 +253,25 @@ only, and it was proven in the most restricted shell available: 15 lines removed
 41 added, each mapped to one of the twelve edits.
 
 **Verified on the branch:** build and vet clean, gofmt clean; go test ./... fully green; the merge gate passed (run-merge-checks.sh, release-stamp check); the pipe-only diff in the Spec shows 15 lines removed and 41 added, every one mapped to the twelve listed edits; seven mutations each red, with a control run green; the stale no-deck claim is absent from the README, the root README and the atlas.
+
+### 2026-09-11 — closed SHIP; four advisories and their dispositions
+
+- **BR-1** (slug rule unstated in the plan): the rule is stated where it runs, in
+  `TestREADMEAnchorsResolve`'s comment — lower-case, spaces to hyphens, drop
+  everything but letters, digits, hyphens and underscores — and exercised by all
+  three link targets, each mutation-verified.
+- **BR-2** (a trailing comment in the superseded-claims list now sits on the #51
+  line): real, and mine. The edit anchored on `"persists when\ngiven.",` as a line
+  *prefix*, so the new entry was inserted ahead of that line's own comment.
+  Cosmetic, in a test file. Deferred: a post-close change under `cmd/` forces a
+  re-close, which is disproportionate for a comment. Fixed with BR-4 in a follow-up.
+- **BR-3** (the anchor guard counts any `#` line as a heading, and does not model
+  GitHub's `-1` suffix for duplicate headings): lenient rather than strict, and
+  unreachable today — no fenced `#` lines, no duplicate slugs. Noted for when the
+  README gains a shell snippet with comments.
+- **BR-4** (`play_loop.go:35` still says an ordinary directory has no deck): outside
+  this window — a #50 residual surviving in a code comment. With BR-2 in the
+  follow-up.
 
 ## Revisions
 
