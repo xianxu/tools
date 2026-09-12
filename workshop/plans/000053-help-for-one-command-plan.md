@@ -84,9 +84,10 @@ This file is read by repo guards in `cmd/define/repo_guard_test.go`, and each ta
 
 - `TestPlanTablesNameEntitiesThatExist` — the `modified` rows (`command`, `runHelp`, `dispatchCommand`) exist from the start; the `new` rows are promises while any box is unticked.
 - `TestPlanTableStatusMatchesTheChangeWindow` — a `modified` row must be touched once its file is. Task 1 is the first commit to touch `command.go`, and it touches all three `modified` symbols, which is why the registry change and `/help <command>` are one task. Task 0 touches no file a row names.
-- `TestPlanNamedTestsExist`, `TestPlanCitesTestsThatExist` — a test is written in backticks here only if it exists. The tests this plan adds, and the one Task 3 deletes, are named plainly.
+- `TestPlanNamedTestsExist`, `TestPlanCitesTestsThatExist` — a test is written in backticks here only if it exists. The tests this plan adds are named plainly until they exist, and the one Task 3 deletes is not named at all.
 - `TestNoArtifactNamesARetiredSymbol` — Task 3 adds `pronCommandHelp` → `pronUsage` to `retiredSymbolNames`; code, atlas and README are swept in the same commit, and this plan stays exempt through its `deleted` row.
 - `TestPlanStatusNormalisesToTheVocabulary` — statuses are `new`, `modified` or `deleted`.
+- `TestARemovedDeclarationIsSweptOrRetired` — a page that names a declaration the window removed fails unless `retiredSymbolNames` maps it. Task 3 removes a test as well as `pronCommandHelp`, so both are mapped, and no current page names either (found at Task 4: the post-commit check had been filtered to `TestPlan*`, which this guard is not).
 
 ---
 
@@ -286,7 +287,7 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
 
 **Files:** Modify `cmd/define/README.md`, `atlas/define.md`, `cmd/define/pron_cmd.go`, `cmd/define/doc_sync_test.go`, `cmd/define/repo_guard_test.go`, and this plan's Pure entities table.
 
-- [ ] **Step 1: Write the failing test.**
+- [x] **Step 1: Write the failing test.**
   ```go
   func commandUsageSpan() string {
   	var b strings.Builder
@@ -312,16 +313,16 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
   	}
   }
   ```
-- [ ] **Step 2: Run it.** → FAIL for both docs.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run it.** → FAIL for both docs.
+- [x] **Step 3: Implement.**
   - `cmd/define/README.md`: the span goes right after "To check additional help for commands, type `/help [command]`."
   - `atlas/define.md`: the paragraph at 1126–1131 becomes the rationale (the summary stays short because it is what a bare `/help` prints; each row's `args` and `usage` are what `/help <command>` and `/<command> --help` print; `--help` is answered once in `dispatchCommand` because `/history` used to read it as a number of days), followed by the span. The `pron-command-help` paragraph and span (1133–1137) are deleted.
-  - Delete `pronCommandHelp` and the test that pinned its span (TestDocsQuoteThePronCommandHelp). Rewrite the comment at `pron_cmd.go:85–97` to say `/pron`'s rule is its row's usage. Update `TestDocsQuoteTheCommandList`'s comment: argument syntax lives in `usage`, quoted by `command-usage`.
+  - Delete `pronCommandHelp` and the doc-sync test that pinned its span. Rewrite the comment at `pron_cmd.go:85–97` to say `/pron`'s rule is its row's usage. Update `TestDocsQuoteTheCommandList`'s comment: argument syntax lives in `usage`, quoted by `command-usage`.
   - Add `"pronCommandHelp": "pronUsage"` to `retiredSymbolNames` in `repo_guard_test.go`.
   - Add a row for `pronCommandHelp` at `cmd/define/pron_cmd.go`, status deleted, to this plan's Pure entities table, in this same commit.
-- [ ] **Step 4: Sweep the deletion.** `git grep -n 'pronCommandHelp\|pron-command-help' -- ':!workshop/history'` → only the #53 issue, this plan and the `retiredSymbolNames` entry.
-- [ ] **Step 5: Run.** `go test ./cmd/define/` → PASS.
-- [ ] **Step 6: Commit.** `#53: the docs quote each command's usage from the registry`
+- [x] **Step 4: Sweep the deletion.** `git grep -n 'pronCommandHelp\|pron-command-help' -- ':!workshop/history'` → only the #53 issue, this plan and the `retiredSymbolNames` entry.
+- [x] **Step 5: Run.** `go test ./cmd/define/` → PASS.
+- [x] **Step 6: Commit.** `#53: the docs quote each command's usage from the registry`
 
 ## Task 4: verify
 
