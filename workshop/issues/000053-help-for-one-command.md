@@ -101,19 +101,19 @@ total: 0.49
 Detailed plan: `workshop/plans/000053-help-for-one-command-plan.md`. Single pass:
 plain checkboxes, no Mx.
 
-- [ ] Task 0 — side-quest: the README rewrite (`6cf5414`, carried by this
+- [x] Task 0 — side-quest: the README rewrite (`6cf5414`, carried by this
       branch) keeps the text the nine doc-sync tests pin; `go test ./cmd/define/`
       green, plan guards included.
-- [ ] Task 1 — every `commands` row carries `args` and `usage` (each text beside
+- [x] Task 1 — every `commands` row carries `args` and `usage` (each text beside
       its parser, limits from the parsers' constants), and `/help <command>`
       explains one (`findCommand`, `unknownCommand`, `commandUsage`); bare `/help`
       says so; `/help`'s summary and both command-list spans updated.
-- [ ] Task 2 — `--help` and `-h` answered in `dispatchCommand` for every command,
+- [x] Task 2 — `--help` and `-h` answered in `dispatchCommand` for every command,
       one-shot included.
-- [ ] Task 3 — the README and atlas quote the generated `command-usage` span;
+- [x] Task 3 — the README and atlas quote the generated `command-usage` span;
       `pronCommandHelp`, its span and its test absorbed and removed, and the
       retirement recorded.
-- [ ] Task 4 — mutation-verify each guard; full suite, vet, gofmt; run the binary
+- [x] Task 4 — mutation-verify each guard; full suite, vet, gofmt; run the binary
       and record the output.
 
 ## Log
@@ -146,6 +146,46 @@ the plan guards, eleven failures in all, not nine. The other finding:
 `usageText` is already taken by the `--help` capture helper in
 `deckasker_test.go`, so the renderer is `commandUsage`; every other new name was
 checked against the package, tests included, and is free.
+
+Implementation, Tasks 0–4 (commits `cae3eb2`, `d6db417`, `3f3bdae`, `c21195a`,
+`d49af6a`):
+
+- Task 0: all eight anchors matched once, and the package went green with the
+  plan guards included. A correction to the count above: "nine doc-sync tests"
+  is nine failures across eight tests, because
+  `TestREADMEQuotesThePromptsTheLoopActuallyPrints` reports two.
+- Tasks 1–3 each went red before the code and green after.
+- One full run after Task 3's edits failed on a test I did not capture (the tail
+  showed only a board footer), and two re-runs of the identical tree passed.
+  Recorded as a flake, not diagnosed.
+- Task 4 found a real miss: `TestARemovedDeclarationIsSweptOrRetired` failed the
+  whole-repo run because the plan still named the test Task 3 removed. My
+  post-commit check had been filtered to `TestPlan*`, which skipped it. Fixed in
+  `d49af6a` (mention swept, removal mapped in `retiredSymbolNames`); the whole
+  suite passed after that commit.
+- Mutation check in a throwaway worktree at `c21195a`. Every mutation was
+  caught, and the unmutated control was green:
+
+  | mutation | went red |
+  |---|---|
+  | `runHelp` ignores its argument | TestHelpExplainsOneCommand |
+  | no `--help` routing | TestDashHelpPrintsTheUsageForEveryCommand, 14 of 14 pairs |
+  | one row's usage blanked | TestEveryRegisteredCommandIsRunnable |
+  | `/help` words an unknown name itself | TestHelpForAnUnknownNameSaysWhatDispatchSays |
+  | one usage word drifted in the atlas, then the README | TestDocsQuoteTheCommandUsage, each page |
+  | the bare-help line dropped | TestBareHelpSaysHowToExplainOne |
+  | `synopsis` pads a command with no args | TestCommandUsageWraps |
+
+- gofmt clean; `go vet ./...` clean; `go test ./...` green (`cmd/define` after
+  `d49af6a`; the other packages are unchanged and green).
+- The built binary, in an empty directory: `define /help history`,
+  `/history --help`, `/history -h`, `/help /history` and `/help HISTORY` each
+  print the synopsis and the usage (exit 0). `/help histry` says "did you mean
+  /history?" and `/help nosuch` lists the commands (exit 2). `/help a b` says it
+  takes one command (exit 2). Bare `/help` lists the commands and the new
+  `/help <command>` line. The TUI smoke test is the operator's, before merge.
+- The estimate-quality judge (INFO) expects 0.49h to run 0.1–0.2h low, because
+  the mutation pass had no line of its own.
 
 ## Revisions
 
