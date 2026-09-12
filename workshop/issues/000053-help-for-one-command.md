@@ -1,14 +1,15 @@
 ---
 id: 000053
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-12
 updated: 2026-09-12
 estimate_hours:
+started: 2026-09-12T15:55:34-07:00
 ---
 
-# /help history prints the whole list, so no command explains its arguments
+# define: /help history prints the whole list, so no command explains its arguments
 
 ## Problem
 
