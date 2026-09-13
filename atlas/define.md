@@ -1745,8 +1745,9 @@ the session's deps taken when it starts, so it finishes the language it started
 in. It hands back one `bgJobResult` on a channel the loop selects on beside
 resizes, and the loop clears the frame, prints the notice and redraws, which keeps
 every screen write on the loop and between prompts. The job reads the store
-through `quietStore`, which drops the store's warnings, so nothing it does reaches
-the terminal. The runner's context is a
+through `quietStore`, the store's own quiet view (`store.Quieter`, which every store
+implements; `TestEveryStoreHasAQuietView` holds each to it), so nothing it does
+reaches the terminal. The runner's context is a
 child of the session's: quitting cancels the job, the loop waits at most two
 seconds for it, and every store write is an atomic rename, so any stop leaves each
 file old or new.
@@ -1757,7 +1758,7 @@ nil batch and gets the whole deck, unchanged. **What a job could not finish is
 retried at most once a session**: a word (a refused band, authoring that kept
 nothing, or a model or store error on it, one rule in `markUnfinished`, where a
 budget cut leaves the word pending), and a learner model it could not write. The
-runner keeps both in a `bgMemory` that the next job skips. **A model that does not
+runner keeps both in a `bgMemory` per language, which the next job in it skips. **A model that does not
 answer, or a deck whose files fail, is said once**, and the session stops asking.
 `stopMeans` reads a stop's kind in one place: `noModel` from `llm.ErrUnavailable`
 (which a rate limit or a 5xx also is) or `llm.ErrRequest`, and `deckErr` from

@@ -109,3 +109,12 @@ func (g *gatedStore) SetAudio(k store.AudioKey, data []byte, rec store.AudioReco
 }
 
 var _ store.Store = (*gatedStore)(nil)
+
+// Quiet is this store with its disk half reporting nothing (#54), the view a
+// background job reads through. It keeps the gate, so the job reads and writes
+// where the session would.
+func (g *gatedStore) Quiet() store.Store {
+	q := *g
+	q.disk = quietStore(g.disk)
+	return &q
+}

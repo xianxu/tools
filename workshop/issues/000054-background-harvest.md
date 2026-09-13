@@ -1,12 +1,13 @@
 ---
 id: 000054
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-09-13
 estimate_hours: 2.75
 started: 2026-09-12T17:16:34-07:00
+actual_hours: 3.60
 ---
 
 # the TUI keeps practice material current in the background, so new words get cloze questions without a command
@@ -91,26 +92,26 @@ it lands.
 
 ## Done when
 
-- [ ] In the TUI, 10 new deck words trigger a background harvest that labels them
+- [x] In the TUI, 10 new deck words trigger a background harvest that labels them
       and writes their sentences, and a `/play` sitting afterwards asks cloze
       questions for them. Asserted end to end against the fake model, not a
       stubbed trigger.
-- [ ] The trigger counts from the store, so words looked up from the command line,
+- [x] The trigger counts from the store, so words looked up from the command line,
       harvested by hand, or forgotten are counted right. Asserted for each.
-- [ ] No lookup, question or sitting waits on it: a test holds the fake model's
+- [x] No lookup, question or sitting waits on it: a test holds the fake model's
       reply and shows the TUI still answers input.
-- [ ] Quitting mid-run cancels it and keeps every word already written.
-- [ ] It never runs in an undecided or declined directory, and never asks the deck
+- [x] Quitting mid-run cancels it and keeps every word already written.
+- [x] It never runs in an undecided or declined directory, and never asks the deck
       question.
-- [ ] A learner model is written in the background once the deck crosses 12 words
+- [x] A learner model is written in the background once the deck crosses 12 words
       with none; refreshed only past the growth threshold; reflect runs before
       harvest when both are due.
-- [ ] Nothing reaches stderr while the TUI owns the terminal; a batch that lands
+- [x] Nothing reaches stderr while the TUI owns the terminal; a batch that lands
       is reported on screen; a missing model gives at most one notice per session.
-- [ ] A per-run budget and an off switch, both documented.
-- [ ] Two processes in one deck don't author the same word twice, or the plan
+- [x] A per-run budget and an off switch, both documented.
+- [x] Two processes in one deck don't author the same word twice, or the plan
       shows why that's harmless.
-- [ ] The README and atlas describe the background work and the restated rule.
+- [x] The README and atlas describe the background work and the restated rule.
 
 ## Estimate
 
@@ -164,6 +165,7 @@ README rewrite it carries.
 
 ## Log
 
+- 2026-09-13: closed — #54 complete through M2. M1 closed SHIP (63a1a37): background harvest with a written state machine, one runner goroutine, quiet store reads, a locked dictionary. M2 closed SHIP (5ff6e9c): the session writes the learner model at the reflect floor and refreshes it when deck lookups double, before the harvest that reads it. Advisory findings carried to this close, each addressed. M1 round 2: (1) budget cut at author/entail marks the word: does not hold, errBudget breaks before those returns; the rule now lives in markUnfinished, pinned by TestMarkUnfinishedLeavesABudgetCutPending (57232e5). (2) deckPermission single-goroutine comment stale: rewritten to name the job reads and the decided-state invariant (8788b6d). (3) a store read error in a job left no trace: errDeckIO marks store errors where the store returns them and stopMeans turns them into one notice and off; pinned by TestAStoreErrorStopsTheSessionOnce, TestAStoreWriteErrorInTheHarvestStopsTheSession, TestHarvestDeckTypesAStoreError, TestReflectDeckTypesAStoreError, TestStopMeans (57232e5, 9d99823). (4) a miss counting toward a check unpinned: TestAMissedLookupDoesNotCountTowardTheCheck with a hits control (8788b6d). (5) residue of a word forgotten mid-job: the atlas names the sweep, a second --forget, since Forget removes every file a word owns whether or not the deck holds it (ddd4e48). M2: (1) bgNoticeFor early return hid a written model: now a fold, pinned by TestBgNoticeForSaysEveryEffectInJobOrder and a transition row (4677e40). (2) plan tables lagged the code: the deckErr state row, the bgJobResult, harvestOutcome, runAuthoring, runBackgroundJob, bgRunner and reflectDue prose, new rows, the envelope and decision 6 updated, and a scripted pass refuses stale phrases (4677e40). (3) the learner model other writers unnamed: the plan ARCH-ORDER list and the atlas name the operator editor and --reflect, governed by the splice and the atomic write (4677e40). (4) the log read at every check: the job reads the model first and the log only when reflectCouldBeDue, pinned by TestAHandEditedModelCostsNoLogRead with a control; the second UserModel read inside reflectDeck is deliberate for the splice and commented (4677e40). Mutations at 4677e40 in a throwaway worktree, each anchor matched once: 20/20 red (reflectDue ignores the factor; modelLookups reads the whole file; a zero-lookup model is due; a refresh skips the floor; reflectDue forgets an unreadable model; the job harvests before it reflects; the runner forgets a failed reflect; the job ignores it; a failed reflect unreported; stopMeans ignores errDeckIO; a harvest store error unmarked; a reflect store error unmarked; markUnfinished counts a budget cut; stepBackground ignores deckErr; the job reflects when not due; reflectDeck never says written; a reflect stop untyped; a miss counts; a stop hides what the job did; a hand-edited model costs a log read); unmutated control green. M1 mutations: 8/8 at 631e6e3 and 12/13 before them (the budget row is unobservable by construction, recorded in plan and test). gofmt clean, go vet ./... clean, go test ./... green at 4677e40 (cmd/define 120.4s). FuzzModelLookups 20s, 229k execs, no failure. Pending and not claimed: the operator TUI smoke test (plan Task 1.7 Step 3), which spends real model calls and is the operator to run before merge.; review verdict: SHIP
 - 2026-09-13: closed M2 — M2 built: reflectDeck/reflectOutcome (3fee9f7); reflectDue, modelLookups, bgRefreshFactor and FuzzModelLookups, fuzzed 20s at 229k execs with no failure (1b21ce4); the job writes the learner model before it harvests, bgMemory remembers a reflect that wrote nothing, reflect store errors marked (fb65cd9). The M1 review round-2 Minors fixed as rules: markUnfinished and stopMeans decide in one place which words a pass gives up on and what a stop means, errDeckIO marks store errors where the store returns them so a deck whose files fail is one notice and off (57232e5); a miss not counting toward a check pinned, the deckPermission comment states the invariant for the job reads (8788b6d); pins for stopMeans, a harvest write error reaching the session, and a reflect store error (9d99823); docs: README, atlas background and learner-model sections, notice table, the forgotten-word sweep, the runReflect comment, plan and issue Revisions (ddd4e48). The round-2 budget-cut finding was checked against harvest.go and does not hold: at the author and entail calls errBudget breaks before the return that marks the word; the rule now lives in markUnfinished, pinned directly. Mutations in a throwaway worktree at ddd4e48, each anchor matched once: 17/17 red (reflectDue ignores the factor; modelLookups reads the whole file; a zero-lookup model is due; a refresh skips the floor; the job harvests before it reflects; the runner forgets a failed reflect; the job ignores it; a failed reflect unreported; stopMeans ignores errDeckIO; a harvest store error unmarked; a reflect store error unmarked; markUnfinished counts a budget cut; stepBackground ignores deckErr; the job reflects when not due; reflectDeck never says written; a reflect stop untyped; a miss counts); unmutated control green. gofmt clean, go vet ./... clean, go test ./... green at ddd4e48 (cmd/define 120.2s); plan guards green after the tick commit. Operator TUI smoke test (plan Task 1.7 Step 3) still pending.; review verdict: SHIP
 - 2026-09-13: closed M1 — M1 review round 1 (FIX-THEN-SHIP) fixed in 631e6e3. BR-1: every word a pass could not finish (a refused band, a model stop or store error on that word, authoring that kept nothing) joins failed and so the runner tried set; a budget cut is not a failure. Pins: TestABandRefusalIsRetriedOncePerSession, TestHarvestDeckCountsAStoppedWordAsUnfinished. BR-2: the job reads the store through quietStore (store.YAML.Quiet, through the deck gate), so no store warning reaches the terminal from its goroutine. Pin: TestTheJobWritesNothingToTheTerminal, bare and gated, with a control read of the same store that must warn. BR-3: plan table moves pendingWords to Integration points, adds quietStore, and appends a Revisions entry. Minors: notice now says "the model did not answer" (ErrUnavailable includes 429/5xx); assertNoJob counts model clients built and asserts after end() instead of a 700ms poll; hasModelSeam is the shared guard; one Deck read per job (pendingWords and runAuthoring take the deck); 130-col comment rewrapped. Mutations in a throwaway worktree at 631e6e3, each anchor matched once: 8/8 red (refused band dropped, stop dropped, job reads the loud store, gated quietStore loud, Quiet keeps warn, permission check dropped, off switch ignored, runner drops failed); unmutated control green. Round-1 mutations 12/13 (the budget row is unobservable by construction, recorded in plan and test). gofmt clean, go vet clean, go test ./... green after the commit (cmd/define 117.6s). Operator TUI smoke test (plan Task 1.7 Step 3) still pending.; review verdict: SHIP
 
@@ -307,6 +309,27 @@ operator's editor included; and the job reads the model before the log, and the
 log only when the model could be due, with the envelope pricing both reads per
 check.
 
+
+**Close review: SHIP.** The nine findings carried from the milestones are
+disposed as addressed, and its three advisory Minors are fixed as their rules:
+quiet reads are the store seam's (`store.Quieter`, pinned by
+TestEveryStoreHasAQuietView); the runner's memory is kept per language (pinned by
+TestBgMemoryIsKeptPerLanguage); and the Done-when boxes are ticked against their
+pins. (1) TestTheSessionPreparesPracticeAfterTenNewWords. (2)
+TestPendingWordsFollowsTheSpec and TestRunBackgroundJobHarvestsOnlyPastTheThreshold.
+(3) TestALookupNeverWaitsForTheBackgroundJob. (4)
+TestQuittingCancelsTheJobAndKeepsWhatItWrote. (5)
+TestNoJobWhereTheDeckWasNotAgreedTo. (6)
+TestTheSessionWritesALearnerModelAtTwelveWords,
+TestTheSessionRefreshesTheModelWhenLookupsDouble and TestReflectDue. (7)
+TestTheJobWritesNothingToTheTerminal, TestABackgroundNoticeIsWrittenBetweenPrompts
+and TestNoModelIsOneNoticeThenQuiet. (8) TestTheOffSwitchStopsIt, with `bgBudget`
+documented and TestRunBackgroundJobStaysInItsBudget recording that the batch binds
+first. (9) Argued in the plan's ARCH-ORDER list. (10) The README and atlas
+sections, under the doc guards. Not ticked: the operator's TUI smoke test (plan
+Task 1.7 Step 3), which spends real model calls and is the operator's to run
+before merge.
+
 ## Revisions
 
 ### 2026-09-12 — planning
@@ -356,3 +379,8 @@ check.
   otherwise it would fail the same way at every check and never say why.
 - **A learner model the job could not write is not asked for again this
   session**, by the same rule as a word it could not finish.
+
+### 2026-09-13 — close review
+
+- **What a job could not finish is remembered per language**: a word or a learner
+  model that failed in English is still tried after `/lang es`.

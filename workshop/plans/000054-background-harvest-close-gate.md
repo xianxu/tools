@@ -146,6 +146,66 @@ rounds:
           round: 3
       boundary: M2
       blocked: false
+    - "n": 4
+      timestamp: "2026-09-13T01:12:28-07:00"
+      agent: claude
+      dispose:
+        - id: BR-8
+          disposition: addressed
+          note: markUnfinished is the one site; errBudget breaks precede every marking return; mutation to count a budget cut turns TestMarkUnfinishedLeavesABudgetCutPending red.
+          round: 4
+        - id: BR-9
+          disposition: addressed
+          note: deckperm.go:42-49 records the invariant; settleQuietly and resolve both return on a decided state, so the job's reads race nothing.
+          round: 4
+        - id: BR-10
+          disposition: addressed
+          note: Store errors are marked errDeckIO where returned; dropping the mark in pendingWords turns TestAStoreErrorStopsTheSessionOnce red.
+          round: 4
+        - id: BR-11
+          disposition: addressed
+          note: Making every submit count turns TestAMissedLookupDoesNotCountTowardTheCheck/misses red.
+          round: 4
+        - id: BR-12
+          disposition: addressed
+          note: Atlas names the sweep; YAML.Forget removes facts and items whether or not the deck holds the word.
+          round: 4
+        - id: BR-13
+          disposition: addressed
+          note: bgNoticeFor is a fold; an inserted early return turns TestBgNoticeForSaysEveryEffectInJobOrder red.
+          round: 4
+        - id: BR-14
+          disposition: addressed
+          note: deckErr row, bgJobResult fields, bgMemory signatures and the per-check envelope row all match the code.
+          round: 4
+        - id: BR-15
+          disposition: addressed
+          note: The learner-model row names the operator's editor and --reflect with the splice as the resolution.
+          round: 4
+        - id: BR-16
+          disposition: addressed
+          note: reflectIfDue reads the model first and the log only when it could be due; reading the log first turns TestAHandEditedModelCostsNoLogRead red.
+          round: 4
+      findings:
+        - id: BR-17
+          severity: Minor
+          title: The operator smoke test (Task 1.7 Step 3) and the issue's ten Done-when boxes are unticked at close
+          detail: 'The Log says twice the smoke test is still pending. Rule: a checkbox the plan or issue carries is ticked when its evidence exists, or explicitly waived in --verified, before the boundary; every Done-when bullet has a pin, so the boxes are tickable now.'
+          family: checklist-state-matches-delivery
+          round: 4
+        - id: BR-18
+          severity: Minor
+          title: quietStore is a type switch over two concrete shapes, so any other production store wrapper reads loudly again
+          detail: 'This is the 2nd finding in family background-never-writes-outside-the-loop. Rule: the job''s silence is a property of the seam, not a list of known types. Make quieting an optional interface each wrapper forwards, with a guard that every store.Store implementation in the package implements it. background.go:327-337.'
+          family: background-never-writes-outside-the-loop
+          round: 4
+        - id: BR-19
+          severity: Minor
+          title: bgMemory survives /lang, so a word or reflect that failed in one language is skipped in the next this session
+          detail: 'This is the 3rd finding in family shared-state-across-the-job-boundary. Rule: session memory that outlives a store switch is keyed by the store it was learned against, or reset on the switch. Prevalence: both fields of bgMemory (background.go:233-236, merged at :281-286); no test covers a two-language session.'
+          family: shared-state-across-the-job-boundary
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#54 (boundary-review)
@@ -210,14 +270,31 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-16** [Minor] `repeated-reads-per-job` Once the deck is at the floor every check reads the whole event log, and a reflecting job reads UserModel twice
   This is the 2nd finding in family repeated-reads-per-job. Rule: a job reads each store surface once, and the envelope prices the read per check. Reading UserModel before Events would skip the log read when modelLookups is unknown; background-only, acknowledged in Revisions, envelope row not yet updated.
 
+## Round 4 — 2026-09-13T01:12:28-07:00 (claude) — passed
+
+### Disposed
+
+- BR-8 — addressed — markUnfinished is the one site; errBudget breaks precede every marking return; mutation to count a budget cut turns TestMarkUnfinishedLeavesABudgetCutPending red.
+- BR-9 — addressed — deckperm.go:42-49 records the invariant; settleQuietly and resolve both return on a decided state, so the job's reads race nothing.
+- BR-10 — addressed — Store errors are marked errDeckIO where returned; dropping the mark in pendingWords turns TestAStoreErrorStopsTheSessionOnce red.
+- BR-11 — addressed — Making every submit count turns TestAMissedLookupDoesNotCountTowardTheCheck/misses red.
+- BR-12 — addressed — Atlas names the sweep; YAML.Forget removes facts and items whether or not the deck holds the word.
+- BR-13 — addressed — bgNoticeFor is a fold; an inserted early return turns TestBgNoticeForSaysEveryEffectInJobOrder red.
+- BR-14 — addressed — deckErr row, bgJobResult fields, bgMemory signatures and the per-check envelope row all match the code.
+- BR-15 — addressed — The learner-model row names the operator's editor and --reflect with the splice as the resolution.
+- BR-16 — addressed — reflectIfDue reads the model first and the log only when it could be due; reading the log first turns TestAHandEditedModelCostsNoLogRead red.
+
+### Raised
+
+- **BR-17** [Minor] `checklist-state-matches-delivery` The operator smoke test (Task 1.7 Step 3) and the issue's ten Done-when boxes are unticked at close
+  The Log says twice the smoke test is still pending. Rule: a checkbox the plan or issue carries is ticked when its evidence exists, or explicitly waived in --verified, before the boundary; every Done-when bullet has a pin, so the boxes are tickable now.
+- **BR-18** [Minor] `background-never-writes-outside-the-loop` quietStore is a type switch over two concrete shapes, so any other production store wrapper reads loudly again
+  This is the 2nd finding in family background-never-writes-outside-the-loop. Rule: the job's silence is a property of the seam, not a list of known types. Make quieting an optional interface each wrapper forwards, with a guard that every store.Store implementation in the package implements it. background.go:327-337.
+- **BR-19** [Minor] `shared-state-across-the-job-boundary` bgMemory survives /lang, so a word or reflect that failed in one language is skipped in the next this session
+  This is the 3rd finding in family shared-state-across-the-job-boundary. Rule: session memory that outlives a store switch is keyed by the store it was learned against, or reset on the switch. Prevalence: both fields of bgMemory (background.go:233-236, merged at :281-286); no test covers a two-language session.
+
 ## Open findings
 
-- **BR-8** [Minor] `retry-bound-covers-every-failure-kind` A budget cut at the author or entail call marks the word failed, unlike the veto path
-- **BR-9** [Minor] `shared-state-across-the-job-boundary` deckPermission's single-goroutine invariant is now stale
-- **BR-10** [Minor] `silent-failure-has-a-signal` A store read error inside a job leaves no trace in the session
-- **BR-11** [Minor] `trigger-event-pinned` No test pins that a missed lookup does not count toward the check
-- **BR-12** [Minor] `residue-names-its-sweep` Facts and items re-created for a word forgotten mid-job have no removal path
-- **BR-13** [Minor] `notice-wording-matches-cause` bgNoticeFor's early return on noModel/deckErr hides a learner model the same job wrote
-- **BR-14** [Minor] `plan-table-classification-matches-code` Plan tables and prose lag the M2 code in four places (deckErr row, bgJobResult fields, bgMemory signatures, envelope reflect row)
-- **BR-15** [Minor] `shared-state-across-the-job-boundary` The learner model is now written by a background actor while the README invites hand-editing it, and the plan's second-actor list does not name it
-- **BR-16** [Minor] `repeated-reads-per-job` Once the deck is at the floor every check reads the whole event log, and a reflecting job reads UserModel twice
+- **BR-17** [Minor] `checklist-state-matches-delivery` The operator smoke test (Task 1.7 Step 3) and the issue's ten Done-when boxes are unticked at close
+- **BR-18** [Minor] `background-never-writes-outside-the-loop` quietStore is a type switch over two concrete shapes, so any other production store wrapper reads loudly again
+- **BR-19** [Minor] `shared-state-across-the-job-boundary` bgMemory survives /lang, so a word or reflect that failed in one language is skipped in the next this session

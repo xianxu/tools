@@ -4480,3 +4480,28 @@ README invites to edit its Corrections (M2 review). The splice already kept the
 edit, but nobody had said so or priced the race. **For each file a background
 actor writes, list every other writer, the operator's editor included, and name
 what governs each.**
+
+## A checkbox is ticked when its evidence exists, or left open out loud (`#54`)
+
+The close review found the issue's ten Done-when boxes unticked at close though
+every one had a pin, and the plan's operator smoke test unticked with nothing
+saying why. A reader could not tell done from forgotten. **Tick a box as soon as
+its evidence exists, citing the evidence, and name every box left open, with its
+reason, before the boundary.**
+
+## A property of a seam belongs to the seam, not to a list of the shapes you know (`#54`)
+
+`quietStore` silenced the store with a type switch over the deck gate and the
+YAML store; a third store, or a new wrapper around one, would have read loudly
+again from the job's goroutine (close review, the second finding in
+`background-never-writes-outside-the-loop`). **Make the property an interface
+every implementation carries (`store.Quieter`), and guard that each one does**,
+so a new shape fails a test instead of printing into the frame.
+
+## Session memory that outlives a switch is keyed by what it describes (`#54`)
+
+The runner's memory of what a job could not finish survived `/lang`, so a word or
+a learner model that failed in English would have been skipped in Spanish (close
+review, the third finding in `shared-state-across-the-job-boundary`). **State a
+session carries across a switch of the thing it describes is keyed by that thing,
+or reset when it changes.**

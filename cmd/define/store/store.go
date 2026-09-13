@@ -110,3 +110,13 @@ type Store interface {
 	// "found something".
 	Forget(key string) (removed bool, err error)
 }
+
+// Quieter is a store that can give a view of itself that reports nothing (#54):
+// the same files, every read and write unchanged, its warnings dropped. A
+// background job reads through it, because a warning written off the loop that
+// owns the terminal lands in the frame. Every Store implementation provides one,
+// and a guard in cmd/define holds each to it, so the job's silence is a property
+// of this seam rather than a list of the shapes the job knows.
+type Quieter interface {
+	Quiet() Store
+}

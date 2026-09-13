@@ -230,6 +230,8 @@ func runBackgroundJob(ctx context.Context, d deps, skip bgMemory) bgJobResult {
 // bgMemory is what a session remembers between jobs, so that what a job tried and
 // could not finish is not tried again this session: the words, and a learner
 // model it could not write. A job gets a copy; received merges each result back.
+// The runner keeps one per language, because /lang changes the store it was
+// learned against.
 type bgMemory struct {
 	words         map[string]bool // words a job could not finish
 	reflectFailed bool            // a reflect ran and wrote nothing
@@ -247,22 +249,26 @@ type bgRunner struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	job     func(context.Context, deps, bgMemory) bgJobResult
-	results chan bgJobResult // capacity 1: one job at a time, so a send never waits on the loop
-	done    chan struct{}    // closed when the latest job's goroutine has returned
-	tried   bgMemory         // what a job could not finish this session
+	results chan bgJobResult        // capacity 1: one job at a time, so a send never waits on the loop
+	done    chan struct{}           // closed when the latest job's goroutine has returned
+	tried   map[store.Lang]bgMemory // what a job could not finish this session, per language
+	jobLang store.Lang              // the language the latest job ran in
 }
 
 // newBgRunner is a runner under the session's context, running job.
 func newBgRunner(parent context.Context, job func(context.Context, deps, bgMemory) bgJobResult) *bgRunner {
 	ctx, cancel := context.WithCancel(parent)
-	return &bgRunner{ctx: ctx, cancel: cancel, job: job, results: make(chan bgJobResult, 1), tried: bgMemory{words: map[string]bool{}}}
+	return &bgRunner{ctx: ctx, cancel: cancel, job: job, results: make(chan bgJobResult, 1), tried: map[store.Lang]bgMemory{}}
 }
 
 // start runs one job with the session's deps as they are now, so a job finishes
 // the language it started in even if /lang switches mid-job. The job's skip is a
-// copy of tried, so the two goroutines never share a map.
+// copy of what tried holds for that language, so the two goroutines never share a
+// map, and a job after a /lang switch starts from what that language has learned.
 func (r *bgRunner) start(d deps) {
-	skip := bgMemory{words: maps.Clone(r.tried.words), reflectFailed: r.tried.reflectFailed}
+	mem := r.tried[d.lang]
+	skip := bgMemory{words: maps.Clone(mem.words), reflectFailed: mem.reflectFailed}
+	r.jobLang = d.lang
 	done := make(chan struct{})
 	r.done = done
 	go func() {
@@ -277,12 +283,18 @@ func (r *bgRunner) start(d deps) {
 
 // received is the loop's half of a result: the words a job could not finish join
 // tried, and so does a learner model it could not write, so no later job this
-// session spends calls on them again.
+// session spends calls on them again. Both are kept for the language the job ran
+// in: what failed in one language says nothing about another.
 func (r *bgRunner) received(res bgJobResult) {
-	for _, w := range res.failed {
-		r.tried.words[w] = true
+	mem := r.tried[r.jobLang]
+	if mem.words == nil {
+		mem.words = map[string]bool{}
 	}
-	r.tried.reflectFailed = r.tried.reflectFailed || res.reflectFailed
+	for _, w := range res.failed {
+		mem.words[w] = true
+	}
+	mem.reflectFailed = mem.reflectFailed || res.reflectFailed
+	r.tried[r.jobLang] = mem
 }
 
 // stop cancels the job and waits up to wait for its goroutine to return. Every
@@ -322,16 +334,12 @@ func hasModelSeam(d deps) bool {
 // quietStore is the job's view of the deck: the same files, with the store's
 // warnings dropped (#54). The session's stores warn to the process stderr, and the
 // job reads off the loop, so a warning about a bad file would land in the frame at
-// an arbitrary moment. A gated store keeps its gate and gets a quiet disk; the
-// in-memory store never warns.
+// an arbitrary moment. The view is the store's own (store.Quieter), which every
+// store in this package provides (TestEveryStoreHasAQuietView); a store without
+// one, a test's wrapper, is read as it is.
 func quietStore(st store.Store) store.Store {
-	switch s := st.(type) {
-	case *gatedStore:
-		q := *s
-		q.disk = quietStore(s.disk)
-		return &q
-	case *store.YAML:
-		return s.Quiet()
+	if q, ok := st.(store.Quieter); ok {
+		return q.Quiet()
 	}
 	return st
 }

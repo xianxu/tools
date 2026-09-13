@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -575,4 +580,82 @@ type countingEvents struct {
 func (c *countingEvents) Events(since time.Time) ([]store.ReviewEvent, error) {
 	c.reads.Add(1)
 	return c.Store.Events(since)
+}
+
+// Every store the session can hold has a quiet view (#54), so the job's silence is
+// a property of the store seam rather than a list of the shapes quietStore knows:
+// a new store, or a new wrapper around one, that forgets store.Quieter fails here
+// instead of printing into the frame from the job's goroutine.
+func TestEveryStoreHasAQuietView(t *testing.T) {
+	fset := token.NewFileSet()
+	methods := map[string]map[string]bool{} // receiver type -> its methods
+	notTest := func(fi fs.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }
+	for _, dir := range []string{".", "store"} {
+		pkgs, err := parser.ParseDir(fset, dir, notTest, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pkg := range pkgs {
+			for _, f := range pkg.Files {
+				for _, decl := range f.Decls {
+					fn, ok := decl.(*ast.FuncDecl)
+					if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
+						continue
+					}
+					typ := fn.Recv.List[0].Type
+					if star, ok := typ.(*ast.StarExpr); ok {
+						typ = star.X
+					}
+					id, ok := typ.(*ast.Ident)
+					if !ok {
+						continue
+					}
+					key := dir + "." + id.Name
+					if methods[key] == nil {
+						methods[key] = map[string]bool{}
+					}
+					methods[key][fn.Name.Name] = true
+				}
+			}
+		}
+	}
+	var stores []string
+	for typ, ms := range methods {
+		if !ms["Deck"] || !ms["AppendEvent"] {
+			continue // not a store.Store, which has both
+		}
+		stores = append(stores, typ)
+		if !ms["Quiet"] {
+			t.Errorf("%s implements store.Store with no Quiet method; a background job reading through it would write its warnings into the frame", typ)
+		}
+	}
+	if len(stores) < 3 {
+		t.Fatalf("found %d store implementation(s) (%v), want the YAML store, the in-memory one and the deck gate; the scan is not seeing the packages", len(stores), stores)
+	}
+}
+
+// What a job could not finish is remembered for the language it ran in (#54): a
+// /lang switch changes the store, so a word or a learner model that failed in one
+// language is still tried in another, and remembered again on the way back.
+func TestBgMemoryIsKeptPerLanguage(t *testing.T) {
+	var mu sync.Mutex
+	var seen []bgMemory
+	r := newBgRunner(t.Context(), func(_ context.Context, _ deps, skip bgMemory) bgJobResult {
+		mu.Lock()
+		seen = append(seen, skip)
+		mu.Unlock()
+		return bgJobResult{failed: []string{"pan"}, reflectFailed: true}
+	})
+	defer r.stop(time.Second)
+	en, es := testDeps(t), testDeps(t)
+	en.lang, es.lang = store.DefaultLang, store.Lang("es")
+	for _, d := range []deps{en, es, en} {
+		r.start(d)
+		r.received(awaitJobResult(t, r))
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 3 || seen[1].words["pan"] || seen[1].reflectFailed || !seen[2].words["pan"] || !seen[2].reflectFailed {
+		t.Errorf("the skip each job saw: %+v; want the Spanish job to start clean and the second English job to remember", seen)
+	}
 }
