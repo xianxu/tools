@@ -35,6 +35,9 @@
 | `stepBackground` | `cmd/define/background.go` | new |
 | `modelLookups` | `cmd/define/background.go` | new |
 | `reflectDue` | `cmd/define/background.go` | new |
+| `bgMemory` | `cmd/define/background.go` | new |
+| `stopMeans` | `cmd/define/background.go` | new |
+| `markUnfinished` | `cmd/define/harvest.go` | new |
 | `harvestOutcome` | `cmd/define/harvest.go` | new |
 | `reflectOutcome` | `cmd/define/reflect.go` | new |
 
@@ -358,17 +361,17 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
 
 **Files:** Modify `cmd/define/reflect.go`. Test `cmd/define/reflect_test.go`.
 
-- [ ] **Step 1: Write the failing tests.** TestReflectDeckReportsWhatItWrote (12 deck words and a scripted model → `written`, a nil `stopped`) and TestReflectDeckTypesAMissingModel (a closed server → `errors.Is(o.stopped, llm.ErrUnavailable)`).
-- [ ] **Step 2: Run.** → FAIL.
-- [ ] **Step 3: Implement** `reflectOutcome` and `reflectDeck` (the body of `runReflect` from the floor check to the write, unchanged). `runReflect` becomes the flag's guards, `reflectDeck`, `return o.code`; every existing reflect test passes unchanged.
-- [ ] **Step 4: Run** → PASS; whole package → PASS.
-- [ ] **Step 5: Commit.** `#54: the reflect core returns what it did`
+- [x] **Step 1: Write the failing tests.** TestReflectDeckReportsWhatItWrote (12 deck words and a scripted model → `written`, a nil `stopped`) and TestReflectDeckTypesAMissingModel (a closed server → `errors.Is(o.stopped, llm.ErrUnavailable)`).
+- [x] **Step 2: Run.** → FAIL.
+- [x] **Step 3: Implement** `reflectOutcome` and `reflectDeck` (the body of `runReflect` from the floor check to the write, unchanged). `runReflect` becomes the flag's guards, `reflectDeck`, `return o.code`; every existing reflect test passes unchanged.
+- [x] **Step 4: Run** → PASS; whole package → PASS.
+- [x] **Step 5: Commit.** `#54: the reflect core returns what it did`
 
 ### Task 2.2: when a learner model is due
 
 **Files:** Modify `cmd/define/background.go`, `cmd/define/background_test.go`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```go
   func TestModelLookupsReadsOnlyTheFrontmatter(t *testing.T) {
   	for _, tc := range []struct {
@@ -413,10 +416,10 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
   }
   ```
   and FuzzModelLookups, seeded with the table's malformed forms (the shape of `cloze_fuzz_test.go`): it never panics, and when it reports a count, that number appears in the frontmatter's `window:` line.
-- [ ] **Step 2: Run.** → FAIL.
-- [ ] **Step 3: Implement** `modelLookups`, `reflectDue` and `bgRefreshFactor = 2`.
-- [ ] **Step 4: Run** → PASS; whole package → PASS.
-- [ ] **Step 5: Commit.** `#54: when a learner model is due`
+- [x] **Step 2: Run.** → FAIL.
+- [x] **Step 3: Implement** `modelLookups`, `reflectDue` and `bgRefreshFactor = 2`.
+- [x] **Step 4: Run** → PASS; whole package → PASS.
+- [x] **Step 5: Commit.** `#54: when a learner model is due`
 
 ### Task 2.3: the job reflects before it harvests
 
@@ -424,16 +427,16 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
 
 `runBackgroundJob` folds the deck (`foldLookups`) and, when `reflectDue`, calls `reflectDeck` before counting unbanded words, because authoring reads the model (`readLearner`). A reflect stop typed `ErrUnavailable` or `ErrRequest` sets `noModel`. `reflected` produces the "learner model updated" notice.
 
-- [ ] **Step 1: Write the failing tests.** TestTheSessionWritesALearnerModelAtTwelveWords (twelve lookups → `UserModel()` is written before the harvest's authoring requests, and the notice shows) and TestTheSessionRefreshesTheModelWhenLookupsDouble (a model recording 20 lookups and a deck with 40 → rewritten; with 30 → left alone).
-- [ ] **Step 2: Run.** → FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** → PASS; whole package → PASS.
-- [ ] **Step 5: Commit.** `#54: the session writes the learner model when it is due`
+- [x] **Step 1: Write the failing tests.** TestTheSessionWritesALearnerModelAtTwelveWords (twelve lookups → `UserModel()` is written before the harvest's authoring requests, and the notice shows) and TestTheSessionRefreshesTheModelWhenLookupsDouble (a model recording 20 lookups and a deck with 40 → rewritten; with 30 → left alone).
+- [x] **Step 2: Run.** → FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** → PASS; whole package → PASS.
+- [x] **Step 5: Commit.** `#54: the session writes the learner model when it is due`
 
 ### Task 2.4: M2 docs, verify, close
 
-- [ ] **Step 1:** The README's learner-model section, the atlas's reflect section and the comment above `runReflect` say the session writes the model at 12 words and refreshes it when lookups double; `--reflect` still runs it by hand.
-- [ ] **Step 2: Mutation-verify:** `reflectDue` ignores the refresh factor (TestReflectDue); `modelLookups` reads past the frontmatter (TestModelLookupsReadsOnlyTheFrontmatter); the job harvests before it reflects (TestTheSessionWritesALearnerModelAtTwelveWords); plus a control.
+- [x] **Step 1:** The README's learner-model section, the atlas's reflect section and the comment above `runReflect` say the session writes the model at 12 words and refreshes it when lookups double; `--reflect` still runs it by hand.
+- [ ] **Step 2: Mutation-verify:** `reflectDue` ignores the refresh factor (TestReflectDue); `modelLookups` reads past the frontmatter (TestModelLookupsReadsOnlyTheFrontmatter); the job harvests before it reflects (TestTheSessionWritesALearnerModelAtTwelveWords); plus a control. Added with the M1 review's second round: `stopMeans` ignores `errDeckIO` (TestStopMeans); a harvest store error, then a reflect store error, loses its mark (TestHarvestDeckTypesAStoreError, TestReflectDeckTypesAStoreError); `markUnfinished` counts a budget cut (TestMarkUnfinishedLeavesABudgetCutPending); `stepBackground` ignores `deckErr` (TestStepBackgroundTransitions); the runner forgets a failed reflect, or the job ignores it (TestAFailedReflectIsNotRetriedThisSession); a model from no lookups is due (TestReflectDue); a miss counts toward a check (TestAMissedLookupDoesNotCountTowardTheCheck).
 - [ ] **Step 3:** gofmt, `go vet ./...`, `go test ./...` → PASS, run after the last commit.
 - [ ] **Step 4:** `sdlc close --issue 54 --verified '<evidence>'`.
 
@@ -446,3 +449,12 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
 - **A store warning during a job**, one more event the loop cannot block (ARCH-ORDER). The session's stores warn to the process stderr, and the job read the deck off the loop, so a bad `words/*.yaml` could print into the frame at any moment. The job now reads through `quietStore`, the same store with its warnings dropped (`store.YAML.Quiet`, reached through the deck gate). The loop's own reads still warn as before. Pinned by `TestTheJobWritesNothingToTheTerminal`.
 - **The notice says "the model did not answer"**, not "no model answered": `llm.ErrUnavailable` includes a rate limit and every 5xx, so one busy moment on a paid key also turns the session's background work off.
 - **Tests and guards**: `assertNoJob` counts the model clients built and asserts after `end()`, whose deferred stop waits for any job, instead of polling for 700 ms. The session's gate and the job share `hasModelSeam`.
+
+### 2026-09-13 — M2 build, and the M1 review's second round
+
+- **`reflectDeck` starts at the model call**, not at the floor check: `runReflect` keeps every guard and message in order (deck, events, fold, the floor, config, client), and the job reaches the core with evidence it folded itself. Its tests sit beside the reflect rig in `reflect_run_test.go` rather than the pure `reflect_test.go`, and the missing-model test scripts a 500, as the harvest's does.
+- **`reflectDue` holds a refresh to the floor too, and a model written from no lookups waits for one**: doubling zero is no growth, and without that row a paid call would repeat at every check. `modelLookups` needs a terminated frontmatter, unlike `parseLearnerBand`, because its count decides a paid call. The refresh test is job-level, in `background_test.go`: the loop adds nothing to a decision the job makes.
+- **The job reads the lookup log at every check once the deck reaches the floor**, to decide whether the model is due; the operating envelope's reflect row reads per check, not per reflect. Background only.
+- **One rule for what stops a job**, because the round-2 review named a family: `markUnfinished` decides which words a pass gives up on, and `stopMeans` what a stop means. A deck whose files fail is a new stop: `errDeckIO`, marked where the store returns an error, turns background work off with one notice, as a model that does not answer does. Until then a job that could not read the deck returned nothing and said nothing.
+- **A reflect that writes nothing is not retried this session**: `bgMemory` holds it beside the unfinished words, replacing the job's `skip` map.
+- **Round-2 Minors**: a miss not counting toward a check is pinned; the permission comment names the job as a reader and the invariant that makes it safe; the atlas names the sweep for a word forgotten mid-job (a second `--forget`). The budget-cut finding was checked against the code and does not hold (at the author and entail calls `errBudget` breaks before the return that marks the word); the rule now lives in `markUnfinished`, pinned directly.

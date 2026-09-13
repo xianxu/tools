@@ -30,7 +30,7 @@ and there is no second consumer yet.
 | `Player` | `afplay(1)` | `fakePlayer`, recording play count |
 | `deps.newLLM` + `getenv` | `internal/llm` (the model) | `llmtest.Fake`, an httptest server on the wire |
 | `deps.notifySignals` | `signal.Notify` | a channel a test writes to |
-| `--reflect` | the model, batch | `llmtest.Fake` + a live conformance check |
+| `--reflect` | the model, batch, and the session's background job (`#54`) | `llmtest.Fake` + a live conformance check |
 | `bgRunner` → `runBackgroundJob` | the model, from the session's background | `llmtest.Fake`, and a blocking stub `llm.Client` where a test must hold a call |
 
 Pure: `ParseEntry` (flat text → `Entry`), `Render` (`Entry` → string),
@@ -1368,9 +1368,11 @@ still collapsed, because that changes no meaning.
 ## The learner model
 
 `define --reflect` folds the deck and the lookup log into the learner model, the
-third artifact in the working directory. Batch and on demand: no model call ever
-sits on the lookup or review path, which is what keeps a lookup instant and
-offline.
+third artifact in the working directory. Batch, and nothing waits on it: no model
+call ever sits on the lookup or review path, which is what keeps a lookup instant
+and offline. A session also writes it in the background (`#54`, see Background
+preparation): at the reflect floor when there is none, and again when the deck's
+lookups have doubled since the count its frontmatter records.
 
 **Every claim names its evidence, and the evidence is CHECKED.** The typed answer
 carries the deck words behind each claim and `checkEvidence` drops any claim
@@ -1726,14 +1728,17 @@ more about rarity than about any level a learner is at.
 
 The interactive session keeps practice material current without a command. Once
 at session start, and after every `bgThreshold` (10) lookups that found their
-word, it checks the store; when at least ten words still need work (no band, or
-no practice item: `pendingWords`), a job bands and authors the ten newest within
-`bgBudget` (60) model calls. Only the raw editor (`runEditor`) does this: not
+word, it checks the store. A job first writes the learner model when it is due
+(`reflectDue`: none yet and the deck at the reflect floor, or the deck's lookups
+doubled since the count the model records, which `modelLookups` reads from its
+frontmatter), because authoring reads it. Then, when at least ten words still
+need work (no band, or no practice item: `pendingWords`), it bands and authors
+the ten newest within `bgBudget` (60) model calls. Only the raw editor (`runEditor`) does this: not
 `-raw`, a pipe, a one-shot lookup, or any mode flag.
 
 **One table decides when a job runs** (`stepBackground`, `background.go`): idle,
-running, or off once the model did not answer, fed three events (session start, a lookup
-that found its word, a finished job). The table is the whole state; the loop only
+running, or off once the model did not answer or the deck's files failed, fed
+three events (session start, a lookup that found its word, a finished job). The table is the whole state; the loop only
 applies its effects. **A job runs on one goroutine** (`bgRunner`) with a copy of
 the session's deps taken when it starts, so it finishes the language it started
 in. It hands back one `bgJobResult` on a channel the loop selects on beside
@@ -1747,15 +1752,21 @@ file old or new.
 
 **The batch is the point.** `harvestDeck` bands a batch before authoring the same
 batch, so a backlog drains on both halves under a small budget; the CLI passes a
-nil batch and gets the whole deck, unchanged. **A word a job could not finish is
-retried at most once a session** (a refused band, authoring that kept nothing, or
-a model or store error on that word): the runner keeps a `tried` set that the next
-job skips. **A model that does not answer is said once** (`noModel`, from a stop
-typed `llm.ErrUnavailable`, which a rate limit or a 5xx also is, or
-`llm.ErrRequest`), and the session stops asking;
-`llm.Resolve` cannot tell whether a model is there, so the first call decides.
+nil batch and gets the whole deck, unchanged. **What a job could not finish is
+retried at most once a session**: a word (a refused band, authoring that kept
+nothing, or a model or store error on it, one rule in `markUnfinished`, where a
+budget cut leaves the word pending), and a learner model it could not write. The
+runner keeps both in a `bgMemory` that the next job skips. **A model that does not
+answer, or a deck whose files fail, is said once**, and the session stops asking.
+`stopMeans` reads a stop's kind in one place: `noModel` from `llm.ErrUnavailable`
+(which a rate limit or a 5xx also is) or `llm.ErrRequest`, and `deckErr` from
+`errDeckIO`, which the harvest and reflect cores wrap around a store error where
+the store returns it. `llm.Resolve` cannot tell whether a model is there, so the
+first call decides.
 `DEFINE_NO_BACKGROUND=1` turns it all off, and so does a directory nobody agreed to
 make a deck: `backgroundEnabled` reads `deckPermission.saving()` and never asks.
+The job then reads the permission off the loop, which is safe only because it
+runs once the question is decided and no method writes to a decided state.
 
 **Every dictionary call holds one lock** (`lockedDictionary`, `dictionaryMu`):
 DictionaryServices is cgo with no documented thread-safety, and the job looks
@@ -1766,12 +1777,15 @@ startup dictionary and every `/lang` switch go through.
 the worst case is one item and some wasted calls, bounded by each process's
 budget. A word forgotten mid-job may keep its facts and items on disk; nothing
 reads them while the word is outside the deck, and they are still true of it if
-it comes back.
+it comes back. The sweep is forgetting it again: `Forget` removes every file a
+word owns whether or not the deck still holds it.
 
 | notice | when |
 |---|---|
 | `N new practice questions ready for /play` | a job wrote items |
+| `learner model updated` | a job wrote the learner model |
 | `practice questions are not being prepared: the model did not answer (see define --llm-check)` | the first job whose model did not answer (none running, a refused request, a rate limit or a 5xx); then the session is quiet |
+| `practice questions are not being prepared: the deck could not be read or written: …` | the first job whose store read or write failed; then the session is quiet |
 
 ## Entry modes
 

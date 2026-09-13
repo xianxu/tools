@@ -359,9 +359,13 @@ you read in, and — the part that matters — what practice material should DO 
 each. Every claim names the words it was read off, and a claim citing a word your
 deck does not hold is dropped before you see it.
 
-It is batch and on demand, and nothing you do waits on it.
-Below a dozen words it declines and says so, because a learner model built from
-four lookups is a confident guess.
+**In a session it writes itself** (`#54`): once a dozen words you have looked up
+are in the deck, the next background check writes it before it prepares practice
+questions, and says `define: learner model updated`. It is rewritten when your
+lookups have doubled since, because a level moves slowly, and `define --reflect`
+still writes it by hand; nothing you do waits on either. Below a dozen words
+`--reflect` declines and says so, and a session waits, because a learner model
+built from four lookups is a confident guess.
 
 **`## Corrections` is yours.** Disagree with it in your own words and re-run
 `--reflect`: everything from that heading down comes back byte-for-byte, and a
@@ -390,9 +394,10 @@ calls a time, and says so between prompts: `define: 10 new practice questions
 ready for /play`. Nothing you do waits on it: a lookup, a question or a sitting
 runs as it always did, and quitting stops the job and keeps what it already
 wrote. A word the model cannot band or write a question for is tried at most
-once a session. `DEFINE_NO_BACKGROUND=1` turns it off, and so does a model that
-does not answer, a rate limit included: the first job it fails says so once, and
-the session stops asking.
+once a session. `DEFINE_NO_BACKGROUND=1` turns it off. So does a model that does
+not answer, a rate limit included, or a deck whose files cannot be read or
+written: the first job that meets either says so once, and the session stops
+asking.
 
 `define --harvest` still runs it by hand, over the whole deck, and it is the only
 thing in `define` that may make you wait. A review works perfectly well against a

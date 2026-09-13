@@ -285,6 +285,17 @@ fixed in one commit, with the cheap Minors:
   instead of polling for 700 ms; `hasModelSeam` is the one guard; a job reads the
   deck once; a 130-column comment in `harvest.go` is rewrapped.
 
+
+**M2 built.** The reflect core returns what it did (`reflectDeck`); `reflectDue`
+and `modelLookups` decide when the session writes the learner model; the job
+writes it before it harvests. With them, the M1 review's round-2 Minors, fixed as
+rules: `markUnfinished` and `stopMeans` decide in one place what a pass gives up
+on and what a stop means, a deck whose files fail is said once and stops
+background work, a reflect that writes nothing is not retried this session, a
+miss not counting toward a check is pinned, and the permission comment names the
+job's reads. The review's budget-cut finding does not hold against the code:
+`errBudget` breaks before the return that would mark the word.
+
 ## Revisions
 
 ### 2026-09-12 — planning
@@ -326,3 +337,11 @@ fixed in one commit, with the cheap Minors:
   through a quiet view of the same store.
 - **The notice reads "the model did not answer"**: a rate limit or a 5xx also
   turns the session's background work off, and "no model answered" overstated it.
+
+### 2026-09-13 — M2, and the M1 review's second round
+
+- **A deck whose files cannot be read or written is said once**, and the
+  session's background work stops, as it does for a model that does not answer:
+  otherwise it would fail the same way at every check and never say why.
+- **A learner model the job could not write is not asked for again this
+  session**, by the same rule as a word it could not finish.

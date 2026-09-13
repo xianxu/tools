@@ -334,7 +334,9 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []dropCl
 // socket (ARCH-PURE).
 //
 // No model call ever moves onto the lookup or review path: this is a MODE, run
-// on demand, and that is the whole reason the analysis is batch (#17's Spec).
+// on demand, and that is the whole reason the analysis is batch (#17's Spec). A
+// session runs the same core, reflectDeck, in the background when the model is
+// due (#54), off the editor loop, so nothing waits on it there either.
 func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer) int {
 	if d.deck == nil {
 		fmt.Fprintln(errOut, noDeckMessage(opt.noCapture))
