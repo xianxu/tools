@@ -223,6 +223,10 @@ full-package runs at about 110 s each), a flaky suite, the loop tests, and a thi
 review round per boundary. The flaky full-package run has now been seen twice
 (once during #53, once by that judge); a hunt runs in a separate worktree.
 
+The flake hunt ran the whole package four times (`-count=4`, a separate worktree
+at the plan commit) and nothing failed, so the failure is rare or depends on
+load. Every full run now saves its output, so a recurrence names its test.
+
 ## Revisions
 
 ### 2026-09-12 — planning
