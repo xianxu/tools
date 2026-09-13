@@ -171,6 +171,11 @@ mapped the integration points; the facts that shaped the plan:
 - A `/play` sitting reads items once (`todaysQuestions`), so items written during
   a sitting appear in the next.
 
+Correction to the first Log entry: the raw editor already runs three
+goroutines (the key reader and resize watcher in `rawterm.go`, the signal relay
+in `interrupt.go`); `scanLines` belongs to the line loop. The conclusion stands:
+nothing hands a job's result back to the loop yet.
+
 ## Revisions
 
 ### 2026-09-12 — planning
@@ -188,3 +193,17 @@ mapped the integration points; the facts that shaped the plan:
   loop does.
 - **Harvest and reflect get typed cores**, because the job must tell a missing
   model from other failures, and both entry points return only exit codes.
+
+### 2026-09-12 — plan-quality round 1
+
+- **The count is the Spec's again.** Counting only unbanded words, while harvest
+  bands the whole deck before authoring any, stalls a backlog: a small budget
+  goes to banding, and once nothing is unbanded the count stops firing while most
+  words still have no item. Pending now means no band or no item, and a job bands
+  and authors one batch, the newest ten pending words.
+- **Failed authoring is retried at most once per session**, through the
+  session's `tried` set, so counting the no-item half cannot turn into a retry
+  loop on words the model cannot write. A persistent backoff is decision 7 for
+  the operator.
+- **Two interleavings written down:** a word forgotten mid-job (ignored, and
+  why), and which context the job derives from (the session's).
