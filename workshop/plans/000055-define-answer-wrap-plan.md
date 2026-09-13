@@ -131,3 +131,41 @@ No architectural blockers. Add two explicit verification requirements:
 - Retain terminal sizing's sub-`minWrapWidth` normalization to zero and test
   that boundary. The narrow live-screen regression must use a width at least
   `minWrapWidth`; width zero alone does not cover this policy.
+
+### 2026-09-13 — Approval and plan-gate refinements
+
+The operator approved execution ("otherwise continue with #55"). This supersedes
+the pending Approval paragraph above.
+
+**PQ-1 — operating envelope:** the response path normally has a 4096-token
+transport default; this wrapper is intended for prose and vocabulary, where
+individual tokens are normally tens of bytes. Enforce a 64 KiB ceiling on the
+combined unfinished word and whitespace, and a 256-byte ceiling on an unfinished
+escape sequence. These are generous implementation limits, not expected sizes.
+Crossing either poisons the writer with a descriptive error; the existing
+answer-write diagnostic reports the incomplete output. Do not split a word or
+silently drop bytes to recover. Width-zero output bypasses the wrapper and these
+new limits. Process complete tokens once and measure each only when released;
+hold only incomplete UTF-8/escape bytes for rescanning. The 256-byte escape cap
+bounds adversarial rescanning independently of total response length. Tests
+exercise limits at and immediately beyond the boundary, including byte-at-a-time
+input and one large Write. No new goroutine or paragraph-size accumulator.
+
+**PQ-2 — function-level test strategies:** this supersedes Task 1's enumerated
+test/procedure paragraphs as the testing contract:
+
+- `answerWrapWriter.Write`: independent literal output oracles plus invariants
+  for visible width (excluding an explicitly oversized word/indent), ordered
+  non-whitespace bytes, paragraph boundaries, and prompt emission of completed
+  words. Metamorphic input partitioning includes every byte split and one-byte
+  writes across styled Unicode. Width-zero is a byte-for-byte pass-through.
+  Bound tests distinguish many short words from an oversized pending token.
+- `answerWrapWriter.Flush`: suffix preservation and idempotence after any
+  partition, including incomplete encoding/escape tails. Fault injection uses
+  the existing downstream writer doubles to establish first-error retention
+  and no subsequent emissions for Write or Flush.
+- `runAsk`: differential testing against a width-zero control through the
+  existing stateful wire fake and real narrow screen; assert word preservation,
+  width, highlighting, unchanged session history, and ordered deferred flushing
+  on the malformed-error path. Keep the interrupted/truncated paths and terminal
+  minimum-width boundary as integration coverage.
