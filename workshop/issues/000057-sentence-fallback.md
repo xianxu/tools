@@ -51,10 +51,10 @@ total: 0.68
 
 ## Plan
 
-- [ ] Add boundary and reported-sentence regressions to question/route tests;
+- [x] Add boundary and reported-sentence regressions to question/route tests;
   observe failures, then extend the shared readsAsQuestion predicate.
-- [ ] Update comments, CLI help and user/atlas descriptions of the heuristic.
-- [ ] Run focused and define-package verification; close through the review
+- [x] Update comments, CLI help and user/atlas descriptions of the heuristic.
+- [x] Run focused and define-package verification; close through the review
   gate, publish and rebuild the local binary preserving installed features.
 
 ## Log
@@ -68,3 +68,9 @@ total: 0.68
   tokenization handles the same bounded console input as before.
 - The plan is a small, fully specified predicate extension, so use change-code's
   documented --no-judge path for trivial changes; the close review still runs.
+
+- c31fbac implements the approved rule. Focused regressions failed before
+  implementation and passed afterward; the full define suite passed (109.982s),
+  vet and git diff --check are clean. Built candidate binary and checked its
+  help output. Installed baseline was d859c42 (main), so no separate feature
+  composition is needed for this rebuild.
