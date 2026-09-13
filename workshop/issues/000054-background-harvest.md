@@ -1,11 +1,12 @@
 ---
 id: 000054
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-12
 updated: 2026-09-12
 estimate_hours:
+started: 2026-09-12T17:16:34-07:00
 ---
 
 # the TUI keeps practice material current in the background, so new words get cloze questions without a command
