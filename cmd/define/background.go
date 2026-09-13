@@ -1,9 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
+	"maps"
+	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
+	"github.com/xianxu/tools/internal/llm"
 )
 
 // Background preparation (#54): the interactive session keeps practice material
@@ -18,6 +24,10 @@ const bgThreshold = 10
 // roughly six calls each (band, author, entail, a veto per wrong answer). A larger
 // backlog drains over several jobs.
 const bgBudget = 60
+
+// noBackgroundEnv turns background preparation off for a session when set to
+// anything: background calls cost money for someone paying per call.
+const noBackgroundEnv = "DEFINE_NO_BACKGROUND"
 
 // bgPhase is where the session's background work stands.
 type bgPhase int
@@ -164,4 +174,99 @@ func pendingWords(st store.Store, skip map[string]bool) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// runBackgroundJob is one job: list what needs work and, when there is enough of
+// it, band and author the newest bgThreshold words within bgBudget calls. Its
+// prose goes to io.Discard; only its result reaches the screen, through the
+// session. skip is the words whose authoring already failed this session.
+func runBackgroundJob(ctx context.Context, d deps, skip map[string]bool) bgJobResult {
+	if d.deck == nil || d.getenv == nil || d.newLLM == nil {
+		return bgJobResult{}
+	}
+	cfg, err := llm.Resolve(d.getenv)
+	if err != nil {
+		// No usable configuration, the case --llm-check reports loudly. The session
+		// stops asking rather than fail the same way at every check.
+		return bgJobResult{noModel: true}
+	}
+	pending, err := pendingWords(d.deck, skip)
+	if err != nil || len(pending) < bgThreshold {
+		return bgJobResult{}
+	}
+	deck, err := d.deck.Deck()
+	if err != nil {
+		return bgJobResult{}
+	}
+	o := harvestDeck(ctx, d, d.newLLM(cfg), deck, &budget{left: bgBudget}, bgBudget, pending[:bgThreshold], io.Discard, io.Discard)
+	return bgJobResult{
+		authored: o.authored,
+		failed:   o.failed,
+		// The two stops that repeat on every call (internal/llm/errors.go): no model
+		// answering, or a request it will always refuse. Any other stop, a malformed
+		// answer or a cancel, leaves the session trying at the next check.
+		noModel: errors.Is(o.stopped, llm.ErrUnavailable) || errors.Is(o.stopped, llm.ErrRequest),
+	}
+}
+
+// bgRunner owns the session's one background goroutine. The session owns the
+// state (stepBackground); the runner only starts a job and hands its result back
+// on results, which the editor loop selects on beside resizes.
+//
+// Its context is a child of the session's, so quitting cancels the job, while a
+// scoped Ctrl-C that stops a streamed answer does not. Every method is called
+// from the loop's goroutine; the job's goroutine touches only its own copies and
+// the results channel.
+type bgRunner struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
+	job     func(context.Context, deps, map[string]bool) bgJobResult
+	results chan bgJobResult // capacity 1: one job at a time, so a send never waits on the loop
+	done    chan struct{}    // closed when the latest job's goroutine has returned
+	tried   map[string]bool  // words whose authoring failed this session
+}
+
+// newBgRunner is a runner under the session's context, running job.
+func newBgRunner(parent context.Context, job func(context.Context, deps, map[string]bool) bgJobResult) *bgRunner {
+	ctx, cancel := context.WithCancel(parent)
+	return &bgRunner{ctx: ctx, cancel: cancel, job: job, results: make(chan bgJobResult, 1), tried: map[string]bool{}}
+}
+
+// start runs one job with the session's deps as they are now, so a job finishes
+// the language it started in even if /lang switches mid-job. The job's skip is a
+// snapshot of tried, so the two goroutines never share a map.
+func (r *bgRunner) start(d deps) {
+	skip := maps.Clone(r.tried)
+	done := make(chan struct{})
+	r.done = done
+	go func() {
+		defer close(done)
+		res := r.job(r.ctx, d, skip)
+		select {
+		case r.results <- res:
+		case <-r.ctx.Done(): // the session is gone, and nobody will read it
+		}
+	}()
+}
+
+// received is the loop's half of a result: the words whose authoring failed join
+// tried, so no later job this session spends calls on them again.
+func (r *bgRunner) received(res bgJobResult) {
+	for _, w := range res.failed {
+		r.tried[w] = true
+	}
+}
+
+// stop cancels the job and waits up to wait for its goroutine to return. Every
+// store write is atomic, so any stop is safe; the wait lets a write in flight
+// finish rather than leave a temp file behind.
+func (r *bgRunner) stop(wait time.Duration) {
+	r.cancel()
+	if r.done == nil {
+		return
+	}
+	select {
+	case <-r.done:
+	case <-time.After(wait):
+	}
 }

@@ -197,7 +197,7 @@ After each commit the check is the whole package, not a filter (lessons, #53).
 
 **Files:** Create `cmd/define/background.go`, `cmd/define/background_test.go`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```go
   func TestStepBackgroundTransitions(t *testing.T) {
   	did := bgJobResult{authored: 3}
@@ -273,10 +273,10 @@ After each commit the check is the whole package, not a filter (lessons, #53).
   }
   ```
   The implementer checks the `store` calls against `store.go` and adjusts the calls, never the assertions.
-- [ ] **Step 2: Run.** → FAIL (undefined).
-- [ ] **Step 3: Implement** `bgPhase` and its three constants, `bgState`, `bgEvent` and its three kinds, `bgEffect`, `bgJobResult`, `stepBackground` per the table, `pendingWords`, and the constants `bgThreshold = 10`, `bgBudget = 60`. Notice texts come from one function, `bgNoticeFor(r bgJobResult) []string`.
-- [ ] **Step 4: Run** → PASS; whole package → PASS.
-- [ ] **Step 5: Commit.** `#54: when a background job runs, as a table`
+- [x] **Step 2: Run.** → FAIL (undefined).
+- [x] **Step 3: Implement** `bgPhase` and its three constants, `bgState`, `bgEvent` and its three kinds, `bgEffect`, `bgJobResult`, `stepBackground` per the table, `pendingWords`, and the constants `bgThreshold = 10`, `bgBudget = 60`. Notice texts come from one function, `bgNoticeFor(r bgJobResult) []string`.
+- [x] **Step 4: Run** → PASS; whole package → PASS.
+- [x] **Step 5: Commit.** `#54: when a background job runs, as a table`
 
 ### Task 1.4: the job and its runner
 
@@ -284,11 +284,11 @@ After each commit the check is the whole package, not a filter (lessons, #53).
 
 - [ ] **Step 1: Write the failing tests.**
   - TestRunBackgroundJobHarvestsOnlyPastTheThreshold: a `harvestRig` store with `bgThreshold - 1` pending words and a `newLLM` that fails the test if called → a zero result; one more word and the scripted fake → `authored > 0`.
-  - TestRunBackgroundJobTypesNoModel: the fake's URL pointing at a closed server → `noModel`.
-  - TestRunBackgroundJobStaysInItsBudget: a backlog of 30 words → the fake saw at most `bgBudget` requests.
-  - TestABacklogDrainsOnBothHalves: a never-harvested deck of 25 words and the scripted fake; run jobs until one finds too little pending → every word is banded, every word the fake lets it author has items, and no job banded a word it then left unauthored for want of budget.
+  - TestRunBackgroundJobTypesNoModel: the fake scripted to answer 500 → `noModel`.
+  - TestRunBackgroundJobStaysInItsBudget: a backlog bigger than one batch (the rig's twelve words) → the fake saw at most `bgBudget` requests.
+  - TestABacklogDrainsOnBothHalves: one job on a never-harvested deck of twelve bands exactly its batch, the ten newest, and authors them; the two oldest stay unbanded for the next job. The order that bands the whole backlog first cannot pass it.
   - TestAWordThatFailsIsRetriedOncePerSession: a veto that rejects every candidate for one word → the first job reports it in `failed`, the runner adds it to `tried`, and the next job's pending list leaves it out.
-  - TestTheRunnerNeverBlocksAfterStop: a job blocked on a stub client; `stop(time.Second)` returns within the second, and the goroutine's send does not block with nobody reading.
+  - TestTheRunnerNeverBlocksAfterStop: a job that returns on cancel, and a result channel already full; `stop(time.Second)` returns before its wait, and the goroutine ends rather than blocking on a send nobody reads.
 - [ ] **Step 2: Run.** → FAIL.
 - [ ] **Step 3: Implement** `runBackgroundJob` (with its `skip` set) and `bgRunner` (with the session's `tried` set), and the `noBackgroundEnv` constant (`"DEFINE_NO_BACKGROUND"`).
 - [ ] **Step 4: Run** → PASS; whole package → PASS.
