@@ -118,6 +118,11 @@ func TestRunBackgroundJobTypesNoModel(t *testing.T) {
 	}
 }
 
+// A job never makes more than bgBudget calls. Today the batch guarantees it on its
+// own: ten words cost at most six calls each (band, author, entail, a veto per
+// wrong answer), which is the budget itself, so the cap cannot bind and replacing
+// it changes nothing this test can see (the M1 mutation run records that). It
+// becomes a pin for the budget the day an item costs more calls.
 func TestRunBackgroundJobStaysInItsBudget(t *testing.T) {
 	d, fake, _ := harvestRig(t, 12)
 	scriptAll(fake, 8)

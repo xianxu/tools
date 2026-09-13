@@ -317,14 +317,14 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
 
 **Files:** Modify `cmd/define/README.md` (practice material), `atlas/define.md` (the harvest section and a new "Background preparation" section: the table, the envelope, the lock, the notices), and every sentence that calls harvesting batch-only: the comment above `runHarvest` in `harvest.go`, the atlas's "Batch, and the only path here that may block" paragraph, and the README's "It is batch, on demand" sentence. M2 takes the learner-model ones.
 
-- [ ] **Step 1:** The README says the session harvests in the background every 10 new words and once at start, at most 60 model calls a time, and says when questions are ready; `DEFINE_NO_BACKGROUND=1` turns it off, and `--harvest` still runs it by hand. The rule is restated as what still holds: nothing you do waits on a model.
-- [ ] **Step 2:** The atlas and code comments say the same, and `TestASittingNeverWaitsOnHarvesting`'s premise is restated (a sitting never harvests; the session's job runs beside it).
-- [ ] **Step 3:** Whole package → PASS (the README guards).
-- [ ] **Step 4: Commit.** `#54: M1 docs: the session prepares practice itself`
+- [x] **Step 1:** The README says the session harvests in the background every 10 new words and once at start, at most 60 model calls a time, and says when questions are ready; `DEFINE_NO_BACKGROUND=1` turns it off, and `--harvest` still runs it by hand. The rule is restated as what still holds: nothing you do waits on a model.
+- [x] **Step 2:** The atlas and code comments say the same, and `TestASittingNeverWaitsOnHarvesting`'s premise is restated (a sitting never harvests; the session's job runs beside it).
+- [x] **Step 3:** Whole package → PASS (the README guards).
+- [x] **Step 4: Commit.** `#54: M1 docs: the session prepares practice itself`
 
 ### Task 1.7: verify M1, then close it
 
-- [ ] **Step 1: Mutation-verify** in a throwaway worktree, each mutation asserted to match once and restored:
+- [x] **Step 1: Mutation-verify** in a throwaway worktree, each mutation asserted to match once and restored:
 
   | mutation | guard that must go red |
   |---|---|
@@ -335,7 +335,7 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
   | the job ignores `bgThreshold` | TestRunBackgroundJobHarvestsOnlyPastTheThreshold |
   | the job bands the whole backlog before authoring | TestABacklogDrainsOnBothHalves |
   | the runner drops a result's `failed` | TestAWordThatFailsIsRetriedOncePerSession |
-  | the job's budget is `harvestLimit` | TestRunBackgroundJobStaysInItsBudget |
+  | the job's budget is `harvestLimit` | not observable today: ten words cost at most 60 calls, the budget itself (see the issue Log) |
   | the send ignores `ctx.Done()` | TestTheRunnerNeverBlocksAfterStop |
   | the permission check is dropped | TestNoJobWhereTheDeckWasNotAgreedTo |
   | the off switch is ignored | TestTheOffSwitchStopsIt |
@@ -343,7 +343,7 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
   | the result case skips `view.Draw("", nil)` before printing | TestABackgroundNoticeIsWrittenBetweenPrompts |
 
   Plus an unmutated control run.
-- [ ] **Step 2:** gofmt, `go vet ./...`, `go test ./...` → PASS, run after the last commit.
+- [x] **Step 2:** gofmt, `go vet ./...`, `go test ./...` → PASS, run after the last commit.
 - [ ] **Step 3:** The operator smoke-tests a session: ten new words, the notice, `/play` shows cloze questions.
 - [ ] **Step 4:** `sdlc milestone-close --issue 54 --milestone M1 --verified '<evidence>'`.
 

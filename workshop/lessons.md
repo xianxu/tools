@@ -4405,3 +4405,13 @@ grep -E` with `\s` and `\b`, matched nothing, and listed every real symbol as
 unresolved. The pass now starts by resolving names that certainly exist and
 refuses to report if it cannot: a checker that cannot run is #51's false zero,
 inverted into a false alarm.
+
+## A cap equal to its batch's worst case cannot be tested, and does nothing today (`#54`)
+
+`bgBudget` is 60 model calls, and a batch of ten words costs at most 60 (band,
+author, entail, three vetoes each). So the budget never binds, and replacing it
+with the CLI's 200 changed nothing a test could see: the mutation run reported it
+NOT CAUGHT, and it could not have come out otherwise. **When a cap and a batch
+bound the same work, name which one binds.** Here the batch does; the budget stays
+as a backstop for an item that costs more calls, its test says so, and the
+mutation table records the row as not observable instead of claiming a pin.
