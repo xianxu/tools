@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-13
 updated: 2026-09-13
-estimate_hours:
+estimate_hours: 1.09
 started: 2026-09-13T12:39:30-07:00
 ---
 
@@ -33,6 +33,32 @@ split it) and terminals narrower than `minWrapWidth` (wrapping disabled).
 - Chunk boundaries do not change wrapping or lose words, Unicode, or styling.
 - Every stream exit flushes pending output, including interruption and errors.
 - Focused regression tests and the define test suite pass.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only. Calibration is marked stale/provisional.*
+
+The spec/plan capture uses the low-end issue-spec primitive (0.5 design × 0.5
+for a clear bug report; 0.1 implementation × 0.4). Two smaller-Go-module
+primitives cover the writer and its ask integration with tests: design 0.3 and
+0.2 × 0.2 for the approved plan; implementation 0.5 each × 0.4. This extends
+the established highlightWriter contract and reuses visibleCells/scanEscape;
+no new library or external-service integration. Atlas design 0.05 × 0.2,
+implementation 0.1 × 0.4; one boundary review uses implementation 0.5 × 0.4.
+Familiarity 1.0; thorough-plan design buffer 15%.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec design=0.25 impl=0.04
+item: smaller-go-module design=0.06 impl=0.20
+item: smaller-go-module design=0.04 impl=0.20
+item: atlas-docs design=0.01 impl=0.04
+item: milestone-review design=0 impl=0.20
+design-buffer: 0.15
+total: 1.09
+```
 
 ## Plan
 
