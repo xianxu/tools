@@ -227,6 +227,15 @@ The flake hunt ran the whole package four times (`-count=4`, a separate worktree
 at the plan commit) and nothing failed, so the failure is rare or depends on
 load. Every full run now saves its output, so a recurrence names its test.
 
+M1 tasks 1.1–1.6 landed (`8965908`, `41fe96d`, `4ae2328`, `27afcb3`, `c8c77b4`,
+and the docs), each red before its code and green after, with the whole suite run
+after every commit. Two small departures from the plan's text, recorded in the
+plan itself: the "missing model" tests script a 500 (the harvest tests' existing
+pattern) rather than a closed server, and the backlog tests use twelve words,
+because the rig's word list holds fourteen. The README's learner-model line said
+nothing calls a model during a lookup; M1 made that false, so the docs task fixed
+it early instead of leaving it for M2.
+
 ## Revisions
 
 ### 2026-09-12 — planning
