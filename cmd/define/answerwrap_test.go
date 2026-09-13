@@ -71,6 +71,52 @@ func TestAnswerWrapStreamsCompletedWords(t *testing.T) {
 	}
 }
 
+func TestAnswerWrapContinuationStyle(t *testing.T) {
+	t.Run("actual highlighted phrase", func(t *testing.T) {
+		var s screen
+		w := newAnswerWrapWriter(&s, 20)
+		hw := newHighlightWriter(w, vocab("alpha beta"), knownOn)
+		if _, err := hw.Write([]byte("12345678901234 alpha beta end")); err != nil {
+			t.Fatal(err)
+		}
+		if err := hw.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		var frame bytes.Buffer
+		s.Paint(&frame, 2, 20, "> ", nil)
+		if strings.Contains(frame.String(), "alpha") || !strings.Contains(frame.String(), knownOn+"beta"+sgrOff+" end") {
+			t.Fatalf("scrolled phrase lost its highlight: %q", frame.String())
+		}
+	})
+	for _, tc := range []struct{ name, input, style string }{
+		{"wrapped highlight", "12345678901234 alpha beta", knownOn},
+		{"explicit newline", "alpha\nbeta", "\x1b[1m\x1b[35m"},
+		{"wrapped enclosing style", "12345678901234 alpha beta", "\x1b[1m\x1b[35m"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var s screen
+			w := newAnswerWrapWriter(&s, 20)
+			input := tc.style + tc.input + sgrOff + " end"
+			for i := range len(input) {
+				if _, err := w.Write([]byte(input[i : i+1])); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := w.Flush(); err != nil {
+				t.Fatal(err)
+			}
+			var frame bytes.Buffer
+			s.Paint(&frame, 2, 20, "> ", nil) // only the continuation fits above the prompt
+			if strings.Contains(frame.String(), "alpha") || !strings.Contains(frame.String(), tc.style+"beta"+sgrOff+" end") {
+				t.Fatalf("continuation lost its independent style: %q", frame.String())
+			}
+		})
+	}
+}
+
 func TestAnswerWrapPoisonedOnWriteFailure(t *testing.T) {
 	boom := errors.New("closed output")
 	for _, width := range []int{0, 20} {

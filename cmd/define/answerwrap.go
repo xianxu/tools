@@ -16,7 +16,8 @@ type answerWrapWriter struct {
 	out        io.Writer
 	width, col int
 	word, gap  strings.Builder
-	tail       []byte // only an incomplete rune or escape; rescans stay bounded
+	tail       []byte   // only an incomplete rune or escape; rescans stay bounded
+	sgr        sgrState // style of emitted text, not of the unfinished word
 	err        error
 }
 
@@ -87,6 +88,7 @@ func (w *answerWrapWriter) consume() {
 		w.emitWord()
 		if r == '\n' {
 			w.emit(w.gap.String() + s)
+			w.emit(w.sgr.resume())
 			w.gap.Reset()
 			w.col = 0
 		} else {
@@ -106,9 +108,25 @@ func (w *answerWrapWriter) emitWord() {
 	cells := visibleCells(word)
 	if cells > 0 && w.col > 0 && w.col+visibleCells(gap)+cells > w.width {
 		w.emit("\n")
+		w.emit(w.sgr.resume())
 		w.col, gap = 0, ""
 	}
 	w.emit(gap + word)
+	// A viewport can begin at any physical row. Reopen the emitted style at
+	// each boundary, but observe only original escapes: observing our own
+	// replay would repeatedly accumulate the same styles in sgrState.
+	for rest := word; ; {
+		i := strings.IndexByte(rest, '\x1b')
+		if i < 0 {
+			break
+		}
+		n := scanEscape(rest[i:])
+		if n < 0 {
+			break // malformed final tail; preserved, not interpreted
+		}
+		w.sgr.observe(rest[i : i+n])
+		rest = rest[i+n:]
+	}
 	w.col += visibleCells(gap) + cells
 	w.word.Reset()
 	w.gap.Reset()

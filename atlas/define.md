@@ -986,7 +986,10 @@ Its contract, in the order the rules matter:
 `highlightWriter` → `answerWrapWriter` → stdout, so highlighting sees logical
 text and wrapping measures the resulting visible cells with `visibleCells`.
 The wrapper emits completed words as they arrive and flushes its unfinished
-word after the highlighter on every exit. The raw session answer is unchanged.
+word after the highlighter on every exit. It reopens the active `sgrState` after
+both inserted and explicit newlines, so a viewport starting inside a highlighted
+phrase or styled paragraph does not depend on an offscreen opening escape.
+The raw session answer is unchanged.
 `opt.width` supplies the terminal width; zero (pipes and terminals below
 `minWrapWidth`) passes bytes through. Words wider than the terminal stay intact;
 old output is not reflowed when the terminal shrinks during an answer. Spaces
