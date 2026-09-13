@@ -101,7 +101,7 @@ type deps struct {
 
 func realDeps() deps {
 	return deps{
-		newDict:         systemDictionary, // dict itself is language-dependent, built in run()
+		newDict:         lockedDictionaries(systemDictionary), // dict itself is language-dependent, built in run()
 		audio:           newAudioSeam(newHTTPAudioSource()),
 		player:          afplayPlayer{},
 		newStore:        openStore,
