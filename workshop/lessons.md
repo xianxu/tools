@@ -4351,3 +4351,57 @@ reporting it.
 
 **Origin:** #51. The final command is pipes plus an `awk` count-difference, proven in the
 most restricted shell available (15 removed, 41 added, every line mapped to an edit).
+
+## The plan is under test too, and a filtered post-commit run is not a post-commit run (`#53`)
+
+Three misses in one issue, all the same shape: a check aimed at the artifact I
+was looking at, while the tree checks more than that.
+
+- **A plan file is a current-truth artifact.** Seven guards read it (`grep -n
+  'currentTruthFiles(t\|"workshop", "plans"' cmd/define/repo_guard_test.go`), so
+  the plan reddened the suite before a line of code existed: a table row
+  backticked two fields that did not exist yet, a row marked `deleted` a symbol
+  still declared, and five unwritten tests were cited in backticks. The
+  plan-quality gate caught it, not me. **Before submitting a plan, run `go test
+  ./cmd/define/ -run 'TestPlan|TestNoArtifact|TestARemoved'` against it, and say
+  in the plan how each task's commit keeps those guards green.** A `modified`
+  row must be touched by the first commit that touches its file
+  (`TestPlanTableStatusMatchesTheChangeWindow`), so the table decides the task
+  split, not the other way round.
+- **A new name must be free in the package, tests included.** The renderer was
+  going to be `usageText`, which `deckasker_test.go` already declares. Grep every
+  new symbol with `-w` over `*.go` before it goes into a plan.
+- **After a commit, run the whole package, not a filter.** Guards that read the
+  committed window see a change only once it is committed, and they are not all
+  named for what they check. `TestARemovedDeclarationIsSweptOrRetired` flagged
+  the plan naming a test the window had removed; my post-commit run, filtered to
+  `TestPlan*`, skipped it, and only the whole-repo run at the end caught it.
+  "Commit, then run the guard" (`#40`) holds, with "the guard" meaning the suite.
+- **A shell that forwards context is pinned with a value that changes the
+  answer.** Every help test ran at width 0, where the renderer does not wrap, so
+  `runHelp` and `dispatchCommand` could drop the width and stay green; the close
+  review found it (BR-1). Pin each forwarded value (the width, and the registry
+  `/help` resolves against) at a setting where the output differs, and check in
+  the test that it does differ. This is "only a disagreeing case pins the
+  DERIVATION", applied to a parameter instead of a formula.
+- **A set of accepted forms is one list, and every surface that names it derives
+  from it.** `--help` and `-h` were written out by hand in the parser, `/help`'s
+  usage, the bare-help line, a test loop and the atlas; the review raised the
+  second finding in that family (BR-2, then BR-4). `usageFlags` is the list now,
+  and a test checks the texts carry the joined phrase, because `-h` is a
+  substring of `--help` and a per-flag Contains would pass on a text naming only
+  one.
+
+## A plan's prose citations have no guard, so resolve them before the gate (`#54`)
+
+The plan guards resolve Core-concepts table rows; nothing checks a backticked
+path or symbol in a plan's prose. #54's plan gate found two in two rounds (a Log
+line claiming one goroutine where the raw editor runs three, and a comment in a
+`config.go` that does not exist), out of about thirty it checked: the family
+`unbacked-claims-about-existing-code`. **Before submitting a plan, resolve every
+backticked `*.go` path to a file and every backticked identifier to a
+declaration, and read the misses.** The first version of that pass used `git
+grep -E` with `\s` and `\b`, matched nothing, and listed every real symbol as
+unresolved. The pass now starts by resolving names that certainly exist and
+refuses to report if it cannot: a checker that cannot run is #51's false zero,
+inverted into a false alarm.

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -17,20 +18,46 @@ import (
 type command struct {
 	name    string
 	summary string
-	run     func(commandCtx, []string) int
+	// args is the argument synopsis that follows the name — "[N | --days N |
+	// --days=N]" — and empty for a command that takes none.
+	args string
+	// usage says how to use the command: what each form of its arguments does,
+	// and what it does bare. `/help <name>` and `/<name> --help` print it, and
+	// the docs quote it through the command-usage span (#53), so a command's
+	// argument rule is stated once, beside the parser that implements it.
+	usage string
+	run   func(commandCtx, []string) int
+}
+
+// synopsis is the command as it would be typed: its name and, only when it
+// takes any, its arguments. The ONE builder, so the screen and the docs' span
+// cannot disagree about a trailing space on a command that takes nothing.
+func (c command) synopsis() string {
+	if c.args == "" {
+		return "/" + c.name
+	}
+	return "/" + c.name + " " + c.args
 }
 
 // commands is the registry. Adding a command is a row here plus its run
-// function — the dispatch loop never changes, which is a Done-when.
+// function — the dispatch loop never changes, which is a Done-when. The row's
+// usage is required (TestEveryRegisteredCommandIsRunnable): /help <name> prints
+// it and the docs quote it.
 var commands = []command{
-	{name: "help", summary: "list the commands", run: runHelp},
-	{name: "history", summary: "words looked up recently", run: runHistory},
-	{name: "stats", summary: "deck, streak and accuracy figures", run: runStatsCommand},
-	{name: "play", summary: "review the words due today", run: runPlayCommand},
-	{name: "sound", summary: "how many times to play a pronunciation", run: runSound},
-	{name: "lang", summary: "the language this deck is in", run: runLang},
-	{name: "pron", summary: "replay this word in its source language, once", run: runPron},
+	{name: "help", summary: "list the commands, or explain one", args: "[command]", usage: helpUsage, run: runHelp},
+	{name: "history", summary: "words looked up recently", args: "[N | --days N | --days=N]", usage: historyUsage, run: runHistory},
+	{name: "stats", summary: "deck, streak and accuracy figures", usage: statsUsage, run: runStatsCommand},
+	{name: "play", summary: "review the words due today", usage: playUsage, run: runPlayCommand},
+	{name: "sound", summary: "how many times to play a pronunciation", args: "[N]", usage: soundUsage, run: runSound},
+	{name: "lang", summary: "the language this deck is in", args: "[language]", usage: langUsage, run: runLang},
+	{name: "pron", summary: "replay this word in its source language, once", args: "[language]", usage: pronUsage, run: runPron},
 }
+
+// helpUsage is /help's own row. Its argument is a command's NAME, with or
+// without the slash, resolved the way dispatch resolves one. The flags come
+// from usageFlags, so a new one cannot go unmentioned.
+var helpUsage = "With nothing, list the commands. With a command's name, say how to use it, which " +
+	strings.Join(usageFlags, " or ") + " after any command also does."
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
 // from, and it is why command-mode type-ahead needed no change to the pure
@@ -247,25 +274,94 @@ func dispatchCommand(c replCommand, cmds []command, cc commandCtx) int {
 	if c.name == "" { // a bare "/" was submitted: show what there is
 		return runHelp(cc, nil)
 	}
-	for _, cmd := range cmds {
-		if strings.EqualFold(cmd.name, c.name) {
-			return cmd.run(cc, c.args)
+	cmd, ok := findCommand(c.name, cmds)
+	if !ok {
+		return unknownCommand(cc.stderr, c.name, cmds)
+	}
+	if asksForUsage(c.args) {
+		// Answered HERE, once, rather than in each command's parser: seven
+		// parsers are seven places to forget it, and /history used to read
+		// --help as a number of days.
+		fmt.Fprint(cc.stdout, commandUsage(cmd, cc.width))
+		return 0
+	}
+	return cmd.run(cc, c.args)
+}
+
+// usageFlags are the arguments that ask for a command's usage instead of being
+// arguments to it. ONE list: the parser below, /help's usage, the bare-help line
+// and the tests all derive from it (#53 BR-4), so a flag added here is routed,
+// named and tested without a second edit.
+var usageFlags = []string{"--help", "-h"}
+
+// asksForUsage reports whether a command's arguments ask for its usage rather
+// than being arguments to it: exactly one, and it is a usage flag. That makes it
+// a contract — no command may take a usage flag as data. None does: /history
+// wants a number, /sound a count, /lang and /pron a two-letter tag.
+func asksForUsage(args []string) bool {
+	return len(args) == 1 && slices.Contains(usageFlags, args[0])
+}
+
+// findCommand resolves a submitted name to its row. Case-INSENSITIVE: dispatch's
+// half of the case policy commandCompletions describes (complete exactly, accept
+// loosely). /help resolves through here too, so it accepts what dispatch does.
+func findCommand(name string, cmds []command) (command, bool) {
+	for _, c := range cmds {
+		if strings.EqualFold(c.name, name) {
+			return c, true
 		}
 	}
-	near, close := nearestCommands(c.name, cmds)
+	return command{}, false
+}
+
+// unknownCommand explains a name that is not a command and returns dispatch's
+// exit code for it. One wording for two routes to the same mistake — a submitted
+// `/histry` and `/help histry` — so they cannot drift apart.
+func unknownCommand(stderr io.Writer, name string, cmds []command) int {
+	near, close := nearestCommands(name, cmds)
 	if close {
-		fmt.Fprintf(cc.stderr, "define: unknown command /%s; did you mean %s?\n", c.name, strings.Join(near, " or "))
+		fmt.Fprintf(stderr, "define: unknown command /%s; did you mean %s?\n", name, strings.Join(near, " or "))
 	} else {
 		// Nothing was close, so "did you mean" would be a lie about all of them.
-		fmt.Fprintf(cc.stderr, "define: unknown command /%s. Commands: %s\n", c.name, strings.Join(near, " "))
+		fmt.Fprintf(stderr, "define: unknown command /%s. Commands: %s\n", name, strings.Join(near, " "))
 	}
 	return 2
 }
 
-func runHelp(c commandCtx, _ []string) int {
+// commandUsage is what `/help <name>` and `/<name> --help` print for one
+// command: the synopsis, then the usage wrapped to width under the command
+// list's two-space indent. Pure — a row and a width in, the text out.
+func commandUsage(c command, width int) string {
+	return "  " + c.synopsis() + "\n  " + wrapText(c.usage, width, 2) + "\n"
+}
+
+// runHelp is /help: bare, the command list; with a command's name, that
+// command's usage (#53).
+func runHelp(c commandCtx, args []string) int {
+	switch {
+	case len(args) > 1:
+		fmt.Fprintf(c.stderr, "define: /help takes one command, not %q\n", strings.Join(args, " "))
+		return 2
+	case len(args) == 1 && strings.TrimPrefix(args[0], "/") != "":
+		// ONE command, resolved exactly as dispatch resolves a submitted one, so
+		// `/help HISTORY` works because `/HISTORY` does, and a name dispatch
+		// would refuse is refused here in dispatch's own words. `/help /` falls
+		// through to the list, as a bare `/` does.
+		name := strings.TrimPrefix(args[0], "/")
+		cmd, ok := findCommand(name, c.cmds)
+		if !ok {
+			return unknownCommand(c.stderr, name, c.cmds)
+		}
+		fmt.Fprint(c.stdout, commandUsage(cmd, c.width))
+		return 0
+	}
 	for _, cmd := range c.cmds {
 		fmt.Fprintf(c.stdout, "  /%-10s %s\n", cmd.name, cmd.summary)
 	}
+	// The way past the summary, stated where the summary is: a command's
+	// arguments live in its usage, and nothing else on screen says so.
+	fmt.Fprintln(c.stdout)
+	fmt.Fprintf(c.stdout, "  /help <command>, or %s after one, says how to use it\n", strings.Join(usageFlags, " or "))
 	// The two hatches are one keystroke each and otherwise invisible: nothing on
 	// screen suggests a line can be forced either way. This is the only place
 	// that lists what the console understands, so it is where they go.

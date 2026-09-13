@@ -1114,7 +1114,7 @@ until both pages catch up.
 <!-- command-list -->
 | command | does |
 |---|---|
-| `/help` | list the commands |
+| `/help` | list the commands, or explain one |
 | `/history` | words looked up recently |
 | `/stats` | deck, streak and accuracy figures |
 | `/play` | review the words due today |
@@ -1123,18 +1123,31 @@ until both pages catch up.
 | `/pron` | replay this word in its source language, once |
 <!-- /command-list -->
 
-Argument forms are documented with each command rather than in the summary: the
-summary is what `/help` prints, and a table that padded it with syntax would stop
-matching the screen. `/history [N]` takes `N`, `--days N` or `--days=N`;
-`/sound [N]` reports when bare; `/lang` reports when bare and persists when
-given — in a deck. In a directory nobody agreed to write to it applies to the
-session and says so, because its only durable effect is the one it cannot have
-there (#50).
+Argument forms stay out of the summary, because the summary is what a bare
+`/help` prints and a table padded with syntax would stop matching the screen.
+Each row carries them instead (`#53`): `args`, the synopsis, and `usage`, a
+sentence or two written beside the parser that implements it, with its limits
+taken from that parser's constants. `/help <command>` and `/<command> --help`
+print them, and this page quotes them, generated from the registry the way the
+list above is and pinned the same way:
 
-`/pron`'s own rule is code-owned rather than restated here, because this is the
-third prose site to state it and the first two went stale:
+<!-- command-usage -->
+- `/help [command]` — With nothing, list the commands. With a command's name, say how to use it, which --help or -h after any command also does.
+- `/history [N | --days N | --days=N]` — The words looked up in the last N days. With nothing, the last 2; N is at most 3650.
+- `/stats` — The deck, streak and accuracy figures for this directory. Takes no arguments.
+- `/play` — Review the words due today; Ctrl-C stops and keeps every answer. Takes no arguments.
+- `/sound [N]` — With nothing, how many times each pronunciation plays. With N, play it N times for the rest of this session; 0 turns playback off, and 20 is the most.
+- `/lang [language]` — With nothing, the language in effect and the dictionary answering it. With a two-letter tag like es, switch to that language: saved when this directory is a deck, for this session otherwise.
+- `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
+<!-- /command-usage -->
 
-<!-- pron-command-help -->`/pron` takes a language, or nothing: with no argument it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.<!-- /pron-command-help -->
+The usage flags are one list, `usageFlags`, answered once in `dispatchCommand`
+before a command runs, rather than in each command's parser: seven parsers are
+seven places to forget one, and `/history` used to read `--help` as a number of
+days. `/help`'s own usage and the bare-help line name the flags from that list,
+so a new one cannot go unmentioned. That makes it a contract: no command may take
+a usage flag as data. An unknown name after `/help` gets dispatch's own message
+through `unknownCommand`, so `/histry` and `/help histry` cannot drift apart.
 
 **Opening a store does not read it.** `storeHistory` used to read the whole event
 log in its constructor, so `define /help` paid for a log it never consulted and

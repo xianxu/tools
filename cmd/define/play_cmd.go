@@ -9,6 +9,9 @@ import (
 	"github.com/xianxu/tools/cmd/define/play"
 )
 
+// playUsage is /play's row in the registry.
+const playUsage = "Review the words due today; Ctrl-C stops and keeps every answer. Takes no arguments."
+
 // runPlayCommand is `/play`: today's sitting, from the definition prompt.
 //
 // IT RECORDS, THE LOOP PERFORMS — `cc.replay`'s shape one size up, and

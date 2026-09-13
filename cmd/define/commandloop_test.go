@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,8 +22,8 @@ func (d refusingDict) Lookup(word string) (string, error) {
 }
 
 var dispatchCmds = []command{
-	{name: "help", summary: "list the commands", run: runHelp},
-	{name: "history", summary: "words looked up recently",
+	{name: "help", summary: "list the commands", usage: helpUsage, run: runHelp},
+	{name: "history", summary: "words looked up recently", usage: "fixture history usage",
 		run: func(c commandCtx, args []string) int {
 			c.stdout.Write([]byte("HISTORY RAN args=" + strings.Join(args, ",") + "\n"))
 			return 0
@@ -477,5 +478,48 @@ func TestRawEditorPronReplaysThroughTheLoop(t *testing.T) {
 	}
 	if got := rig.player.count(); got != 2 {
 		t.Errorf("played %d times, want 2 — the lookup and the /pron replay", got)
+	}
+}
+
+// --help and -h after any command print its usage (#53). Over the WHOLE
+// registry: without the routing, every one of these fails in its own parser —
+// /history reads --help as a number of days, /play and /stats refuse
+// arguments, /lang and /pron reject it as a language, /help as a name.
+func TestDashHelpPrintsTheUsageForEveryCommand(t *testing.T) {
+	for _, c := range commands {
+		for _, flag := range usageFlags {
+			var out, errb bytes.Buffer
+			code := dispatchCommand(parseREPLLine("/"+c.name+" "+flag, false), commands, commandCtx{stdout: &out, stderr: &errb})
+			if code != 0 || out.String() != commandUsage(c, 0) || errb.Len() != 0 {
+				t.Errorf("/%s %s: exit %d, out %q, err %q", c.name, flag, code, out.String(), errb.String())
+			}
+		}
+	}
+}
+
+// The usage is printed INSTEAD of running the command, not before it.
+func TestDashHelpDoesNotRunTheCommand(t *testing.T) {
+	var out bytes.Buffer
+	dispatchCommand(parseREPLLine("/history --help", false), dispatchCmds, commandCtx{stdout: &out, stderr: io.Discard})
+	if strings.Contains(out.String(), "HISTORY RAN") {
+		t.Errorf("--help ran the command: %q", out.String())
+	}
+}
+
+// The one-shot path reaches both forms: Go's flag parsing stops at /history, so
+// --help arrives as the command's argument rather than as define's own flag.
+func TestOneShotHelpExplainsOneCommand(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+	rig.deps.stdinIsTerminal = func() bool { return false }
+	rig.deps.history, rig.deps.capture, rig.deps.deck = nil, nil, nil
+	rig.deps.newStore = openStore
+	t.Chdir(t.TempDir())
+	for _, args := range [][]string{{"-no-audio", "/help", "history"}, {"-no-audio", "/history", "--help"}} {
+		var out, errb bytes.Buffer
+		code := run(t.Context(), args, rig.deps, strings.NewReader(""), &out, &errb)
+		if code != 0 || !strings.Contains(out.String(), "/history [N | --days N | --days=N]") {
+			t.Errorf("define %v: exit %d, out %q, err %q", args, code, out.String(), errb.String())
+		}
 	}
 }

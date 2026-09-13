@@ -7,6 +7,15 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
+// pronUsage is /pron's row in the registry: THE statement of the command's
+// argument rule, which /help pron prints and the docs quote. It is not pronHelp,
+// and the distinction is the point: pronHelp documents the -pron FLAG, which
+// deliberately does NOT infer (#35 D6).
+const pronUsage = "Replay this word once in another language. With nothing, it reads the source " +
+	"language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names " +
+	"only historical stages (Old French, Latin) or cognates (\"related to Dutch …\"), because " +
+	"neither is a language anyone speaks the word in today."
+
 // parsePronArgs reads /pron's language. Pure, so the table is a unit test.
 //
 // A language is REQUIRED, which is where this differs from parseLangArgs and
@@ -81,22 +90,3 @@ func runPron(c commandCtx, args []string) int {
 	c.replay(lang)
 	return 0
 }
-
-// pronCommandHelp is THE statement of the /pron COMMAND's argument rule.
-//
-// A separate const from pronHelp, and the distinction is the point: pronHelp
-// documents the -pron FLAG, which deliberately does NOT infer (#35 D6). Writing
-// "the language is optional" there would be false where it was written.
-//
-// It is not folded into the `commands` registry summary either, because #31
-// recorded why argument forms stay out of it: the summary is what /help prints,
-// and padding it with syntax makes the table stop matching the screen.
-//
-// So it lives here and atlas/define.md consumes it through a marked span, the
-// mechanism localeHelp and pronHelp already use — this being the third prose
-// site to state this rule, after two went stale.
-const pronCommandHelp = "`/pron` takes a language, or nothing: with no argument " +
-	"it reads the source language off the entry's ORIGIN and says which it chose. " +
-	"It declines when ORIGIN names only historical stages (Old French, Latin) or " +
-	"cognates (\"related to Dutch …\"), because neither is a language anyone speaks " +
-	"the word in today."

@@ -353,7 +353,8 @@ func TestDocsQuoteTheLocaleHelp(t *testing.T) {
 // The NAME and SUMMARY only, in registry order. Argument syntax is deliberately
 // out: the summary is what /help prints, so padding it with forms would make the
 // table stop matching the screen — and the screen is what a reader checks it
-// against.
+// against. The syntax lives in each row's usage instead, quoted by the
+// command-usage span (TestDocsQuoteTheCommandUsage, #53).
 func TestDocsQuoteTheCommandList(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("<!-- command-list -->\n| command | does |\n|---|---|\n")
@@ -376,26 +377,6 @@ func TestDocsQuoteTheCommandList(t *testing.T) {
 				"marked span to read:\n%s\n`commands` owns this list; the page consumes it.",
 				doc, b.String())
 		}
-	}
-}
-
-// The atlas quotes the /pron COMMAND's argument rule from the code that owns it.
-//
-// Third prose site for this one rule — #31's per-command paragraph, the walk
-// sentence in the pronunciation section, and the README — and the first two went
-// stale the moment #35 made the argument optional. This pins the one that states
-// the RULE; the other two are prose about behaviour, swept by hand and named as
-// such in #35's plan rather than pretending a mechanism covers them.
-func TestDocsQuoteThePronCommandHelp(t *testing.T) {
-	want := "<!-- pron-command-help -->" + pronCommandHelp + "<!-- /pron-command-help -->"
-	doc := "../../atlas/define.md"
-	b, err := os.ReadFile(doc)
-	if err != nil {
-		t.Fatalf("%s unreadable: %v", doc, err)
-	}
-	if !strings.Contains(string(b), want) {
-		t.Errorf("%s does not quote the /pron argument rule.\nwant the marked span to read:\n%s\n"+
-			"pronCommandHelp owns this text; the page consumes it.", doc, want)
 	}
 }
 
@@ -845,6 +826,39 @@ func TestREADMEAnchorsResolve(t *testing.T) {
 	for _, m := range links {
 		if !heads[m[1]] {
 			t.Errorf("README.md links to #%s, which is no heading on the page", m[1])
+		}
+	}
+}
+
+// commandUsageSpan is the marked span every derived page quotes: each row's
+// synopsis and usage, in registry order (#53).
+func commandUsageSpan() string {
+	var b strings.Builder
+	b.WriteString("<!-- command-usage -->\n")
+	for _, c := range commands {
+		fmt.Fprintf(&b, "- `%s` — %s\n", c.synopsis(), c.usage)
+	}
+	b.WriteString("<!-- /command-usage -->")
+	return b.String()
+}
+
+// The pages quote each command's usage from the registry, or they drift (#53).
+//
+// TestDocsQuoteTheCommandList's mechanism, one column over: the summary is the
+// list, the usage is how to use each entry. Argument forms used to be stated by
+// hand in the atlas for three commands and through a separate constant for
+// /pron; now a changed rule or a new command fails the build until both pages
+// catch up.
+func TestDocsQuoteTheCommandUsage(t *testing.T) {
+	want := commandUsageSpan()
+	for _, doc := range derivedDocs {
+		raw, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc, err)
+		}
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("%s does not quote the command usage the registry produces.\nwant the marked span to read:\n%s\n"+
+				"`commands` owns each usage; the page consumes it.", doc, want)
 		}
 	}
 }

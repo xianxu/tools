@@ -233,6 +233,9 @@ func formLabel(form string) string {
 	return safe
 }
 
+// statsUsage is /stats's row in the registry.
+const statsUsage = "The deck, streak and accuracy figures for this directory. Takes no arguments."
+
 // runStatsCommand is `/stats`, and it is `--stats` with a different door.
 //
 // ONE FOLD, ONE RENDERER, TWO ENTRY POINTS — through printStats, which is where

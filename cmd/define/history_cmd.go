@@ -19,6 +19,12 @@ const maxHistoryDays = 3650
 
 const defaultHistoryDays = 2
 
+// historyUsage is /history's row in the registry: what its window argument
+// means. Built from the two constants above, so the text cannot promise a limit
+// the parser does not enforce.
+var historyUsage = fmt.Sprintf("The words looked up in the last N days. With nothing, the last %d; N is at most %d.",
+	defaultHistoryDays, maxHistoryDays)
+
 // historyWindow is the instant "the last N days" starts, in LOCAL time.
 //
 // Two things make this less obvious than it looks:
