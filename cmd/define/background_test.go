@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -296,4 +299,94 @@ func TestTheJobWritesNothingToTheTerminal(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The learner model's lookup count comes from its frontmatter's window: line and
+// nowhere else, and anything a person could have written reads as unknown (#54).
+func TestModelLookupsReadsOnlyTheFrontmatter(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		md   string
+		want int
+		ok   bool
+	}{
+		{"written by reflect", "---\ntype: user-model\nwindow: 2026-08-01..2026-09-01          # 40 lookups, 3 questions\n---\n", 40, true},
+		{"no window line", "---\ntype: user-model\n---\n", 0, false},
+		{"hand-edited", "---\nwindow: whenever\n---\n", 0, false},
+		{"no model", "", 0, false},
+		{"only in Corrections", "---\ntype: user-model\n---\n\n## Corrections\nwindow: a..b # 99 lookups\n", 0, false},
+		{"unterminated frontmatter", "---\nwindow: a..b # 40 lookups\n", 0, false},
+	} {
+		if got, ok := modelLookups(tc.md); got != tc.want || ok != tc.ok {
+			t.Errorf("%s: modelLookups = %d, %v; want %d, %v", tc.name, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// When the session writes the learner model: at the floor when there is none, and
+// again when the deck's lookups have doubled (#54).
+func TestReflectDue(t *testing.T) {
+	model := func(n int) string {
+		return fmt.Sprintf("---\nwindow: a..b          # %d lookups, 0 questions\n---\n", n)
+	}
+	for _, tc := range []struct {
+		name           string
+		md             string
+		lookups, words int
+		want           bool
+	}{
+		{"below the floor", "", 30, minDeckForReflection - 1, false},
+		{"none yet, at the floor", "", 30, minDeckForReflection, true},
+		{"fresh", model(40), 60, 30, false},
+		{"lookups doubled", model(40), 80, 30, true},
+		{"unreadable model is left alone", "---\nwindow: ???\n---\n", 500, 30, false},
+		// Doubling nothing is no growth: without this a model written from no
+		// lookups would be rewritten, a paid call, at every check.
+		{"a model from no lookups waits for one", model(0), 0, 30, false},
+		{"a refresh still needs the floor", model(40), 80, minDeckForReflection - 1, false},
+	} {
+		if got := reflectDue(tc.md, tc.lookups, tc.words); got != tc.want {
+			t.Errorf("%s: reflectDue = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// FuzzModelLookups: the learner model is a file a person edits, so reading its
+// count must never panic, and a count it reports must be one the frontmatter's
+// window: line states.
+func FuzzModelLookups(f *testing.F) {
+	for _, s := range []string{
+		"---\ntype: user-model\nwindow: 2026-08-01..2026-09-01          # 40 lookups, 3 questions\n---\n",
+		"---\ntype: user-model\n---\n",
+		"---\nwindow: whenever\n---\n",
+		"",
+		"---\ntype: user-model\n---\n\n## Corrections\nwindow: a..b # 99 lookups\n",
+		"---\nwindow: a..b # 40 lookups\n",
+		"---\nwindow: a..b # -3 lookups\n---\n",
+		"---\nwindow: a..b # 99999999999999999999999 lookups\n---\n",
+		"---\r\nwindow: a..b # 7 lookups\r\n---\r\n",
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, md string) {
+		n, ok := modelLookups(md)
+		if !ok {
+			if n != 0 {
+				t.Errorf("modelLookups(%q) = %d with no count", md, n)
+			}
+			return
+		}
+		if n < 0 {
+			t.Fatalf("modelLookups(%q) = %d, a negative count", md, n)
+		}
+		for _, line := range strings.Split(md, "\n")[1:] {
+			if strings.TrimSpace(line) == "---" {
+				break
+			}
+			if key, val, _ := strings.Cut(line, ":"); strings.TrimSpace(key) == "window" && strings.Contains(val, strconv.Itoa(n)) {
+				return
+			}
+		}
+		t.Errorf("modelLookups(%q) = %d, which no window: line in the frontmatter states", md, n)
+	})
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -305,4 +307,57 @@ func quietStore(st store.Store) store.Store {
 		return s.Quiet()
 	}
 	return st
+}
+
+// bgRefreshFactor is how far the deck's lookups must grow past the count a learner
+// model records before the session rewrites the model. A level is stable, so the
+// model is refreshed rarely: at double, then at double again.
+const bgRefreshFactor = 2
+
+// reflectDue is whether the session should write the learner model now: there is
+// none yet and the deck has reached minDeckForReflection words, or the session can
+// read the one there and the deck's lookups have grown to bgRefreshFactor times
+// what it records. Nothing is due below the floor, where --reflect itself refuses;
+// unknown is not due, so a model someone edited by hand is left alone; and a model
+// written from no lookups waits for one, because doubling nothing is no growth.
+func reflectDue(md string, lookups, words int) bool {
+	if words < minDeckForReflection {
+		return false
+	}
+	if strings.TrimSpace(md) == "" {
+		return true
+	}
+	recorded, ok := modelLookups(md)
+	return ok && lookups > recorded && lookups >= bgRefreshFactor*recorded
+}
+
+// modelLookups is the lookup count a learner model was written from, read off its
+// frontmatter's window: line (renderUserModel writes "# N lookups"). The
+// frontmatter only, as parseLearnerBand reads it, and only a terminated one: this
+// count decides a paid call, so a number in the Corrections a person writes, or in
+// a truncated file, reads as unknown.
+func modelLookups(md string) (int, bool) {
+	lines := strings.Split(md, "\n")
+	if strings.TrimSpace(lines[0]) != "---" {
+		return 0, false
+	}
+	n, found := 0, false
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) == "---" {
+			return n, found
+		}
+		key, val, ok := strings.Cut(line, ":")
+		if !ok || found || strings.TrimSpace(key) != "window" {
+			continue
+		}
+		_, comment, ok := strings.Cut(val, "#")
+		fields := strings.Fields(comment)
+		if !ok || len(fields) < 2 || strings.TrimSuffix(fields[1], ",") != "lookups" {
+			continue
+		}
+		if v, err := strconv.Atoi(fields[0]); err == nil && v >= 0 {
+			n, found = v, true
+		}
+	}
+	return 0, false // no closing fence: a truncated file, not a model
 }
