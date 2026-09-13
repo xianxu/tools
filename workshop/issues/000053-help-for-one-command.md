@@ -196,6 +196,14 @@ the answer. BR-2: `-h` was accepted but named only in the atlas; `helpUsage` and
 the bare-help line now say `--help or -h`, and the regenerated span carries it
 to both pages. BR-3: the Done-when boxes are ticked.
 
+Round-1 fixes verified after `b6dd99c`: the whole `cmd/define` suite passed. The
+new test goes red when `runHelp` renders at width 0 (M8a) and when dispatch does
+(M8b). Making `runHelp` resolve against the package registry instead of `c.cmds`
+(M8c) does not compile: Go reports an initialization cycle (`commands` refers to
+`runHelp`, which would refer to `commands`), so the compiler already enforces what
+that mutation would break. An empty registry (M8c', `c.cmds[:0]`) compiles, and
+the test goes red.
+
 ## Revisions
 
 ### 2026-09-12 — planning
