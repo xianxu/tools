@@ -138,10 +138,39 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 		limit = harvestLimit
 	}
 	// ONE budget for the whole invocation, both passes.
-	bud := &budget{left: limit}
+	return harvestDeck(ctx, d, client, deck, &budget{left: limit}, limit, nil, out, errOut).code
+}
+
+// harvestOutcome is one harvest pass as data (#54): what runHarvest used to only
+// print. The CLI still prints the same lines and maps this to its exit code; the
+// background job reads it, because it must tell a missing model from any other
+// stop, and prose cannot tell it that.
+type harvestOutcome struct {
+	banded, refused, skipped int      // the banding half, as its summary line counts them
+	authored                 int      // practice items this pass wrote
+	failed                   []string // words authoring ran for and kept nothing
+	stopped                  error    // the model error that stopped the pass, if any
+	code                     int      // runHarvest's exit code, unchanged
+}
+
+// harvestDeck is one harvest pass: band the words with no band, then author items
+// for banded words with none. It is runHarvest's loop, moved so the background job
+// can run it too (#54).
+//
+// batch limits both halves to those words; a nil batch, which is what the CLI
+// passes, means every word, exactly as before. Authoring still draws wrong answers
+// from every banded word, so a batch costs no distractor quality, and banding a
+// batch before authoring the same batch is what lets a backlog drain on both
+// halves under a small budget.
+func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Word, bud *budget, limit int, batch []string, out, errOut io.Writer) harvestOutcome {
 
 	var asked, skipped, refused int
+	var o harvestOutcome
+	inBatch := batchFilter(batch)
 	for _, w := range deck {
+		if !inBatch(w.Text) {
+			continue // not this pass's words; a nil batch, the CLI's, holds every word
+		}
 		// A cheap early exit. runWithin refuses on its own, so this is an
 		// optimisation — it saves a dictionary lookup per remaining word — and
 		// NOT the bound. The bound is at the call.
@@ -154,7 +183,8 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 		facts, err := d.deck.WordFacts(w.Text)
 		if err != nil {
 			fmt.Fprintf(errOut, "define: could not read facts for %q: %v\n", w.Text, err)
-			return 1
+			o.code = 1
+			return o
 		}
 		if facts.Harvested() {
 			skipped++
@@ -175,7 +205,8 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 			// rate-limited budget on calls that will each fail the same way.
 			fmt.Fprintf(errOut, "define: harvesting stopped: %v\n", err)
 			fmt.Fprintf(out, "define: banded %d word(s) before stopping; they are saved\n", asked)
-			return 1
+			o.banded, o.refused, o.skipped, o.stopped, o.code = asked-refused, refused, skipped, err, 1
+			return o
 		}
 		asked++
 
@@ -200,7 +231,8 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 			Band: band, Domain: domain, At: now(d),
 		}); err != nil {
 			fmt.Fprintf(errOut, "define: could not save facts for %q: %v\n", w.Text, err)
-			return 1
+			o.code = 1
+			return o
 		}
 	}
 
@@ -210,21 +242,40 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 	}
 	fmt.Fprintln(out, ".")
 
-	return runAuthoring(ctx, d, client, bud, limit, out, errOut)
+	o.banded, o.refused, o.skipped = asked-refused, refused, skipped
+	o.authored, o.failed, o.stopped, o.code = runAuthoring(ctx, d, client, bud, limit, batch, out, errOut)
+	return o
+}
+
+// batchFilter says whether a word is in a harvest pass's batch. A nil batch is the
+// CLI's whole deck, so every word is in it.
+func batchFilter(batch []string) func(string) bool {
+	if batch == nil {
+		return func(string) bool { return true }
+	}
+	in := make(map[string]bool, len(batch))
+	for _, w := range batch {
+		in[w] = true
+	}
+	return func(w string) bool { return in[w] }
 }
 
 // runAuthoring writes practice items for banded words that have none.
+//
+// Only the batch's words when there is one (#54). It returns what it authored,
+// the words it ran for and kept nothing, and the error that stopped it, so the
+// background job can read the pass instead of parsing its prose.
 //
 // SECOND PASS, after banding, and it depends on the first having run: selection
 // draws from the deck's BANDED words, so a word cannot supply a distractor until
 // it has a level. That ordering is why a single --harvest does both rather than
 // authoring being its own flag — the two are one job with a dependency, not two
 // jobs a person chooses between.
-func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, limit int, out, errOut io.Writer) int {
+func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, limit int, batch []string, out, errOut io.Writer) (authored int, failed []string, stopped error, code int) {
 	deck, err := d.deck.Deck()
 	if err != nil {
 		fmt.Fprintf(errOut, "define: could not read the deck: %v\n", err)
-		return 1
+		return 0, nil, nil, 1
 	}
 
 	// THE POOL is every banded word, built once. Selection is pure over it, so
@@ -234,7 +285,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		f, err := d.deck.WordFacts(w.Text)
 		if err != nil {
 			fmt.Fprintf(errOut, "define: could not read facts for %q: %v\n", w.Text, err)
-			return 1
+			return 0, nil, nil, 1
 		}
 		if f.Harvested() {
 			pool = append(pool, bandedWord{Word: w.Text, Facts: f})
@@ -248,11 +299,12 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		// authored" were satisfied by a pass that never ran.
 		fmt.Fprintf(out, "define: skipped authoring: %d banded word(s), need at least 2 to select "+
 			"wrong answers from.\n", len(pool))
-		return 0
+		return 0, nil, nil, 0
 	}
 
 	learner := readLearner(d.deck)
-	var authored, skipped, rejected int
+	inBatch := batchFilter(batch)
+	var skipped, rejected int
 	var domains []store.Domain
 	widened := map[selectionTier]int{}
 	// How often each word has already served as a wrong answer in THIS batch.
@@ -261,6 +313,9 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 	served := map[string]int{}
 
 	for _, c := range pool {
+		if !inBatch(c.Word) {
+			continue // not this pass's words (#54)
+		}
 		// Cheap early exit, not the bound — see the banding loop.
 		if bud.spent() {
 			fmt.Fprintf(out, "define: stopped authoring at the --limit of %d model call(s); run again to continue\n", limit)
@@ -269,7 +324,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		existing, err := d.deck.Items(c.Word)
 		if err != nil {
 			fmt.Fprintf(errOut, "define: could not read items for %q: %v\n", c.Word, err)
-			return 1
+			return authored, failed, nil, 1
 		}
 		if len(existing) > 0 {
 			skipped++
@@ -285,7 +340,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		if err != nil {
 			fmt.Fprintf(errOut, "define: authoring stopped: %v\n", err)
 			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-			return 1
+			return authored, failed, err, 1
 		}
 
 		// THE FREE CHECK FIRST. A stem that does not contain its answer cannot be
@@ -293,6 +348,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		// before the judge is paid to have an opinion about it.
 		if !stemUsesTheWord(stem.Stem, c.Word) {
 			rejected++
+			failed = append(failed, c.Word)
 			fmt.Fprintf(errOut, "define: %q: the stem does not use the word; leaving it unauthored\n", c.Word)
 			continue
 		}
@@ -308,10 +364,11 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		if err != nil {
 			fmt.Fprintf(errOut, "define: judging stopped: %v\n", err)
 			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-			return 1
+			return authored, failed, err, 1
 		}
 		if !verdict.Entails || verdict.Glosses || !verdict.Named {
 			rejected++
+			failed = append(failed, c.Word)
 			fmt.Fprintf(errOut, "define: %q: stem rejected (%s); leaving it unauthored\n", c.Word, verdict.Reason)
 			continue
 		}
@@ -344,7 +401,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 			if err != nil {
 				fmt.Fprintf(errOut, "define: the veto stopped: %v\n", err)
 				fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-				return 1
+				return authored, failed, err, 1
 			}
 			if v.Fits {
 				// The veto EXERCISED. Said out loud because a veto nobody sees
@@ -367,6 +424,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		}
 		if len(kept) == 0 {
 			rejected++
+			failed = append(failed, c.Word)
 			fmt.Fprintf(errOut, "define: %q: every candidate was vetoed; leaving it unauthored\n", c.Word)
 			continue
 		}
@@ -376,7 +434,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 			Answer: c.Word, Distractors: kept, At: now(d),
 		}}); err != nil {
 			fmt.Fprintf(errOut, "define: could not save items for %q: %v\n", c.Word, err)
-			return 1
+			return authored, failed, nil, 1
 		}
 		authored++
 		domains = append(domains, c.Facts.Domain)
@@ -410,7 +468,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 			fmt.Fprintf(out, "define: %d item(s) drew options from %s.\n", widened[t], t)
 		}
 	}
-	return 0
+	return authored, failed, nil, 0
 }
 
 // authorTask, entailTask and vetoTask are the one place each request is built,

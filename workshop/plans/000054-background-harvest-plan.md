@@ -65,7 +65,7 @@
 | `runEditor` | `cmd/define/replraw.go` | modified | the editor loop |
 
 - **`lockedDictionary`** — a `Dictionary` whose `Lookup` holds `dictionaryMu`, one package-level mutex, so two instances (the loop's, and a job's copy after `/lang`) still serialize. DictionaryServices is reached through cgo (`dict_darwin.go`) with no lock and no documented thread-safety. Every production `Dictionary` is wrapped where it is built.
-- **`harvestDeck(ctx, d deps, client llm.Client, bud *budget, limit int, batch []string, out, errOut io.Writer) harvestOutcome`** — the banding loop and the call to `runAuthoring`, moved out of `runHarvest`, recording what `runHarvest` used to only print. `batch` limits both halves to those words; nil, which is what the CLI passes, means the whole deck, as today. Authoring still draws wrong answers from every banded word, so a batch costs no distractor quality. Banding a batch and then authoring the same batch is what lets a backlog drain on both halves: today's order, band everything and then author, spends a small budget on banding alone. `runHarvest` keeps its signature: guards, config, client, the agreement mode, then `harvestDeck`, returning `o.code`. Every line `--harvest` prints today, it still prints (the harvest tests pin them).
+- **`harvestDeck(ctx, d deps, client llm.Client, deck []store.Word, bud *budget, limit int, batch []string, out, errOut io.Writer) harvestOutcome`** — the banding loop and the call to `runAuthoring`, moved out of `runHarvest`, recording what `runHarvest` used to only print. `batch` limits both halves to those words; nil, which is what the CLI passes, means the whole deck, as today. Authoring still draws wrong answers from every banded word, so a batch costs no distractor quality. Banding a batch and then authoring the same batch is what lets a backlog drain on both halves: today's order, band everything and then author, spends a small budget on banding alone. `runHarvest` keeps its signature: guards, config, client, the agreement mode, then `harvestDeck`, returning `o.code`. Every line `--harvest` prints today, it still prints (the harvest tests pin them).
 - **`runAuthoring`** takes the batch and returns `(authored int, failed []string, stopped error, code int)` instead of an exit code alone.
 - **`reflectDeck` / `runReflect`** — the same split for `--reflect` (M2).
 - **`runBackgroundJob(ctx, d deps, skip map[string]bool) bgJobResult`** — resolve the model config, reflect if due (M2), list the pending words, and if there are at least `bgThreshold`, band and author the newest `bgThreshold` of them within `bgBudget` calls. Its prose goes to `io.Discard`; only its result reaches the screen. A stop whose error is `llm.ErrUnavailable` or `llm.ErrRequest` (`internal/llm/errors.go`, the two that repeat on every call) sets `noModel`. `llm.Resolve` alone cannot say whether a model exists (it succeeds on the default local proxy with nothing running), so the first call decides.
@@ -137,7 +137,7 @@ After each commit the check is the whole package, not a filter (lessons, #53).
 
 **Files:** Modify `cmd/define/dict.go` and every place a production `Dictionary` is built (the one `deps` starts with, and the one `newDict` builds for another language). Test `cmd/define/dict_test.go` (new).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   ```go
   type overlapDict struct{ in, max atomic.Int32 }
 
@@ -174,10 +174,10 @@ After each commit the check is the whole package, not a filter (lessons, #53).
   }
   ```
   plus TestProductionDictionariesAreLocked: the dictionary production `deps` starts with, and the one `newDict` returns for another language, are both `lockedDictionary`.
-- [ ] **Step 2: Run.** → FAIL (`lockedDictionary` undefined).
-- [ ] **Step 3: Implement** `dictionaryMu`, `lockedDictionary`, and the wrapping at each production construction site.
-- [ ] **Step 4: Run** the new tests, then the whole package → PASS.
-- [ ] **Step 5: Commit.** `#54: every dictionary call holds one lock`
+- [x] **Step 2: Run.** → FAIL (`lockedDictionary` undefined).
+- [x] **Step 3: Implement** `dictionaryMu`, `lockedDictionary`, and the wrapping at each production construction site.
+- [x] **Step 4: Run** the new tests, then the whole package → PASS.
+- [x] **Step 5: Commit.** `#54: every dictionary call holds one lock`
 
 ### Task 1.2: the harvest core returns what it did
 
@@ -185,7 +185,7 @@ After each commit the check is the whole package, not a filter (lessons, #53).
 
 - [ ] **Step 1: Write the failing tests.** With `harvestRig(t, 3)` and `scriptAll`:
   - TestHarvestDeckReportsWhatItAuthored: `harvestDeck` returns `banded == 3`, `authored` equal to the number of words `Items` now holds, and a nil `stopped`.
-  - TestHarvestDeckTypesAMissingModel: with the fake's URL pointing at a closed server, `errors.Is(o.stopped, llm.ErrUnavailable)` and `o.code == 1`.
+  - TestHarvestDeckTypesAMissingModel: with the fake scripted to answer 500 (the pattern the harvest tests already use), `errors.Is(o.stopped, llm.ErrUnavailable)` and `o.code == 1`.
   - TestHarvestDeckWorksOnlyOnItsBatch: `harvestRig(t, 6)` with four words pre-banded (`preBand`) and a batch of the other two → only those two are banded and authored, and their wrong answers may come from the four.
   - TestHarvestDeckReportsWhatItCouldNotAuthor: a veto that rejects every candidate → the word is in `o.failed` and has no items.
 - [ ] **Step 2: Run.** → FAIL (`harvestDeck` undefined).
