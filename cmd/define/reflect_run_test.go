@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -429,4 +431,50 @@ func TestDropDiagnosticRendersEveryShape(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The reflect core reports what it did, so the background job can tell a written
+// learner model from a pass that wrote nothing (#54).
+func TestReflectDeckReportsWhatItWrote(t *testing.T) {
+	d, fake, st, _ := reflectRig(t, minDeckForReflection)
+	fake.Script("", llmtest.Reply{Text: reflectReply})
+	o := reflectDeckForTest(t, d)
+	if !o.written || o.stopped != nil || o.code != 0 {
+		t.Fatalf("outcome = %+v, want written with no stop", o)
+	}
+	if got, _ := st.UserModel(); !strings.Contains(got, "level: C1") {
+		t.Errorf("the learner model does not hold the answer:\n%s", got)
+	}
+}
+
+// A stop is typed, so the job can tell a model that is not answering from any
+// other failure.
+func TestReflectDeckTypesAMissingModel(t *testing.T) {
+	d, fake, st, _ := reflectRig(t, minDeckForReflection)
+	fake.Script("", llmtest.Reply{Status: 500, Text: "upstream is having a day"})
+	o := reflectDeckForTest(t, d)
+	if !errors.Is(o.stopped, llm.ErrUnavailable) || o.written || o.code != 1 {
+		t.Errorf("outcome = %+v; want llm.ErrUnavailable, nothing written and 1", o)
+	}
+	if got, _ := st.UserModel(); got != "" {
+		t.Error("a learner model was written by a pass the model never answered")
+	}
+}
+
+// reflectDeckForTest runs the core the way runReflect does, over the rig's deck.
+func reflectDeckForTest(t *testing.T, d deps) reflectOutcome {
+	t.Helper()
+	cfg, err := llm.Resolve(d.getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deck, err := d.deck.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := d.deck.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reflectDeck(t.Context(), d, d.newLLM(cfg), cfg.Model, foldLookups(deck, events, d.clock.Now()), io.Discard, io.Discard)
 }
