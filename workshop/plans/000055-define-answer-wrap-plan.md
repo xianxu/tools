@@ -70,15 +70,15 @@ terminal shrinks during an answer is outside this fix.
 **Files:** create `cmd/define/answerwrap.go` and
 `cmd/define/answerwrap_test.go`.
 
-- [ ] Write table tests for narrow text, paragraph breaks, width zero, words
+- [x] Write table tests for narrow text, paragraph breaks, width zero, words
   longer than the width, indentation/whitespace, and a final word without newline.
   Pin literal expected output for representative text. For every byte split of
   styled Unicode input, require output equal to that literal expectation;
   include splits inside UTF-8 and ANSI sequences. Assert completed words appear
   before `Flush`, and no bytes are duplicated after a short/error write.
-- [ ] Run `go test ./cmd/define -run '^TestAnswerWrap' -count=1`; confirm failure
+- [x] Run `go test ./cmd/define -run '^TestAnswerWrap' -count=1`; confirm failure
   from the absent behavior, then implement the writer.
-- [ ] Implement token scanning with `scanEscape`: complete escape sequences are
+- [x] Implement token scanning with `scanEscape`: complete escape sequences are
   copied into the pending token without changing its width; incomplete sequences
   wait. Space/tab boundaries decide the previous token; newlines also reset the
   display column. Use `visibleCells(token)` when deciding whether the token and
@@ -86,7 +86,7 @@ terminal shrinks during an answer is outside this fix.
   already has content. Never add repeated empty rows for an oversized token.
   Preserve leading indentation, with the same no-word-splitting policy as the
   existing renderer. Flush drains the tail exactly once.
-- [ ] Re-run focused tests until green. Use the existing `shortWriter` test
+- [x] Re-run focused tests until green. Use the existing `shortWriter` test
   double where suitable; assert `io.ErrShortWrite` for a nil-error short write.
 
 ### Task 2: Wire and verify the real ask path
@@ -94,21 +94,21 @@ terminal shrinks during an answer is outside this fix.
 **Files:** modify `cmd/define/ask.go`, `cmd/define/askrun_test.go`, and
 `atlas/define.md`.
 
-- [ ] Add a regression using `askRig`, the committed SSE capture, and a narrow
+- [x] Add a regression using `askRig`, the committed SSE capture, and a narrow
   `liveScreen`. Check answer buffer rows fit the chosen width for ordinary
   words, and compare the full whitespace-normalized answer with a width-zero
   control. Include highlighting and an interrupted/truncated stream; retain the
   full raw answer in session context. Run the test before wiring and see it fail.
-- [ ] Construct the wrapper before `newHighlightWriter`; pass the wrapper as
+- [x] Construct the wrapper before `newHighlightWriter`; pass the wrapper as
   the highlighter's output. In the existing deferred flush, flush highlighting
   before wrapping and report errors through the existing stderr diagnostic.
   Keep all answer accumulation and capture logic unchanged.
-- [ ] Update the atlas's answer-output description with terminal wrapping and
+- [x] Update the atlas's answer-output description with terminal wrapping and
   the existing narrow-terminal/oversized-word limits.
-- [ ] Run `gofmt` on changed Go files, `go test ./cmd/define/...`,
+- [x] Run `gofmt` on changed Go files, `go test ./cmd/define/...`,
   `go vet ./cmd/define/...`, and `git diff --check`. Check the narrow-screen test
   observes every word rather than merely the presence of added newlines.
-- [ ] Commit with issue reference and model co-author trailer, tick issue and
+- [x] Commit with issue reference and model co-author trailer, tick issue and
   plan tasks, and invoke `sdlc close --issue 55 --verified '<actual evidence>'`.
   The close gate owns the fresh-context review. Resolve blocking findings before
   publishing through `sdlc pr` and `sdlc merge`.
@@ -169,3 +169,21 @@ test/procedure paragraphs as the testing contract:
   width, highlighting, unchanged session history, and ordered deferred flushing
   on the malformed-error path. Keep the interrupted/truncated paths and terminal
   minimum-width boundary as integration coverage.
+
+### 2026-09-13 — Implementation findings
+
+- The transport default is **8192** tokens (`internal/llm/config.go`), correcting
+  the 4096 figure above. The wrapper's independent byte limits are unchanged.
+- Enabled wrapping normalizes tabs to one space: terminal tab stops cannot be
+  measured as a fixed display-cell width. Width-zero output remains verbatim.
+  The literal-output tests pin both behaviors.
+- The fake's `JunkFrame` is classified as truncation after partial output. The
+  malformed-exit test delegates to that real wire exchange and injects a terminal
+  `ErrMalformed` afterward. It verifies runAsk's flush order without claiming
+  transport coverage for an unreachable classification.
+- `screen.go` receives only a comment correction: the old comment explicitly
+  described the missing streaming wrapper. No viewport behavior changes.
+- #55 was rebased onto origin/main so publishing it does not also publish #54.
+  The installed binary currently includes #54. Rebuild the local binary from
+  that installed revision plus the #55 code commit in an isolated temporary
+  checkout, retaining the operator's existing background-harvest behavior.
