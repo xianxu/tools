@@ -175,7 +175,8 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	// removed: the screen owns line placement now, and two owners of line endings
 	// is how they drift. `#41` did the same for `--play`, which retired that
 	// writer from this binary entirely.
-	hw := newHighlightWriter(out, vocabularyFor(d, opt), knownOn)
+	aw := newAnswerWrapWriter(out, opt.width)
+	hw := newHighlightWriter(aw, vocabularyFor(d, opt), knownOn)
 	defer func() {
 		// REPORTED, not discarded. The writer poisons on its first downstream
 		// failure, so one failed write silently drops the REST of an answer —
@@ -184,7 +185,13 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		// made without checking each delta.
 		//
 		// stderr, because stdout is what just failed.
-		if err := hw.Flush(); err != nil {
+		// Release highlighting's tail before wrapping's tail. Width zero is a
+		// pass-through, and the answer builder below always keeps logical text.
+		err := hw.Flush()
+		if wrapErr := aw.Flush(); err == nil {
+			err = wrapErr
+		}
+		if err != nil {
 			fmt.Fprintf(errOut, "define: the answer could not be fully written: %v\n", err)
 		}
 	}()

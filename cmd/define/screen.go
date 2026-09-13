@@ -682,9 +682,9 @@ func (l *liveScreen) window() time.Duration {
 // buffer at 156 cells in a 40-column terminal while every site the loop owns was
 // wrapped. Here nothing can write around it.
 //
-// The editor's screen does NOT wrap: its text is pre-wrapped by `Render` at the
-// policy width, and its ask path streams token by token, where a chunk that ends
-// mid-line has no line to wrap yet. A sitting writes whole messages.
+// The editor's screen does NOT wrap: definitions arrive pre-wrapped by Render,
+// and runAsk's answerWrapWriter carries word boundaries across streamed chunks.
+// Both use the policy width. A sitting writes whole messages.
 func (l *liveScreen) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

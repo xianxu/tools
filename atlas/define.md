@@ -982,6 +982,19 @@ Its contract, in the order the rules matter:
    contract.
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
+**Streamed answers wrap before reaching the screen** (#55). `runAsk` chains
+`highlightWriter` → `answerWrapWriter` → stdout, so highlighting sees logical
+text and wrapping measures the resulting visible cells with `visibleCells`.
+The wrapper emits completed words as they arrive and flushes its unfinished
+word after the highlighter on every exit. The raw session answer is unchanged.
+`opt.width` supplies the terminal width; zero (pipes and terminals below
+`minWrapWidth`) passes bytes through. Words wider than the terminal stay intact;
+old output is not reflowed when the terminal shrinks during an answer. Spaces
+and paragraph breaks are preserved when they fit; tabs become single spaces in
+wrapped prose. Pending text is capped at 64 KiB and incomplete escapes at 256
+bytes; exceeding a cap stops the writer and reports incomplete answer output
+through the existing diagnostic. The wrapper owns no goroutine or durable state.
+
 `sgrState` is the pure half: it watches escapes go past and answers "what style
 would a terminal be in right now", so a highlight can hand that style back. It
 accumulates SGRs until a reset, because `Render` opens bold and colour
