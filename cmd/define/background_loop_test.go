@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -354,5 +355,46 @@ func TestTheSessionWritesALearnerModelAtTwelveWords(t *testing.T) {
 	}
 	if reflectAt < 0 || bandAt < 0 || reflectAt > bandAt {
 		t.Errorf("the reflect request is #%d and the first harvest request #%d; the model must be written first", reflectAt, bandAt)
+	}
+}
+
+// Only a lookup that found its word counts toward the next check (#54): a miss
+// adds nothing to the deck. The start job prepares the seeded words; ten more then
+// reach the store without a lookup, as from another process, so a check would
+// build a model client for them, and only the typed lines can cause a check.
+func TestAMissedLookupDoesNotCountTowardTheCheck(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		typed func(i int) string
+		built int32
+	}{
+		{"misses", func(i int) string { return fmt.Sprintf("zzqxv%c", 'a'+i) }, 1},
+		{"hits, the control", func(i int) string { return bgLookupWords[i] }, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, fake, st, finish := bgLoopRig(t, bgThreshold)
+			scriptAll(fake, 4)
+			var built atomic.Int32
+			base := d.newLLM
+			d.newLLM = func(c llm.Config) llm.Client {
+				built.Add(1)
+				return base(c)
+			}
+			out := &syncBuf{}
+			keys, end := bgRunSession(t, t.Context(), d, opt, recordingConsole(out, out, finish))
+			waitFor(t, func() bool { return strings.Contains(out.String(), "ready for /play") })
+			for i := range bgThreshold {
+				if err := st.Upsert(store.Word{Text: fmt.Sprintf("arrival%c", 'a'+i), LastSeen: harvestClock, Lookups: 1}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for i := range bgThreshold {
+				typeLine(keys, tc.typed(i))
+			}
+			end()
+			if n := built.Load(); n != tc.built {
+				t.Errorf("%d model client(s) built, want %d: only a lookup that found its word counts toward a check", n, tc.built)
+			}
+		})
 	}
 }
