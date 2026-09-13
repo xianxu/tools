@@ -4405,3 +4405,11 @@ grep -E` with `\s` and `\b`, matched nothing, and listed every real symbol as
 unresolved. The pass now starts by resolving names that certainly exist and
 refuses to report if it cannot: a checker that cannot run is #51's false zero,
 inverted into a false alarm.
+
+## Styling survives the viewport boundary (define #55)
+
+Text preservation across a wrap does not prove styling preservation. A screen
+can begin on the continuation row, with the opening SGR offscreen. Make each
+continuation independently styled using the shared SGR state, and verify the
+painted viewport rather than only the full transcript. Cover inserted and
+explicit newlines, learned phrases and enclosing styles, and the closing reset.

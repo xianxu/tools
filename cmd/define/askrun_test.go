@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -997,4 +998,134 @@ func TestAskScopedHandsTheScopeBackAndCleansUp(t *testing.T) {
 			t.Error("the question's context outlived the question")
 		}
 	})
+}
+
+// Exercise the actual stream → highlight → wrap → screen path. Comparing the
+// complete transcript with a pipe-width control detects clipping or dropped
+// words even when the remaining rows happen to fit the terminal.
+func TestAskWrapsStreamWithoutLosingText(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		reply      llmtest.Reply
+		interrupt  bool
+		wantCode   int
+		diagnostic string
+	}{
+		{name: "complete", reply: llmtest.Reply{Capture: streamCapture}},
+		{name: "malformed", reply: llmtest.Reply{Capture: streamCapture, JunkFrame: true}, wantCode: 1, diagnostic: "malformed"},
+		{name: "truncated", reply: llmtest.Reply{Capture: streamCapture, JunkFrame: true}, diagnostic: "the answer was cut off"},
+		{name: "interrupted", reply: llmtest.Reply{Capture: streamCapture, Stall: true}, interrupt: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			type result struct {
+				text  string
+				turns []exchange
+			}
+			render := func(width int) result {
+				t.Helper()
+				d, fake, st, _ := askRig(t)
+				fake.Script("", tc.reply)
+				for _, word := range []string{"obsequious", "after"} {
+					if err := st.Upsert(store.Word{Text: word, FirstSeen: aDay, LastSeen: aDay, Lookups: 1}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				d.vocab = newStoreVocabulary(st, nil)
+				d.newLLM = func(cfg llm.Config) llm.Client {
+					client := llm.New(cfg)
+					if tc.name == "malformed" {
+						return malformedAskStream{Client: client}
+					}
+					return client
+				}
+				view := newLiveScreen(io.Discard, 24, max(width, minWrapWidth))
+				t.Cleanup(view.Stop)
+				sess := &session{}
+				var errOut bytes.Buffer
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				done := make(chan int, 1)
+				go func() {
+					done <- runAsk(ctx, d, options{width: width, color: true}, sess,
+						question{text: "what is obsequious?"}, view, &errOut)
+				}()
+				if tc.interrupt {
+					waitFor(t, func() bool { return strings.Contains(view.Transcript(), "clue") })
+					cancel()
+				}
+				select {
+				case code := <-done:
+					if code != tc.wantCode {
+						t.Fatalf("width %d: exit = %d, want %d; stderr = %q", width, code, tc.wantCode, errOut.String())
+					}
+				case <-time.After(6 * time.Second):
+					t.Fatal("answer did not finish within its deadline")
+				}
+				if tc.diagnostic == "" {
+					if errOut.Len() != 0 {
+						t.Errorf("width %d: unexpected diagnostic: %q", width, errOut.String())
+					}
+				} else if !strings.Contains(errOut.String(), tc.diagnostic) {
+					t.Errorf("width %d: stderr = %q, want %q", width, errOut.String(), tc.diagnostic)
+				}
+				got := view.Transcript()
+				for _, word := range []string{"Obsequious", "after"} {
+					if !strings.Contains(got, knownOn+word) {
+						t.Errorf("width %d: lost highlighted %q: %q", width, word, got)
+					}
+				}
+				if tc.name == "malformed" {
+					view.mu.Lock()
+					partial := view.s.partial
+					view.mu.Unlock()
+					if !partial {
+						t.Error("malformed exit unexpectedly terminated the final line")
+					}
+					// Transcript appends a newline even to an unfinished row.
+					// This path adds no newline: only the ordered deferred flush
+					// releases the highlighted final token through the wrapper.
+					if want := "**Obsequious.**\n\nThe clue after\n"; stripANSI(got) != want {
+						t.Errorf("malformed partial answer = %q, want %q", stripANSI(got), want)
+					}
+				} else if len(sess.turns) != 1 {
+					t.Fatalf("width %d: session turns = %+v, want one", width, sess.turns)
+				}
+				return result{text: got, turns: sess.turns}
+			}
+
+			control, narrow := render(0), render(minWrapWidth)
+			if got, want := strings.Join(strings.Fields(stripANSI(narrow.text)), " "), strings.Join(strings.Fields(stripANSI(control.text)), " "); got != want {
+				t.Errorf("narrow answer lost or changed text:\ngot  %q\nwant %q", got, want)
+			}
+			for i, line := range strings.Split(narrow.text, "\n") {
+				if cells := visibleCells(line); cells > minWrapWidth {
+					t.Errorf("row %d uses %d cells in a %d-column terminal: %q", i, cells, minWrapWidth, line)
+				}
+			}
+			if len(narrow.turns) != len(control.turns) {
+				t.Fatalf("wrapping changed session history: %+v vs %+v", narrow.turns, control.turns)
+			}
+			for i, turn := range narrow.turns {
+				if turn != control.turns[i] {
+					t.Errorf("wrapping changed raw session exchange: %+v vs %+v", turn, control.turns[i])
+				}
+				if got := stripANSI(control.text); strings.TrimSuffix(got, "\n") != turn.Answer {
+					t.Errorf("session answer changed raw model text: %q vs %q", turn.Answer, got)
+				}
+			}
+		})
+	}
+}
+
+// The transport classifies JunkFrame as truncation. Inject a terminal malformed
+// error after that real partial stream to test runAsk's distinct no-newline exit;
+// this adapter makes no claim about transport error classification.
+type malformedAskStream struct{ llm.Client }
+
+func (c malformedAskStream) Stream(ctx context.Context, req llm.Request, onDelta func(string)) (llm.Response, error) {
+	response, err := c.Client.Stream(ctx, req, onDelta)
+	if !errors.Is(err, llm.ErrTruncated) {
+		return response, fmt.Errorf("expected truncated wire fixture, got %v", err)
+	}
+	return response, llm.ErrMalformed
 }
