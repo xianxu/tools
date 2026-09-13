@@ -183,6 +183,11 @@ no prefix to remember:
 The word lookup vs free form chat can be deterministically triggered by `?` and `\\` prefixes. The question-answer is driven by LLM; the definition is driven by local
 dictionary.
 
+After a dictionary miss, input with four or more whitespace-separated words goes
+to the LLM, including statements such as `so lickspittle is similar to sycophantic`.
+Shorter input still uses the existing question/request rules. Dictionary entries
+take precedence, and `\` or `-raw` suppresses the fallback.
+
 | prefix | means |
 |---|---|
 | `?` | ask, even if it is a word — `?why` asks about *why* instead of defining it |

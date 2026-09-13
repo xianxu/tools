@@ -1220,7 +1220,7 @@ timestamps — not in this command.
 
 ## Free-form input
 
-A line that is not a word and reads as a question is answered by the model rather
+A dictionary miss with four or more words, or one that reads as a question, is answered by the model rather
 than looked up. There is no mode and no prefix to remember — which is the whole
 claim, so the interesting part is how "is this a word" gets decided.
 
@@ -1247,17 +1247,18 @@ the *table* unasserted.
 | `?hot dog` | question, forced — the dictionary is not consulted at all |
 | `\how so` | not found, forced — the question fallback is suppressed |
 
-`readsAsQuestion` has three arms: a trailing `?`, a leading interrogative or
+`readsAsQuestion` has four arms: four or more whitespace-separated words, a
+trailing `?`, a leading interrogative or
 auxiliary (`what's` → what, `isn't` → is, and `when` is not a negation), or a
 leading request verb with an object (`use it in a sentence`). A single-word line
 with no question mark is never a question — that is a headword shape, and a miss
 is a typo. `why?` is, because the mark is explicit and its arm is tested first.
 
-**There is deliberately no length arm.** A draft had "≥5 words → question" to
-catch `difference between sycophantic and obsequious`, which reads as neither
-interrogative nor imperative. That is a word count wearing a different hat, and
-word count is the signal that cannot work. The cost is real and named: that line
-answers "not found", and `?` is its recovery.
+**Long dictionary misses fall back to conversation** (#57). The four-word arm
+admits statements such as `so lickspittle is similar to sycophantic` and
+`difference between sycophantic and obsequious`. Dictionary hits still win,
+including long phrases; `\` and `-raw` still suppress fallback. One-to-three-word
+misses need an existing question/request signal or an explicit `?` prefix.
 
 **Both hatches, and why neither is exclusive.** `?` forces a question and `\`
 forces a lookup; a bare question still asks and a bare word still looks up, so
