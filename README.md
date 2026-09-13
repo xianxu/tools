@@ -17,6 +17,14 @@ brew tap xianxu/tools
 brew install xianxu/tools/define
 ```
 
+For upgrade
+
+```sh
+brew update
+brew upgrade xianxu/tools/define
+
+```
+
 The `brew trust` line and the *qualified* formula name are both load-bearing;
 [cmd/define/README.md](cmd/define/README.md#install) says why, and is the one
 copy that does — this section is deliberately just the commands.
