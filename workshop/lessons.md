@@ -4415,3 +4415,39 @@ NOT CAUGHT, and it could not have come out otherwise. **When a cap and a batch
 bound the same work, name which one binds.** Here the batch does; the budget stays
 as a backstop for an item that costs more calls, its test says so, and the
 mutation table records the row as not observable instead of claiming a pin.
+
+## A retry bound covers every failure kind only when one place decides it (`#54`)
+
+A session skips, for the rest of the session, a word a job could not finish, so a
+word the model cannot handle costs a call once rather than at every check. M1
+applied that to authoring and missed banding: a refused band left the word
+pending, and it took a batch slot at every check (round 1, BR-1). Round 2 found
+the same family again (`retry-bound-covers-every-failure-kind`), because each of
+seven return sites spelled its own `append(failed, c.Word)`, and a store error
+inside a job still vanished without a word. **When a rule says "every failure of
+kind X", write it as one function every site calls, and mark an error's kind
+where it is born**: `markUnfinished` decides which words a pass gives up on,
+`stopMeans` what a stop means for the session, and `errDeckIO` marks a store
+error at the store call rather than at the job that reads it.
+
+## Work moved off a loop inherits every writer its deps hold (`#54`)
+
+The background job took a copy of the session's deps, and with it the store,
+whose warning writer is the process stderr, set before the raw terminal exists. A
+stray file under `words/` would have printed into the live frame from the job's
+goroutine at an arbitrary moment (M1 review, BR-2). Nothing in the job wrote to
+stderr on purpose; the store did. **When work moves off the loop that owns the
+screen, list every writer reachable from what it carries (store warnings, a
+client's slow-call hook, a dictionary's warnings) and silence or reroute each**,
+then pin it with a planted fault and a control read that proves the fault is loud
+without the fix (`quietStore`, `TestTheJobWritesNothingToTheTerminal`).
+
+## A review finding is a claim about the code; read the cited lines first (`#54`)
+
+Round 2 said a budget cut at the author and entail calls marked the word
+unfinished, and cited the lines. At both, `errBudget` breaks out before the
+return it cited, so the instance was false, and a change there would have changed
+nothing a test could see. The family behind it was real, so its rule went into
+one function with a direct pin. **Read the cited lines before acting on a
+finding, dispose a false instance with the evidence, and still weigh the rule it
+points at.**

@@ -116,6 +116,36 @@ rounds:
           round: 2
       boundary: M1
       blocked: false
+    - "n": 3
+      timestamp: "2026-09-13T00:54:08-07:00"
+      agent: claude
+      findings:
+        - id: BR-13
+          severity: Minor
+          title: bgNoticeFor's early return on noModel/deckErr hides a learner model the same job wrote
+          detail: 'This is the 2nd finding in family notice-wording-matches-cause. Rule: bgNoticeFor is a fold over the result, one line per effect in job order then the stop line, no early return. Both stop branches (background.go:127-135) drop reflected today; a job that reflects and then meets a 429 on its first band call says only that the model did not answer.'
+          family: notice-wording-matches-cause
+          round: 3
+        - id: BR-14
+          severity: Minor
+          title: Plan tables and prose lag the M2 code in four places (deckErr row, bgJobResult fields, bgMemory signatures, envelope reflect row)
+          detail: 'This is the 2nd finding in family plan-table-classification-matches-code. Rule: a Revisions entry that changes a behavior edits every table row and prose signature describing it in the same commit; the pre-gate grep pass covers signatures, not only symbols. Prevalence: 4 sites. See section 7 for the Revisions entry.'
+          family: plan-table-classification-matches-code
+          round: 3
+        - id: BR-15
+          severity: Minor
+          title: The learner model is now written by a background actor while the README invites hand-editing it, and the plan's second-actor list does not name it
+          detail: 'This is the 2nd finding in family shared-state-across-the-job-boundary. Rule: every artifact the job writes is listed with all its other writers, including the operator''s editor, and the resolution named. Prevalence: 1 of the 3 artifacts the job writes is missing. Consequence is bounded: the splice keeps Corrections from disk, and a clobbered refresh leaves the old count so the next check refreshes again, one wasted call. Plan-only change.'
+          family: shared-state-across-the-job-boundary
+          round: 3
+        - id: BR-16
+          severity: Minor
+          title: Once the deck is at the floor every check reads the whole event log, and a reflecting job reads UserModel twice
+          detail: 'This is the 2nd finding in family repeated-reads-per-job. Rule: a job reads each store surface once, and the envelope prices the read per check. Reading UserModel before Events would skip the log read when modelLookups is unknown; background-only, acknowledged in Revisions, envelope row not yet updated.'
+          family: repeated-reads-per-job
+          round: 3
+      boundary: M2
+      blocked: false
 ---
 
 # Gate ledger — tools#54 (boundary-review)
@@ -167,6 +197,19 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-12** [Minor] `residue-names-its-sweep` Facts and items re-created for a word forgotten mid-job have no removal path
   The plan argues they are harmless; the only cleanup is a second --forget of the same word. Rare, but per ARCH-FUNERAL the sweep should be named.
 
+## Round 3 — 2026-09-13T00:54:08-07:00 (claude) — passed
+
+### Raised
+
+- **BR-13** [Minor] `notice-wording-matches-cause` bgNoticeFor's early return on noModel/deckErr hides a learner model the same job wrote
+  This is the 2nd finding in family notice-wording-matches-cause. Rule: bgNoticeFor is a fold over the result, one line per effect in job order then the stop line, no early return. Both stop branches (background.go:127-135) drop reflected today; a job that reflects and then meets a 429 on its first band call says only that the model did not answer.
+- **BR-14** [Minor] `plan-table-classification-matches-code` Plan tables and prose lag the M2 code in four places (deckErr row, bgJobResult fields, bgMemory signatures, envelope reflect row)
+  This is the 2nd finding in family plan-table-classification-matches-code. Rule: a Revisions entry that changes a behavior edits every table row and prose signature describing it in the same commit; the pre-gate grep pass covers signatures, not only symbols. Prevalence: 4 sites. See section 7 for the Revisions entry.
+- **BR-15** [Minor] `shared-state-across-the-job-boundary` The learner model is now written by a background actor while the README invites hand-editing it, and the plan's second-actor list does not name it
+  This is the 2nd finding in family shared-state-across-the-job-boundary. Rule: every artifact the job writes is listed with all its other writers, including the operator's editor, and the resolution named. Prevalence: 1 of the 3 artifacts the job writes is missing. Consequence is bounded: the splice keeps Corrections from disk, and a clobbered refresh leaves the old count so the next check refreshes again, one wasted call. Plan-only change.
+- **BR-16** [Minor] `repeated-reads-per-job` Once the deck is at the floor every check reads the whole event log, and a reflecting job reads UserModel twice
+  This is the 2nd finding in family repeated-reads-per-job. Rule: a job reads each store surface once, and the envelope prices the read per check. Reading UserModel before Events would skip the log read when modelLookups is unknown; background-only, acknowledged in Revisions, envelope row not yet updated.
+
 ## Open findings
 
 - **BR-8** [Minor] `retry-bound-covers-every-failure-kind` A budget cut at the author or entail call marks the word failed, unlike the veto path
@@ -174,3 +217,7 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-10** [Minor] `silent-failure-has-a-signal` A store read error inside a job leaves no trace in the session
 - **BR-11** [Minor] `trigger-event-pinned` No test pins that a missed lookup does not count toward the check
 - **BR-12** [Minor] `residue-names-its-sweep` Facts and items re-created for a word forgotten mid-job have no removal path
+- **BR-13** [Minor] `notice-wording-matches-cause` bgNoticeFor's early return on noModel/deckErr hides a learner model the same job wrote
+- **BR-14** [Minor] `plan-table-classification-matches-code` Plan tables and prose lag the M2 code in four places (deckErr row, bgJobResult fields, bgMemory signatures, envelope reflect row)
+- **BR-15** [Minor] `shared-state-across-the-job-boundary` The learner model is now written by a background actor while the README invites hand-editing it, and the plan's second-actor list does not name it
+- **BR-16** [Minor] `repeated-reads-per-job` Once the deck is at the floor every check reads the whole event log, and a reflecting job reads UserModel twice
