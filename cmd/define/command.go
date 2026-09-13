@@ -54,7 +54,7 @@ var commands = []command{
 
 // helpUsage is /help's own row. Its argument is a command's NAME, with or
 // without the slash, resolved the way dispatch resolves one.
-const helpUsage = "With nothing, list the commands. With a command's name, say how to use it, which --help after any command also does."
+const helpUsage = "With nothing, list the commands. With a command's name, say how to use it, which --help or -h after any command also does."
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
 // from, and it is why command-mode type-ahead needed no change to the pure
@@ -352,7 +352,7 @@ func runHelp(c commandCtx, args []string) int {
 	// The way past the summary, stated where the summary is: a command's
 	// arguments live in its usage, and nothing else on screen says so.
 	fmt.Fprintln(c.stdout)
-	fmt.Fprintln(c.stdout, "  /help <command>, or --help after one, says how to use it")
+	fmt.Fprintln(c.stdout, "  /help <command>, or --help or -h after one, says how to use it")
 	// The two hatches are one keystroke each and otherwise invisible: nothing on
 	// screen suggests a line can be forced either way. This is the only place
 	// that lists what the console understands, so it is where they go.

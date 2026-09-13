@@ -359,3 +359,33 @@ func TestBareHelpSaysHowToExplainOne(t *testing.T) {
 		t.Errorf("bare /help never mentions /help <command>:\n%s", out.String())
 	}
 }
+
+// The shell forwards its context to the renderer, and a value that changes the
+// answer is what pins it (#53 BR-1). Every other help test runs at width 0,
+// where commandUsage does not wrap, so a runHelp or dispatchCommand that dropped
+// the width would pass them all. /pron's usage is the longest row, so at 20
+// columns it must wrap; the vacuity check makes sure it does.
+func TestHelpRendersWithTheContextItIsGiven(t *testing.T) {
+	pron, _ := findCommand("pron", commands)
+	want := commandUsage(pron, 20)
+	if want == commandUsage(pron, 0) {
+		t.Fatal("the pron usage does not wrap at 20 columns; this test would pass vacuously")
+	}
+	var viaHelp bytes.Buffer
+	runHelp(commandCtx{cmds: commands, width: 20, stdout: &viaHelp, stderr: io.Discard}, []string{"pron"})
+	if viaHelp.String() != want {
+		t.Errorf("/help pron at width 20 printed %q, want %q", viaHelp.String(), want)
+	}
+	var viaDash bytes.Buffer
+	dispatchCommand(parseREPLLine("/pron --help", false), commands, commandCtx{width: 20, stdout: &viaDash, stderr: io.Discard})
+	if viaDash.String() != want {
+		t.Errorf("/pron --help at width 20 printed %q, want %q", viaDash.String(), want)
+	}
+	// The registry is context too: /help resolves against the table it was
+	// dispatched from, which is what keeps the fixture tests honest.
+	var viaFixture bytes.Buffer
+	runHelp(commandCtx{cmds: dispatchCmds, stdout: &viaFixture, stderr: io.Discard}, []string{"history"})
+	if !strings.Contains(viaFixture.String(), "fixture history usage") {
+		t.Errorf("/help history against the fixture registry printed %q", viaFixture.String())
+	}
+}

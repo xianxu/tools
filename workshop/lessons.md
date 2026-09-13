@@ -4377,3 +4377,10 @@ was looking at, while the tree checks more than that.
   the plan naming a test the window had removed; my post-commit run, filtered to
   `TestPlan*`, skipped it, and only the whole-repo run at the end caught it.
   "Commit, then run the guard" (`#40`) holds, with "the guard" meaning the suite.
+- **A shell that forwards context is pinned with a value that changes the
+  answer.** Every help test ran at width 0, where the renderer does not wrap, so
+  `runHelp` and `dispatchCommand` could drop the width and stay green; the close
+  review found it (BR-1). Pin each forwarded value (the width, and the registry
+  `/help` resolves against) at a setting where the output differs, and check in
+  the test that it does differ. This is "only a disagreeing case pins the
+  DERIVATION", applied to a parameter instead of a formula.

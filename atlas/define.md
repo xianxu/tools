@@ -1132,7 +1132,7 @@ print them, and this page quotes them, generated from the registry the way the
 list above is and pinned the same way:
 
 <!-- command-usage -->
-- `/help [command]` — With nothing, list the commands. With a command's name, say how to use it, which --help after any command also does.
+- `/help [command]` — With nothing, list the commands. With a command's name, say how to use it, which --help or -h after any command also does.
 - `/history [N | --days N | --days=N]` — The words looked up in the last N days. With nothing, the last 2; N is at most 3650.
 - `/stats` — The deck, streak and accuracy figures for this directory. Takes no arguments.
 - `/play` — Review the words due today; Ctrl-C stops and keeps every answer. Takes no arguments.

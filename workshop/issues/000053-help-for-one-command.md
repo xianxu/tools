@@ -60,16 +60,16 @@ operator (2026-09-12). Start the README part after it lands, not over it.
 
 ## Done when
 
-- [ ] `/help history` prints `/history`'s usage, in the TUI and as
+- [x] `/help history` prints `/history`'s usage, in the TUI and as
       `define /help history`, asserted by a test.
-- [ ] Every registered command has a usage text, and a test fails when a new row
+- [x] Every registered command has a usage text, and a test fails when a new row
       lacks one.
-- [ ] `--help` after any command prints its usage, asserted over the whole
+- [x] `--help` after any command prints its usage, asserted over the whole
       registry rather than one example.
-- [ ] `/help nosuch` suggests the nearest command, in dispatch's wording.
-- [ ] The README and atlas quote each usage from the registry, pinned by a
+- [x] `/help nosuch` suggests the nearest command, in dispatch's wording.
+- [x] The README and atlas quote each usage from the registry, pinned by a
       doc-sync test; `pronCommandHelp` is folded in, not duplicated.
-- [ ] Bare `/help` mentions `/help <command>`.
+- [x] Bare `/help` mentions `/help <command>`.
 
 ## Estimate
 
@@ -186,6 +186,15 @@ Implementation, Tasks 0–4 (commits `cae3eb2`, `d6db417`, `3f3bdae`, `c21195a`,
   `/help <command>` line. The TUI smoke test is the operator's, before merge.
 - The estimate-quality judge (INFO) expects 0.49h to run 0.1–0.2h low, because
   the mutation pass had no line of its own.
+
+Close round 1 (boundary review): FIX-THEN-SHIP, one Important and two Minor.
+BR-1: nothing pinned that `runHelp` and `dispatchCommand` forward the width to
+`commandUsage`, because every help test ran at width 0, where nothing wraps. The
+class is context the shell forwards, so the new test pins the width at both call
+sites and the registry `runHelp` resolves against, each with a value that changes
+the answer. BR-2: `-h` was accepted but named only in the atlas; `helpUsage` and
+the bare-help line now say `--help or -h`, and the regenerated span carries it
+to both pages. BR-3: the Done-when boxes are ticked.
 
 ## Revisions
 
