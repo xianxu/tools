@@ -1732,23 +1732,27 @@ no practice item: `pendingWords`), a job bands and authors the ten newest within
 `-raw`, a pipe, a one-shot lookup, or any mode flag.
 
 **One table decides when a job runs** (`stepBackground`, `background.go`): idle,
-running, or off once no model answered, fed three events (session start, a lookup
+running, or off once the model did not answer, fed three events (session start, a lookup
 that found its word, a finished job). The table is the whole state; the loop only
 applies its effects. **A job runs on one goroutine** (`bgRunner`) with a copy of
 the session's deps taken when it starts, so it finishes the language it started
 in. It hands back one `bgJobResult` on a channel the loop selects on beside
 resizes, and the loop clears the frame, prints the notice and redraws, which keeps
-every screen write on the loop and between prompts. The runner's context is a
+every screen write on the loop and between prompts. The job reads the store
+through `quietStore`, which drops the store's warnings, so nothing it does reaches
+the terminal. The runner's context is a
 child of the session's: quitting cancels the job, the loop waits at most two
 seconds for it, and every store write is an atomic rename, so any stop leaves each
 file old or new.
 
 **The batch is the point.** `harvestDeck` bands a batch before authoring the same
 batch, so a backlog drains on both halves under a small budget; the CLI passes a
-nil batch and gets the whole deck, unchanged. **A word whose authoring fails is
-retried at most once a session**: the runner keeps a `tried` set that the next job
-skips. **A missing model is said once** (`noModel`, from a stop typed
-`llm.ErrUnavailable` or `llm.ErrRequest`), and the session stops asking;
+nil batch and gets the whole deck, unchanged. **A word a job could not finish is
+retried at most once a session** (a refused band, authoring that kept nothing, or
+a model or store error on that word): the runner keeps a `tried` set that the next
+job skips. **A model that does not answer is said once** (`noModel`, from a stop
+typed `llm.ErrUnavailable`, which a rate limit or a 5xx also is, or
+`llm.ErrRequest`), and the session stops asking;
 `llm.Resolve` cannot tell whether a model is there, so the first call decides.
 `DEFINE_NO_BACKGROUND=1` turns it all off, and so does a directory nobody agreed to
 make a deck: `backgroundEnabled` reads `deckPermission.saving()` and never asks.
@@ -1767,7 +1771,7 @@ it comes back.
 | notice | when |
 |---|---|
 | `N new practice questions ready for /play` | a job wrote items |
-| `practice questions are not being prepared: no model answered (see define --llm-check)` | the first job that found no model; then the session is quiet |
+| `practice questions are not being prepared: the model did not answer (see define --llm-check)` | the first job whose model did not answer (none running, a refused request, a rate limit or a 5xx); then the session is quiet |
 
 ## Entry modes
 

@@ -247,21 +247,25 @@ func TestTheOffSwitchStopsIt(t *testing.T) {
 }
 
 // assertNoJob runs a session over a deck that already needs work, so an enabled
-// runner would start a job at once, and checks that no model call is made. The
-// poll bounds how long "at once" is; it proves an absence, not an ordering.
+// runner would start a job at once, and checks that no model client was built.
+// end waits for the session, whose deferred stop waits for any job it started, and
+// a job over this deck builds its client before its first call; so a zero here is
+// an observed absence, not a timing guess.
 func assertNoJob(t *testing.T, d deps, opt options, fake *llmtest.Fake, finish func()) {
 	t.Helper()
+	var built atomic.Int32
+	base := d.newLLM
+	d.newLLM = func(c llm.Config) llm.Client {
+		built.Add(1)
+		return base(c)
+	}
 	out := &syncBuf{}
 	keys, end := bgRunSession(t, t.Context(), d, opt, recordingConsole(out, out, finish))
 	typeLine(keys, "sycophantic")
-	for deadline := time.Now().Add(700 * time.Millisecond); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		if n := len(fake.Requests()); n > 0 {
-			t.Fatalf("%d model call(s) made; the session must not prepare anything here", n)
-		}
-	}
 	end()
-	if n := len(fake.Requests()); n > 0 {
-		t.Errorf("%d model call(s) made; the session must not prepare anything here", n)
+	if n := built.Load(); n != 0 || len(fake.Requests()) != 0 {
+		t.Errorf("a model client was built %d time(s) and %d call(s) made; the session must not prepare anything here",
+			n, len(fake.Requests()))
 	}
 }
 
@@ -271,14 +275,14 @@ func TestNoModelIsOneNoticeThenQuiet(t *testing.T) {
 	fake.Script(markBand, llmtest.Reply{Status: 500, Text: "upstream is having a day"})
 	out := &syncBuf{}
 	keys, end := bgRunSession(t, t.Context(), d, opt, recordingConsole(out, out, finish))
-	waitFor(t, func() bool { return strings.Contains(out.String(), "no model answered") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "the model did not answer") })
 	before := len(fake.Requests())
 	for _, w := range bgLookupWords {
 		typeLine(keys, w)
 	}
 	waitFor(t, func() bool { return bgDeckHolds(st, "concrete") }) // the last word typed, and not seeded
 	end()
-	if n := strings.Count(out.String(), "no model answered"); n != 1 {
+	if n := strings.Count(out.String(), "the model did not answer"); n != 1 {
 		t.Errorf("the no-model notice showed %d times, want once", n)
 	}
 	if after := len(fake.Requests()); after != before {

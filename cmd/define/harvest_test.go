@@ -9,6 +9,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1216,4 +1217,17 @@ func harvestDeckForTest(t *testing.T, d deps, batch []string, limit int) harvest
 		t.Fatal(err)
 	}
 	return harvestDeck(t.Context(), d, d.newLLM(cfg), deck, &budget{left: limit}, limit, batch, io.Discard, io.Discard)
+}
+
+// A stop on a word leaves that word unfinished, so the session skips it at the
+// next check (#54). A model that keeps answering one word with something
+// unreadable would otherwise stop every job at the same newest word, and the
+// backlog behind it would never drain.
+func TestHarvestDeckCountsAStoppedWordAsUnfinished(t *testing.T) {
+	d, fake, _ := harvestRig(t, 3)
+	fake.Script(markBand, llmtest.Reply{Text: "not json"})
+	o := harvestDeckForTest(t, d, nil, bgBudget)
+	if o.stopped == nil || !slices.Equal(o.failed, []string{deckWord(0)}) {
+		t.Errorf("a stop on the newest word: stopped %v, unfinished %v; want a stop and [%s]", o.stopped, o.failed, deckWord(0))
+	}
 }

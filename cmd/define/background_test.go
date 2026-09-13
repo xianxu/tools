@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -77,14 +79,14 @@ func TestPendingWordsFollowsTheSpec(t *testing.T) {
 		Stem: "the alpha test", Answer: "alpha", Distractors: []string{"bravo"}, At: base}}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := pendingWords(st, nil); err != nil || !slices.Equal(got, []string{"delta", "charlie", "bravo"}) {
+	if got, err := pendingWords(st, readDeck(t, st), nil); err != nil || !slices.Equal(got, []string{"delta", "charlie", "bravo"}) {
 		t.Fatalf("pendingWords = %v, %v; want [delta charlie bravo], newest first", got, err)
 	}
 	// A word whose authoring failed this session is skipped; a forgotten word is gone.
 	if _, err := st.Forget("delta"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := pendingWords(st, map[string]bool{"bravo": true}); !slices.Equal(got, []string{"charlie"}) {
+	if got, _ := pendingWords(st, readDeck(t, st), map[string]bool{"bravo": true}); !slices.Equal(got, []string{"charlie"}) {
 		t.Errorf("with bravo skipped and delta forgotten: %v, want [charlie]", got)
 	}
 }
@@ -138,7 +140,7 @@ func TestRunBackgroundJobStaysInItsBudget(t *testing.T) {
 func TestABacklogDrainsOnBothHalves(t *testing.T) {
 	d, fake, st := harvestRig(t, 12)
 	scriptAll(fake, 8)
-	pending, err := pendingWords(st, nil)
+	pending, err := pendingWords(st, readDeck(t, st), nil)
 	if err != nil || len(pending) != 12 {
 		t.Fatalf("pending = %v, %v; want all twelve", pending, err)
 	}
@@ -218,5 +220,80 @@ func awaitJobResult(t *testing.T, r *bgRunner) bgJobResult {
 	case <-time.After(30 * time.Second):
 		t.Fatal("no result from the background job")
 		return bgJobResult{}
+	}
+}
+
+// readDeck is the deck as a caller reads it before asking what is pending.
+func readDeck(t *testing.T, st store.Store) []store.Word {
+	t.Helper()
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return deck
+}
+
+// Every way a job leaves a word unfinished is retried at most once a session, a
+// refused band included (#54). A model that answers with no CEFR band leaves the
+// word unbanded, so it stays pending, and a runner that did not remember it would
+// spend a band call on it at every check.
+func TestABandRefusalIsRetriedOncePerSession(t *testing.T) {
+	d, fake, _ := harvestRig(t, bgThreshold)
+	for range bgThreshold {
+		fake.Script(markBand, llmtest.Reply{Text: `{"band":"Z9","domain":"Law"}`})
+	}
+	r := newBgRunner(t.Context(), runBackgroundJob)
+	defer r.stop(time.Second)
+	r.start(d)
+	first := awaitJobResult(t, r)
+	if len(first.failed) != bgThreshold {
+		t.Fatalf("the first job reported %d unfinished word(s), want all %d refused: %+v", len(first.failed), bgThreshold, first)
+	}
+	r.received(first)
+	before := len(fake.Requests())
+	r.start(d)
+	awaitJobResult(t, r)
+	if after := len(fake.Requests()); after != before {
+		t.Errorf("the second job made %d more call(s); the refused words should be skipped", after-before)
+	}
+}
+
+// The job never writes to the terminal (#54). The session's stores warn to the
+// process stderr and a job reads off the loop, so it reads through a view that
+// drops warnings, whether the store is bare or behind the deck gate. The control
+// reads the same store plainly and must warn, or the test proves nothing.
+func TestTheJobWritesNothingToTheTerminal(t *testing.T) {
+	for name, gated := range map[string]bool{"bare": false, "behind the gate": true} {
+		t.Run(name, func(t *testing.T) {
+			d, fake, _ := harvestRig(t, 0)
+			scriptAll(fake, 4)
+			dir := t.TempDir()
+			warn := &syncBuf{}
+			st := store.NewYAML(dir, store.DefaultLang, warn)
+			for i := range bgThreshold {
+				if err := st.Upsert(store.Word{Text: deckWord(i), FirstSeen: harvestClock.AddDate(0, 0, -20),
+					LastSeen: harvestClock.AddDate(0, 0, -i), Lookups: 1}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			bad := filepath.Join(dir, store.RuntimeDirs[0], string(store.DefaultLang), "unreadable.yaml")
+			if err := os.WriteFile(bad, []byte("text: [unclosed\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.Deck(); err != nil || warn.Len() == 0 {
+				t.Fatalf("a plain read of the planted file drew no warning (%v); the test would pass vacuously", err)
+			}
+			warn.TakeAll()
+			d.deck = st
+			if gated {
+				d.deck = newGatedStore(st, store.NewMem(), nil)
+			}
+			if r := runBackgroundJob(t.Context(), d, nil); r.authored == 0 {
+				t.Fatalf("the job did no work, so its silence proves nothing: %+v", r)
+			}
+			if warn.Len() != 0 {
+				t.Errorf("the job wrote %q to the store's warning writer, which is the terminal in a session", warn.String())
+			}
+		})
 	}
 }

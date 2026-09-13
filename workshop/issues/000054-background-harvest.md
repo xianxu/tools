@@ -262,6 +262,27 @@ test's comment rather than claimed as a pin. gofmt and `go vet ./...` clean; eve
 other package green; the whole `cmd/define` suite green after every commit. The
 operator's TUI smoke test is pending.
 
+**M1 boundary review, round 1: FIX-THEN-SHIP, three Important.** All three are
+fixed in one commit, with the cheap Minors:
+
+- A refused band never reached `tried`, so a word the model mis-bands would take
+  a batch slot at every check. `harvestOutcome.failed` now holds every word a pass
+  ran for and could not finish: a refused band, authoring that kept nothing, or a
+  model stop or store error on that word. A budget cut is not a failure. Pinned
+  by TestABandRefusalIsRetriedOncePerSession and
+  TestHarvestDeckCountsAStoppedWordAsUnfinished; the store-error joins have no
+  pin, because no rig here fails one word's read.
+- A job's store reads could print a warning into the frame from its goroutine,
+  because the session's stores warn to the process stderr. The job reads through
+  `quietStore` (`store.YAML.Quiet`, through the deck gate). Pinned by
+  TestTheJobWritesNothingToTheTerminal, bare and gated, with a control read that
+  must warn. The loop's own reads still warn to stderr as they did before #54.
+- The plan listed `pendingWords` as pure; it moved to the integration table.
+- Minors: the notice says "the model did not answer", since a 429 or a 5xx is
+  `ErrUnavailable` too; `assertNoJob` counts the clients built after `end()`
+  instead of polling for 700 ms; `hasModelSeam` is the one guard; a job reads the
+  deck once; a 130-column comment in `harvest.go` is rewrapped.
+
 ## Revisions
 
 ### 2026-09-12 — planning
@@ -293,3 +314,13 @@ operator's TUI smoke test is pending.
   the operator.
 - **Two interleavings written down:** a word forgotten mid-job (ignored, and
   why), and which context the job derives from (the session's).
+
+### 2026-09-12 — M1 boundary review, round 1
+
+- **Any word a job could not finish is tried at most once a session**, not only
+  one whose authoring kept nothing: a refused band, a model stop on that word, or
+  a store error on it counts too, so the retry bound covers the banding half.
+- **The job writes nothing to the terminal**, store warnings included: it reads
+  through a quiet view of the same store.
+- **The notice reads "the model did not answer"**: a rate limit or a 5xx also
+  turns the session's background work off, and "no model answered" overstated it.

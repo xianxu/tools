@@ -33,7 +33,6 @@
 | `bgEffect` | `cmd/define/background.go` | new |
 | `bgJobResult` | `cmd/define/background.go` | new |
 | `stepBackground` | `cmd/define/background.go` | new |
-| `pendingWords` | `cmd/define/background.go` | new |
 | `modelLookups` | `cmd/define/background.go` | new |
 | `reflectDue` | `cmd/define/background.go` | new |
 | `harvestOutcome` | `cmd/define/harvest.go` | new |
@@ -44,7 +43,6 @@
 - **`bgEffect`** — what the loop must do after a step: start a job, or print a notice.
 - **`bgJobResult`** — what one job did: `authored` (new practice items), `failed` (words whose authoring kept nothing), `reflected` (M2), `noModel`.
 - **`stepBackground(s bgState, ev bgEvent) (bgState, []bgEffect)`** — the transition function. Pure; the loop applies its effects.
-- **`pendingWords(st store.Store, skip map[string]bool) ([]string, error)`** — the deck words `--harvest` would still do work for, exactly the Spec's definition: no band yet, or no practice item. Newest first (`Deck()` is ordered by last seen), minus `skip`, the words whose authoring already failed this session. The store is the only count: words looked up from the command line, harvested by hand, or forgotten are counted the same way.
 - **`modelLookups(md string) (int, bool)`** — the lookup count a learner model was written from, read off its frontmatter `window:` line (`usermodel.go` writes `# N lookups`). Frontmatter only; a hand-edited or truncated file reads as "unknown".
 - **`reflectDue(md string, lookups, words int) bool`** — no model and at least `minDeckForReflection` words, or a readable model whose recorded lookups have been doubled (`bgRefreshFactor`). Unknown means not due: a model someone edited by hand is left alone.
 - **`harvestOutcome`** — one harvest pass as data: `banded`, `refused`, `skipped`, `authored`, `failed` (the words authoring ran for and kept nothing), `stopped` (the error that stopped it, if any) and `code` (the CLI's exit code, unchanged).
@@ -60,6 +58,8 @@
 | `runAuthoring` | `cmd/define/harvest.go` | modified | the model, the store |
 | `reflectDeck` | `cmd/define/reflect.go` | new | the model, the store |
 | `runReflect` | `cmd/define/reflect.go` | modified | the `--reflect` flag |
+| `pendingWords` | `cmd/define/background.go` | new | the store |
+| `quietStore` | `cmd/define/background.go` | new | the store's warning writer |
 | `runBackgroundJob` | `cmd/define/background.go` | new | model config, the store, the two cores |
 | `bgRunner` | `cmd/define/background.go` | new | one goroutine and its result channel |
 | `runEditor` | `cmd/define/replraw.go` | modified | the editor loop |
@@ -68,6 +68,8 @@
 - **`harvestDeck(ctx, d deps, client llm.Client, deck []store.Word, bud *budget, limit int, batch []string, out, errOut io.Writer) harvestOutcome`** — the banding loop and the call to `runAuthoring`, moved out of `runHarvest`, recording what `runHarvest` used to only print. `batch` limits both halves to those words; nil, which is what the CLI passes, means the whole deck, as today. Authoring still draws wrong answers from every banded word, so a batch costs no distractor quality. Banding a batch and then authoring the same batch is what lets a backlog drain on both halves: today's order, band everything and then author, spends a small budget on banding alone. `runHarvest` keeps its signature: guards, config, client, the agreement mode, then `harvestDeck`, returning `o.code`. Every line `--harvest` prints today, it still prints (the harvest tests pin them).
 - **`runAuthoring`** takes the batch and returns `(authored int, failed []string, stopped error, code int)` instead of an exit code alone.
 - **`reflectDeck` / `runReflect`** — the same split for `--reflect` (M2).
+- **`pendingWords(st store.Store, deck []store.Word, skip map[string]bool) ([]string, error)`** — the deck words `--harvest` would still do work for, exactly the Spec's definition: no band yet, or no practice item. Newest first (`Deck()` is ordered by last seen), minus `skip`, the words a job already could not finish this session. It reads facts and items through the store, so it is an integration entity and its test runs on the in-memory store; `deck` is the deck its caller read, so a job reads it once. The store is the only count: words looked up from the command line, harvested by hand, or forgotten are counted the same way.
+- **`quietStore(st store.Store) store.Store`** — the job's view of the deck: the same files with the store's warnings dropped (`store.YAML.Quiet`, reached through the deck gate), because the job reads off the loop and the session's stores warn to the process stderr.
 - **`runBackgroundJob(ctx, d deps, skip map[string]bool) bgJobResult`** — resolve the model config, reflect if due (M2), list the pending words, and if there are at least `bgThreshold`, band and author the newest `bgThreshold` of them within `bgBudget` calls. Its prose goes to `io.Discard`; only its result reaches the screen. A stop whose error is `llm.ErrUnavailable` or `llm.ErrRequest` (`internal/llm/errors.go`, the two that repeat on every call) sets `noModel`. `llm.Resolve` alone cannot say whether a model exists (it succeeds on the default local proxy with nothing running), so the first call decides.
 - **`bgRunner`** — starts one job with a copy of `deps`, sends its result on `results` (capacity 1) inside a `select` that also watches `ctx.Done()`, and `stop(wait)` cancels and waits up to `wait` for the job to return. It keeps the session's `tried` set, the words whose authoring failed this session: each result's `failed` joins it, and it is the next job's `skip`, so a word that fails is retried at most once per session.
 - **`runEditor`** — builds the runner only when the session can use it (below), feeds `stepBackground`, and selects on `results` beside `con.resizes`. A nil `results` channel never fires, so a session without background work runs exactly as today.
@@ -341,6 +343,9 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
   | the off switch is ignored | TestTheOffSwitchStopsIt |
   | `noModel` is never set | TestNoModelIsOneNoticeThenQuiet |
   | the result case skips `view.Draw("", nil)` before printing | TestABackgroundNoticeIsWrittenBetweenPrompts |
+  | a refused band is left out of `failed` (review round 1) | TestABandRefusalIsRetriedOncePerSession |
+  | the job reads through the store it was given (review round 1) | TestTheJobWritesNothingToTheTerminal |
+  | `quietStore` hands a gated store back unchanged (review round 1) | TestTheJobWritesNothingToTheTerminal |
 
   Plus an unmutated control run.
 - [x] **Step 2:** gofmt, `go vet ./...`, `go test ./...` → PASS, run after the last commit.
@@ -431,3 +436,13 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
 - [ ] **Step 2: Mutation-verify:** `reflectDue` ignores the refresh factor (TestReflectDue); `modelLookups` reads past the frontmatter (TestModelLookupsReadsOnlyTheFrontmatter); the job harvests before it reflects (TestTheSessionWritesALearnerModelAtTwelveWords); plus a control.
 - [ ] **Step 3:** gofmt, `go vet ./...`, `go test ./...` → PASS, run after the last commit.
 - [ ] **Step 4:** `sdlc close --issue 54 --verified '<evidence>'`.
+
+## Revisions
+
+### 2026-09-12 — M1 boundary review, round 1 (FIX-THEN-SHIP)
+
+- **`pendingWords` is an integration entity**, not pure: it reads facts and items through `store.Store`, and its test runs on the in-memory store. Its row moved to the Integration points table (wraps: the store). It now takes the deck its caller read, and `runAuthoring` takes the deck `harvestDeck` was given, so one job reads the deck once rather than three times.
+- **`failed` covers every way a job leaves a word unfinished**, not only authoring that kept nothing. A refused band, a model stop on that word and a store error on it join the list, and so the runner's `tried` set: the class decision 7 named, applied to the banding half. A budget cut is not a failure; the word stays pending for the next job. The operating-envelope row "authoring retries" reads as "retries" for the whole pass. Pinned by `TestABandRefusalIsRetriedOncePerSession`.
+- **A store warning during a job**, one more event the loop cannot block (ARCH-ORDER). The session's stores warn to the process stderr, and the job read the deck off the loop, so a bad `words/*.yaml` could print into the frame at any moment. The job now reads through `quietStore`, the same store with its warnings dropped (`store.YAML.Quiet`, reached through the deck gate). The loop's own reads still warn as before. Pinned by `TestTheJobWritesNothingToTheTerminal`.
+- **The notice says "the model did not answer"**, not "no model answered": `llm.ErrUnavailable` includes a rate limit and every 5xx, so one busy moment on a paid key also turns the session's background work off.
+- **Tests and guards**: `assertNoJob` counts the model clients built and asserts after `end()`, whose deferred stop waits for any job, instead of polling for 700 ms. The session's gate and the job share `hasModelSeam`.

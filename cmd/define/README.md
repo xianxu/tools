@@ -389,9 +389,10 @@ question), it bands the 10 newest and writes their questions, at most 60 model
 calls a time, and says so between prompts: `define: 10 new practice questions
 ready for /play`. Nothing you do waits on it: a lookup, a question or a sitting
 runs as it always did, and quitting stops the job and keeps what it already
-wrote. A word the model cannot write a question for is tried at most once a
-session. `DEFINE_NO_BACKGROUND=1` turns it off, and so does having no model: the
-first job that finds none says so once, and the session stops asking.
+wrote. A word the model cannot band or write a question for is tried at most
+once a session. `DEFINE_NO_BACKGROUND=1` turns it off, and so does a model that
+does not answer, a rate limit included: the first job it fails says so once, and
+the session stops asking.
 
 `define --harvest` still runs it by hand, over the whole deck, and it is the only
 thing in `define` that may make you wait. A review works perfectly well against a

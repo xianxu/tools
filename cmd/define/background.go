@@ -35,7 +35,7 @@ type bgPhase int
 const (
 	bgIdle    bgPhase = iota // nothing running; lookups count toward the next check
 	bgRunning                // one job in flight; lookups still count
-	bgOff                    // no model answered: nothing more this session
+	bgOff                    // the model did not answer: nothing more this session
 )
 
 // bgState is everything the session carries between events for background work.
@@ -69,9 +69,9 @@ type bgEffect struct {
 // bgJobResult is what one job did.
 type bgJobResult struct {
 	authored  int      // practice items it wrote
-	failed    []string // words whose authoring ran and kept nothing
+	failed    []string // words the job ran for and could not finish
 	reflected bool     // the learner model was written or refreshed
-	noModel   bool     // no model answered; the session stops trying
+	noModel   bool     // the model did not answer; the session stops trying
 }
 
 // stepBackground is the transition table. Pure: the session applies its effects.
@@ -80,7 +80,7 @@ type bgJobResult struct {
 //	idle     session start  running, since 0                       start a job
 //	idle     looked up      since+1; at bgThreshold: running, 0    start a job at the threshold
 //	running  looked up      since+1                                none
-//	running  job done       off when no model answered             one notice
+//	running  job done       off when the model did not answer      one notice
 //	running  job done       idle, or running again past threshold  a notice per thing it did
 //	off      anything       off                                    none
 //	idle     job done       idle                                   none (a job starts only from idle)
@@ -123,7 +123,7 @@ func stepBackground(s bgState, ev bgEvent) (bgState, []bgEffect) {
 // it: the learner model is written before the harvest that reads it.
 func bgNoticeFor(r bgJobResult) []string {
 	if r.noModel {
-		return []string{"practice questions are not being prepared: no model answered (see define --llm-check)"}
+		return []string{"practice questions are not being prepared: the model did not answer (see define --llm-check)"}
 	}
 	var out []string
 	if r.reflected {
@@ -142,16 +142,13 @@ func bgNoticeFor(r bgJobResult) []string {
 // pendingWords is the deck words --harvest would still do work for, the Spec's
 // definition: no band yet, or no practice item. Newest first, because Deck() is
 // ordered by last seen and the words being learned now matter most, and minus
-// skip, the words whose authoring already failed this session.
+// skip, the words a job already could not finish this session. deck is the deck as
+// its caller read it, so a job reads it once.
 //
 // The store is the only count. Words looked up from the command line, harvested
 // by hand, or forgotten are counted the same way, which a counter kept by the
 // session could not do.
-func pendingWords(st store.Store, skip map[string]bool) ([]string, error) {
-	deck, err := st.Deck()
-	if err != nil {
-		return nil, err
-	}
+func pendingWords(st store.Store, deck []store.Word, skip map[string]bool) ([]string, error) {
 	var out []string
 	for _, w := range deck {
 		if skip[w.Text] {
@@ -178,24 +175,26 @@ func pendingWords(st store.Store, skip map[string]bool) ([]string, error) {
 
 // runBackgroundJob is one job: list what needs work and, when there is enough of
 // it, band and author the newest bgThreshold words within bgBudget calls. Its
-// prose goes to io.Discard; only its result reaches the screen, through the
-// session. skip is the words whose authoring already failed this session.
+// prose goes to io.Discard and it reads the store through quietStore, so only its
+// result reaches the screen, through the session. skip is the words a job already
+// could not finish this session.
 func runBackgroundJob(ctx context.Context, d deps, skip map[string]bool) bgJobResult {
-	if d.deck == nil || d.getenv == nil || d.newLLM == nil {
-		return bgJobResult{}
+	if !hasModelSeam(d) {
+		return bgJobResult{} // tests call the job directly; a session checked already
 	}
+	d.deck = quietStore(d.deck)
 	cfg, err := llm.Resolve(d.getenv)
 	if err != nil {
 		// No usable configuration, the case --llm-check reports loudly. The session
 		// stops asking rather than fail the same way at every check.
 		return bgJobResult{noModel: true}
 	}
-	pending, err := pendingWords(d.deck, skip)
-	if err != nil || len(pending) < bgThreshold {
-		return bgJobResult{}
-	}
 	deck, err := d.deck.Deck()
 	if err != nil {
+		return bgJobResult{}
+	}
+	pending, err := pendingWords(d.deck, deck, skip)
+	if err != nil || len(pending) < bgThreshold {
 		return bgJobResult{}
 	}
 	o := harvestDeck(ctx, d, d.newLLM(cfg), deck, &budget{left: bgBudget}, bgBudget, pending[:bgThreshold], io.Discard, io.Discard)
@@ -223,7 +222,7 @@ type bgRunner struct {
 	job     func(context.Context, deps, map[string]bool) bgJobResult
 	results chan bgJobResult // capacity 1: one job at a time, so a send never waits on the loop
 	done    chan struct{}    // closed when the latest job's goroutine has returned
-	tried   map[string]bool  // words whose authoring failed this session
+	tried   map[string]bool  // words a job could not finish this session
 }
 
 // newBgRunner is a runner under the session's context, running job.
@@ -249,7 +248,7 @@ func (r *bgRunner) start(d deps) {
 	}()
 }
 
-// received is the loop's half of a result: the words whose authoring failed join
+// received is the loop's half of a result: the words a job could not finish join
 // tried, so no later job this session spends calls on them again.
 func (r *bgRunner) received(res bgJobResult) {
 	for _, w := range res.failed {
@@ -276,11 +275,34 @@ func (r *bgRunner) stop(wait time.Duration) {
 // the loop starts, and this only reads the answer, never asks), a model seam
 // exists, and DEFINE_NO_BACKGROUND is unset.
 func backgroundEnabled(d deps) bool {
-	if d.deck == nil || d.getenv == nil || d.newLLM == nil {
+	if !hasModelSeam(d) {
 		return false
 	}
 	if allowed, decided := d.deckPermission.saving(); !allowed || !decided {
 		return false
 	}
 	return d.getenv(noBackgroundEnv) == ""
+}
+
+// hasModelSeam is whether deps has a deck to read and a model to ask: the
+// session's gate checks it, and so does the job, which tests call directly.
+func hasModelSeam(d deps) bool {
+	return d.deck != nil && d.getenv != nil && d.newLLM != nil
+}
+
+// quietStore is the job's view of the deck: the same files, with the store's
+// warnings dropped (#54). The session's stores warn to the process stderr, and the
+// job reads off the loop, so a warning about a bad file would land in the frame at
+// an arbitrary moment. A gated store keeps its gate and gets a quiet disk; the
+// in-memory store never warns.
+func quietStore(st store.Store) store.Store {
+	switch s := st.(type) {
+	case *gatedStore:
+		q := *s
+		q.disk = quietStore(s.disk)
+		return &q
+	case *store.YAML:
+		return s.Quiet()
+	}
+	return st
 }

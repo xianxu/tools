@@ -103,9 +103,10 @@ func runWithin[T any](ctx context.Context, bud *budget, c llm.Client, t llm.Task
 //
 // A BATCH path, and nothing waits on it. A review sitting never reaches it
 // (nothing here is reachable from --play), and the session's background job runs
-// the same core, harvestDeck, off the editor loop (#54). The work is per NEW word, so a second run over an unchanged deck makes
-// ZERO model calls — that is what keeps the cost from growing with time, and it
-// is a claim about CALLS rather than about a file existing.
+// the same core, harvestDeck, off the editor loop (#54). The work is per NEW
+// word, so a second run over an unchanged deck makes ZERO model calls — that is
+// what keeps the cost from growing with time, and it is a claim about CALLS
+// rather than about a file existing.
 func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out, errOut io.Writer) int {
 	if d.deck == nil {
 		fmt.Fprintln(errOut, noDeckMessage(opt.noCapture))
@@ -148,7 +149,7 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 type harvestOutcome struct {
 	banded, refused, skipped int      // the banding half, as its summary line counts them
 	authored                 int      // practice items this pass wrote
-	failed                   []string // words authoring ran for and kept nothing
+	failed                   []string // words it ran for and could not finish; a budget cut is not a failure
 	stopped                  error    // the model error that stopped the pass, if any
 	code                     int      // runHarvest's exit code, unchanged
 }
@@ -183,6 +184,7 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 		facts, err := d.deck.WordFacts(w.Text)
 		if err != nil {
 			fmt.Fprintf(errOut, "define: could not read facts for %q: %v\n", w.Text, err)
+			o.failed = append(o.failed, w.Text)
 			o.code = 1
 			return o
 		}
@@ -205,6 +207,7 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 			// rate-limited budget on calls that will each fail the same way.
 			fmt.Fprintf(errOut, "define: harvesting stopped: %v\n", err)
 			fmt.Fprintf(out, "define: banded %d word(s) before stopping; they are saved\n", asked)
+			o.failed = append(o.failed, w.Text)
 			o.banded, o.refused, o.skipped, o.stopped, o.code = asked-refused, refused, skipped, err, 1
 			return o
 		}
@@ -216,6 +219,7 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 			// next run asks again, which is the cheap failure; a nonsense band
 			// written to a forever cache is the expensive one.
 			refused++
+			o.failed = append(o.failed, w.Text)
 			fmt.Fprintf(errOut, "define: %q: %q is not a CEFR band; leaving it unbanded\n", w.Text, claim.Band)
 			continue
 		}
@@ -231,6 +235,7 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 			Band: band, Domain: domain, At: now(d),
 		}); err != nil {
 			fmt.Fprintf(errOut, "define: could not save facts for %q: %v\n", w.Text, err)
+			o.failed = append(o.failed, w.Text)
 			o.code = 1
 			return o
 		}
@@ -243,7 +248,9 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 	fmt.Fprintln(out, ".")
 
 	o.banded, o.refused, o.skipped = asked-refused, refused, skipped
-	o.authored, o.failed, o.stopped, o.code = runAuthoring(ctx, d, client, bud, limit, batch, out, errOut)
+	var authorFailed []string
+	o.authored, authorFailed, o.stopped, o.code = runAuthoring(ctx, d, client, deck, bud, limit, batch, out, errOut)
+	o.failed = append(o.failed, authorFailed...)
 	return o
 }
 
@@ -263,21 +270,16 @@ func batchFilter(batch []string) func(string) bool {
 // runAuthoring writes practice items for banded words that have none.
 //
 // Only the batch's words when there is one (#54). It returns what it authored,
-// the words it ran for and kept nothing, and the error that stopped it, so the
-// background job can read the pass instead of parsing its prose.
+// the words it ran for and could not finish, and the error that stopped it, so the
+// background job can read the pass instead of parsing its prose. deck is the one
+// harvestDeck was given: banding writes facts, never words, so it is still current.
 //
 // SECOND PASS, after banding, and it depends on the first having run: selection
 // draws from the deck's BANDED words, so a word cannot supply a distractor until
 // it has a level. That ordering is why a single --harvest does both rather than
 // authoring being its own flag — the two are one job with a dependency, not two
 // jobs a person chooses between.
-func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, limit int, batch []string, out, errOut io.Writer) (authored int, failed []string, stopped error, code int) {
-	deck, err := d.deck.Deck()
-	if err != nil {
-		fmt.Fprintf(errOut, "define: could not read the deck: %v\n", err)
-		return 0, nil, nil, 1
-	}
-
+func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.Word, bud *budget, limit int, batch []string, out, errOut io.Writer) (authored int, failed []string, stopped error, code int) {
 	// THE POOL is every banded word, built once. Selection is pure over it, so
 	// this is the only place the store is read for candidates.
 	var pool []bandedWord
@@ -324,7 +326,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		existing, err := d.deck.Items(c.Word)
 		if err != nil {
 			fmt.Fprintf(errOut, "define: could not read items for %q: %v\n", c.Word, err)
-			return authored, failed, nil, 1
+			return authored, append(failed, c.Word), nil, 1
 		}
 		if len(existing) > 0 {
 			skipped++
@@ -340,7 +342,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		if err != nil {
 			fmt.Fprintf(errOut, "define: authoring stopped: %v\n", err)
 			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-			return authored, failed, err, 1
+			return authored, append(failed, c.Word), err, 1
 		}
 
 		// THE FREE CHECK FIRST. A stem that does not contain its answer cannot be
@@ -364,7 +366,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 		if err != nil {
 			fmt.Fprintf(errOut, "define: judging stopped: %v\n", err)
 			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-			return authored, failed, err, 1
+			return authored, append(failed, c.Word), err, 1
 		}
 		if !verdict.Entails || verdict.Glosses || !verdict.Named {
 			rejected++
@@ -401,7 +403,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 			if err != nil {
 				fmt.Fprintf(errOut, "define: the veto stopped: %v\n", err)
 				fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-				return authored, failed, err, 1
+				return authored, append(failed, c.Word), err, 1
 			}
 			if v.Fits {
 				// The veto EXERCISED. Said out loud because a veto nobody sees
@@ -434,7 +436,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, bud *budget, l
 			Answer: c.Word, Distractors: kept, At: now(d),
 		}}); err != nil {
 			fmt.Fprintf(errOut, "define: could not save items for %q: %v\n", c.Word, err)
-			return authored, failed, nil, 1
+			return authored, append(failed, c.Word), nil, 1
 		}
 		authored++
 		domains = append(domains, c.Facts.Domain)
