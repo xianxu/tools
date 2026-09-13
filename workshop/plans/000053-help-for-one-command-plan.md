@@ -23,6 +23,7 @@
 | `commandUsage` | `cmd/define/command.go` | new |
 | `findCommand` | `cmd/define/command.go` | new |
 | `asksForUsage` | `cmd/define/command.go` | new |
+| `usageFlags` | `cmd/define/command.go` | new |
 | `helpUsage` | `cmd/define/command.go` | new |
 | `historyUsage` | `cmd/define/history_cmd.go` | new |
 | `statsUsage` | `cmd/define/stats.go` | new |
@@ -345,3 +346,18 @@ The rewrite (`6cf5414`) dropped text nine tests require. Put each piece back int
 ## Operating envelope
 
 N/A beyond "instant": a command at the prompt, a handful of string operations, no IO but the writer.
+
+## Revisions
+
+### 2026-09-12 — what the close reviews added
+
+- **`usageFlags`** (`cmd/define/command.go`), from BR-4, the second finding in the
+  `docs-name-every-accepted-form` family. The usage flags are one list;
+  `asksForUsage`, `helpUsage`, the bare-help line and the tests derive from it.
+- **Two tests beyond Tasks 1 and 2.** TestHelpRendersWithTheContextItIsGiven
+  (BR-1) pins the width `runHelp` and `dispatchCommand` forward, and the registry
+  `/help` resolves against, each with a value that changes the output.
+  TestEveryUsageFlagIsNamedWhereUsersRead (BR-4) checks the texts carry the
+  joined phrase of `usageFlags`.
+- **`-h` is named where users read** (BR-2): `helpUsage` and the bare-help line
+  say it, and the regenerated span carries it to both pages.
