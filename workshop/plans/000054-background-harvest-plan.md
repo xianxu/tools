@@ -282,17 +282,17 @@ After each commit the check is the whole package, not a filter (lessons, #53).
 
 **Files:** Modify `cmd/define/background.go`, `cmd/define/background_test.go`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - TestRunBackgroundJobHarvestsOnlyPastTheThreshold: a `harvestRig` store with `bgThreshold - 1` pending words and a `newLLM` that fails the test if called → a zero result; one more word and the scripted fake → `authored > 0`.
   - TestRunBackgroundJobTypesNoModel: the fake scripted to answer 500 → `noModel`.
   - TestRunBackgroundJobStaysInItsBudget: a backlog bigger than one batch (the rig's twelve words) → the fake saw at most `bgBudget` requests.
   - TestABacklogDrainsOnBothHalves: one job on a never-harvested deck of twelve bands exactly its batch, the ten newest, and authors them; the two oldest stay unbanded for the next job. The order that bands the whole backlog first cannot pass it.
   - TestAWordThatFailsIsRetriedOncePerSession: a veto that rejects every candidate for one word → the first job reports it in `failed`, the runner adds it to `tried`, and the next job's pending list leaves it out.
   - TestTheRunnerNeverBlocksAfterStop: a job that returns on cancel, and a result channel already full; `stop(time.Second)` returns before its wait, and the goroutine ends rather than blocking on a send nobody reads.
-- [ ] **Step 2: Run.** → FAIL.
-- [ ] **Step 3: Implement** `runBackgroundJob` (with its `skip` set) and `bgRunner` (with the session's `tried` set), and the `noBackgroundEnv` constant (`"DEFINE_NO_BACKGROUND"`).
-- [ ] **Step 4: Run** → PASS; whole package → PASS.
-- [ ] **Step 5: Commit.** `#54: a background job, bounded and cancellable`
+- [x] **Step 2: Run.** → FAIL.
+- [x] **Step 3: Implement** `runBackgroundJob` (with its `skip` set) and `bgRunner` (with the session's `tried` set), and the `noBackgroundEnv` constant (`"DEFINE_NO_BACKGROUND"`).
+- [x] **Step 4: Run** → PASS; whole package → PASS.
+- [x] **Step 5: Commit.** `#54: a background job, bounded and cancellable`
 
 ### Task 1.5: the session runs it
 
@@ -304,10 +304,10 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
   - TestTheSessionPreparesPracticeAfterTenNewWords: look up ten words → the screen shows the ready notice, `Items` holds items for them, and `todaysQuestions` builds cloze questions for them. The Done-when, end to end.
   - TestALookupNeverWaitsForTheBackgroundJob: a stub client whose `Complete` blocks until released; after the tenth word, look up two more and assert both render while the job is blocked; then release.
   - TestQuittingCancelsTheJobAndKeepsWhatItWrote: the stub answers the first band and then blocks; cancel the session → `runEditor` returns within the stop's wait, and that word's facts are on disk.
-  - TestNoJobWhereTheDeckWasNotAgreedTo: an undecided, then a declined, permission and a `newLLM` that fails the test if called; ten lookups → no job.
+  - TestNoJobWhereTheDeckWasNotAgreedTo: an undecided, then a declined, permission over a deck that already needs work, so an enabled runner would start a job at once → no model call.
   - TestTheOffSwitchStopsIt: `DEFINE_NO_BACKGROUND=1` → the same.
-  - TestNoModelIsOneNoticeThenQuiet: a closed server → one notice after the first job; ten more lookups → no job, no second notice.
-  - `TestNothingIsWrittenWhileAPromptIsShown` stays green with a result delivered mid-session.
+  - TestNoModelIsOneNoticeThenQuiet: the fake scripted to answer 500 → one notice after the first job; ten more lookups → no job, no second notice.
+  - `TestNothingIsWrittenWhileAPromptIsShown` stays green, and TestABackgroundNoticeIsWrittenBetweenPrompts applies its rule to a job's notice.
 - [ ] **Step 2: Run.** → FAIL.
 - [ ] **Step 3: Implement** the wiring above.
 - [ ] **Step 4: Run** → PASS; whole package → PASS.
@@ -340,7 +340,7 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
   | the permission check is dropped | TestNoJobWhereTheDeckWasNotAgreedTo |
   | the off switch is ignored | TestTheOffSwitchStopsIt |
   | `noModel` is never set | TestNoModelIsOneNoticeThenQuiet |
-  | the loop prints the notice from the goroutine | `TestNothingIsWrittenWhileAPromptIsShown` |
+  | the result case skips `view.Draw("", nil)` before printing | TestABackgroundNoticeIsWrittenBetweenPrompts |
 
   Plus an unmutated control run.
 - [ ] **Step 2:** gofmt, `go vet ./...`, `go test ./...` → PASS, run after the last commit.

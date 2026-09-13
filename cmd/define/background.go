@@ -270,3 +270,17 @@ func (r *bgRunner) stop(wait time.Duration) {
 	case <-time.After(wait):
 	}
 }
+
+// backgroundEnabled is whether a session may prepare practice in the background: a
+// deck is open, the directory already agreed to be one (repl settles that before
+// the loop starts, and this only reads the answer, never asks), a model seam
+// exists, and DEFINE_NO_BACKGROUND is unset.
+func backgroundEnabled(d deps) bool {
+	if d.deck == nil || d.getenv == nil || d.newLLM == nil {
+		return false
+	}
+	if allowed, decided := d.deckPermission.saving(); !allowed || !decided {
+		return false
+	}
+	return d.getenv(noBackgroundEnv) == ""
+}
