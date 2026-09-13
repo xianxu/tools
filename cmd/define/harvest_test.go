@@ -1264,3 +1264,13 @@ type failingFacts struct{ store.Store }
 func (failingFacts) WordFacts(string) (store.WordFacts, error) {
 	return store.WordFacts{}, errors.New("permission denied")
 }
+
+// failingWrites is a deck that reads but cannot be written: the store error a full
+// disk or a read-only directory gives.
+type failingWrites struct{ store.Store }
+
+func (failingWrites) SetWordFacts(string, store.WordFacts) error {
+	return errors.New("read-only file system")
+}
+
+func (failingWrites) SetUserModel(string) error { return errors.New("read-only file system") }

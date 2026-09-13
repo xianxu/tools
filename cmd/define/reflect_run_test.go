@@ -478,3 +478,14 @@ func reflectDeckForTest(t *testing.T, d deps) reflectOutcome {
 	}
 	return reflectDeck(t.Context(), d, d.newLLM(cfg), cfg.Model, foldLookups(deck, events, d.clock.Now()), io.Discard, io.Discard)
 }
+
+// A store error is typed too, so the job can tell a learner model it cannot write
+// from a model that did not answer (#54).
+func TestReflectDeckTypesAStoreError(t *testing.T) {
+	d, fake, _, _ := reflectRig(t, minDeckForReflection)
+	fake.Script("", llmtest.Reply{Text: reflectReply})
+	d.deck = failingWrites{d.deck}
+	if o := reflectDeckForTest(t, d); !errors.Is(o.stopped, errDeckIO) || o.written || o.code != 1 {
+		t.Errorf("outcome = %+v; want errDeckIO, nothing written and 1", o)
+	}
+}

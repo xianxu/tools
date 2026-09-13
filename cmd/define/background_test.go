@@ -474,3 +474,39 @@ func TestAFailedReflectIsNotRetriedThisSession(t *testing.T) {
 		t.Errorf("the second job asked for the learner model %d more time(s); a failed reflect is not retried this session", n)
 	}
 }
+
+// What a stop means for the session, by its kind (#54): the two model stops that
+// repeat on every call, and a deck whose files fail, turn background work off;
+// anything else, a malformed answer or a cancel, leaves the next check to try.
+func TestStopMeans(t *testing.T) {
+	deck := deckIO(errors.New("permission denied"))
+	for _, tc := range []struct {
+		name    string
+		err     error
+		noModel bool
+		deckErr error
+	}{
+		{"no stop", nil, false, nil},
+		{"not answering", fmt.Errorf("band: %w", llm.ErrUnavailable), true, nil},
+		{"a request it refuses", fmt.Errorf("band: %w", llm.ErrRequest), true, nil},
+		{"the deck's files", deck, false, deck},
+		{"a malformed answer", fmt.Errorf("band: %w", llm.ErrMalformed), false, nil},
+		{"a cancel", context.Canceled, false, nil},
+	} {
+		if noModel, deckErr := stopMeans(tc.err); noModel != tc.noModel || deckErr != tc.deckErr {
+			t.Errorf("%s: stopMeans = %v, %v; want %v, %v", tc.name, noModel, deckErr, tc.noModel, tc.deckErr)
+		}
+	}
+}
+
+// A store error inside the harvest reaches the session as one while counting does
+// (#54): the harvest marks it where the store returned it, and the job reads the
+// mark.
+func TestAStoreWriteErrorInTheHarvestStopsTheSession(t *testing.T) {
+	d, fake, _ := harvestRig(t, bgThreshold)
+	fake.Script(markBand, llmtest.Reply{Text: bandReply})
+	d.deck = failingWrites{d.deck}
+	if r := runBackgroundJob(t.Context(), d, bgMemory{}); !errors.Is(r.deckErr, errDeckIO) || r.noModel {
+		t.Errorf("result = %+v, want a deck error and not a model one", r)
+	}
+}
