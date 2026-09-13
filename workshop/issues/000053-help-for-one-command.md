@@ -206,6 +206,16 @@ new test goes red when `runHelp` renders at width 0 (M8a) and when dispatch does
 that mutation would break. An empty registry (M8c', `c.cmds[:0]`) compiles, and
 the test goes red.
 
+BR-4 (the round-2 advisory, second finding in its family) fixed as a class in
+`bac69ff`: `usageFlags` is the one list, and the parser, `/help`'s usage, the
+bare-help line and the tests derive from it. The new test checks the texts carry
+the joined phrase, because `-h` is a substring of `--help`. Mutations: `/help`'s
+usage naming only `--help` (M9a) and the bare-help line doing the same (M9b) turn
+it red; the parser accepting only the first flag (M9c') turns it and the
+whole-registry `--help` test red. The first parser mutant (`args[0] ==
+"--help"`) did not compile, leaving `slices` imported and unused. The whole suite
+passed after `bac69ff`.
+
 ## Revisions
 
 ### 2026-09-12 — planning
