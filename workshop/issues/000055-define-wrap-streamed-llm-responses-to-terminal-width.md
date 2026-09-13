@@ -50,3 +50,6 @@ split it) and terminals narrower than `minWrapWidth` (wrapping disabled).
 - ARCH-DRY: reuse `visibleCells` and `scanEscape`; keep wrapping out of the
   viewport/click-map machinery. Durable plan prepared; implementation awaits
   the repository's required approval for non-trivial work.
+- Fresh-context plan review found no architectural blockers. Added explicit
+  malformed-stream deferred-flush coverage and the minimum-width boundary to
+  the plan's Revisions section. No implementation code changed yet.
