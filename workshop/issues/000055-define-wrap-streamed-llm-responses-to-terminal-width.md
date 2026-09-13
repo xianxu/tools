@@ -1,12 +1,13 @@
 ---
 id: 000055
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-13
 updated: 2026-09-13
 estimate_hours: 1.09
 started: 2026-09-13T12:39:30-07:00
+actual_hours: 0.47
 ---
 
 # define: wrap streamed LLM responses to terminal width
@@ -69,6 +70,7 @@ total: 1.09
 ## Log
 
 ### 2026-09-13
+- 2026-09-13: closed — BR-1 fixed in 7815f83: viewport-start regressions fail before and pass after for a highlighted phrase, enclosing styles, and explicit/new wrapping; shared sgrState replay preserves independent rows. go test ./cmd/define/... passed (109.307s), focused tests with -race passed, go vet ./cmd/define/... and git diff --check clean. Original width20 regression preserves every word and raw history. Local candidate retaining installed #54 also passes focused tests, build, and dictionary smoke.; review verdict: SHIP
 
 - Claimed issue; traced the clipping to `liveScreen.Write`'s explicit streaming
   exception. `wrapWritten` cannot be applied independently to arbitrary deltas:
@@ -104,3 +106,8 @@ total: 1.09
   Local candidate 7cf97ef combines the installed #54 baseline and both #55 code
   commits, passes the focused integration tests, builds cleanly, and passes help
   plus a no-audio/no-capture dictionary lookup smoke check.
+- Close round 2 returned SHIP with no remaining findings. The reviewer also
+  removed both SGR replay calls in a scratch mutation and all four viewport
+  cases failed. Installed local candidate 7cf97ef atomically at `bin/define`,
+  preserving #54; the PATH symlink resolves to that revision and help succeeds.
+  Existing processes load the fix on restart.
