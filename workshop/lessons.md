@@ -4391,3 +4391,17 @@ was looking at, while the tree checks more than that.
   and a test checks the texts carry the joined phrase, because `-h` is a
   substring of `--help` and a per-flag Contains would pass on a text naming only
   one.
+
+## A plan's prose citations have no guard, so resolve them before the gate (`#54`)
+
+The plan guards resolve Core-concepts table rows; nothing checks a backticked
+path or symbol in a plan's prose. #54's plan gate found two in two rounds (a Log
+line claiming one goroutine where the raw editor runs three, and a comment in a
+`config.go` that does not exist), out of about thirty it checked: the family
+`unbacked-claims-about-existing-code`. **Before submitting a plan, resolve every
+backticked `*.go` path to a file and every backticked identifier to a
+declaration, and read the misses.** The first version of that pass used `git
+grep -E` with `\s` and `\b`, matched nothing, and listed every real symbol as
+unresolved. The pass now starts by resolving names that certainly exist and
+refuses to report if it cannot: a checker that cannot run is #51's false zero,
+inverted into a false alarm.
