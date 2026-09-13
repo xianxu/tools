@@ -523,7 +523,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"same deck, and the next lookup is English again. You name the\n"+
 			"language; the entry's ORIGIN says which. A source with no recording\n"+
 			"falls back to the session's and says so.\n\n"+
-			"A line that is not a word and reads as a question is answered by\n"+
+			"A dictionary miss with 4+ words, or one that reads as a question, is answered by\n"+
 			"the model rather than looked up — there is no mode to switch. The\n"+
 			"dictionary is asked first, so multi-word headwords (hot dog) are\n"+
 			"still definitions. Force either way: ? asks, \\ defines.\n\n"+
