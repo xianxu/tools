@@ -176,6 +176,11 @@ goroutines (the key reader and resize watcher in `rawterm.go`, the signal relay
 in `interrupt.go`); `scanLines` belongs to the line loop. The conclusion stands:
 nothing hands a job's result back to the loop yet.
 
+Plan-quality round 2 cleared the plan with one advisory, PQ-5, the second
+finding in `unbacked-claims-about-existing-code`: prose citations get no guard.
+Fixed: Task 1.6's comment list, the change-window guard's wording, and a citation
+pass over the plan's prose, now named in its guards section.
+
 ## Revisions
 
 ### 2026-09-12 — planning
