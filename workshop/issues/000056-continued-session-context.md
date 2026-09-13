@@ -79,3 +79,26 @@ not an established diagnosis.
 - ARCH-DRY: build on or repair the existing session transcript rather than
   introduce a second conversation store. ARCH-PURPOSE: evaluate natural
   follow-up understanding, not just the presence of history in a request.
+
+## Revisions
+
+### 2026-09-13 — Narrow scope to twenty exchanges
+
+The operator tested a follow-up ("tell me synonyms in this group") and confirmed
+that existing conversational context works. The task's earlier premise is
+superseded: no new conversation mechanism or failure investigation is required.
+The desired change is to send the latest **20 complete question-and-answer
+pairs**, up from six; the operator does not expect discussions longer than that.
+
+This replaces the broader Spec, Done-when, and Plan above with the following:
+
+- Change the existing `maxTurns` retention limit in `cmd/define/askctx.go` from
+  6 to 20; retain chronological order, the current prompt format, and session
+  scope. No summaries, cross-restart persistence, or new conversation store.
+- Verify that all exchanges reach the prompt through turn 20, and that the 21st
+  stored exchange evicts only the oldest from the next request. A shorter
+  session remains unchanged. Use an independent expected count in the boundary
+  test so deriving the test expectation from `maxTurns` cannot mask a bad limit.
+- Update the documented limit and run the relevant context/request tests.
+- Prior user questions and model answers remain the context for abbreviated
+  follow-ups; the change only lengthens the existing window.
