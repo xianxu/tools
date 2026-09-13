@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-12
 updated: 2026-09-12
-estimate_hours:
+estimate_hours: 2.75
 started: 2026-09-12T17:16:34-07:00
 ---
 
@@ -111,6 +111,42 @@ it lands.
 - [ ] Two processes in one deck don't author the same word twice, or the plan
       shows why that's harmless.
 - [ ] The README and atlas describe the background work and the restated rule.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: greenfield-go-module    design=0.2 impl=0.32
+item: cross-cutting-refactor  design=0.12 impl=0.2
+item: smaller-go-module       design=0.09 impl=0.4
+item: tui-screen              design=0.2 impl=0.4
+item: atlas-docs              design=0.04 impl=0.12
+item: milestone-review        design=0.0 impl=0.56
+design-buffer: 0.15
+total: 2.75
+```
+
+Design takes the v2 range's middle × 0.2 throughout, because the plan settles
+every decision; implementation is the v2 range × 0.4.
+
+- greenfield-go-module: `background.go`, the state machine, `pendingWords`, the
+  job and its runner. Design 1.0 × 0.2; impl at the top of 0.3–0.8, because it
+  carries seven tests and a mutation pass: 0.8 × 0.4 = 0.32.
+- cross-cutting-refactor: the harvest core takes a batch and returns a typed
+  outcome, with every `--harvest` line unchanged. Design 0.6 × 0.2; impl 0.5 × 0.4.
+- smaller-go-module, three of them: the dictionary lock (0.03 / 0.1), the reflect
+  core's split (0.03 / 0.14), and `reflectDue` with `modelLookups` and their fuzz
+  (0.03 / 0.16).
+- tui-screen: the session wiring, the notices, and seven loop tests including a
+  blocking stub client. Design 1.0 × 0.2; impl at the top of 0.3–1: 1.0 × 0.4.
+- atlas-docs: two passes, M1 and M2, at 0.02 / 0.06 each.
+- milestone-review: two boundaries (M1's milestone-close and the final close) at
+  two rounds each, because #53's close needed three: 4 × 0.35 × 0.4 = 0.56.
+- Design buffer +15% for a thorough plan: 0.65 × 1.15 + 2.0 = 2.75.
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
 
 ## Plan
 
