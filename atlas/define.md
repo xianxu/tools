@@ -1141,12 +1141,13 @@ list above is and pinned the same way:
 - `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
 <!-- /command-usage -->
 
-`--help` and `-h` are answered once, in `dispatchCommand`, before a command
-runs, rather than in each command's parser: seven parsers are seven places to
-forget it, and `/history` used to read `--help` as a number of days. That makes
-it a contract: no command may take either as data. An unknown name after
-`/help` gets dispatch's own message through `unknownCommand`, so `/histry` and
-`/help histry` cannot drift apart.
+The usage flags are one list, `usageFlags`, answered once in `dispatchCommand`
+before a command runs, rather than in each command's parser: seven parsers are
+seven places to forget one, and `/history` used to read `--help` as a number of
+days. `/help`'s own usage and the bare-help line name the flags from that list,
+so a new one cannot go unmentioned. That makes it a contract: no command may take
+a usage flag as data. An unknown name after `/help` gets dispatch's own message
+through `unknownCommand`, so `/histry` and `/help histry` cannot drift apart.
 
 **Opening a store does not read it.** `storeHistory` used to read the whole event
 log in its constructor, so `define /help` paid for a log it never consulted and

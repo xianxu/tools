@@ -389,3 +389,27 @@ func TestHelpRendersWithTheContextItIsGiven(t *testing.T) {
 		t.Errorf("/help history against the fixture registry printed %q", viaFixture.String())
 	}
 }
+
+// The usage flags are one list, and the texts that name them derive from it
+// (#53 BR-4, the second finding in its family). Checked as the joined phrase
+// rather than flag by flag, because "-h" is a substring of "--help": a text that
+// named only --help would pass a per-flag Contains.
+func TestEveryUsageFlagIsNamedWhereUsersRead(t *testing.T) {
+	if len(usageFlags) == 0 {
+		t.Fatal("usageFlags is empty; every check below would pass vacuously")
+	}
+	phrase := strings.Join(usageFlags, " or ")
+	if !strings.Contains(helpUsage, phrase) {
+		t.Errorf("/help's usage does not name the usage flags as %q: %q", phrase, helpUsage)
+	}
+	var bare bytes.Buffer
+	runHelp(commandCtx{cmds: commands, stdout: &bare, stderr: io.Discard}, nil)
+	if !strings.Contains(bare.String(), phrase) {
+		t.Errorf("bare /help does not name the usage flags as %q:\n%s", phrase, bare.String())
+	}
+	for _, flag := range usageFlags {
+		if !asksForUsage([]string{flag}) {
+			t.Errorf("%s is a usage flag but does not ask for usage", flag)
+		}
+	}
+}

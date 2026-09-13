@@ -4384,3 +4384,10 @@ was looking at, while the tree checks more than that.
   `/help` resolves against) at a setting where the output differs, and check in
   the test that it does differ. This is "only a disagreeing case pins the
   DERIVATION", applied to a parameter instead of a formula.
+- **A set of accepted forms is one list, and every surface that names it derives
+  from it.** `--help` and `-h` were written out by hand in the parser, `/help`'s
+  usage, the bare-help line, a test loop and the atlas; the review raised the
+  second finding in that family (BR-2, then BR-4). `usageFlags` is the list now,
+  and a test checks the texts carry the joined phrase, because `-h` is a
+  substring of `--help` and a per-flag Contains would pass on a text naming only
+  one.

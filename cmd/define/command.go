@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -53,8 +54,10 @@ var commands = []command{
 }
 
 // helpUsage is /help's own row. Its argument is a command's NAME, with or
-// without the slash, resolved the way dispatch resolves one.
-const helpUsage = "With nothing, list the commands. With a command's name, say how to use it, which --help or -h after any command also does."
+// without the slash, resolved the way dispatch resolves one. The flags come
+// from usageFlags, so a new one cannot go unmentioned.
+var helpUsage = "With nothing, list the commands. With a command's name, say how to use it, which " +
+	strings.Join(usageFlags, " or ") + " after any command also does."
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
 // from, and it is why command-mode type-ahead needed no change to the pure
@@ -285,12 +288,18 @@ func dispatchCommand(c replCommand, cmds []command, cc commandCtx) int {
 	return cmd.run(cc, c.args)
 }
 
+// usageFlags are the arguments that ask for a command's usage instead of being
+// arguments to it. ONE list: the parser below, /help's usage, the bare-help line
+// and the tests all derive from it (#53 BR-4), so a flag added here is routed,
+// named and tested without a second edit.
+var usageFlags = []string{"--help", "-h"}
+
 // asksForUsage reports whether a command's arguments ask for its usage rather
-// than being arguments to it: exactly one, `--help` or `-h`. That makes it a
-// contract — no command may take either as data. None does: /history wants a
-// number, /sound a count, /lang and /pron a two-letter tag.
+// than being arguments to it: exactly one, and it is a usage flag. That makes it
+// a contract — no command may take a usage flag as data. None does: /history
+// wants a number, /sound a count, /lang and /pron a two-letter tag.
 func asksForUsage(args []string) bool {
-	return len(args) == 1 && (args[0] == "--help" || args[0] == "-h")
+	return len(args) == 1 && slices.Contains(usageFlags, args[0])
 }
 
 // findCommand resolves a submitted name to its row. Case-INSENSITIVE: dispatch's
@@ -352,7 +361,7 @@ func runHelp(c commandCtx, args []string) int {
 	// The way past the summary, stated where the summary is: a command's
 	// arguments live in its usage, and nothing else on screen says so.
 	fmt.Fprintln(c.stdout)
-	fmt.Fprintln(c.stdout, "  /help <command>, or --help or -h after one, says how to use it")
+	fmt.Fprintf(c.stdout, "  /help <command>, or %s after one, says how to use it\n", strings.Join(usageFlags, " or "))
 	// The two hatches are one keystroke each and otherwise invisible: nothing on
 	// screen suggests a line can be forced either way. This is the only place
 	// that lists what the console understands, so it is where they go.

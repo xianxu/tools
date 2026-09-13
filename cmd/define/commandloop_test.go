@@ -487,7 +487,7 @@ func TestRawEditorPronReplaysThroughTheLoop(t *testing.T) {
 // arguments, /lang and /pron reject it as a language, /help as a name.
 func TestDashHelpPrintsTheUsageForEveryCommand(t *testing.T) {
 	for _, c := range commands {
-		for _, flag := range []string{"--help", "-h"} {
+		for _, flag := range usageFlags {
 			var out, errb bytes.Buffer
 			code := dispatchCommand(parseREPLLine("/"+c.name+" "+flag, false), commands, commandCtx{stdout: &out, stderr: &errb})
 			if code != 0 || out.String() != commandUsage(c, 0) || errb.Len() != 0 {
