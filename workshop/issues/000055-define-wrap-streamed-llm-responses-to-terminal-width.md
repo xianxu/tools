@@ -92,3 +92,15 @@ total: 1.09
   endings, highlighted words, and raw history preservation. JunkFrame itself is
   truncation in this transport; the malformed branch uses a real-stream error
   adapter. Existing TestApplyShapeSetsBothWidths covers the minimum-width policy.
+- Close round 1 requested rework (BR-1): a styled continuation lost its opening
+  SGR when the preceding row scrolled offscreen. Three viewport regressions
+  reproduced the loss for inserted/explicit newlines and enclosing styles.
+  Fixed in 7815f83 by replaying the shared bounded sgrState at both kinds of
+  boundary, observing original escapes only. A real highlightWriter phrase
+  regression also passes. Focused race tests and vet are clean after the fix;
+  the full suite is being rerun. Added the viewport-level testing rule to lessons.
+- After BR-1: full `go test ./cmd/define/...` passed (109.307s); focused wrapping
+  and ask tests passed with `-race`; vet and diff whitespace checks passed.
+  Local candidate 7cf97ef combines the installed #54 baseline and both #55 code
+  commits, passes the focused integration tests, builds cleanly, and passes help
+  plus a no-audio/no-capture dictionary lookup smoke check.

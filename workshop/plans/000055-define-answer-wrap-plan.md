@@ -187,3 +187,13 @@ test/procedure paragraphs as the testing contract:
   The installed binary currently includes #54. Rebuild the local binary from
   that installed revision plus the #55 code commit in an isolated temporary
   checkout, retaining the operator's existing background-harvest behavior.
+
+### 2026-09-13 — BR-1: viewport-independent styling
+
+The close review found that styled continuation rows relied on an opening SGR
+that may have scrolled offscreen. Reuse the bounded `sgrState` to remember the
+style of emitted words and reopen it after both inserted and explicit newlines.
+Observe original escapes only, never the replays. Add viewport-paint regressions
+for an actual highlighted multiword phrase and enclosing styles, including a
+closing reset. These supersede the earlier assumption that preserving the
+transcript's original escape bytes alone proves preserved highlighting.
