@@ -1231,3 +1231,36 @@ func TestHarvestDeckCountsAStoppedWordAsUnfinished(t *testing.T) {
 		t.Errorf("a stop on the newest word: stopped %v, unfinished %v; want a stop and [%s]", o.stopped, o.failed, deckWord(0))
 	}
 }
+
+// One rule for what a harvest pass gives up on (#54): a stop or a rejection marks
+// the word unfinished, and a budget cut never does, because the word is still
+// pending for the next pass.
+func TestMarkUnfinishedLeavesABudgetCutPending(t *testing.T) {
+	if got := markUnfinished(nil, "keel", errBudget); got != nil {
+		t.Errorf("a budget cut marked %v unfinished", got)
+	}
+	for _, err := range []error{nil, llm.ErrMalformed, deckIO(errors.New("permission denied"))} {
+		if got := markUnfinished(nil, "keel", err); !slices.Equal(got, []string{"keel"}) {
+			t.Errorf("a stop (%v) marked %v, want [keel]", err, got)
+		}
+	}
+}
+
+// A store error is typed apart from the model's, so the job can tell a deck it
+// cannot read from a word it could not finish (#54).
+func TestHarvestDeckTypesAStoreError(t *testing.T) {
+	d, _, _ := harvestRig(t, 3)
+	d.deck = failingFacts{d.deck}
+	o := harvestDeckForTest(t, d, nil, bgBudget)
+	if !errors.Is(o.stopped, errDeckIO) || o.code != 1 || !slices.Equal(o.failed, []string{deckWord(0)}) {
+		t.Errorf("stopped %v, code %d, unfinished %v; want errDeckIO, 1 and [%s]", o.stopped, o.code, o.failed, deckWord(0))
+	}
+}
+
+// failingFacts is a deck whose facts cannot be read: the store error a changed
+// permission or a failing disk gives.
+type failingFacts struct{ store.Store }
+
+func (failingFacts) WordFacts(string) (store.WordFacts, error) {
+	return store.WordFacts{}, errors.New("permission denied")
+}

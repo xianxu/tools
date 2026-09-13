@@ -150,7 +150,7 @@ type harvestOutcome struct {
 	banded, refused, skipped int      // the banding half, as its summary line counts them
 	authored                 int      // practice items this pass wrote
 	failed                   []string // words it ran for and could not finish; a budget cut is not a failure
-	stopped                  error    // the model error that stopped the pass, if any
+	stopped                  error    // what stopped the pass, if anything: the model's error, or the store's (errDeckIO)
 	code                     int      // runHarvest's exit code, unchanged
 }
 
@@ -184,8 +184,8 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 		facts, err := d.deck.WordFacts(w.Text)
 		if err != nil {
 			fmt.Fprintf(errOut, "define: could not read facts for %q: %v\n", w.Text, err)
-			o.failed = append(o.failed, w.Text)
-			o.code = 1
+			o.failed = markUnfinished(o.failed, w.Text, err)
+			o.stopped, o.code = deckIO(err), 1
 			return o
 		}
 		if facts.Harvested() {
@@ -207,7 +207,7 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 			// rate-limited budget on calls that will each fail the same way.
 			fmt.Fprintf(errOut, "define: harvesting stopped: %v\n", err)
 			fmt.Fprintf(out, "define: banded %d word(s) before stopping; they are saved\n", asked)
-			o.failed = append(o.failed, w.Text)
+			o.failed = markUnfinished(o.failed, w.Text, err)
 			o.banded, o.refused, o.skipped, o.stopped, o.code = asked-refused, refused, skipped, err, 1
 			return o
 		}
@@ -219,7 +219,7 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 			// next run asks again, which is the cheap failure; a nonsense band
 			// written to a forever cache is the expensive one.
 			refused++
-			o.failed = append(o.failed, w.Text)
+			o.failed = markUnfinished(o.failed, w.Text, nil)
 			fmt.Fprintf(errOut, "define: %q: %q is not a CEFR band; leaving it unbanded\n", w.Text, claim.Band)
 			continue
 		}
@@ -235,8 +235,8 @@ func harvestDeck(ctx context.Context, d deps, client llm.Client, deck []store.Wo
 			Band: band, Domain: domain, At: now(d),
 		}); err != nil {
 			fmt.Fprintf(errOut, "define: could not save facts for %q: %v\n", w.Text, err)
-			o.failed = append(o.failed, w.Text)
-			o.code = 1
+			o.failed = markUnfinished(o.failed, w.Text, err)
+			o.stopped, o.code = deckIO(err), 1
 			return o
 		}
 	}
@@ -267,6 +267,17 @@ func batchFilter(batch []string) func(string) bool {
 	return func(w string) bool { return in[w] }
 }
 
+// markUnfinished is the one rule for which words a harvest pass reports it could
+// not finish (#54): a stop or a rejection on a word, but never a budget cut, which
+// leaves the word pending for the next pass. Every site that gives up on a word
+// goes through it, so the rule cannot drift site by site.
+func markUnfinished(failed []string, word string, err error) []string {
+	if errors.Is(err, errBudget) {
+		return failed
+	}
+	return append(failed, word)
+}
+
 // runAuthoring writes practice items for banded words that have none.
 //
 // Only the batch's words when there is one (#54). It returns what it authored,
@@ -287,7 +298,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.W
 		f, err := d.deck.WordFacts(w.Text)
 		if err != nil {
 			fmt.Fprintf(errOut, "define: could not read facts for %q: %v\n", w.Text, err)
-			return 0, nil, nil, 1
+			return 0, nil, deckIO(err), 1
 		}
 		if f.Harvested() {
 			pool = append(pool, bandedWord{Word: w.Text, Facts: f})
@@ -326,7 +337,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.W
 		existing, err := d.deck.Items(c.Word)
 		if err != nil {
 			fmt.Fprintf(errOut, "define: could not read items for %q: %v\n", c.Word, err)
-			return authored, append(failed, c.Word), nil, 1
+			return authored, markUnfinished(failed, c.Word, err), deckIO(err), 1
 		}
 		if len(existing) > 0 {
 			skipped++
@@ -342,7 +353,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.W
 		if err != nil {
 			fmt.Fprintf(errOut, "define: authoring stopped: %v\n", err)
 			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-			return authored, append(failed, c.Word), err, 1
+			return authored, markUnfinished(failed, c.Word, err), err, 1
 		}
 
 		// THE FREE CHECK FIRST. A stem that does not contain its answer cannot be
@@ -350,7 +361,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.W
 		// before the judge is paid to have an opinion about it.
 		if !stemUsesTheWord(stem.Stem, c.Word) {
 			rejected++
-			failed = append(failed, c.Word)
+			failed = markUnfinished(failed, c.Word, nil)
 			fmt.Fprintf(errOut, "define: %q: the stem does not use the word; leaving it unauthored\n", c.Word)
 			continue
 		}
@@ -366,11 +377,11 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.W
 		if err != nil {
 			fmt.Fprintf(errOut, "define: judging stopped: %v\n", err)
 			fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-			return authored, append(failed, c.Word), err, 1
+			return authored, markUnfinished(failed, c.Word, err), err, 1
 		}
 		if !verdict.Entails || verdict.Glosses || !verdict.Named {
 			rejected++
-			failed = append(failed, c.Word)
+			failed = markUnfinished(failed, c.Word, nil)
 			fmt.Fprintf(errOut, "define: %q: stem rejected (%s); leaving it unauthored\n", c.Word, verdict.Reason)
 			continue
 		}
@@ -403,7 +414,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.W
 			if err != nil {
 				fmt.Fprintf(errOut, "define: the veto stopped: %v\n", err)
 				fmt.Fprintf(out, "define: authored %d item(s) before stopping; they are saved\n", authored)
-				return authored, append(failed, c.Word), err, 1
+				return authored, markUnfinished(failed, c.Word, err), err, 1
 			}
 			if v.Fits {
 				// The veto EXERCISED. Said out loud because a veto nobody sees
@@ -426,7 +437,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.W
 		}
 		if len(kept) == 0 {
 			rejected++
-			failed = append(failed, c.Word)
+			failed = markUnfinished(failed, c.Word, nil)
 			fmt.Fprintf(errOut, "define: %q: every candidate was vetoed; leaving it unauthored\n", c.Word)
 			continue
 		}
@@ -436,7 +447,7 @@ func runAuthoring(ctx context.Context, d deps, client llm.Client, deck []store.W
 			Answer: c.Word, Distractors: kept, At: now(d),
 		}}); err != nil {
 			fmt.Fprintf(errOut, "define: could not save items for %q: %v\n", c.Word, err)
-			return authored, append(failed, c.Word), nil, 1
+			return authored, markUnfinished(failed, c.Word, err), deckIO(err), 1
 		}
 		authored++
 		domains = append(domains, c.Facts.Domain)

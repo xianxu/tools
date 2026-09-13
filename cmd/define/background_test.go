@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ func TestStepBackgroundTransitions(t *testing.T) {
 	did := bgJobResult{authored: 3}
 	nothing := bgJobResult{}
 	noModel := bgJobResult{noModel: true}
+	deckFail := bgJobResult{deckErr: deckIO(errors.New("permission denied"))}
 	for _, tc := range []struct {
 		name    string
 		from    bgState
@@ -38,6 +40,7 @@ func TestStepBackgroundTransitions(t *testing.T) {
 		{"a result with nothing new is silent", bgState{phase: bgRunning}, bgEvent{kind: bgJobDone, result: nothing}, bgState{phase: bgIdle}, false, 0},
 		{"a result after the threshold runs again", bgState{phase: bgRunning, since: bgThreshold}, bgEvent{kind: bgJobDone, result: nothing}, bgState{phase: bgRunning}, true, 0},
 		{"no model turns it off, once", bgState{phase: bgRunning, since: bgThreshold}, bgEvent{kind: bgJobDone, result: noModel}, bgState{phase: bgOff, since: bgThreshold}, false, 1},
+		{"a deck that fails turns it off, once", bgState{phase: bgRunning}, bgEvent{kind: bgJobDone, result: deckFail}, bgState{phase: bgOff}, false, 1},
 		{"off ignores a lookup", bgState{phase: bgOff}, bgEvent{kind: bgLookedUp}, bgState{phase: bgOff}, false, 0},
 		{"off ignores a start", bgState{phase: bgOff}, bgEvent{kind: bgSessionStart}, bgState{phase: bgOff}, false, 0},
 		{"a stray result while idle is ignored", bgState{phase: bgIdle, since: 1}, bgEvent{kind: bgJobDone, result: did}, bgState{phase: bgIdle, since: 1}, false, 0},
@@ -389,4 +392,21 @@ func FuzzModelLookups(f *testing.F) {
 		}
 		t.Errorf("modelLookups(%q) = %d, which no window: line in the frontmatter states", md, n)
 	})
+}
+
+// A deck the job cannot read is said once and turns the session's background work
+// off, as a model that does not answer does (#54): it would fail the same way at
+// every check, and a session that stayed silent would never say why no practice
+// appeared.
+func TestAStoreErrorStopsTheSessionOnce(t *testing.T) {
+	d, _, _ := harvestRig(t, bgThreshold)
+	d.deck = failingFacts{d.deck}
+	r := runBackgroundJob(t.Context(), d, nil)
+	if !errors.Is(r.deckErr, errDeckIO) {
+		t.Fatalf("result = %+v, want a deck error", r)
+	}
+	s, effects := stepBackground(bgState{phase: bgRunning}, bgEvent{kind: bgJobDone, result: r})
+	if s.phase != bgOff || len(effects) != 1 || !strings.Contains(effects[0].notice, "could not be read or written") {
+		t.Errorf("after a deck error: %+v, %+v; want off and one notice naming the deck", s, effects)
+	}
 }

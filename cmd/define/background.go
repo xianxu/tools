@@ -37,7 +37,7 @@ type bgPhase int
 const (
 	bgIdle    bgPhase = iota // nothing running; lookups count toward the next check
 	bgRunning                // one job in flight; lookups still count
-	bgOff                    // the model did not answer: nothing more this session
+	bgOff                    // the model or the deck failed: nothing more this session
 )
 
 // bgState is everything the session carries between events for background work.
@@ -74,6 +74,7 @@ type bgJobResult struct {
 	failed    []string // words the job ran for and could not finish
 	reflected bool     // the learner model was written or refreshed
 	noModel   bool     // the model did not answer; the session stops trying
+	deckErr   error    // the deck's files could not be read or written; the session stops trying
 }
 
 // stepBackground is the transition table. Pure: the session applies its effects.
@@ -82,7 +83,7 @@ type bgJobResult struct {
 //	idle     session start  running, since 0                       start a job
 //	idle     looked up      since+1; at bgThreshold: running, 0    start a job at the threshold
 //	running  looked up      since+1                                none
-//	running  job done       off when the model did not answer      one notice
+//	running  job done       off when the model or deck failed      one notice
 //	running  job done       idle, or running again past threshold  a notice per thing it did
 //	off      anything       off                                    none
 //	idle     job done       idle                                   none (a job starts only from idle)
@@ -109,7 +110,7 @@ func stepBackground(s bgState, ev bgEvent) (bgState, []bgEffect) {
 			for _, n := range bgNoticeFor(ev.result) {
 				effects = append(effects, bgEffect{notice: n})
 			}
-			if ev.result.noModel {
+			if ev.result.noModel || ev.result.deckErr != nil {
 				return bgState{phase: bgOff, since: s.since}, effects
 			}
 			if s.since >= bgThreshold {
@@ -126,6 +127,9 @@ func stepBackground(s bgState, ev bgEvent) (bgState, []bgEffect) {
 func bgNoticeFor(r bgJobResult) []string {
 	if r.noModel {
 		return []string{"practice questions are not being prepared: the model did not answer (see define --llm-check)"}
+	}
+	if r.deckErr != nil {
+		return []string{"practice questions are not being prepared: " + r.deckErr.Error()}
 	}
 	var out []string
 	if r.reflected {
@@ -193,21 +197,19 @@ func runBackgroundJob(ctx context.Context, d deps, skip map[string]bool) bgJobRe
 	}
 	deck, err := d.deck.Deck()
 	if err != nil {
-		return bgJobResult{}
+		return bgJobResult{deckErr: deckIO(err)}
 	}
 	pending, err := pendingWords(d.deck, deck, skip)
-	if err != nil || len(pending) < bgThreshold {
+	if err != nil {
+		return bgJobResult{deckErr: deckIO(err)}
+	}
+	if len(pending) < bgThreshold {
 		return bgJobResult{}
 	}
 	o := harvestDeck(ctx, d, d.newLLM(cfg), deck, &budget{left: bgBudget}, bgBudget, pending[:bgThreshold], io.Discard, io.Discard)
-	return bgJobResult{
-		authored: o.authored,
-		failed:   o.failed,
-		// The two stops that repeat on every call (internal/llm/errors.go): no model
-		// answering, or a request it will always refuse. Any other stop, a malformed
-		// answer or a cancel, leaves the session trying at the next check.
-		noModel: errors.Is(o.stopped, llm.ErrUnavailable) || errors.Is(o.stopped, llm.ErrRequest),
-	}
+	res := bgJobResult{authored: o.authored, failed: o.failed}
+	res.noModel, res.deckErr = stopMeans(o.stopped)
+	return res
 }
 
 // bgRunner owns the session's one background goroutine. The session owns the
@@ -360,4 +362,28 @@ func modelLookups(md string) (int, bool) {
 		}
 	}
 	return 0, false // no closing fence: a truncated file, not a model
+}
+
+// errDeckIO marks a stop that came from the deck's own files rather than the
+// model: a read or a write the store refused. It repeats at every check, so the
+// session says it once and stops, as it does for a model that will not answer.
+var errDeckIO = errors.New("the deck could not be read or written")
+
+// deckIO marks err as the deck's, where the store returned it.
+func deckIO(err error) error { return fmt.Errorf("%w: %w", errDeckIO, err) }
+
+// stopMeans is what a pass's stop means for the session, decided by the error's
+// kind in this one place. A model that is not answering, or that refuses every
+// request (the two stops internal/llm/errors.go says repeat on every call), and a
+// deck whose files fail both turn background work off. Any other stop, a
+// malformed answer or a cancel, leaves the session trying at the next check; a
+// word it stopped on is already reported unfinished.
+func stopMeans(err error) (noModel bool, deckErr error) {
+	switch {
+	case errors.Is(err, llm.ErrUnavailable), errors.Is(err, llm.ErrRequest):
+		return true, nil
+	case errors.Is(err, errDeckIO):
+		return false, err
+	}
+	return false, nil
 }
