@@ -359,7 +359,7 @@ you read in, and — the part that matters — what practice material should DO 
 each. Every claim names the words it was read off, and a claim citing a word your
 deck does not hold is dropped before you see it.
 
-It is batch and on demand: nothing calls a model while you are looking a word up.
+It is batch and on demand, and nothing you do waits on it.
 Below a dozen words it declines and says so, because a learner model built from
 four lookups is a confident guess.
 
@@ -382,9 +382,20 @@ never change: a CEFR band (`A1`–`C2`) and a subject domain. Those are what mak
 a good wrong answer possible — a distractor is *selected* from real words at your
 level, never invented.
 
-It is batch, on demand, and the only thing in `define` that may take a while.
-Nothing a sitting does ever waits on it, and a review works perfectly well
-against a deck that has never been harvested; it simply has less to draw on.
+**In a session it runs itself** (`#54`). When a session starts, and again after
+every 10 lookups that find their word, `define` checks the deck in the
+background. When at least 10 words still need work (no band yet, or no practice
+question), it bands the 10 newest and writes their questions, at most 60 model
+calls a time, and says so between prompts: `define: 10 new practice questions
+ready for /play`. Nothing you do waits on it: a lookup, a question or a sitting
+runs as it always did, and quitting stops the job and keeps what it already
+wrote. A word the model cannot write a question for is tried at most once a
+session. `DEFINE_NO_BACKGROUND=1` turns it off, and so does having no model: the
+first job that finds none says so once, and the session stops asking.
+
+`define --harvest` still runs it by hand, over the whole deck, and it is the only
+thing in `define` that may make you wait. A review works perfectly well against a
+deck that has never been harvested; it simply has less to draw on.
 
 **It asks about each word once, ever.** Run it again and it re-reads what it
 already knows and makes no calls at all, so the cost does not grow with time —

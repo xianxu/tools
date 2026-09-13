@@ -31,6 +31,7 @@ and there is no second consumer yet.
 | `deps.newLLM` + `getenv` | `internal/llm` (the model) | `llmtest.Fake`, an httptest server on the wire |
 | `deps.notifySignals` | `signal.Notify` | a channel a test writes to |
 | `--reflect` | the model, batch | `llmtest.Fake` + a live conformance check |
+| `bgRunner` → `runBackgroundJob` | the model, from the session's background | `llmtest.Fake`, and a blocking stub `llm.Client` where a test must hold a call |
 
 Pure: `ParseEntry` (flat text → `Entry`), `Render` (`Entry` → string),
 `AudioCandidates` (word → ordered URLs), `isPronunciation`, `opensBlock`,
@@ -1448,10 +1449,12 @@ time. The fourth and fifth artifacts in the working directory: `facts/<lang>/`
 holds one record per word — a CEFR band and a subject domain — and `items/<lang>/`
 holds the practice items authored from them (`#10 M2`).
 
-**Batch, and the only path here that may block.** Nothing a sitting does reaches
-it, asserted with the model seam made to PANIC rather than left nil — nil passes
-on a loop that reaches for a model behind a `!= nil` guard, which is how a
-network dependency creeps into a path that promises to be offline.
+**Batch, and nothing waits on it.** `--harvest` runs it by hand, and since `#54`
+the session's background job runs the same core, `harvestDeck`, off the editor
+loop (see *Background preparation* below). A sitting still never reaches it,
+asserted with the model seam made to PANIC rather than left nil — nil passes on
+a loop that reaches for a model behind a `!= nil` guard, which is how a network
+dependency creeps into a path that promises to be offline.
 
 **Assigned once, re-read forever.** The cache check precedes anything that
 touches the network, so a second run over an unchanged deck makes ZERO calls. The
@@ -1718,6 +1721,53 @@ the first thing to suspect and the hand-labelled sample the issue defers is the
 thing to build. The live run's own bands are worth reading in that light —
 `run` and `set` at A1 and `ephemeral` at C1 are right, while `quokka` at C2 says
 more about rarity than about any level a learner is at.
+
+## Background preparation (`#54`)
+
+The interactive session keeps practice material current without a command. Once
+at session start, and after every `bgThreshold` (10) lookups that found their
+word, it checks the store; when at least ten words still need work (no band, or
+no practice item: `pendingWords`), a job bands and authors the ten newest within
+`bgBudget` (60) model calls. Only the raw editor (`runEditor`) does this: not
+`-raw`, a pipe, a one-shot lookup, or any mode flag.
+
+**One table decides when a job runs** (`stepBackground`, `background.go`): idle,
+running, or off once no model answered, fed three events (session start, a lookup
+that found its word, a finished job). The table is the whole state; the loop only
+applies its effects. **A job runs on one goroutine** (`bgRunner`) with a copy of
+the session's deps taken when it starts, so it finishes the language it started
+in. It hands back one `bgJobResult` on a channel the loop selects on beside
+resizes, and the loop clears the frame, prints the notice and redraws, which keeps
+every screen write on the loop and between prompts. The runner's context is a
+child of the session's: quitting cancels the job, the loop waits at most two
+seconds for it, and every store write is an atomic rename, so any stop leaves each
+file old or new.
+
+**The batch is the point.** `harvestDeck` bands a batch before authoring the same
+batch, so a backlog drains on both halves under a small budget; the CLI passes a
+nil batch and gets the whole deck, unchanged. **A word whose authoring fails is
+retried at most once a session**: the runner keeps a `tried` set that the next job
+skips. **A missing model is said once** (`noModel`, from a stop typed
+`llm.ErrUnavailable` or `llm.ErrRequest`), and the session stops asking;
+`llm.Resolve` cannot tell whether a model is there, so the first call decides.
+`DEFINE_NO_BACKGROUND=1` turns it all off, and so does a directory nobody agreed to
+make a deck: `backgroundEnabled` reads `deckPermission.saving()` and never asks.
+
+**Every dictionary call holds one lock** (`lockedDictionary`, `dictionaryMu`):
+DictionaryServices is cgo with no documented thread-safety, and the job looks
+words up while the loop does. `realDeps` wraps its one builder, which both the
+startup dictionary and every `/lang` switch go through.
+
+**Two processes on one deck take no lock.** `SetItems` replaces a word's file, so
+the worst case is one item and some wasted calls, bounded by each process's
+budget. A word forgotten mid-job may keep its facts and items on disk; nothing
+reads them while the word is outside the deck, and they are still true of it if
+it comes back.
+
+| notice | when |
+|---|---|
+| `N new practice questions ready for /play` | a job wrote items |
+| `practice questions are not being prepared: no model answered (see define --llm-check)` | the first job that found no model; then the session is quiet |
 
 ## Entry modes
 

@@ -101,9 +101,9 @@ func runWithin[T any](ctx context.Context, bud *budget, c llm.Client, t llm.Task
 
 // runHarvest assigns a band and a domain to every unbanded word in the deck.
 //
-// A BATCH path, and the only one in this program that may block: a review
-// sitting must never wait on it, which is why nothing here is reachable from
-// --play. The work is per NEW word, so a second run over an unchanged deck makes
+// A BATCH path, and nothing waits on it. A review sitting never reaches it
+// (nothing here is reachable from --play), and the session's background job runs
+// the same core, harvestDeck, off the editor loop (#54). The work is per NEW word, so a second run over an unchanged deck makes
 // ZERO model calls — that is what keeps the cost from growing with time, and it
 // is a claim about CALLS rather than about a file existing.
 func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out, errOut io.Writer) int {

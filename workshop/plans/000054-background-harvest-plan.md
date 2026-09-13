@@ -300,7 +300,7 @@ After each commit the check is the whole package, not a filter (lessons, #53).
 
 The runner exists only when all hold: this is the raw editor (`replRaw`), the deck is open (`d.deck != nil`), the deck question is decided and allowed (`d.deckPermission.saving()` returns `true, true`; `repl` settles it before `replRaw` starts), and `d.getenv(noBackgroundEnv)` is empty. At start the loop applies `bgSessionStart`. After `submitLine` returns with `out.code == 0 && out.ask == ""` it applies `bgLookedUp`. The new case is `case res := <-results:` (nil when there is no runner): `view.Draw("", nil)`, apply `bgJobDone`, print each notice as `define: <notice>`, `draw()`. A job's `deps` is a copy of the loop's at the moment it starts.
 
-- [ ] **Step 1: Write the failing tests**, on the editor rig with `fakeDictionary` holding a dozen words, a `harvestRig`-style store and the scripted fake:
+- [x] **Step 1: Write the failing tests**, on the editor rig with `fakeDictionary` holding a dozen words, a `harvestRig`-style store and the scripted fake:
   - TestTheSessionPreparesPracticeAfterTenNewWords: look up ten words → the screen shows the ready notice, `Items` holds items for them, and `todaysQuestions` builds cloze questions for them. The Done-when, end to end.
   - TestALookupNeverWaitsForTheBackgroundJob: a stub client whose `Complete` blocks until released; after the tenth word, look up two more and assert both render while the job is blocked; then release.
   - TestQuittingCancelsTheJobAndKeepsWhatItWrote: the stub answers the first band and then blocks; cancel the session → `runEditor` returns within the stop's wait, and that word's facts are on disk.
@@ -308,10 +308,10 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
   - TestTheOffSwitchStopsIt: `DEFINE_NO_BACKGROUND=1` → the same.
   - TestNoModelIsOneNoticeThenQuiet: the fake scripted to answer 500 → one notice after the first job; ten more lookups → no job, no second notice.
   - `TestNothingIsWrittenWhileAPromptIsShown` stays green, and TestABackgroundNoticeIsWrittenBetweenPrompts applies its rule to a job's notice.
-- [ ] **Step 2: Run.** → FAIL.
-- [ ] **Step 3: Implement** the wiring above.
-- [ ] **Step 4: Run** → PASS; whole package → PASS.
-- [ ] **Step 5: Commit.** `#54: the session prepares practice in the background`
+- [x] **Step 2: Run.** → FAIL.
+- [x] **Step 3: Implement** the wiring above.
+- [x] **Step 4: Run** → PASS; whole package → PASS.
+- [x] **Step 5: Commit.** `#54: the session prepares practice in the background`
 
 ### Task 1.6: M1 docs
 
