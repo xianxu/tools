@@ -426,6 +426,9 @@ func reflectDeck(ctx context.Context, d deps, client llm.Client, modelName strin
 		return reflectOutcome{code: 1}
 	}
 
+	// Read here, just before the write, and not taken from a caller that read it
+	// earlier: a Corrections edit saved while the model was answering is kept, which
+	// a copy read before the call would lose (#54).
 	existing, err := d.deck.UserModel()
 	if err != nil {
 		fmt.Fprintf(errOut, "define: could not read the existing learner model: %v\n", err)

@@ -17,7 +17,7 @@
 3. The learner model is written once the deck has 12 looked-up words (reflect's own floor) and none exists, and refreshed when the deck's lookups have doubled since it was written.
 4. Off switch: `DEFINE_NO_BACKGROUND=1`.
 5. No cross-process lock (see ARCH-ORDER below).
-6. Notices: "N new practice questions ready for /play", "learner model updated", and once per session "practice questions are not being prepared: no model answered (see define --llm-check)".
+6. Notices: "N new practice questions ready for /play", "learner model updated", and once per session "practice questions are not being prepared: the model did not answer (see define --llm-check)", or the same line naming the deck when its files cannot be read or written.
 7. A word whose sentence the model cannot write is retried at most once per session, which costs up to one job's calls per session. A persistent backoff (record the failed attempt and wait 30 days, the way the store already believes a missing recording for thirty days) would stop even that, but it needs a store change; this plan leaves it for a follow-up unless you want it now.
 
 ---
@@ -35,6 +35,7 @@
 | `stepBackground` | `cmd/define/background.go` | new |
 | `modelLookups` | `cmd/define/background.go` | new |
 | `reflectDue` | `cmd/define/background.go` | new |
+| `reflectCouldBeDue` | `cmd/define/background.go` | new |
 | `bgMemory` | `cmd/define/background.go` | new |
 | `stopMeans` | `cmd/define/background.go` | new |
 | `markUnfinished` | `cmd/define/harvest.go` | new |
@@ -44,11 +45,15 @@
 - **`bgState`** — everything the loop carries between events: a phase (`bgIdle`, `bgRunning`, `bgOff`) and `since`, the successful lookups since the last job started. Two fields with a written transition table (below) instead of a set of flags (ARCH-ORDER).
 - **`bgEvent`** — one of `bgSessionStart`, `bgLookedUp`, `bgJobDone`; the last carries a `bgJobResult`.
 - **`bgEffect`** — what the loop must do after a step: start a job, or print a notice.
-- **`bgJobResult`** — what one job did: `authored` (new practice items), `failed` (words whose authoring kept nothing), `reflected` (M2), `noModel`.
+- **`bgJobResult`** — what one job did: `authored` (new practice items), `failed` (the words it ran for and could not finish, by `markUnfinished`), `reflected` (the learner model was written), `reflectFailed` (a reflect ran and wrote nothing), and `noModel` and `deckErr`, the two stops that turn background work off (by `stopMeans`).
 - **`stepBackground(s bgState, ev bgEvent) (bgState, []bgEffect)`** — the transition function. Pure; the loop applies its effects.
 - **`modelLookups(md string) (int, bool)`** — the lookup count a learner model was written from, read off its frontmatter `window:` line (`usermodel.go` writes `# N lookups`). Frontmatter only; a hand-edited or truncated file reads as "unknown".
-- **`reflectDue(md string, lookups, words int) bool`** — no model and at least `minDeckForReflection` words, or a readable model whose recorded lookups have been doubled (`bgRefreshFactor`). Unknown means not due: a model someone edited by hand is left alone.
-- **`harvestOutcome`** — one harvest pass as data: `banded`, `refused`, `skipped`, `authored`, `failed` (the words authoring ran for and kept nothing), `stopped` (the error that stopped it, if any) and `code` (the CLI's exit code, unchanged).
+- **`reflectDue(md string, lookups, words int) bool`** — at least `minDeckForReflection` words, and either no model or a readable one whose recorded lookups the deck has doubled (`bgRefreshFactor`) and exceeded, so a model from no lookups waits for one. Unknown means not due: a model someone edited by hand is left alone.
+- **`reflectCouldBeDue(md string) bool`** — whether any deck could make the model due: none yet, or a count `modelLookups` can read. `reflectDue` asks it, and the job asks it before reading the lookup log, so the rule lives once.
+- **`bgMemory`** — what a session remembers between jobs: `words`, the words a job could not finish, and `reflectFailed`, a learner model it could not write. A job gets a copy; the runner merges each result back.
+- **`stopMeans(err error) (noModel bool, deckErr error)`** — what a pass's stop means for the session, by the error's kind in one place: `llm.ErrUnavailable` or `llm.ErrRequest` is `noModel`, `errDeckIO` is `deckErr`, and anything else leaves the next check to try.
+- **`markUnfinished(failed []string, word string, err error) []string`** — the one rule for which words a harvest pass gives up on: a stop or a rejection on a word, never a budget cut.
+- **`harvestOutcome`** — one harvest pass as data: `banded`, `refused`, `skipped`, `authored`, `failed` (the words it ran for and could not finish, by `markUnfinished`), `stopped` (what stopped it, if anything: the model's error, or the store's, marked `errDeckIO`) and `code` (the CLI's exit code, unchanged).
 - **`reflectOutcome`** — one reflect pass as data: `written`, `stopped`, `code`.
 
 ### Integration points
@@ -63,18 +68,19 @@
 | `runReflect` | `cmd/define/reflect.go` | modified | the `--reflect` flag |
 | `pendingWords` | `cmd/define/background.go` | new | the store |
 | `quietStore` | `cmd/define/background.go` | new | the store's warning writer |
+| `reflectIfDue` | `cmd/define/background.go` | new | the store, the reflect core |
 | `runBackgroundJob` | `cmd/define/background.go` | new | model config, the store, the two cores |
 | `bgRunner` | `cmd/define/background.go` | new | one goroutine and its result channel |
 | `runEditor` | `cmd/define/replraw.go` | modified | the editor loop |
 
 - **`lockedDictionary`** — a `Dictionary` whose `Lookup` holds `dictionaryMu`, one package-level mutex, so two instances (the loop's, and a job's copy after `/lang`) still serialize. DictionaryServices is reached through cgo (`dict_darwin.go`) with no lock and no documented thread-safety. Every production `Dictionary` is wrapped where it is built.
 - **`harvestDeck(ctx, d deps, client llm.Client, deck []store.Word, bud *budget, limit int, batch []string, out, errOut io.Writer) harvestOutcome`** — the banding loop and the call to `runAuthoring`, moved out of `runHarvest`, recording what `runHarvest` used to only print. `batch` limits both halves to those words; nil, which is what the CLI passes, means the whole deck, as today. Authoring still draws wrong answers from every banded word, so a batch costs no distractor quality. Banding a batch and then authoring the same batch is what lets a backlog drain on both halves: today's order, band everything and then author, spends a small budget on banding alone. `runHarvest` keeps its signature: guards, config, client, the agreement mode, then `harvestDeck`, returning `o.code`. Every line `--harvest` prints today, it still prints (the harvest tests pin them).
-- **`runAuthoring`** takes the batch and returns `(authored int, failed []string, stopped error, code int)` instead of an exit code alone.
+- **`runAuthoring`** takes the deck `harvestDeck` was given and the batch, and returns `(authored int, failed []string, stopped error, code int)` instead of an exit code alone.
 - **`reflectDeck` / `runReflect`** — the same split for `--reflect` (M2).
 - **`pendingWords(st store.Store, deck []store.Word, skip map[string]bool) ([]string, error)`** — the deck words `--harvest` would still do work for, exactly the Spec's definition: no band yet, or no practice item. Newest first (`Deck()` is ordered by last seen), minus `skip`, the words a job already could not finish this session. It reads facts and items through the store, so it is an integration entity and its test runs on the in-memory store; `deck` is the deck its caller read, so a job reads it once. The store is the only count: words looked up from the command line, harvested by hand, or forgotten are counted the same way.
 - **`quietStore(st store.Store) store.Store`** — the job's view of the deck: the same files with the store's warnings dropped (`store.YAML.Quiet`, reached through the deck gate), because the job reads off the loop and the session's stores warn to the process stderr.
-- **`runBackgroundJob(ctx, d deps, skip map[string]bool) bgJobResult`** — resolve the model config, reflect if due (M2), list the pending words, and if there are at least `bgThreshold`, band and author the newest `bgThreshold` of them within `bgBudget` calls. Its prose goes to `io.Discard`; only its result reaches the screen. A stop whose error is `llm.ErrUnavailable` or `llm.ErrRequest` (`internal/llm/errors.go`, the two that repeat on every call) sets `noModel`. `llm.Resolve` alone cannot say whether a model exists (it succeeds on the default local proxy with nothing running), so the first call decides.
-- **`bgRunner`** — starts one job with a copy of `deps`, sends its result on `results` (capacity 1) inside a `select` that also watches `ctx.Done()`, and `stop(wait)` cancels and waits up to `wait` for the job to return. It keeps the session's `tried` set, the words whose authoring failed this session: each result's `failed` joins it, and it is the next job's `skip`, so a word that fails is retried at most once per session.
+- **`runBackgroundJob(ctx, d deps, skip bgMemory) bgJobResult`** — resolve the model config, read the deck once, write the learner model if it is due (`reflectIfDue`, M2), list the pending words, and if there are at least `bgThreshold`, band and author the newest `bgThreshold` of them within `bgBudget` calls. Its prose goes to `io.Discard`; only its result reaches the screen. `stopMeans` types each pass's stop: `llm.ErrUnavailable` or `llm.ErrRequest` (`internal/llm/errors.go`, the two that repeat on every call) sets `noModel`, and a store error marked `errDeckIO` sets `deckErr`. `llm.Resolve` alone cannot say whether a model exists (it succeeds on the default local proxy with nothing running), so the first call decides.
+- **`bgRunner`** — starts one job with a copy of `deps`, sends its result on `results` (capacity 1) inside a `select` that also watches `ctx.Done()`, and `stop(wait)` cancels and waits up to `wait` for the job to return. It keeps the session's `tried` memory, a `bgMemory`: each result's `failed` words and `reflectFailed` join it, and a copy is the next job's `skip`, so what a job could not finish is retried at most once per session.
 - **`runEditor`** — builds the runner only when the session can use it (below), feeds `stepBackground`, and selects on `results` beside `con.resizes`. A nil `results` channel never fires, so a session without background work runs exactly as today.
 
 The model sits behind the existing seam (`deps.newLLM`, `deps.getenv`). Tests use the `llmtest` fake, scripted through the harvest tests' own helpers (`harvestRig`, `scriptAll`), plus a stub `llm.Client` whose `Complete` blocks on a channel, because the fake cannot hold a non-streamed reply. The store is `store.YAML` on a temp dir, and the dictionary is `fakeDictionary` (`dict_fake_test.go`). The live conformance checks for the tasks the job calls already exist (`harvest_conformance_test.go`, `reflect_conformance_test.go`); the job adds no new call shape (ARCH-MOCK).
@@ -86,7 +92,8 @@ The model sits behind the existing seam (`deps.newLLM`, `deps.getenv`). Tests us
 | idle | session start | running, since 0 | start a job |
 | idle | looked up | since + 1; at `bgThreshold`: running, since 0 | start a job at the threshold |
 | running | looked up | since + 1 | none |
-| running | job done, `noModel` | off | one notice |
+| running | job done, `noModel` | off | a notice per thing it did, then the model's |
+| running | job done, `deckErr` | off | a notice per thing it did, then the deck's |
 | running | job done | idle; if since ≥ `bgThreshold`: running, since 0 | a notice per thing it did; start a job if due |
 | off | any | off | none |
 | idle | job done | idle | none (unreachable: a job starts only from idle) |
@@ -98,8 +105,11 @@ Events the loop cannot block, and what governs each:
 - **`/lang` mid-job.** The job holds the deps copy it started with, so it finishes the language it started in; the next check counts the new language's store.
 - **A second `define` on the same deck.** No lock. `SetItems` replaces a word's items file, so two processes authoring one word leave one item (last rename wins). The cost is wasted calls, bounded by each process's budget.
 - **A word forgotten mid-job.** A sitting's `d` key, or `define --forget` in another process, removes a word with its facts and items while the job may be authoring it, and the job's later writes can re-create the facts and items. Governed by ignoring it: nothing reads facts or items for a word outside the deck, and if the word is looked up again, its band and sentence are still true of it. The cost is that the word is not re-harvested, which is already the outcome when `define --forget` races `--harvest` today.
+- **The learner model edited by hand mid-job.** The README invites the operator to edit its `## Corrections`, and the job now rewrites the file; `--reflect` in another process is the same actor. `reflectDeck` reads the file just before it writes and splices the Corrections on disk back in, so an edit is lost only if it is saved between that read and the atomic rename. An editor holding the old file that saves after a refresh puts the old generated part back with its own Corrections; the model then records its old count, so the next check refreshes again, at the cost of one call. Governed by the splice and the atomic write; no lock.
 - **Which context.** The runner's is a child of the session context `runEditor` receives. An unscoped `interrupter.Fire` cancels the session, which is quit; a scoped Ctrl-C during a streamed answer cancels only that question and leaves the job running.
-- **The model disappears mid-job.** A stop typed `ErrUnavailable` or `ErrRequest` turns the session's background work off with one notice; any other stop (a malformed answer, a cancel) leaves it idle, and the next check retries.
+- **The model disappears mid-job, or the deck's files fail.** A stop typed `ErrUnavailable` or `ErrRequest`, or a store error marked `errDeckIO`, turns the session's background work off with one notice, after the notices for what the job had done; any other stop (a malformed answer, a cancel) leaves it idle, and the next check retries.
+
+The job writes three kinds of file, and each has its other writers named above: a word's facts and items (a second `define`, `--forget`, a sitting's `d`) and the learner model (the operator's editor, `--reflect`).
 
 Nondeterminism enters through the scheduler and IO completion. Tests fix the order with the blocking stub client (release a channel), never with sleeps, and the pure table covers every transition.
 
@@ -110,10 +120,10 @@ Nondeterminism enters through the scheduler and IO completion. Tests fix the ord
 | lookup latency | unchanged; the job never runs on the loop; the lock adds at most one lookup's wait | lookups are local CoreServices calls, milliseconds | — |
 | model calls | ≤ 60 per job (`bgBudget`), one job at a time, plus 1 per reflect | operator choice, decision 2 | the job stops at the budget; the next check continues |
 | disk per check | `Deck` (1 + N reads) plus N `WordFacts` and N `Items` reads | `store/yaml.go` | background only; N = 5,000 is about 15,000 small reads |
-| reflect input | `Events` reads every day file | `reflect.go` | background only |
+| reflect input | once the deck is at the floor and the model on disk could be due (`reflectCouldBeDue`), every check reads every `Events` day file; `UserModel` is read once to decide, and once more inside `reflectDeck`, just before a write | `reflect.go`, `background.go` | background only; the second read keeps a Corrections edit saved during the model call |
 | concurrency | one job goroutine; results channel capacity 1 | the machine starts a job only from idle | — |
 | shutdown | cancel, then wait ≤ 2 s | atomic writes make any stop safe | after 2 s the process exits anyway |
-| authoring retries | a word whose authoring fails is retried at most once per session, about 6 calls each | the session's `tried` set | a persistent backoff is decision 7 |
+| retries | a word a job could not finish, and a learner model it could not write, are each tried at most once per session (a word costs about 6 calls, a reflect 1) | the session's `bgMemory` | a persistent backoff is decision 7 |
 
 **ARCH-SECURE.** The job reads files a user may edit by hand: the learner model (parsed by `modelLookups`, where anything unreadable means "not due") and facts and items (already sanitised by the store on read). It touches no credential beyond the existing model config.
 
@@ -458,3 +468,10 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
 - **One rule for what stops a job**, because the round-2 review named a family: `markUnfinished` decides which words a pass gives up on, and `stopMeans` what a stop means. A deck whose files fail is a new stop: `errDeckIO`, marked where the store returns an error, turns background work off with one notice, as a model that does not answer does. Until then a job that could not read the deck returned nothing and said nothing.
 - **A reflect that writes nothing is not retried this session**: `bgMemory` holds it beside the unfinished words, replacing the job's `skip` map.
 - **Round-2 Minors**: a miss not counting toward a check is pinned; the permission comment names the job as a reader and the invariant that makes it safe; the atlas names the sweep for a word forgotten mid-job (a second `--forget`). The budget-cut finding was checked against the code and does not hold (at the author and entail calls `errBudget` breaks before the return that marks the word); the rule now lives in `markUnfinished`, pinned directly.
+
+### 2026-09-13 — M2 boundary review, round 1 (SHIP, four advisory Minors)
+
+- **A notice list is a fold**: `bgNoticeFor` says a line per thing the job did, in order, then the stop's, with no early return, so a learner model written before a rate limit is still announced. Pinned by `TestBgNoticeForSaysEveryEffectInJobOrder` and a transition row carrying both.
+- **The tables and prose follow the code**: the state machine gains the `deckErr` row and its stop rows say the job's notices come first; `bgJobResult`, `harvestOutcome`, `runAuthoring`, `runBackgroundJob`, `bgRunner` and `reflectDue` describe the code as it is; `bgMemory`, `stopMeans`, `markUnfinished`, `reflectCouldBeDue` and `reflectIfDue` have rows; decision 6 quotes the notice as it reads now; the envelope prices the log read per check. A scripted pass refuses the commit while a stale phrase survives in these sections.
+- **Every file the job writes names its other writers** (ARCH-ORDER): facts and items (a second `define`, `--forget`, a sitting's `d`), and the learner model (the operator's editor, `--reflect`), with what governs each.
+- **The job reads the model before the log, and the log only when the model could be due** (`reflectCouldBeDue`, which `reflectDue` also asks). `UserModel` is read a second time inside `reflectDeck`, just before the write, on purpose: a Corrections edit saved while the model answers is kept. Pinned by `TestAHandEditedModelCostsNoLogRead`, with a readable model as its control.

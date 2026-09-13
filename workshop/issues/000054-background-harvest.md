@@ -297,6 +297,16 @@ miss not counting toward a check is pinned, and the permission comment names the
 job's reads. The review's budget-cut finding does not hold against the code:
 `errBudget` breaks before the return that would mark the word.
 
+
+**M2 boundary review: SHIP, four advisory Minors, each the second in its family.**
+Fixed as the rules the review stated: `bgNoticeFor` is a fold (a line per effect
+in job order, then the stop's), so a learner model written before a stop is still
+announced; the plan's tables and prose now match the code, checked by a pass for
+stale phrases; every file the job writes is listed with its other writers, the
+operator's editor included; and the job reads the model before the log, and the
+log only when the model could be due, with the envelope pricing both reads per
+check.
+
 ## Revisions
 
 ### 2026-09-12 — planning

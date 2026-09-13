@@ -1731,7 +1731,8 @@ at session start, and after every `bgThreshold` (10) lookups that found their
 word, it checks the store. A job first writes the learner model when it is due
 (`reflectDue`: none yet and the deck at the reflect floor, or the deck's lookups
 doubled since the count the model records, which `modelLookups` reads from its
-frontmatter), because authoring reads it. Then, when at least ten words still
+frontmatter), because authoring reads it; it reads the lookup log only when the
+model on disk could be due (`reflectCouldBeDue`). Then, when at least ten words still
 need work (no band, or no practice item: `pendingWords`), it bands and authors
 the ten newest within `bgBudget` (60) model calls. Only the raw editor (`runEditor`) does this: not
 `-raw`, a pipe, a one-shot lookup, or any mode flag.
@@ -1778,7 +1779,12 @@ the worst case is one item and some wasted calls, bounded by each process's
 budget. A word forgotten mid-job may keep its facts and items on disk; nothing
 reads them while the word is outside the deck, and they are still true of it if
 it comes back. The sweep is forgetting it again: `Forget` removes every file a
-word owns whether or not the deck still holds it.
+word owns whether or not the deck still holds it. The learner model has a second
+writer too: the operator, editing its `## Corrections`. `reflectDeck` reads the
+file just before it writes and splices the Corrections on disk back in, so an
+edit is lost only if it is saved between that read and the rename; an editor that
+saves an old copy over a refresh leaves the old count, and the next check
+refreshes again, at the cost of one call.
 
 | notice | when |
 |---|---|
@@ -1786,6 +1792,9 @@ word owns whether or not the deck still holds it.
 | `learner model updated` | a job wrote the learner model |
 | `practice questions are not being prepared: the model did not answer (see define --llm-check)` | the first job whose model did not answer (none running, a refused request, a rate limit or a 5xx); then the session is quiet |
 | `practice questions are not being prepared: the deck could not be read or written: …` | the first job whose store read or write failed; then the session is quiet |
+
+A job's notices come in the order it did things and a stop's comes last, so a
+learner model written before the model stopped answering is still announced.
 
 ## Entry modes
 

@@ -84,7 +84,7 @@ type bgJobResult struct {
 //	idle     session start  running, since 0                       start a job
 //	idle     looked up      since+1; at bgThreshold: running, 0    start a job at the threshold
 //	running  looked up      since+1                                none
-//	running  job done       off when the model or deck failed      one notice
+//	running  job done       off when the model or deck failed      its notices, then the stop's
 //	running  job done       idle, or running again past threshold  a notice per thing it did
 //	off      anything       off                                    none
 //	idle     job done       idle                                   none (a job starts only from idle)
@@ -123,15 +123,11 @@ func stepBackground(s bgState, ev bgEvent) (bgState, []bgEffect) {
 	return s, nil
 }
 
-// bgNoticeFor is what the session says about one job, in the order the job did
-// it: the learner model is written before the harvest that reads it.
+// bgNoticeFor is what the session says about one job: a line per thing it did, in
+// the order it did them (the learner model is written before the harvest that
+// reads it), then the stop, when one turned background work off. A fold with no
+// early return, so a stop never hides what the job had already written.
 func bgNoticeFor(r bgJobResult) []string {
-	if r.noModel {
-		return []string{"practice questions are not being prepared: the model did not answer (see define --llm-check)"}
-	}
-	if r.deckErr != nil {
-		return []string{"practice questions are not being prepared: " + r.deckErr.Error()}
-	}
 	var out []string
 	if r.reflected {
 		out = append(out, "learner model updated")
@@ -142,6 +138,12 @@ func bgNoticeFor(r bgJobResult) []string {
 			s = ""
 		}
 		out = append(out, fmt.Sprintf("%d new practice question%s ready for /play", r.authored, s))
+	}
+	switch {
+	case r.noModel:
+		out = append(out, "practice questions are not being prepared: the model did not answer (see define --llm-check)")
+	case r.deckErr != nil:
+		out = append(out, "practice questions are not being prepared: "+r.deckErr.Error())
 	}
 	return out
 }
@@ -202,23 +204,13 @@ func runBackgroundJob(ctx context.Context, d deps, skip bgMemory) bgJobResult {
 		return bgJobResult{deckErr: deckIO(err)}
 	}
 	var res bgJobResult
-	// Only a deck at the reflect floor can be due, so a smaller one reads no log.
+	// Only a deck at the reflect floor can be due, so a smaller one reads nothing
+	// more; a reflect that already wrote nothing this session is not asked again.
 	if !skip.reflectFailed && len(deck) >= minDeckForReflection {
-		events, err := d.deck.Events(time.Time{})
-		if err != nil {
-			return bgJobResult{deckErr: deckIO(err)}
-		}
-		md, err := d.deck.UserModel()
-		if err != nil {
-			return bgJobResult{deckErr: deckIO(err)}
-		}
-		ev := foldLookups(deck, events, d.clock.Now())
-		if reflectDue(md, ev.DeckLookups(), len(ev.Words)) {
-			o := reflectDeck(ctx, d, d.newLLM(cfg), cfg.Model, ev, io.Discard, io.Discard)
-			res.reflected, res.reflectFailed = o.written, !o.written
-			if res.noModel, res.deckErr = stopMeans(o.stopped); res.noModel || res.deckErr != nil {
-				return res
-			}
+		ran, written, err := reflectIfDue(ctx, d, cfg, deck)
+		res.reflected, res.reflectFailed = written, ran && !written
+		if res.noModel, res.deckErr = stopMeans(err); res.noModel || res.deckErr != nil {
+			return res
 		}
 	}
 	pending, err := pendingWords(d.deck, deck, skip.words)
@@ -349,6 +341,41 @@ func quietStore(st store.Store) store.Store {
 // model is refreshed rarely: at double, then at double again.
 const bgRefreshFactor = 2
 
+// reflectIfDue writes the learner model when it is due (#54). It reads the model on
+// disk first, and the lookup log, the largest thing a check reads, only when that
+// model could be due. ran says a reflect was attempted and written that it wrote
+// the file; err is what stopped it, a read error marked errDeckIO, or nil.
+func reflectIfDue(ctx context.Context, d deps, cfg llm.Config, deck []store.Word) (ran, written bool, err error) {
+	md, err := d.deck.UserModel()
+	if err != nil {
+		return false, false, deckIO(err)
+	}
+	if !reflectCouldBeDue(md) {
+		return false, false, nil
+	}
+	events, err := d.deck.Events(time.Time{})
+	if err != nil {
+		return false, false, deckIO(err)
+	}
+	ev := foldLookups(deck, events, d.clock.Now())
+	if !reflectDue(md, ev.DeckLookups(), len(ev.Words)) {
+		return false, false, nil
+	}
+	o := reflectDeck(ctx, d, d.newLLM(cfg), cfg.Model, ev, io.Discard, io.Discard)
+	return true, o.written, o.stopped
+}
+
+// reflectCouldBeDue is whether any deck could make the learner model due: there is
+// none yet, or the count it records can be read. A model someone edited by hand is
+// left alone whatever the deck holds, so for it the job reads no lookup log.
+func reflectCouldBeDue(md string) bool {
+	if strings.TrimSpace(md) == "" {
+		return true
+	}
+	_, ok := modelLookups(md)
+	return ok
+}
+
 // reflectDue is whether the session should write the learner model now: there is
 // none yet and the deck has reached minDeckForReflection words, or the session can
 // read the one there and the deck's lookups have grown to bgRefreshFactor times
@@ -356,14 +383,14 @@ const bgRefreshFactor = 2
 // unknown is not due, so a model someone edited by hand is left alone; and a model
 // written from no lookups waits for one, because doubling nothing is no growth.
 func reflectDue(md string, lookups, words int) bool {
-	if words < minDeckForReflection {
+	if words < minDeckForReflection || !reflectCouldBeDue(md) {
 		return false
 	}
 	if strings.TrimSpace(md) == "" {
 		return true
 	}
-	recorded, ok := modelLookups(md)
-	return ok && lookups > recorded && lookups >= bgRefreshFactor*recorded
+	recorded, _ := modelLookups(md)
+	return lookups > recorded && lookups >= bgRefreshFactor*recorded
 }
 
 // modelLookups is the lookup count a learner model was written from, read off its

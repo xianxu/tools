@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,6 +42,7 @@ func TestStepBackgroundTransitions(t *testing.T) {
 		{"a result after the threshold runs again", bgState{phase: bgRunning, since: bgThreshold}, bgEvent{kind: bgJobDone, result: nothing}, bgState{phase: bgRunning}, true, 0},
 		{"no model turns it off, once", bgState{phase: bgRunning, since: bgThreshold}, bgEvent{kind: bgJobDone, result: noModel}, bgState{phase: bgOff, since: bgThreshold}, false, 1},
 		{"a deck that fails turns it off, once", bgState{phase: bgRunning}, bgEvent{kind: bgJobDone, result: deckFail}, bgState{phase: bgOff}, false, 1},
+		{"a stop after work says both, then off", bgState{phase: bgRunning}, bgEvent{kind: bgJobDone, result: bgJobResult{reflected: true, noModel: true}}, bgState{phase: bgOff}, false, 2},
 		{"off ignores a lookup", bgState{phase: bgOff}, bgEvent{kind: bgLookedUp}, bgState{phase: bgOff}, false, 0},
 		{"off ignores a start", bgState{phase: bgOff}, bgEvent{kind: bgSessionStart}, bgState{phase: bgOff}, false, 0},
 		{"a stray result while idle is ignored", bgState{phase: bgIdle, since: 1}, bgEvent{kind: bgJobDone, result: did}, bgState{phase: bgIdle, since: 1}, false, 0},
@@ -509,4 +511,68 @@ func TestAStoreWriteErrorInTheHarvestStopsTheSession(t *testing.T) {
 	if r := runBackgroundJob(t.Context(), d, bgMemory{}); !errors.Is(r.deckErr, errDeckIO) || r.noModel {
 		t.Errorf("result = %+v, want a deck error and not a model one", r)
 	}
+}
+
+// What a job says is a line per thing it did, in the order it did them, then the
+// stop's line (#54): a stop never hides a learner model or questions the job had
+// already written.
+func TestBgNoticeForSaysEveryEffectInJobOrder(t *testing.T) {
+	const (
+		model   = "learner model updated"
+		noModel = "practice questions are not being prepared: the model did not answer (see define --llm-check)"
+	)
+	for _, tc := range []struct {
+		name string
+		r    bgJobResult
+		want []string
+	}{
+		{"nothing", bgJobResult{}, nil},
+		{"one question", bgJobResult{authored: 1}, []string{"1 new practice question ready for /play"}},
+		{"a model, then questions", bgJobResult{reflected: true, authored: 3}, []string{model, "3 new practice questions ready for /play"}},
+		{"a model, then the model stopped", bgJobResult{reflected: true, noModel: true}, []string{model, noModel}},
+		{"questions, then the deck failed", bgJobResult{authored: 2, deckErr: deckIO(errors.New("permission denied"))},
+			[]string{"2 new practice questions ready for /play", "practice questions are not being prepared: the deck could not be read or written: permission denied"}},
+	} {
+		if got := bgNoticeFor(tc.r); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: bgNoticeFor = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A learner model edited so that its count cannot be read is never due, so a check
+// reads no lookup log for it (#54): the log is the largest thing a check reads,
+// and the answer cannot depend on it. The control is a model the job can read.
+func TestAHandEditedModelCostsNoLogRead(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		md    string
+		reads int32
+	}{
+		{"hand-edited", "---\nwindow: whenever\n---\n", 0},
+		{"written by reflect, the control", "---\nwindow: a..b          # 999 lookups, 0 questions\n---\n", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _, st, _ := reflectRig(t, minDeckForReflection)
+			if err := st.SetUserModel(tc.md); err != nil {
+				t.Fatal(err)
+			}
+			counted := &countingEvents{Store: d.deck}
+			d.deck = counted
+			runBackgroundJob(t.Context(), d, bgMemory{})
+			if n := counted.reads.Load(); n != tc.reads {
+				t.Errorf("the job read the lookup log %d time(s), want %d", n, tc.reads)
+			}
+		})
+	}
+}
+
+// countingEvents counts reads of the lookup log.
+type countingEvents struct {
+	store.Store
+	reads atomic.Int32
+}
+
+func (c *countingEvents) Events(since time.Time) ([]store.ReviewEvent, error) {
+	c.reads.Add(1)
+	return c.Store.Events(since)
 }

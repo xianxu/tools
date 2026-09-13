@@ -4451,3 +4451,32 @@ nothing a test could see. The family behind it was real, so its rule went into
 one function with a direct pin. **Read the cited lines before acting on a
 finding, dispose a false instance with the evidence, and still weigh the rule it
 points at.**
+
+## A notice list is a fold over what the job did; an early return for the stop hides the rest (`#54`)
+
+`bgNoticeFor` returned the stop's line the moment it saw one, so a job that wrote
+the learner model and then met a rate limit said only that the model did not
+answer: the file was on disk and the learner was never told (M2 review, the
+second finding in `notice-wording-matches-cause`). **Build a report as one line
+per effect, in the order they happened, with the stop's line last and no early
+return**, and pin a result that carries both an effect and a stop.
+
+## A plan revision edits every row and signature it changes (`#54`)
+
+M1's review fixes went into the plan's Revisions and left the tables and prose
+that describe the same code: the state machine without the deck-error row,
+`bgJobResult` without its new fields, the job and runner still taking a `skip`
+map, the envelope pricing per reflect a read that now happens per check (M2
+review, four sites, the family's second finding). The judge reads the tables.
+**A Revisions entry that changes a behavior also edits every table row and prose
+signature that describes it, in the same commit, and the pre-gate pass checks
+for stale phrases and signatures as well as names.**
+
+## Name every writer of every file a background job writes, the person included (`#54`)
+
+The plan named a second `define` and `--forget` as the other writers of the facts
+and items the job writes, and missed the learner model's: the operator, whom the
+README invites to edit its Corrections (M2 review). The splice already kept the
+edit, but nobody had said so or priced the race. **For each file a background
+actor writes, list every other writer, the operator's editor included, and name
+what governs each.**
