@@ -316,3 +316,43 @@ func TestABackgroundNoticeIsWrittenBetweenPrompts(t *testing.T) {
 		}
 	}
 }
+
+// markReflect matches the reflect prompt, and nothing the harvest sends.
+const markReflect = "## The deck"
+
+// At twelve looked-up words the session writes the learner model, before the
+// harvest that reads it, and says so (#54). Two words were looked up in an earlier
+// session; this one looks up ten more.
+func TestTheSessionWritesALearnerModelAtTwelveWords(t *testing.T) {
+	d, opt, fake, st, finish := bgLoopRig(t, 2)
+	for i := range 2 {
+		if err := st.AppendEvent(store.ReviewEvent{Word: deckWord(i), Kind: store.EventLookedUp, Found: true,
+			At: harvestClock.AddDate(0, 0, -1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fake.Script(markReflect, llmtest.Reply{Text: reflectReply})
+	scriptAll(fake, 4)
+	out := &syncBuf{}
+	keys, end := bgRunSession(t, t.Context(), d, opt, recordingConsole(out, out, finish))
+	for _, w := range bgLookupWords {
+		typeLine(keys, w)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "learner model updated") })
+	end()
+	if md, _ := st.UserModel(); !strings.Contains(md, "level: C1") {
+		t.Errorf("the learner model was not written from the session's words:\n%s", md)
+	}
+	reflectAt, bandAt := -1, -1
+	for i, r := range fake.Requests() {
+		switch p := r.Prompt(); {
+		case reflectAt < 0 && strings.Contains(p, markReflect):
+			reflectAt = i
+		case bandAt < 0 && strings.Contains(p, markBand):
+			bandAt = i
+		}
+	}
+	if reflectAt < 0 || bandAt < 0 || reflectAt > bandAt {
+		t.Errorf("the reflect request is #%d and the first harvest request #%d; the model must be written first", reflectAt, bandAt)
+	}
+}

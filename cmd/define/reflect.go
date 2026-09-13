@@ -376,7 +376,7 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 // answering from any other failure, and prose cannot tell it that.
 type reflectOutcome struct {
 	written bool  // the learner model file was written
-	stopped error // the model error that stopped the pass, if any
+	stopped error // what stopped the pass, if anything: the model's error, or the store's (errDeckIO)
 	code    int   // runReflect's exit code, unchanged
 }
 
@@ -427,7 +427,7 @@ func reflectDeck(ctx context.Context, d deps, client llm.Client, modelName strin
 	existing, err := d.deck.UserModel()
 	if err != nil {
 		fmt.Fprintf(errOut, "define: could not read the existing learner model: %v\n", err)
-		return reflectOutcome{code: 1}
+		return reflectOutcome{stopped: deckIO(err), code: 1}
 	}
 	generated := renderUserModel(model, modelMeta{
 		Updated:   d.clock.Now(),
@@ -439,7 +439,7 @@ func reflectDeck(ctx context.Context, d deps, client llm.Client, modelName strin
 	})
 	if err := d.deck.SetUserModel(spliceCorrections(existing, generated)); err != nil {
 		fmt.Fprintf(errOut, "define: could not write the learner model: %v\n", err)
-		return reflectOutcome{code: 1}
+		return reflectOutcome{stopped: deckIO(err), code: 1}
 	}
 
 	// The NAME, from the store, not a literal: the learner is told in the

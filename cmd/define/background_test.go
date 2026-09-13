@@ -104,7 +104,7 @@ func TestRunBackgroundJobHarvestsOnlyPastTheThreshold(t *testing.T) {
 		t.Fatal("a job built a model client below the threshold")
 		return nil
 	}
-	if r := runBackgroundJob(t.Context(), d, nil); r.authored != 0 || r.noModel {
+	if r := runBackgroundJob(t.Context(), d, bgMemory{}); r.authored != 0 || r.noModel {
 		t.Fatalf("below the threshold: %+v, want nothing done", r)
 	}
 	if err := st.Upsert(store.Word{Text: deckWord(bgThreshold - 1), LastSeen: harvestClock, Lookups: 1}); err != nil {
@@ -112,7 +112,7 @@ func TestRunBackgroundJobHarvestsOnlyPastTheThreshold(t *testing.T) {
 	}
 	d.newLLM = llm.New
 	scriptAll(fake, 4)
-	if r := runBackgroundJob(t.Context(), d, nil); r.authored == 0 {
+	if r := runBackgroundJob(t.Context(), d, bgMemory{}); r.authored == 0 {
 		t.Errorf("at the threshold: %+v, want items authored", r)
 	}
 }
@@ -121,7 +121,7 @@ func TestRunBackgroundJobHarvestsOnlyPastTheThreshold(t *testing.T) {
 func TestRunBackgroundJobTypesNoModel(t *testing.T) {
 	d, fake, _ := harvestRig(t, bgThreshold)
 	fake.Script(markBand, llmtest.Reply{Status: 500, Text: "upstream is having a day"})
-	if r := runBackgroundJob(t.Context(), d, nil); !r.noModel {
+	if r := runBackgroundJob(t.Context(), d, bgMemory{}); !r.noModel {
 		t.Errorf("a model answering 500: %+v, want noModel", r)
 	}
 }
@@ -134,7 +134,7 @@ func TestRunBackgroundJobTypesNoModel(t *testing.T) {
 func TestRunBackgroundJobStaysInItsBudget(t *testing.T) {
 	d, fake, _ := harvestRig(t, 12)
 	scriptAll(fake, 8)
-	runBackgroundJob(t.Context(), d, nil)
+	runBackgroundJob(t.Context(), d, bgMemory{})
 	if n := len(fake.Requests()); n == 0 || n > bgBudget {
 		t.Errorf("one job made %d model call(s); the budget is %d", n, bgBudget)
 	}
@@ -154,7 +154,7 @@ func TestABacklogDrainsOnBothHalves(t *testing.T) {
 	for _, w := range pending[:bgThreshold] {
 		batch[w] = true
 	}
-	if r := runBackgroundJob(t.Context(), d, nil); r.authored == 0 {
+	if r := runBackgroundJob(t.Context(), d, bgMemory{}); r.authored == 0 {
 		t.Fatalf("the job authored nothing: %+v", r)
 	}
 	for _, w := range pending {
@@ -195,7 +195,7 @@ func TestAWordThatFailsIsRetriedOncePerSession(t *testing.T) {
 func TestTheRunnerNeverBlocksAfterStop(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
-	r := newBgRunner(t.Context(), func(ctx context.Context, _ deps, _ map[string]bool) bgJobResult {
+	r := newBgRunner(t.Context(), func(ctx context.Context, _ deps, _ bgMemory) bgJobResult {
 		select {
 		case <-ctx.Done():
 		case <-release:
@@ -294,7 +294,7 @@ func TestTheJobWritesNothingToTheTerminal(t *testing.T) {
 			if gated {
 				d.deck = newGatedStore(st, store.NewMem(), nil)
 			}
-			if r := runBackgroundJob(t.Context(), d, nil); r.authored == 0 {
+			if r := runBackgroundJob(t.Context(), d, bgMemory{}); r.authored == 0 {
 				t.Fatalf("the job did no work, so its silence proves nothing: %+v", r)
 			}
 			if warn.Len() != 0 {
@@ -401,12 +401,76 @@ func FuzzModelLookups(f *testing.F) {
 func TestAStoreErrorStopsTheSessionOnce(t *testing.T) {
 	d, _, _ := harvestRig(t, bgThreshold)
 	d.deck = failingFacts{d.deck}
-	r := runBackgroundJob(t.Context(), d, nil)
+	r := runBackgroundJob(t.Context(), d, bgMemory{})
 	if !errors.Is(r.deckErr, errDeckIO) {
 		t.Fatalf("result = %+v, want a deck error", r)
 	}
 	s, effects := stepBackground(bgState{phase: bgRunning}, bgEvent{kind: bgJobDone, result: r})
 	if s.phase != bgOff || len(effects) != 1 || !strings.Contains(effects[0].notice, "could not be read or written") {
 		t.Errorf("after a deck error: %+v, %+v; want off and one notice naming the deck", s, effects)
+	}
+}
+
+// The session refreshes the learner model only when the deck's lookups have
+// doubled since the count the model records (#54): a level is stable.
+func TestTheSessionRefreshesTheModelWhenLookupsDouble(t *testing.T) {
+	const recorded = "---\ntype: user-model\nwindow: 2026-08-01..2026-08-20          # 20 lookups, 0 questions\n---\n"
+	for _, tc := range []struct {
+		name    string
+		lookups int
+		want    bool
+	}{{"doubled", 40, true}, {"not yet", 30, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, fake, st, _ := reflectRig(t, minDeckForReflection)
+			for i := minDeckForReflection; i < tc.lookups; i++ {
+				if err := st.AppendEvent(store.ReviewEvent{Word: deckWord(i % minDeckForReflection),
+					Kind: store.EventLookedUp, Found: true, At: reflectClock}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := st.SetUserModel(recorded); err != nil {
+				t.Fatal(err)
+			}
+			fake.Script(markReflect, llmtest.Reply{Text: reflectReply})
+			r := runBackgroundJob(t.Context(), d, bgMemory{})
+			md, _ := st.UserModel()
+			if r.reflected != tc.want || (md != recorded) != tc.want {
+				t.Fatalf("%d lookups against a model from 20: reflected %v, rewritten %v; want %v",
+					tc.lookups, r.reflected, md != recorded, tc.want)
+			}
+			if tc.want && !strings.Contains(md, fmt.Sprintf("# %d lookups", tc.lookups)) {
+				t.Errorf("the rewritten model does not record the %d lookups it was written from:\n%s", tc.lookups, md)
+			}
+		})
+	}
+}
+
+// A reflect that writes nothing is not asked for again this session (#54), by the
+// same rule as a word a job could not finish: the model stays due at every check
+// until one is written, so an answer that cannot be used would cost a call at each.
+func TestAFailedReflectIsNotRetriedThisSession(t *testing.T) {
+	d, fake, _, _ := reflectRig(t, minDeckForReflection)
+	fake.Script(markReflect, llmtest.Reply{Text: "not json"})
+	reflects := func() (n int) {
+		for _, r := range fake.Requests() {
+			if strings.Contains(r.Prompt(), markReflect) {
+				n++
+			}
+		}
+		return n
+	}
+	r := newBgRunner(t.Context(), runBackgroundJob)
+	defer r.stop(time.Second)
+	r.start(d)
+	first := awaitJobResult(t, r)
+	if !first.reflectFailed || reflects() == 0 {
+		t.Fatalf("the first job: %+v after %d reflect call(s); want a reflect that wrote nothing", first, reflects())
+	}
+	r.received(first)
+	before := reflects()
+	r.start(d)
+	awaitJobResult(t, r)
+	if n := reflects() - before; n != 0 {
+		t.Errorf("the second job asked for the learner model %d more time(s); a failed reflect is not retried this session", n)
 	}
 }

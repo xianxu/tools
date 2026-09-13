@@ -70,11 +70,12 @@ type bgEffect struct {
 
 // bgJobResult is what one job did.
 type bgJobResult struct {
-	authored  int      // practice items it wrote
-	failed    []string // words the job ran for and could not finish
-	reflected bool     // the learner model was written or refreshed
-	noModel   bool     // the model did not answer; the session stops trying
-	deckErr   error    // the deck's files could not be read or written; the session stops trying
+	authored      int      // practice items it wrote
+	failed        []string // words the job ran for and could not finish
+	reflected     bool     // the learner model was written or refreshed
+	noModel       bool     // the model did not answer; the session stops trying
+	deckErr       error    // the deck's files could not be read or written; the session stops trying
+	reflectFailed bool     // a reflect ran and wrote nothing; not asked for again this session
 }
 
 // stepBackground is the transition table. Pure: the session applies its effects.
@@ -179,12 +180,13 @@ func pendingWords(st store.Store, deck []store.Word, skip map[string]bool) ([]st
 	return out, nil
 }
 
-// runBackgroundJob is one job: list what needs work and, when there is enough of
-// it, band and author the newest bgThreshold words within bgBudget calls. Its
-// prose goes to io.Discard and it reads the store through quietStore, so only its
-// result reaches the screen, through the session. skip is the words a job already
-// could not finish this session.
-func runBackgroundJob(ctx context.Context, d deps, skip map[string]bool) bgJobResult {
+// runBackgroundJob is one job: write the learner model when it is due, then list
+// what needs work and, when there is enough of it, band and author the newest
+// bgThreshold words within bgBudget calls. The model comes first because
+// authoring reads it (readLearner). Its prose goes to io.Discard and it reads the
+// store through quietStore, so only its result reaches the screen, through the
+// session. skip is what a job already could not finish this session.
+func runBackgroundJob(ctx context.Context, d deps, skip bgMemory) bgJobResult {
 	if !hasModelSeam(d) {
 		return bgJobResult{} // tests call the job directly; a session checked already
 	}
@@ -199,17 +201,46 @@ func runBackgroundJob(ctx context.Context, d deps, skip map[string]bool) bgJobRe
 	if err != nil {
 		return bgJobResult{deckErr: deckIO(err)}
 	}
-	pending, err := pendingWords(d.deck, deck, skip)
+	var res bgJobResult
+	// Only a deck at the reflect floor can be due, so a smaller one reads no log.
+	if !skip.reflectFailed && len(deck) >= minDeckForReflection {
+		events, err := d.deck.Events(time.Time{})
+		if err != nil {
+			return bgJobResult{deckErr: deckIO(err)}
+		}
+		md, err := d.deck.UserModel()
+		if err != nil {
+			return bgJobResult{deckErr: deckIO(err)}
+		}
+		ev := foldLookups(deck, events, d.clock.Now())
+		if reflectDue(md, ev.DeckLookups(), len(ev.Words)) {
+			o := reflectDeck(ctx, d, d.newLLM(cfg), cfg.Model, ev, io.Discard, io.Discard)
+			res.reflected, res.reflectFailed = o.written, !o.written
+			if res.noModel, res.deckErr = stopMeans(o.stopped); res.noModel || res.deckErr != nil {
+				return res
+			}
+		}
+	}
+	pending, err := pendingWords(d.deck, deck, skip.words)
 	if err != nil {
-		return bgJobResult{deckErr: deckIO(err)}
+		res.deckErr = deckIO(err)
+		return res
 	}
 	if len(pending) < bgThreshold {
-		return bgJobResult{}
+		return res
 	}
 	o := harvestDeck(ctx, d, d.newLLM(cfg), deck, &budget{left: bgBudget}, bgBudget, pending[:bgThreshold], io.Discard, io.Discard)
-	res := bgJobResult{authored: o.authored, failed: o.failed}
+	res.authored, res.failed = o.authored, o.failed
 	res.noModel, res.deckErr = stopMeans(o.stopped)
 	return res
+}
+
+// bgMemory is what a session remembers between jobs, so that what a job tried and
+// could not finish is not tried again this session: the words, and a learner
+// model it could not write. A job gets a copy; received merges each result back.
+type bgMemory struct {
+	words         map[string]bool // words a job could not finish
+	reflectFailed bool            // a reflect ran and wrote nothing
 }
 
 // bgRunner owns the session's one background goroutine. The session owns the
@@ -223,23 +254,23 @@ func runBackgroundJob(ctx context.Context, d deps, skip map[string]bool) bgJobRe
 type bgRunner struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
-	job     func(context.Context, deps, map[string]bool) bgJobResult
+	job     func(context.Context, deps, bgMemory) bgJobResult
 	results chan bgJobResult // capacity 1: one job at a time, so a send never waits on the loop
 	done    chan struct{}    // closed when the latest job's goroutine has returned
-	tried   map[string]bool  // words a job could not finish this session
+	tried   bgMemory         // what a job could not finish this session
 }
 
 // newBgRunner is a runner under the session's context, running job.
-func newBgRunner(parent context.Context, job func(context.Context, deps, map[string]bool) bgJobResult) *bgRunner {
+func newBgRunner(parent context.Context, job func(context.Context, deps, bgMemory) bgJobResult) *bgRunner {
 	ctx, cancel := context.WithCancel(parent)
-	return &bgRunner{ctx: ctx, cancel: cancel, job: job, results: make(chan bgJobResult, 1), tried: map[string]bool{}}
+	return &bgRunner{ctx: ctx, cancel: cancel, job: job, results: make(chan bgJobResult, 1), tried: bgMemory{words: map[string]bool{}}}
 }
 
 // start runs one job with the session's deps as they are now, so a job finishes
 // the language it started in even if /lang switches mid-job. The job's skip is a
-// snapshot of tried, so the two goroutines never share a map.
+// copy of tried, so the two goroutines never share a map.
 func (r *bgRunner) start(d deps) {
-	skip := maps.Clone(r.tried)
+	skip := bgMemory{words: maps.Clone(r.tried.words), reflectFailed: r.tried.reflectFailed}
 	done := make(chan struct{})
 	r.done = done
 	go func() {
@@ -253,11 +284,13 @@ func (r *bgRunner) start(d deps) {
 }
 
 // received is the loop's half of a result: the words a job could not finish join
-// tried, so no later job this session spends calls on them again.
+// tried, and so does a learner model it could not write, so no later job this
+// session spends calls on them again.
 func (r *bgRunner) received(res bgJobResult) {
 	for _, w := range res.failed {
-		r.tried[w] = true
+		r.tried.words[w] = true
 	}
+	r.tried.reflectFailed = r.tried.reflectFailed || res.reflectFailed
 }
 
 // stop cancels the job and waits up to wait for its goroutine to return. Every
