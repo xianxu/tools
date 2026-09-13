@@ -154,7 +154,7 @@ Detailed plan: `workshop/plans/000054-background-harvest-plan.md`. Two review
 boundaries. Code branches after PR #38 (#53) merges, because M1's docs edit the
 README rewrite it carries.
 
-- [ ] M1 — background harvest: one lock for every dictionary call; the harvest
+- [x] M1 — background harvest: one lock for every dictionary call; the harvest
       core returns a typed outcome (the CLI's output unchanged); the state
       machine, the job and its runner; the session wiring, notices and off
       switch; tests; docs.
@@ -163,6 +163,8 @@ README rewrite it carries.
       reflects before it harvests; tests; docs.
 
 ## Log
+
+- 2026-09-13: closed M1 — M1 review round 1 (FIX-THEN-SHIP) fixed in 631e6e3. BR-1: every word a pass could not finish (a refused band, a model stop or store error on that word, authoring that kept nothing) joins failed and so the runner tried set; a budget cut is not a failure. Pins: TestABandRefusalIsRetriedOncePerSession, TestHarvestDeckCountsAStoppedWordAsUnfinished. BR-2: the job reads the store through quietStore (store.YAML.Quiet, through the deck gate), so no store warning reaches the terminal from its goroutine. Pin: TestTheJobWritesNothingToTheTerminal, bare and gated, with a control read of the same store that must warn. BR-3: plan table moves pendingWords to Integration points, adds quietStore, and appends a Revisions entry. Minors: notice now says "the model did not answer" (ErrUnavailable includes 429/5xx); assertNoJob counts model clients built and asserts after end() instead of a 700ms poll; hasModelSeam is the shared guard; one Deck read per job (pendingWords and runAuthoring take the deck); 130-col comment rewrapped. Mutations in a throwaway worktree at 631e6e3, each anchor matched once: 8/8 red (refused band dropped, stop dropped, job reads the loud store, gated quietStore loud, Quiet keeps warn, permission check dropped, off switch ignored, runner drops failed); unmutated control green. Round-1 mutations 12/13 (the budget row is unobservable by construction, recorded in plan and test). gofmt clean, go vet clean, go test ./... green after the commit (cmd/define 117.6s). Operator TUI smoke test (plan Task 1.7 Step 3) still pending.; review verdict: SHIP
 
 ### 2026-09-12
 
