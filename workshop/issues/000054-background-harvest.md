@@ -217,6 +217,12 @@ finding in `unbacked-claims-about-existing-code`: prose citations get no guard.
 Fixed: Task 1.6's comment list, the change-window guard's wording, and a citation
 pass over the plan's prose, now named in its guards section.
 
+`sdlc change-code`: plan-quality cleared in three rounds. Estimate-quality: INFO,
+expecting nearer 4–5 h than 2.75, chiefly for the unbudgeted mutation runs (18
+full-package runs at about 110 s each), a flaky suite, the loop tests, and a third
+review round per boundary. The flaky full-package run has now been seen twice
+(once during #53, once by that judge); a hunt runs in a separate worktree.
+
 ## Revisions
 
 ### 2026-09-12 — planning
