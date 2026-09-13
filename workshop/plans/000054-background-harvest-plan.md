@@ -183,15 +183,15 @@ After each commit the check is the whole package, not a filter (lessons, #53).
 
 **Files:** Modify `cmd/define/harvest.go`. Test `cmd/define/harvest_test.go`.
 
-- [ ] **Step 1: Write the failing tests.** With `harvestRig(t, 3)` and `scriptAll`:
+- [x] **Step 1: Write the failing tests.** With `harvestRig(t, 3)` and `scriptAll`:
   - TestHarvestDeckReportsWhatItAuthored: `harvestDeck` returns `banded == 3`, `authored` equal to the number of words `Items` now holds, and a nil `stopped`.
   - TestHarvestDeckTypesAMissingModel: with the fake scripted to answer 500 (the pattern the harvest tests already use), `errors.Is(o.stopped, llm.ErrUnavailable)` and `o.code == 1`.
   - TestHarvestDeckWorksOnlyOnItsBatch: `harvestRig(t, 6)` with four words pre-banded (`preBand`) and a batch of the other two → only those two are banded and authored, and their wrong answers may come from the four.
   - TestHarvestDeckReportsWhatItCouldNotAuthor: a veto that rejects every candidate → the word is in `o.failed` and has no items.
-- [ ] **Step 2: Run.** → FAIL (`harvestDeck` undefined).
-- [ ] **Step 3: Implement** `harvestOutcome`, `harvestDeck` (the banding loop moved out of `runHarvest`, filtered to the batch when there is one) and the new `runAuthoring` signature. `runHarvest` becomes guards, config, client, the agreement mode, `harvestDeck`, `return o.code`.
-- [ ] **Step 4: Run** every existing harvest test unchanged (their output assertions are the guard that the CLI did not move), the new tests, then the whole package → PASS.
-- [ ] **Step 5: Commit.** `#54: the harvest core returns what it did`
+- [x] **Step 2: Run.** → FAIL (`harvestDeck` undefined).
+- [x] **Step 3: Implement** `harvestOutcome`, `harvestDeck` (the banding loop moved out of `runHarvest`, filtered to the batch when there is one) and the new `runAuthoring` signature. `runHarvest` becomes guards, config, client, the agreement mode, `harvestDeck`, `return o.code`.
+- [x] **Step 4: Run** every existing harvest test unchanged (their output assertions are the guard that the CLI did not move), the new tests, then the whole package → PASS.
+- [x] **Step 5: Commit.** `#54: the harvest core returns what it did`
 
 ### Task 1.3: the state machine and the count
 
