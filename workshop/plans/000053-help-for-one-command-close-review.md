@@ -184,3 +184,82 @@ findings:
     detail: |
       Second finding in this family, so the rule rather than the instance: the accepted forms are one list, and every surface naming them derives from or is checked against it. A usageFlags slice driving asksForUsage and the test loop, plus one Contains assertion over helpUsage, closes the class. Non-blocking.
 ```
+
+---
+
+## Re-review — 2026-09-12T17:23:03-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 53 — define: /help history prints the whole list, so no command explains its arguments |
+| repo | tools |
+| issue file | workshop/issues/000053-help-for-one-command.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | ebfab6b4dc373f8da2e3746f5cfad6d1b8668666..44996ec82cb9af722211025f35b7fe89c13aa1c6 |
+| command | sdlc close --issue 53 |
+| reviewer | claude |
+| timestamp | 2026-09-12T17:23:03-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+The window delivers every Spec bullet and every Done-when box, and I verified each against the code rather than the Log: `go build`, `go vet`, `gofmt -l` and the whole `cmd/define` suite are green at head; the working tree is clean at the pinned commit. The BR-4 fix is real, not cosmetic: in a scratch worktree, three mutations against `usageFlags` (the `/help` usage naming only `--help`, the bare-help line naming only `--help`, the parser accepting only the first flag) each turn `TestEveryUsageFlagIsNamedWhereUsersRead` red, and the parser mutation also reddens the whole-registry `--help` test for `/sound`, `/lang` and `/pron`; the control run is green. As a spot-check of the earlier-disposed BR-1, dropping the width at either call site reddens `TestHelpRendersWithTheContextItIsGiven`. The docs gate passes: atlas and package README both quote the generated `command-usage` span, the hand-written argument paragraph and `pron-command-help` span are gone, the root README's "`/help` lists the rest" is still true, and a grep of both pages finds no hand-written restatement of any argument rule outside the span. Nothing blocks SHIP; the one finding is a Minor plan-hygiene gap.
+
+**1. Strengths**
+
+- `cmd/define/command.go:290` — `--help`/`-h` answered once in `dispatchCommand`, before `cmd.run`, so seven parsers stay ignorant of it; `TestDashHelpPrintsTheUsageForEveryCommand` sweeps the registry × `usageFlags` rather than one example, and `TestDashHelpDoesNotRunTheCommand` pins "instead of", not "before".
+- `cmd/define/command.go:319` — `unknownCommand` is one wording for two routes, and the test compares `/help histry` against dispatch byte-for-byte instead of against a restated string, so a plausible second phrasing cannot pass.
+- `cmd/define/history_cmd.go:25`, `sound_cmd.go:16` — usage text built from `defaultHistoryDays`, `maxHistoryDays`, `maxSoundTimes`; the doc span therefore carries "2", "3650", "20" from the parsers' constants, not from prose.
+- `cmd/define/command_test.go:398` — the BR-4 test checks the joined phrase `"--help or -h"`, correctly noting `-h` is a substring of `--help`; a per-flag `Contains` would have been vacuous.
+- `cmd/define/command_test.go:365` — the vacuity guard (`want == commandUsage(pron, 0)` fatals) is exactly the "value that changes the answer" discipline the lessons entry names.
+
+**2. Critical findings** — none.
+
+**3. Important findings** — none.
+
+**4. Minor findings**
+
+- `workshop/plans/000053-help-for-one-command-plan.md` — `usageFlags` (new pure entity, `command.go:299`) and the two review-driven tests (`TestHelpRendersWithTheContextItIsGiven`, `TestEveryUsageFlagIsNamedWhereUsersRead`) exist only in the issue Log; the plan's Core concepts table and Task 1/2 test lists don't name them and the plan has no `## Revisions` section. Not a contradiction (nothing in the table is false), so Minor; see §7.
+
+**5. Test coverage notes**
+
+- The kind of bug this diff could ship is covered: dropped argument (`TestHelpExplainsOneCommand`'s disagreeing `/sound` case), missing routing (whole-registry sweep), blanked usage (`TestEveryRegisteredCommandIsRunnable`), trailing-space synopsis (`TestCommandUsageWraps`), doc drift (`TestDocsQuoteTheCommandUsage` over `derivedDocs`), dropped width (BR-1 test), hand-restated flags (BR-4 test).
+- `TestOneShotHelpExplainsOneCommand` boots against a temp dir with `openStore` and a refusing dict; no live dependency (ARCH-MOCK pass).
+- `retiredSymbolNames` maps both `pronCommandHelp` and the deleted `TestDocsQuoteThePronCommandHelp`, so the removed-declaration guard is satisfied rather than bypassed.
+
+**6. Architectural notes for upcoming work**
+
+- ARCH-DRY: pass. One list (`usageFlags`), one resolver (`findCommand`), one wording (`unknownCommand`), one synopsis builder.
+- ARCH-PURE: pass. `commandUsage`, `findCommand`, `asksForUsage`, `synopsis` are pure and tested without IO; `runHelp` and `dispatchCommand` only choose and write.
+- ARCH-PURPOSE: pass. Shadow-sweep of consumers: `/help <name>`, `/<name> --help|-h`, one-shot path, atlas span, README span, bare-help line, `pronCommandHelp` folded. No hand-maintained restatement of an argument rule remains in either page. Argument completion for `/help hi` was correctly left as a separable extension.
+- ARCH-MOCK: pass (N/A, nothing leaves the process).
+- ARCH-CONSTRAINTS: pass. O(commands) string work on a prompt submission.
+- ARCH-SECURE: pass. The only untrusted input is the typed name, echoed via `%q` the way dispatch already did.
+- ARCH-ORDER: pass. `/help` is a function of registry, args and width; no state carried between events.
+- Design note, not a finding: `asksForUsage` is deliberately "exactly one argument", so `/sound 3 --help` reaches the parser and fails as "not a number of times". The plan states the contract and the atlas documents it, so it's a settled choice; if a future issue wants `--help` anywhere in the argument list, the change is one line in `asksForUsage` and the sweep test already covers the registry.
+
+**7. Plan revision recommendations**
+
+- Append a `## Revisions` section to `workshop/plans/000053-help-for-one-command-plan.md` with a 2026-09-12 entry: (a) add `usageFlags` | `cmd/define/command.go` | new to the Pure entities table and note `asksForUsage` derives from it; (b) record that close rounds 1 and 2 added `TestHelpRendersWithTheContextItIsGiven` (BR-1) and `TestEveryUsageFlagIsNamedWhereUsersRead` (BR-4) beyond Task 1/2's listed tests. Keep it to the plan; the issue Log already carries the narrative.
+
+```findings
+dispose:
+  - id: BR-4
+    disposition: addressed
+    note: |
+      usageFlags is the one list; three mutations (usage text, bare-help line, parser) each redden TestEveryUsageFlagIsNamedWhereUsersRead, control green.
+findings:
+  - id: new
+    severity: Minor
+    family: plan-records-review-driven-changes
+    title: |
+      The plan's Core concepts table and task test lists omit usageFlags and the two review-added tests; no Revisions section records them
+    detail: |
+      usageFlags (command.go), TestHelpRendersWithTheContextItIsGiven and TestEveryUsageFlagIsNamedWhereUsersRead exist only in the issue Log. Append a Revisions entry and a usageFlags row so the plan stops under-claiming what the code delivers.
+```

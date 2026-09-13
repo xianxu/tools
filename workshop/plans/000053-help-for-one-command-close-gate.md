@@ -50,6 +50,22 @@ rounds:
           family: docs-name-every-accepted-form
           round: 2
       blocked: false
+    - "n": 3
+      timestamp: "2026-09-12T17:23:03-07:00"
+      agent: claude
+      dispose:
+        - id: BR-4
+          disposition: addressed
+          note: usageFlags is the one list; three mutations (usage text, bare-help line, parser) each redden TestEveryUsageFlagIsNamedWhereUsersRead, control green.
+          round: 3
+      findings:
+        - id: BR-5
+          severity: Minor
+          title: The plan's Core concepts table and task test lists omit usageFlags and the two review-added tests; no Revisions section records them
+          detail: usageFlags (command.go), TestHelpRendersWithTheContextItIsGiven and TestEveryUsageFlagIsNamedWhereUsersRead exist only in the issue Log. Append a Revisions entry and a usageFlags row so the plan stops under-claiming what the code delivers.
+          family: plan-records-review-driven-changes
+          round: 3
+      blocked: false
 ---
 
 # Gate ledger — tools#53 (boundary-review)
@@ -81,6 +97,17 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-4** [Minor] `docs-name-every-accepted-form` The --help/-h pair is restated by hand at five sites; nothing checks helpUsage names every form asksForUsage accepts
   Second finding in this family, so the rule rather than the instance: the accepted forms are one list, and every surface naming them derives from or is checked against it. A usageFlags slice driving asksForUsage and the test loop, plus one Contains assertion over helpUsage, closes the class. Non-blocking.
 
+## Round 3 — 2026-09-12T17:23:03-07:00 (claude) — passed
+
+### Disposed
+
+- BR-4 — addressed — usageFlags is the one list; three mutations (usage text, bare-help line, parser) each redden TestEveryUsageFlagIsNamedWhereUsersRead, control green.
+
+### Raised
+
+- **BR-5** [Minor] `plan-records-review-driven-changes` The plan's Core concepts table and task test lists omit usageFlags and the two review-added tests; no Revisions section records them
+  usageFlags (command.go), TestHelpRendersWithTheContextItIsGiven and TestEveryUsageFlagIsNamedWhereUsersRead exist only in the issue Log. Append a Revisions entry and a usageFlags row so the plan stops under-claiming what the code delivers.
+
 ## Open findings
 
-- **BR-4** [Minor] `docs-name-every-accepted-form` The --help/-h pair is restated by hand at five sites; nothing checks helpUsage names every form asksForUsage accepts
+- **BR-5** [Minor] `plan-records-review-driven-changes` The plan's Core concepts table and task test lists omit usageFlags and the two review-added tests; no Revisions section records them

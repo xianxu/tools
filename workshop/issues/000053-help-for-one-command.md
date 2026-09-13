@@ -7,7 +7,7 @@ created: 2026-09-12
 updated: 2026-09-12
 estimate_hours: 0.49
 started: 2026-09-12T15:55:34-07:00
-actual_hours: 1.53
+actual_hours: 1.71
 ---
 
 # define: /help history prints the whole list, so no command explains its arguments
@@ -120,6 +120,7 @@ plain checkboxes, no Mx.
 ## Log
 
 ### 2026-09-12
+- 2026-09-12: closed — BR-4 (the round-2 advisory, second finding in its family) fixed as a class in bac69ff: usageFlags is the one list the parser, the /help usage, the bare-help line and the tests derive from, and TestEveryUsageFlagIsNamedWhereUsersRead checks the texts carry the joined phrase. Mutations: the /help usage naming only --help, the bare-help line naming only --help, and the parser accepting only the first flag each turn a guard red (the first parser mutant did not compile, an unused import); control green. go test ./cmd/define/ green after bac69ff. Earlier evidence stands: rounds 1 and 2 mutations caught, gofmt and vet clean, the built binary run in an empty directory. Operator TUI smoke test pending before merge.; review verdict: SHIP
 - 2026-09-12: closed — Round 1 FIX-THEN-SHIP findings fixed in b6dd99c. BR-1: width and registry forwarding pinned by TestHelpRendersWithTheContextItIsGiven; rendering at width 0 in runHelp and in dispatch each turn it red, the global-registry mutation does not compile (initialization cycle), an empty registry turns it red. BR-2: -h named in helpUsage and the bare-help line, span regenerated in both pages. BR-3: Done-when ticked. go test ./cmd/define/ green after b6dd99c. Round 1 evidence stands: eight earlier mutations caught with a green control, gofmt and vet clean, the built binary run in an empty directory. Operator TUI smoke test pending before merge.; review verdict: SHIP
 
 Asked whether `/help history` is supported. Built main and ran it in an empty
