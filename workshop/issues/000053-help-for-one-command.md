@@ -1,12 +1,13 @@
 ---
 id: 000053
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-12
 updated: 2026-09-12
 estimate_hours: 0.49
 started: 2026-09-12T15:55:34-07:00
+actual_hours: 1.53
 ---
 
 # define: /help history prints the whole list, so no command explains its arguments
@@ -119,6 +120,7 @@ plain checkboxes, no Mx.
 ## Log
 
 ### 2026-09-12
+- 2026-09-12: closed — Round 1 FIX-THEN-SHIP findings fixed in b6dd99c. BR-1: width and registry forwarding pinned by TestHelpRendersWithTheContextItIsGiven; rendering at width 0 in runHelp and in dispatch each turn it red, the global-registry mutation does not compile (initialization cycle), an empty registry turns it red. BR-2: -h named in helpUsage and the bare-help line, span regenerated in both pages. BR-3: Done-when ticked. go test ./cmd/define/ green after b6dd99c. Round 1 evidence stands: eight earlier mutations caught with a green control, gofmt and vet clean, the built binary run in an empty directory. Operator TUI smoke test pending before merge.; review verdict: SHIP
 
 Asked whether `/help history` is supported. Built main and ran it in an empty
 directory: `define /help history` and `define /help` print identical output, and

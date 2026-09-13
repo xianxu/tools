@@ -90,3 +90,97 @@ findings:
     detail: |
       Tick the six Done-when items at close so the tracker reflects the verified state.
 ```
+
+---
+
+## Re-review — 2026-09-12T17:11:26-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 53 — define: /help history prints the whole list, so no command explains its arguments |
+| repo | tools |
+| issue file | workshop/issues/000053-help-for-one-command.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | ebfab6b4dc373f8da2e3746f5cfad6d1b8668666..941bc789550965a836314127982a1263388f55a6 |
+| command | sdlc close --issue 53 |
+| reviewer | claude |
+| timestamp | 2026-09-12T17:11:26-07:00 |
+| verdict | SHIP |
+
+## Review
+
+All checks are done: mutations verified, binary exercised, docs and callers inspected. Writing up the verdict now.
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+The round-2 commit (`b6dd99c`) closes every open finding with evidence I could reproduce, and nothing new blocks. `go build ./...`, `go vet ./...`, `gofmt -l cmd/define` and `go test ./cmd/define/` are all clean on the pinned head. I reverted BR-1's fix in a scratch worktree twice (once per call site) and `TestHelpRendersWithTheContextItIsGiven` went red both times with the unwrapped `/pron` text; dropping `-h` from `asksForUsage` reddens `TestDashHelpPrintsTheUsageForEveryCommand` on the first `-h` pair; the unmutated control is green. The built binary in an empty directory prints the usage for `/help history`, `/history --help`, `/history -h`, `/help --help` and `/sound -h` (exit 0), the list for bare `/help` and `/help /`, dispatch's own wording for `/help histry` and `/help nosuch` (exit 2), and the arity error for `/help a b` (exit 2). The Core concepts table matches the tree row for row, and both derived pages quote the regenerated span that now names `-h`. One Minor, non-blocking note below, which is a repeat family and is written as the rule rather than the instance.
+
+## 1. Strengths
+
+- `cmd/define/command_test.go:361-392` — the new width test asserts a vacuity guard first (`commandUsage(pron, 20) != commandUsage(pron, 0)`) before comparing, so it cannot pass by both sides being the unwrapped string. It pins three forwarded values (width at `runHelp`, width at `dispatchCommand`, the registry `/help` resolves against), each with a value that changes the answer. Confirmed by revert.
+- `cmd/define/command.go:269-284` — dispatch branches on outcome only (found / unknown / asks-for-usage / run). Adding a command is still one registry row; the loop did not grow a case.
+- `cmd/define/command.go:311-322` and `TestHelpForAnUnknownNameSaysWhatDispatchSays` — one wording for `/histry` and `/help histry`, pinned byte-for-byte against dispatch with a `Len() == 0` guard (ARCH-DRY).
+- `history_cmd.go:25`, `sound_cmd.go:16` — limits in the usage text are `Sprintf`'d from the parser's constants, so `N is at most 3650` and `20 is the most` cannot drift from what is enforced.
+- `workshop/lessons.md` gains the BR-1 rule in general form ("a shell that forwards context is pinned with a value that changes the answer"), which is the §4 loop working as intended.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+None.
+
+## 4. Minor findings
+
+- **2nd finding in family `docs-name-every-accepted-form`.** BR-2 was fixed as the instance: `-h` was typed by hand into `helpUsage` (`command.go:56`) and the bare-help line (`command.go:355`). The rule that covers the class: *the set of forms a parser accepts is one list, and every surface that names them is derived from or checked against it.* Today the pair `--help`/`-h` is restated at five sites: `asksForUsage` (`command.go:293`), `helpUsage`, the bare-help line, the loop literal in `TestDashHelpPrintsTheUsageForEveryCommand` (`commandloop_test.go:491`), and atlas prose (`atlas/define.md:1144`). No test fails if `asksForUsage` gains or loses a token while the prose stays put. Cheapest fix of the rule: a `usageFlags` slice drives `asksForUsage` and the test loop, and one assertion checks `helpUsage` names each entry. Non-blocking.
+
+## 5. Test coverage notes
+
+- Unit (no IO): renderer over every row at three widths, resolver, unknown-name parity, arity error, bare-help line, usage-required-per-row, and now width/registry forwarding. ARCH-PURE holds; `command_test.go` uses only `bytes.Buffer`.
+- Integration: `--help`/`-h` over the whole registry through `dispatchCommand`; fixture proves `--help` does not run the command; one-shot path via `run()` with the refusing dictionary and a temp-dir store.
+- Docs: `TestDocsQuoteTheCommandUsage` over both derived pages; `TestDocsQuoteTheCommandList` updated for the new `/help` summary. The three README anchors and eight restored doc-sync tests from Task 0 are green.
+- Verified by revert this round: M8a, M8b, and the `-h` routing.
+
+## 6. Architectural notes
+
+- **ARCH-DRY** pass, with the Minor above as the one remaining hand-kept restatement.
+- **ARCH-PURE** pass: `commandUsage`, `findCommand`, `asksForUsage`, `synopsis` are pure; `runHelp`/`dispatchCommand` choose and write.
+- **ARCH-PURPOSE** pass: shadow-sweep of README, atlas and root README finds no hand-written argument forms outside the span; the `pronCommandHelp` span and the atlas paragraph are gone; root README's "`/help` lists the rest" stays true. Argument completion was declared out of scope in Spec and Revisions and is separable.
+- **ARCH-MOCK** pass: nothing new leaves the process; the one-shot test boots on a temp-dir store.
+- **ARCH-CONSTRAINTS** pass: O(rows) string work; `wrapText` returns early at width 0.
+- **ARCH-SECURE** pass: the typed name is echoed with `%s`/`%q` as dispatch already did; no persisted input, no credentials.
+- **ARCH-ORDER** pass: no state carried between events, and the plan says why rather than a bare N/A.
+- For upcoming work: `asksForUsage` is a contract that no command takes `--help`/`-h` as data, and it only fires on exactly one argument. A future command with free-text arguments will need to revisit it; the atlas states the contract, which is enough for now.
+
+## 7. Plan revision recommendations
+
+None. The table's `new`/`modified`/`deleted` rows all match the tree, and the Revisions section already records the README carry and the two-field decision.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      TestHelpRendersWithTheContextItIsGiven goes red when either call site renders at width 0 (verified by revert in a scratch worktree); control green.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      helpUsage and the bare-help line say "--help or -h"; the regenerated span carries it to README and atlas, and the -h routing is pinned by TestDashHelpPrintsTheUsageForEveryCommand.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      All six Done-when boxes are ticked in the issue file at head.
+findings:
+  - id: new
+    severity: Minor
+    family: docs-name-every-accepted-form
+    title: |
+      The --help/-h pair is restated by hand at five sites; nothing checks helpUsage names every form asksForUsage accepts
+    detail: |
+      Second finding in this family, so the rule rather than the instance: the accepted forms are one list, and every surface naming them derives from or is checked against it. A usageFlags slice driving asksForUsage and the test loop, plus one Contains assertion over helpUsage, closes the class. Non-blocking.
+```
