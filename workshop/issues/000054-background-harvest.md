@@ -114,11 +114,17 @@ it lands.
 
 ## Plan
 
-- [ ] Wait for the README rewrite in progress (the docs part only).
-- [ ] `sdlc claim`, then `sdlc start-plan`. Settle the trigger count, the
-      on-screen report, the lock, the budget and the refresh threshold before any
-      code. Likely two review boundaries (harvest trigger, reflect trigger);
-      decide the Mx split at plan time.
+Detailed plan: `workshop/plans/000054-background-harvest-plan.md`. Two review
+boundaries. Code branches after PR #38 (#53) merges, because M1's docs edit the
+README rewrite it carries.
+
+- [ ] M1 — background harvest: one lock for every dictionary call; the harvest
+      core returns a typed outcome (the CLI's output unchanged); the state
+      machine, the job and its runner; the session wiring, notices and off
+      switch; tests; docs.
+- [ ] M2 — background reflect: the reflect core returns a typed outcome; when a
+      model is due (none at 12 words, or the deck's lookups doubled); the job
+      reflects before it harvests; tests; docs.
 
 ## Log
 
@@ -141,3 +147,44 @@ Findings that shaped the spec:
   no surface for background jobs.
 
 Related: #52 (a local model would make these calls free), #53.
+
+Planning, after `sdlc claim` and `sdlc start-plan`. A read-only exploration
+mapped the integration points; the facts that shaped the plan:
+
+- The editor loop is one `select` over the context, resizes and keys in
+  `runEditor`. Lookups, answers, playback and `/play` all run inside the keys
+  case, and nothing hands an async result back yet, so a buffered result channel
+  as a new case is the seam.
+- Every screen write must follow `view.Draw("", nil)`
+  (`TestNothingIsWrittenWhileAPromptIsShown`), so the job never writes; the loop
+  prints its notice.
+- `runHarvest` and `runReflect` return only exit codes and print prose, so the
+  job cannot tell a missing model from other failures without typed cores.
+- `llm.Resolve` succeeds on the default local proxy with nothing running; the
+  first call is what reports `ErrUnavailable`.
+- The dictionary is cgo DictionaryServices with no lock, and harvesting looks
+  words up, so two goroutines would call it at once.
+- The `llmtest` fake cannot hold a non-streamed reply, so the "never waits" test
+  needs a blocking stub client through `d.newLLM`.
+- No cross-process lock exists, and `SetItems` replaces a word's file, so
+  duplicate authoring wastes calls rather than doubling material.
+- A `/play` sitting reads items once (`todaysQuestions`), so items written during
+  a sitting appear in the next.
+
+## Revisions
+
+### 2026-09-12 — planning
+
+- **The trigger is a check, not a counter of new words.** The loop asks for a
+  check at session start and every 10 successful lookups; the job counts the
+  store's unbanded words and harvests when there are at least 10. The loop never
+  decides whether a word is new, so the store stays the only count, as the Spec
+  asked.
+- **No cross-process lock.** `SetItems` replaces a word's file, so two processes
+  authoring one word leave one item, and the waste is bounded by each process's
+  budget.
+- **Dictionary calls are serialized process-wide**, a need the Spec did not name:
+  DictionaryServices has no lock of its own, and the job looks words up while the
+  loop does.
+- **Harvest and reflect get typed cores**, because the job must tell a missing
+  model from other failures, and both entry points return only exit codes.
