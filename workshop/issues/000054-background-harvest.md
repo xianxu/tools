@@ -236,6 +236,32 @@ because the rig's word list holds fourteen. The README's learner-model line said
 nothing calls a model during a lookup; M1 made that false, so the docs task fixed
 it early instead of leaving it for M2.
 
+M1 verification, in a throwaway worktree at `5d4eb83`. 12 of 13 mutations turned
+their guard red, and the unmutated control was green:
+
+| mutation | went red |
+|---|---|
+| the lock is skipped | TestLockedDictionarySerializesAcrossInstances |
+| production builds a bare dictionary | TestProductionDictionariesAreLocked |
+| a lookup while running starts a job | TestStepBackgroundTransitions |
+| pending drops the no-item half | TestPendingWordsFollowsTheSpec |
+| the job ignores the threshold | TestRunBackgroundJobHarvestsOnlyPastTheThreshold |
+| the job bands the whole backlog | TestABacklogDrainsOnBothHalves |
+| the runner drops `failed` | TestAWordThatFailsIsRetriedOncePerSession |
+| the send ignores cancellation | TestTheRunnerNeverBlocksAfterStop |
+| the permission check is dropped | TestNoJobWhereTheDeckWasNotAgreedTo |
+| the off switch is ignored | TestTheOffSwitchStopsIt |
+| `noModel` is never set | TestNoModelIsOneNoticeThenQuiet |
+| the notice skips clearing the frame | TestABackgroundNoticeIsWrittenBetweenPrompts |
+
+Not observable: the job's budget replaced by the CLI's 200. Ten words cost at most
+60 calls (band, author, entail, three vetoes each), which is the budget itself, so
+the cap cannot bind; the batch size is the real bound today, and the budget stays
+as a backstop for an item that costs more. Recorded in the plan's table and the
+test's comment rather than claimed as a pin. gofmt and `go vet ./...` clean; every
+other package green; the whole `cmd/define` suite green after every commit. The
+operator's TUI smoke test is pending.
+
 ## Revisions
 
 ### 2026-09-12 — planning
