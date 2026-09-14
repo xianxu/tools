@@ -169,3 +169,10 @@ proposed default is copy on release.
   newest input with feedback so pointer/interrupt decoding remains live. Click
   validation and target capture share one lock to avoid action after layout drift.
   Plan review and artifact guards are running. No product code changed.
+
+- 2026-09-14: Durable plan review approved after resolving atomic target capture
+  and isolated foreground PTY clipboard injection. Conformance-only target factory
+  fails closed, while normal builds always use the canonical clipboard.
+  `go test ./cmd/define -run 'TestPlan|TestNoArtifact|TestARemoved' -count=1`
+  passed (1.252s), and git diff --check passed. Awaiting durable-plan approval;
+  implementation has not started.
