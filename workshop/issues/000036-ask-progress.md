@@ -103,7 +103,8 @@ screen overlay outside the transcript; ticks repaint through the existing screen
 lock/throttle and preserve prompt, footer, scroll position and partial output.
 In a one-shot terminal use one transient line and synchronously clear it before
 answer/error output. Serialize the animation's paints and teardown through that
-host. Use the existing opt.tty capability decision: no animation or escape bytes
+host. Use the existing opt.tty capability decision with an explicit !opt.raw guard:
+no animation or escape bytes
 in pipes, redirected output, or other non-erasable output. No spinner on ordinary
 dictionary lookups or fully cached/no-work operations.
 
@@ -198,3 +199,10 @@ distinguishes waiting from streaming — so the transport half of this exists.
   preserving a clean boundary for #54's future background work. Optional spinner
   lifetime preference has received no change request; first visible text remains
   the proposed default.
+
+- 2026-09-13: Fresh-context spec review approved implementation planning. Carry
+  forward: explicit opt.tty && !opt.raw eligibility; separate --llm-check wiring;
+  activity overlay independent of Draw(prompt, footer); visible host write-failure
+  detection despite current screen Paint discarding errors; releasable fake
+  completion/stream barriers; ownership on stale stop, suspension and shutdown.
+  No product code changed; design approval is the next checkpoint.
