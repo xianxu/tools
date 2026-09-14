@@ -139,3 +139,8 @@ Files: main.go, play_loop.go, relevant main/editor/play/selection tests, README.
 ## Revision: default on (2026-09-14)
 
 The user explicitly selected **on by default**. This supersedes the pending/default-off assumption in the preceding revision. Missing or malformed settings resolve to on; an explicit saved off remains off. Existing decks without a saved setting therefore gain bilingual display. Update default/read/startup tests and documentation accordingly.
+
+
+### Toggle review clarifications (2026-09-14)
+
+Fresh review approved the toggle/default-on revisions without blockers. Implement interactive session-only mutation even when no persistence callback exists: do not copy sessionSetLang's nil-callback refusal. Wire both repl.go and replraw.go. Carry an explicitly resolved setting at startup (or an optional value before resolution); never treat false as unspecified, because saved off must survive default-on fallback. The planned restart, DEFINE_NO_CAPTURE, failed-write and declined-deck tests cover these cases.

@@ -58,3 +58,5 @@ The user requests `/bilingual` to toggle the two behaviors: on means selected la
 ### 2026-09-14 — Default confirmed
 
 User chose **default on**. Missing or malformed settings resolve to on, including existing decks without this setting. Persisted off wins. This supersedes the previous fallback assumption.
+
+- Fresh review approved the toggle/default-on revisions. Recorded callback and bool-resolution details so no-capture sessions can toggle and saved off cannot become default on.
