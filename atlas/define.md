@@ -405,6 +405,8 @@ quotes them verbatim and `doc_sync_test.go` pins that — and the style is appli
 where the strings are handed to `Draw`. Escapes cost no columns and every
 measuring helper skips them, so no row budget moves; the summary `finish` writes
 is the RECORD rather than the live edge and is correctly left undimmed.
+The board’s bracketed active marking option is highlighted in cyan by
+`boardPrompt`; it clears dim for that span and restores dim for the instructions.
 
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —
