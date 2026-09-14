@@ -245,7 +245,7 @@ since every other model-shaped feature degrades silently by design.
 
 ## Conformance
 
-Three tagged suites, all on-demand (`-tags conformance`), none in merge-check:
+Four tagged suites, all on-demand (`-tags conformance`), none in merge-check:
 
 - `TestConformanceAgainstTheLiveService` — the obligation suite against the real
   service, so "the fake behaves like the real thing" is a test.
@@ -260,6 +260,11 @@ Three tagged suites, all on-demand (`-tags conformance`), none in merge-check:
   Every failure names `scripts/llm-probe.sh record`, because a drift test that
   doesn't say what to do becomes the test everyone skips — and an **unreachable**
   service skips rather than reporting drift, since "not running" is not "changed".
+- `TestConformanceAutoSelection` — discovers the default local provider and
+  exercises plain, streaming, and schema-shaped answers with the selected model.
+  Missing configuration/providers use the shared conformance policy: skip by
+  default, fail when `CONFORMANCE_STRICT` is set. It verifies the selected provider
+  only; other advertised providers are not implicitly certified by that run.
 
 ## Known limitations
 

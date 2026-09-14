@@ -1,12 +1,13 @@
 ---
 id: 000058
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-13
 updated: 2026-09-13
 estimate_hours: 2.634
 started: 2026-09-13T22:21:55-07:00
+actual_hours: 0.84
 ---
 
 # define: discover local proxy models and select by preference
@@ -177,6 +178,7 @@ so these values remain provisional.
 ## Log
 
 ### 2026-09-13
+- 2026-09-13: closed — Full define/llm suites and llm race tests passed; conformance guard passes after BR-1 fix; absent dependency skips by default and fails strict mode; live Claude plain/stream/structured passed; all provider routes fake-verified; release-stamp merge checks passed.; review verdict: SHIP
 
 - Created and claimed at design start. User confirmed discovery-based selection
   with explicit DEFINE_LLM_MODEL override, then clarified that the primary
@@ -223,6 +225,11 @@ so these values remain provisional.
   routed every new skip through conformance.SkipOrFail. Conformance package tests
   now pass; absent credentials skip by default and fail under strict mode.
   Added the prevention rule to lessons. Merge-check release stamping also passed.
+
+- Close round 2 approved SHIP with no blocking findings. Addressed its advisory
+  atlas inventory omission by listing TestConformanceAutoSelection and the shared
+  strict/default policy. Full `go test ./... -count=1` passed, including
+  internal/conformance; all code is verified and only final publication remains.
 
 ## Revisions
 

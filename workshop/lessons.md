@@ -4423,3 +4423,7 @@ explicit newlines, learned phrases and enclosing styles, and the closing reset.
   `go test ./internal/conformance` whenever adding a live test. Check both default
   skip and strict failure with an unavailable dependency; a live success does
   not exercise the skip branches.
+
+- When adding a conformance entrypoint, update the atlas's named inventory and
+  count along with behavior documentation; describing the feature elsewhere
+  does not keep its verification map current.
