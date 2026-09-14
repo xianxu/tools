@@ -96,14 +96,19 @@ auth failures, bounded response parsing, deadline/cancellation races, client
 reuse, no-LLM paths with zero discovery requests, selected provenance, and
 streaming/structured calls for each supported provider.
 
-CLIProxyAPI translates `/v1/messages` for other providers, but catalog presence
-alone does not establish structured-output or effort compatibility. Inspect
-translation source and add deterministic wire tests for the consumed contract;
-do not require upstream schema enforcement if the existing typed decoder checks
-the result, and do not claim live compatibility without a live test. Any
-necessary provider-specific request rendering belongs in the shared transport,
-with explicit tests. Source inspection/live conformance must establish eligible
-model IDs before implementation, especially the requested Sol/Astra display names.
+CLIProxyAPI translates `/v1/messages` for other providers, but its current
+Claude-source Codex/Gemini/Antigravity translators omit the JSON-schema output
+setting. For auto-selected non-Claude providers, the shared request renderer
+must also supply the existing request schema as explicit JSON-only instructions
+alongside the domain prompt; continue using the existing typed decoder to reject
+malformed/incomplete results. Derive those instructions from Request.Schema,
+never maintain a parallel schema. Direct Claude keeps its existing renderer.
+For those non-Claude requests, translate the existing effort setting through
+the proxy's supported adaptive-thinking contract, with deterministic wire tests.
+Do not claim upstream schema enforcement or live compatibility without a live
+test. Eligible IDs must be supported by source inspection or runtime discovery,
+especially the requested Sol/Astra display names; unknown mappings are never
+guessed.
 
 ARCH-CONSTRAINTS: the budgets above bound the interactive IO path.
 ARCH-ORDER: selection is unselected/discovering/selected, with cancellation and
@@ -145,3 +150,10 @@ introduced by discovery.
 - Source exploration found provider ownership metadata and a distinction between
   direct Claude and Antigravity-served Claude. The checkout's embedded model
   catalog does not establish Sol/Astra IDs. No implementation code changed.
+
+## Revisions
+
+- 2026-09-13: Proxy source review established that Claude-source translators drop
+  schema output configuration for Codex/Gemini/Antigravity. Added schema-derived
+  JSON instructions plus local validation to the proposed non-Claude request
+  contract so selection also supports define's structured tasks.
