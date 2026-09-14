@@ -90,7 +90,7 @@ or one command. All consumers currently belong to define, so no speculative
 cross-binary package is introduced (AGENTS.local.md; ARCH-DRY).
 
 The standard cycle is `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, advancing every 80 ms. Show the first
-frame immediately with `Thinking…`. Start only at an actual model call, before
+frame immediately, with no label or other text. Start only at an actual model call, before
 local model discovery. Complete calls remain active until return; Stream calls
 stop before forwarding the first nonempty answer-text delta. Empty deltas and
 thinking/tool events do not finish the wait. Error, timeout, cancellation, and
@@ -206,3 +206,8 @@ distinguishes waiting from streaming — so the transport half of this exists.
   detection despite current screen Paint discarding errors; releasable fake
   completion/stream barriers; ownership on stale stop, suspension and shutdown.
   No product code changed; design approval is the next checkpoint.
+
+- 2026-09-13: User approved the pattern and corrected presentation: glyph only,
+  no Thinking label; stop when the response arrives. For streaming this means
+  clearing before the first nonempty answer text; for Complete, on return.
+  Proceeding to a durable implementation plan with that correction.
