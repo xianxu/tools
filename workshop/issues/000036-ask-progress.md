@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-30
 updated: 2026-09-13
-estimate_hours:
+estimate_hours: 2.57
 started: 2026-09-13T23:05:26-07:00
 ---
 
@@ -226,3 +226,36 @@ distinguishes waiting from streaming — so the transport half of this exists.
   embedded newlines; explicitly budget the activity row and test exact footer and
   cursor geometry. Durable plan is ready for operator approval. Product code is
   unchanged; next action after approval is sdlc change-code --issue 36.
+
+## Estimate
+
+Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only; calibration is marked stale by estimate-source,
+so the values remain provisional. Derived after plan-quality accepted the design.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: greenfield-go-module design=0.2 impl=0.32
+item: tui-screen design=0.25 impl=0.4
+item: smaller-go-module design=0.03 impl=0.2
+item: cross-cutting-refactor design=0.12 impl=0.28
+item: smaller-go-module design=0.03 impl=0.2
+item: atlas-docs design=0.04 impl=0.12
+item: milestone-review design=0 impl=0.28
+design-buffer: 0.15
+total: 2.57
+```
+
+- Common lifecycle: design 1.0 × 0.2 for the resolved ownership contract;
+  implementation 0.8 × 0.4. Library check: standard context/timers and existing
+  renderer suffice; no external spinner package removes our lease ownership work.
+- Display hosts: design 1.25 × 0.2; implementation 1.0 × 0.4, with existing
+  terminal oracle and screen painter reused.
+- Foreground decorator and fake barriers: each design 0.15 × 0.2 and
+  implementation 0.5 × 0.4; both extend established seams.
+- Consumer wiring: design 0.6 × 0.2, implementation 0.7 × 0.4 across all paths.
+- Docs: two surfaces at design 0.02 and implementation 0.15 × 0.4 each.
+- Sole close boundary: allow two review rounds at 0.35 × 0.4 each.
+- Thorough-plan buffer adds 15% to design subtotal 0.67; implementation totals
+  1.80, familiarity 1.0. Total 2.5705 rounded to 2.57 hours.
