@@ -190,15 +190,15 @@ func TestDecodeWheel(t *testing.T) {
 		// The click, which M2.2 gave a meaning. It was KeyUnknown through M1,
 		// deliberately: coordinates mean nothing until something can look them
 		// up, and a Key kind nothing reads is a kind that drifts.
-		{"a left press is a click", "\x1b[<0;10;5M", KeyClick, 10},
+		{"a left press is a click", "\x1b[<0;10;5M", KeyPointerPress, 10},
 		// A press and a release BOTH arrive. Acting on both would play every
 		// recording twice, so the release is consumed and dropped.
-		{"the release is not a second click", "\x1b[<0;10;5m", KeyUnknown, 10},
+		{"the release is not a second click", "\x1b[<0;10;5m", KeyPointerRelease, 10},
 		// Middle pastes and right opens a menu, in every terminal a user knows;
 		// taking either would break a gesture this program did not invent.
 		{"the middle button is not ours", "\x1b[<1;10;5M", KeyUnknown, 10},
 		{"the right button is not ours", "\x1b[<2;10;5M", KeyUnknown, 10},
-		{"a shift-click is still a click", "\x1b[<4;10;5M", KeyClick, 10},
+		{"a shift-click is still a click", "\x1b[<4;10;5M", KeyPointerPress, 10},
 		{"a horizontal wheel is inert", "\x1b[<66;10;5M", KeyUnknown, 11},
 		{"a malformed report is inert, not partial", "\x1b[<;;M", KeyUnknown, 6},
 		// A field this program could not read WHOLE must not become a
@@ -243,7 +243,7 @@ func FuzzDecodeMouseIsBounded(f *testing.F) {
 			t.Fatalf("decodeKey(%q) consumed %d of %d bytes", in, n, len(in))
 		}
 		switch k.Kind {
-		case KeyWheelUp, KeyWheelDown, KeyClick:
+		case KeyWheelUp, KeyWheelDown, KeyPointerPress, KeyPointerMotion, KeyPointerRelease:
 			seq := in[:n]
 			// It came from something that really was a mouse report: either the
 			// SGR form, which ends in its own final byte, or the six-byte X10
@@ -257,12 +257,12 @@ func FuzzDecodeMouseIsBounded(f *testing.F) {
 		}
 		// A click's coordinates are always inside the screen. Negative ones
 		// would index backwards through the region map.
-		if k.Kind == KeyClick && (k.Row < 0 || k.Col < 0) {
+		if isPointerKey(k.Kind) && (k.Row < 0 || k.Col < 0) {
 			t.Fatalf("decodeKey(%q) reported a click at row %d col %d", in, k.Row, k.Col)
 		}
 		// And nothing but a click carries a position, so a consumer cannot read
 		// one off a key that never had it.
-		if k.Kind != KeyClick && (k.Row != 0 || k.Col != 0) {
+		if !isPointerKey(k.Kind) && (k.Row != 0 || k.Col != 0) {
 			t.Fatalf("decodeKey(%q) put a position on a %v", in, k.Kind)
 		}
 	})
@@ -284,14 +284,14 @@ func TestDecodeX10Mouse(t *testing.T) {
 		n    int
 	}{
 		// Button 0 at (1,1): 32+0, 32+1, 32+1.
-		{"a left click is consumed WHOLE, payload and all", "\x1b[M \x21\x21", KeyClick, 6},
+		{"a left click is consumed WHOLE, payload and all", "\x1b[M \x21\x21", KeyPointerPress, 6},
 		{"an X10 wheel up scrolls", "\x1b[M\x60\x21\x21", KeyWheelUp, 6},
 		{"an X10 wheel down scrolls", "\x1b[M\x61\x21\x21", KeyWheelDown, 6},
 		// Coordinates are raw bytes and may be anything ≥ 32, including bytes
 		// that look like the start of a UTF-8 rune.
 		// The payload is raw BYTES, not text: a coordinate byte may look like the
 		// start of a UTF-8 rune and must never be decoded as one.
-		{"a click at a high column", "\x1b[M \xc3\xa9", KeyClick, 6},
+		{"a click at a high column", "\x1b[M \xc3\xa9", KeyPointerPress, 6},
 		{"a partial report waits rather than half-decoding", "\x1b[M ", 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -351,7 +351,7 @@ func TestClickCarriesItsPosition(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			k, n := decodeKey([]byte(tc.in))
-			if k.Kind != KeyClick {
+			if k.Kind != KeyPointerPress {
 				t.Fatalf("decodeKey(%q) = kind %v consumed %d, want a click", tc.in, k.Kind, n)
 			}
 			if k.Row != tc.row || k.Col != tc.col {
@@ -377,7 +377,7 @@ func TestMouseDecoderRejectsWhatNoTerminalSends(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			k, n := decodeKey([]byte(tc.in))
-			if k.Kind == KeyClick || k.Kind == KeyWheelUp || k.Kind == KeyWheelDown {
+			if k.Kind == KeyPointerPress || k.Kind == KeyWheelUp || k.Kind == KeyWheelDown {
 				t.Errorf("decodeKey(%q) = %v at row %d col %d — a gesture invented from bytes no terminal sends",
 					tc.in, k.Kind, k.Row, k.Col)
 			}
@@ -404,7 +404,7 @@ func TestEveryEnabledMouseModeIsDecoded(t *testing.T) {
 	// them only when ASKED, and this program never asks. That is why the table
 	// is keyed on what we enable rather than on what exists.
 	replies := map[string][]struct{ encoding, sample string }{
-		"1000": {
+		"1002": {
 			{"X10, the default reply to 1000", "\x1b[M \x21\x21"},
 			{"SGR, once 1006 is also on", "\x1b[<0;1;1M"},
 		},
@@ -457,7 +457,7 @@ func TestExtendedMouseButtonsAreNotClicks(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			k, n := decodeKey([]byte(tc.in))
-			if k.Kind == KeyClick {
+			if k.Kind == KeyPointerPress {
 				t.Errorf("decodeKey(%q) = a click at row %d col %d — an extended button is not the left one",
 					tc.in, k.Row, k.Col)
 			}

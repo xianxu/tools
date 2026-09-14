@@ -368,13 +368,9 @@ func runHelp(c commandCtx, args []string) int {
 	fmt.Fprintln(c.stdout)
 	fmt.Fprintln(c.stdout, "  a word is defined, a question is asked — no mode to switch")
 	fmt.Fprintln(c.stdout, `  ?  ask, even if it is a word     \  define, even if it reads as a question`)
-	// The screen and its one cost (#30). Mouse reporting is what makes the wheel
-	// a scroll rather than a history walk, and it takes drag-select away from the
-	// terminal — a real regression for anyone who copies definitions, so the
-	// escape is stated in the one place that lists what the console understands
-	// rather than left for a user to discover by failing to select a word.
+	// Both full-screen loops share selection and viewport gestures.
 	fmt.Fprintln(c.stdout)
-	fmt.Fprintln(c.stdout, "  wheel or PageUp/PageDown scrolls   hold Option to select text")
+	fmt.Fprintln(c.stdout, "  wheel or PageUp/PageDown scrolls   drag to select, release to copy")
 	return 0
 }
 

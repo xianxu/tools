@@ -181,6 +181,13 @@ Set exec.Cmd.WaitDelay so inherited pipes cannot defeat cancellation. The helper
 validates exact arguments, UTF-8 and a limit+1 bounded input read before touching
 native state. Dispatch before realDeps/signal setup/dictionary/store acquisition.
 Reject malformed private invocations; do not expose helper details in normal help.
+The helper arms its own three-second time.AfterFunc watchdog at dispatch, before
+reading stdin or entering native code; its callback calls os.Exit(124). This runs
+in the child independently of parent cancellation and also ends an orphan after
+a parent crash or SIGKILL. Normal return stops the watchdog. Process conformance
+kills a parent while its helper is blocked and observes that child termination
+occurs within the independent deadline. Parent cancellation still kills/reaps
+promptly; the watchdog bounds survival when that owner disappears.
 
 For foreground PTY conformance, use a dedicated `define_clipboard_conformance`
 build tag that replaces only clipboardTarget. The normal implementation (negated
@@ -225,10 +232,10 @@ owner; only explicitly copied clipboard text persists (ARCH-ORDER/FUNERAL).
 Files: create selection.go, selection_test.go, selection_frame.go and
 selection_frame_test.go under cmd/define.
 
-- [ ] Write selectionStep tests with generated event sequences and exclusive-effect
+- [x] Write selectionStep tests with generated event sequences and exclusive-effect
   invariants; test selectionCells/selectedText with bounded Unicode/ANSI inputs
   against exact text and whole-character coverage oracles. No IO mocks.
-- [ ] Run focused selection tests red; implement the policies and rerun green.
+- [x] Run focused selection tests red; implement the policies and rerun green.
   Commit this independent core, then run the full cmd/define package so committed
   declaration/status guards are exercised.
 
@@ -239,18 +246,18 @@ clipboard_process_test.go, clipboard_darwin.go, clipboard_stub.go,
 clipboard_conformance_test.go, clipboard_target.go and
 clipboard_target_conformance.go under cmd/define; modify main.go.
 
-- [ ] Test clipboardQueue against memoryClipboard with controlled completion,
+- [x] Test clipboardQueue against memoryClipboard with controlled completion,
   failure and cancellation order, checking accepted-write FIFO and bounded workers.
   Test processClipboardWriter/runClipboardHelper against a stateful child process
   harness for input/output limits, literal input, exit status and kill/reap.
-- [ ] Run focused clipboard tests red; implement queue, private helper dispatch,
+- [x] Run focused clipboard tests red; implement queue, private helper dispatch,
   native transaction and portable stub. Wire only the factory in deps/realDeps;
   foreground activation lands with router integration.
-- [ ] Native conformance creates a unique pasteboard with PasteboardCreate(NULL),
+- [x] Native conformance creates a unique pasteboard with PasteboardCreate(NULL),
   retains it, obtains its name via PasteboardCopyName, and invokes the real helper
   against that name. Inspect exact UTF-8 bytes and flavor inventory; clear/release
   the isolated board at cleanup. Never use the general clipboard in tests.
-- [ ] Run focused/race/native tests green, shared conformance guard, and Linux
+- [x] Run focused/race/native tests green, shared conformance guard, and Linux
   build/vet. Commit; run the full cmd/define package on the committed window.
 
 ### Task 3 — Shared painter and live selection overlay
@@ -258,14 +265,14 @@ clipboard_target_conformance.go under cmd/define; modify main.go.
 Files: modify screen.go; create selection_screen.go/selection_screen_test.go;
 extend screen_test.go as needed without deleting still-valid painter obligations.
 
-- [ ] Test layoutSelectionFrame and live selection against the independent terminal
+- [x] Test layoutSelectionFrame and live selection against the independent terminal
   oracle over generated dimensions, decorated text and cursor positions, checking
   copy/highlight/region agreement and unchanged transcript. Control invalidation
   and write failure with stateful terminal writers.
-- [ ] Run focused tests red; extract the existing single layout and add its frame
+- [x] Run focused tests red; extract the existing single layout and add its frame
   snapshot, overlay and scoped copy feedback. Preserve every existing geometry
   obligation, including #36's glyph row and exact-width RenderLine normalization.
-- [ ] Run screen/selection tests and race checks green. Keep Tasks 3–5 as one
+- [x] Run screen/selection tests and race checks green. Keep Tasks 3–5 as one
   integrated commit: decoder, console and consumer contracts must switch together.
 
 ### Task 4 — Pointer routing, decoder and console lifetime
@@ -273,16 +280,16 @@ extend screen_test.go as needed without deleting still-valid painter obligations
 Files: modify key.go, key_test.go, rawterm.go, rawterm_test.go, replraw.go,
 play_loop.go, play_cmd.go; create selection_input.go/selection_input_test.go.
 
-- [ ] Fuzz decodeWheel/decodeX10Mouse through decodeKey with malformed/partial
+- [x] Fuzz decodeWheel/decodeX10Mouse through decodeKey with malformed/partial
   reports and coordinate bounds; test readInput with saturated type-ahead and
   independent pointer/interrupt barriers. Use a stateful active-screen/router rig
   for resize observation, ownership handoff and stale click tickets. Force a
   repaint or active-screen switch between release and consumer dispatch; the
   captured-target oracle must show no lookup, playback or grade against new geometry.
-- [ ] Run focused tests red; implement 1002 mode/restoration, raw pointer kinds,
+- [x] Run focused tests red; implement 1002 mode/restoration, raw pointer kinds,
   router admission and watcher-time invalidation. Build consoles before readers,
   share router/worker through nested /play, and join cleanup before handBack.
-- [ ] Route completed clicks through shared validation in runEditor/playSession
+- [x] Route completed clicks through shared validation in runEditor/playSession
   before clicked/formCell/playRegion. Replace press-only integration fixtures with
   decoded press/release gestures. Leave pure play.Input unchanged.
 
@@ -293,20 +300,20 @@ existing mouse/ask/play integration fixtures, cmd/define/pty_conformance_test.go
 cmd/define/command.go,
 cmd/define/README.md, atlas/define.md, and workshop/lessons.md when findings warrant.
 
-- [ ] Test actual editor, standalone practice and nested /play against stateful
+- [x] Test actual editor, standalone practice and nested /play against stateful
   clipboard and display seams: recorded grades/audio and clipboard contents are
   independent effect oracles. Hold real fake LLM/audio operations while injecting
   gestures, shape changes and saturated type-ahead to expose delayed-input races.
-- [ ] PTY conformance drives raw mouse reports through the tagged build of the
+- [x] PTY conformance drives raw mouse reports through the tagged build of the
   actual main entrypoint described above and copies only to its isolated board.
   Verify the target factory fails closed for absent or invalid test configuration;
   normal builds ignore the test configuration entirely. Verify painted highlight, exact copied text,
   click-vs-drag outcomes, busy-operation handling and terminal restoration. Reuse
   shared SkipOrFail for absent external dependencies; update atlas inventory.
-- [ ] Replace modifier-only copying guidance with drag/release behavior, literal
+- [x] Replace modifier-only copying guidance with drag/release behavior, literal
   text semantics, failure retry and local clipboard scope. Document queue overload
   behavior and viewport-only selection without exposing the internal helper.
-- [ ] Run `go test ./... -count=1`, focused selection/clipboard race and bounded
+- [x] Run `go test ./... -count=1`, focused selection/clipboard race and bounded
   fuzz tests, strict targeted PTY/native conformance, `go test ./internal/conformance`,
   `go vet ./...`, `GOOS=linux CGO_ENABLED=0 go build ./...` and corresponding vet,
   plus `git diff --check`. Commit Tasks 3–5 and run the full cmd/define package on
@@ -350,3 +357,22 @@ before change-code.
 
 - 2026-09-14: Fresh-context re-review approved both corrections with no remaining
   blockers. Plan/artifact guard tests passed (1.252s); no product code changed.
+
+- 2026-09-14: User approved implementation. Plan gate PQ-1 identified orphan
+  lifetime after abrupt parent death; specified a child-owned three-second exit
+  watchdog before input/native work, with parent-death process verification.
+
+- 2026-09-14: Implementation found the existing displayRows count under-budgeted
+  wide characters when a column remained before a soft wrap. The painter now
+  shares physical-row traversal for counting, clipping and snapshots; independent
+  terminal geometry tests reproduce and verify this fix. Related clipped-region
+  hit tests refuse invisible glyph cells. Input, painter and consumer code were
+  developed concurrently in isolated file ownership; code commits are consolidated
+  to keep the coupled declaration/fixture contracts reviewable and green.
+
+- 2026-09-14: Implementation deliverables and verification completed. Full
+  repository tests passed (define 111.711s), focused race 8.077s, strict native/PTY
+  8.871s, mouse fuzz 33,961 executions, vet and Linux build/vet passed. Checkboxes
+  record delivered code/test work; committed-window checks and the SDLC close/PR
+  gates follow before publication. The previously pending plan approval was
+  granted by the user before change-code.

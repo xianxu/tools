@@ -72,7 +72,7 @@ func runPlayCommand(c commandCtx, args []string) int {
 // into the caller's buffer rather than out to a terminal it does not own.
 func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 	interrupts *interrupter, repl *liveScreen, resizes <-chan winSize,
-	tty io.Writer, stderr io.Writer) (code int, shape winSize) {
+	tty io.Writer, stderr io.Writer, pointers ...*pointerRouter) (code int, shape winSize) {
 
 	rows, cols := repl.Size()
 	// NAMED RESULTS, because the shape is settled by the deferred hand-back and
@@ -99,6 +99,13 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 	// goroutine; without this its pending frame lands inside the sitting's.
 	repl.suspend()
 	sitting := newPinnedScreen(tty, rows, cols)
+	var pointer *pointerRouter
+	if len(pointers) > 0 {
+		pointer = pointers[0]
+	}
+	if pointer != nil {
+		pointer.activate(sitting)
+	}
 	defer func() {
 		// THE SHAPE IS HANDED BACK, and this is not tidiness (#48 BR-5).
 		//
@@ -117,6 +124,9 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 		r, c := sitting.Size()
 		shape = winSize{rows: r, cols: c}
 		repl.Resize(r, c)
+		if pointer != nil {
+			pointer.activate(repl)
+		}
 		repl.resume()
 	}()
 
@@ -130,7 +140,7 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 	defer restore()
 
 	con := console{
-		view:    sitting,
+		view: sitting, pointer: pointer,
 		resizes: resizes,
 		// The summary goes UP, not out. handBack would restore the shared
 		// session and print to a cooked terminal; the loop still owns that
