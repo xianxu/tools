@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-13
 updated: 2026-09-13
-estimate_hours:
+estimate_hours: 2.634
 started: 2026-09-13T22:21:55-07:00
 ---
 
@@ -135,6 +135,36 @@ introduced by discovery.
   learner-model provenance identifies the model actually selected.
 - Pure selector tests and stateful HTTP integration tests cover the cases above;
   README and atlas describe the verified contract and limits.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: greenfield-go-module design=0.20 impl=0.24
+item: api-integration design=0.20 impl=0.40
+item: greenfield-go-module design=0.20 impl=0.32
+item: smaller-go-module design=0.06 impl=0.20
+item: smaller-go-module design=0.06 impl=0.20
+item: atlas-docs design=0.02 impl=0.04
+item: milestone-review design=0.02 impl=0.20
+item: real-api-discovery design=0 impl=0.16
+design-buffer: 0.15
+total: 2.634
+```
+
+Method A decomposition: selector (v2 1.0 design / 0.6 impl), discovery API
+(2.0 / 1.0), lazy client (1.0 / 0.8), renderer (0.3 / 0.5), consumer wiring
+(0.3 / 0.5), docs (0.1 / 0.1), one close review (0.1 / 0.5), and API discovery
+(0 / 0.4). net/http and existing SDK/fake halve discovery design before the
+thorough-spec x0.2 design discount. All other design uses x0.2. Each impl value
+is v2 x0.4 per v3.1; existing Go/HTTP patterns give familiarity 1.0. No library
+replaces this provider-ranking policy or its lazy selection lifecycle. Design
+sum 0.76 x1.15 plus impl sum 1.76 = 2.634 hours. Calibration is marked stale,
+so these values remain provisional.
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
 
 ## Plan
 
