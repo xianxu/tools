@@ -1,11 +1,12 @@
 ---
 id: 000036
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-13
 estimate_hours:
+started: 2026-09-13T23:05:26-07:00
 ---
 
 # a question has no progress indicator, and it is the one slow path
