@@ -32,11 +32,18 @@ model prefix: Antigravity can itself advertise Claude models.
 Proposed preference order:
 
 1. Direct Claude (`anthropic`): newest advertised text Opus version.
-2. Codex (`openai`): GPT-5.6 Sol, then GPT-6 Astra, if the corresponding exact
-   IDs are advertised. Otherwise newest recognized general text GPT model.
+2. Codex (`openai`): prefer recognized advertised GPT version 5.6, then version
+   6, then newest recognized general text GPT version. The user's Sol/Astra
+   labels express these version preferences, not literal API ID spellings.
+   Initially recognize canonical `gpt-N[.N[.N]]` and its `-codex` variant;
+   prefer canonical over `-codex` at the same version. Other aliases require
+   an explicit override until their spelling/meaning is verified.
 3. Antigravity (`antigravity`): newest advertised Gemini Pro text model, then
-   newest Gemini Flash text model. Exclude image, audio, embedding, and agent
-   variants requiring a different request contract.
+   newest Gemini Flash text model. At the same version/tier, prefer `high`,
+   then unsuffixed, then `low`, then `lite`; use exact ID lexical order as the
+   last deterministic tie-break. Exclude image, audio, and embedding models.
+   Exclude agent variants as a product policy for this initial general-text
+   selector, not as a claim that their client request contract differs.
 
 Selection is deterministic under catalog reordering and duplicates. Version
 comparison is numeric, not lexical. Exact IDs are sent unchanged. The selector
@@ -150,6 +157,10 @@ introduced by discovery.
 - Source exploration found provider ownership metadata and a distinction between
   direct Claude and Antigravity-served Claude. The checkout's embedded model
   catalog does not establish Sol/Astra IDs. No implementation code changed.
+- Fresh-context spec review approved implementation planning after resolving
+  schema transport, Gemini tie-breaks, and display-name/API-ID ambiguity.
+  Awaiting user approval of the proposed provider/model policy before the
+  durable implementation plan and change-code gate.
 
 ## Revisions
 
@@ -157,3 +168,7 @@ introduced by discovery.
   schema output configuration for Codex/Gemini/Antigravity. Added schema-derived
   JSON instructions plus local validation to the proposed non-Claude request
   contract so selection also supports define's structured tasks.
+- 2026-09-13: Spec review requested concrete Gemini tie-breaks and cautioned
+  against inventing Sol/Astra API names. Added suffix ordering, identified agent
+  exclusion as a product policy, and expressed Codex preferences as recognized
+  advertised numeric versions with unknown aliases left to the explicit override.
