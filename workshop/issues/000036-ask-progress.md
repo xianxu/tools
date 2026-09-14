@@ -95,8 +95,8 @@ local model discovery. Complete calls remain active until return; Stream calls
 stop before forwarding the first nonempty answer-text delta. Empty deltas and
 thinking/tool events do not finish the wait. Error, timeout, cancellation, and
 an empty response all clear the spinner. A stopped activity cannot repaint.
-Whether streaming should instead retain the spinner to completion is an optional
-user preference currently pending; first answer text is the recommended default.
+First answer text is the proposed streaming default; the user was offered the
+alternative of keeping it visible through completion.
 
 A display host owns placement and terminal writes. In the raw REPL use a live
 screen overlay outside the transcript; ticks repaint through the existing screen
@@ -124,7 +124,9 @@ and reflection: it must reuse the component in an appropriate status area and
 preserve the foreground prompt. This issue owns shared activity display and
 existing synchronous model-call adapters, not #54's background job lifecycle.
 Sequence this issue before #54's activity integration and preserve the selected
-model metadata added in #58.
+model metadata added in #58. Decorate foreground clients at their UI entry
+points, not the global d.newLLM factory; #54 background cores should accept
+undecorated clients so background work cannot take over a foreground spinner.
 
 One alternative is using OnSlow as the animation clock; it misses discovery and
 couples UI cadence to transport diagnostics. Another is separate command-specific
@@ -189,3 +191,10 @@ distinguishes waiting from streaming — so the transport half of this exists.
   Corrected prior assumptions: defaultIndicator keeps playback records in pipes;
   spinner suppression should reuse terminal capability, not playback record text.
   OnSlow does not cover discovery or first visible text. No implementation yet.
+
+- 2026-09-13: Confirmed shared-component placement in cmd/define because the
+  current consumers are all one binary. Foreground adapters retain original
+  clients for SelectionOf metadata and do not decorate the global client factory,
+  preserving a clean boundary for #54's future background work. Optional spinner
+  lifetime preference has received no change request; first visible text remains
+  the proposed default.
