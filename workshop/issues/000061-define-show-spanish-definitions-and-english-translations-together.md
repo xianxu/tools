@@ -45,3 +45,5 @@ Use the same section renderer in one-shot/editor full lookups and full dictionar
 - Live probe found DCSCopyTextDefinition(OxfordSpanish, "red") returns English red→Spanish rojo. Selecting the dictionary ID alone is insufficient; direction must be verified at the record level before implementation.
 
 - Native probe confirmed usable record search and copied XHTML/flat text. Root record IDs distinguish direction; title preference and deduplication are necessary. Read-only independent corpus: `/var/folders/07/b9wcwwld4_v2w9r3hk525bm80000gn/T/tools61-oxford-ch79mbjk`. Probe observed OxfordSpanish v1.1.
+
+- Fresh spec/plan review approved after correcting audio identity: keep existing lookup-key pronunciation and use canonical headwords only for supplemental matching. Added inflection playback/replay regression and lesson. Durable plan awaits user approval before change-code.

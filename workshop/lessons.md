@@ -4459,3 +4459,11 @@ keyboard/page/wheel events, byte interrupts and signal interrupts. Queue saturat
 and scoped callbacks must not bypass cancellation. Assert external effects with an
 ordered barrier: stopping a worker immediately can drop the bad write and make a
 zero-write assertion pass even though the cancelled gesture submitted it.
+
+
+## Dictionary canonicalization is not audio identity (define #61 plan review)
+
+Use canonical dictionary headwords to match related records without replacing the
+user's typed/deck word. An inflected lookup can resolve to a lemma for definition
+but must retain the existing pronunciation policy on initial playback and replay.
+Test both paths with an inflection, not only accent-equivalent spellings.

@@ -32,7 +32,7 @@
 | Oxford record adapter | cmd/define/bilingual_darwin.go, bilingual_stub.go | new | DictionaryServices record search/copy APIs |
 | systemDictionary | cmd/define/dict_darwin.go | modified | Installed dictionary construction |
 | lookupAndRender | cmd/define/main.go | modified | One-shot and editor display/capture |
-| buildQuestions full-definition renderer | cmd/define/play_loop.go | modified | Practice choice reveal and region map |
+| todaysQuestions full-definition renderer | cmd/define/play_loop.go | modified | Practice choice reveal and region map |
 | stateful record fake | cmd/define/bilingual_test.go | new | Installed set, per-word records, errors and call observations |
 
 The optional capability is owned by the same dictionary object rebuilt through `newDict`, so `/lang` and startup cannot retain stale supplements. `Dictionary.Lookup` continues to query only the primary language. Spanish composition must not fall back to the uncontrolled all-active-dictionaries search when Larousse is missing: that could label English output as Spanish. Other languages retain their existing fallback behavior. `/lang` names both installed sources or the missing source.
@@ -77,10 +77,10 @@ Files: definitions.go, definitions_test.go, dictselect.go, dictselect_test.go, d
 
 Files: main.go, play_loop.go, relevant main/editor/play/selection tests, README.md, atlas/define.md.
 
-- [ ] In lookupAndRender, keep raw on primary-only path; for normal display resolve both sections before deciding failure/capture. Capture once per user lookup. Pronounce the Spanish canonical headword once; do not derive voice from the English translation. Preserve primary session context when available.
+- [ ] In lookupAndRender, keep raw on primary-only path; for normal display resolve both sections before deciding failure/capture. Capture once per user lookup. Preserve the existing typed/deck lookup-key audio identity and utteranceFor policy; pronounce once and do not derive voice from the English translation. Use canonical-primary matching only to select supplemental dictionary records. Preserve primary session context when available.
 - [ ] Use the same renderDefinitions output for one-shot/editor and full choice-definition reveal. Reuse the primary parsed entry for options/board glosses. Resolve supplemental text only for an actual full-definition render, not every option-pool candidate.
 - [ ] Audit writeWords and practice write paths: they currently add deck regions over entire strings. Preserve section provenance through those paths so English prose is not remapped to Spanish deck entries. Reuse existing region-merging and already-rendered content handling; cover this through a live frame test, not just a pure renderer test.
-- [ ] Add fake-driven end-to-end tests for one-shot, editor, language switch, practice reveal, partial availability, zero LLM calls, one capture, Spanish audio, raw byte equality, and copy/region coordinates across both sections.
+- [ ] Add fake-driven end-to-end tests for one-shot, editor, language switch, practice reveal, partial availability, zero LLM calls, one capture, Spanish audio (including initial audio and headword replay for inflected madrugaste), raw byte equality, and copy/region coordinates across both sections.
 - [ ] Document enabling Spanish Larousse and Spanish–English Oxford in Dictionary.app settings, waiting for downloads, and `define -lang es madrugar` / `/lang es`. Explain section ordering and partial setup diagnostics.
 - [ ] Run `go test ./cmd/define/...`, focused new race tests, `go vet ./...`, `GOOS=linux CGO_ENABLED=0 go build ./...`, strict native conformance and existing release-stamp check. Confirm no-data-loss and language-isolation guards have meaningful updated expectations.
 - [ ] Commit, run one `sdlc close --issue 61 --verified '<actual evidence>'`, address findings, and merge via SDLC. Release is a separate requested action.
@@ -94,3 +94,7 @@ Files: main.go, play_loop.go, relevant main/editor/play/selection tests, README.
 - ARCH-SECURE: no shell interpolation or external HTML rendering; copied dictionary markup is parsed as bounded data. Unknown source direction is rejected.
 - ARCH-ORDER: lookup composition is synchronous and has no persistent pending state; existing editor serializes language switches and capture. Rebuild the whole dictionary composition on switch. No additional goroutines survive a lookup.
 - ARCH-FUNERAL: lookup values die with the call or existing practice question/session; native copied refs released on every path. No new durable runtime artifact or cache.
+
+## Revisions
+
+- 2026-09-14: Fresh review corrected the original instruction “Pronounce the Spanish canonical headword once.” This would turn spoken madrugaste into madrugar and violate existing lookup-key audio identity. Preserve utteranceFor and RenderOpts.Word, using the canonical headword only for dictionary matching; add initial/replay inflection coverage. Corrected the navigation name buildQuestions to todaysQuestions. Otherwise review approved the plan.
