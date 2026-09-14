@@ -21,7 +21,7 @@ a key accepted by the proxy.
 
 ## Spec
 
-### Provider-first selection (proposed for approval)
+### Provider-first selection
 
 When `DEFINE_LLM_MODEL` is unset and the endpoint is the default local proxy,
 query its authenticated `GET /v1/models` on first model use. Select a provider
@@ -29,7 +29,7 @@ from advertised `owned_by` metadata, then a preferred advertised model within
 that provider. Do not infer the configured provider from a `claude-` or `gpt-`
 model prefix: Antigravity can itself advertise Claude models.
 
-Proposed preference order:
+Approved preference order (including the user's Flash-first correction):
 
 1. Direct Claude (`anthropic`): newest advertised text Opus version.
 2. Codex (`openai`): prefer recognized advertised GPT version 5.6, then version
@@ -38,8 +38,8 @@ Proposed preference order:
    Initially recognize canonical `gpt-N[.N[.N]]` and its `-codex` variant;
    prefer canonical over `-codex` at the same version. Other aliases require
    an explicit override until their spelling/meaning is verified.
-3. Antigravity (`antigravity`): newest advertised Gemini Pro text model, then
-   newest Gemini Flash text model. At the same version/tier, prefer `high`,
+3. Antigravity (`antigravity`): newest advertised Gemini Flash text model, then
+   newest Gemini Pro text model. At the same version/tier, prefer `high`,
    then unsuffixed, then `low`, then `lite`; use exact ID lexical order as the
    last deterministic tie-break. Exclude image, audio, and embedding models.
    Exclude agent variants as a product policy for this initial general-text
@@ -161,8 +161,14 @@ introduced by discovery.
   schema transport, Gemini tie-breaks, and display-name/API-ID ambiguity.
   Awaiting user approval of the proposed provider/model policy before the
   durable implementation plan and change-code gate.
+- User corrected Antigravity preference to Flash before Pro; proceeding to
+  implementation planning with that policy. The other provider/override decisions
+  stand.
 
 ## Revisions
+
+- 2026-09-13: User requested Flash before Pro for Antigravity; reversed that
+  provider's tier order. Claude then Codex then Antigravity is unchanged.
 
 - 2026-09-13: Proxy source review established that Claude-source translators drop
   schema output configuration for Codex/Gemini/Antigravity. Added schema-derived
