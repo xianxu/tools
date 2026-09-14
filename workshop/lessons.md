@@ -4427,3 +4427,14 @@ explicit newlines, learned phrases and enclosing styles, and the closing reset.
 - When adding a conformance entrypoint, update the atlas's named inventory and
   count along with behavior documentation; describing the feature elsewhere
   does not keep its verification map current.
+
+
+## Render controls are not display cells (define #36)
+
+When budgeting a rendered editor prompt, use its real control-bearing output in
+geometry tests. RenderLine's leading carriage return was counted as a cell,
+turning an exact-width prompt into two rows and shifting the spinner/footer.
+Normalize redundant controls at the painter's owned origin, and assert cursor
+and hit-test geometry with an independent terminal oracle. Test short writes
+with nil errors too: a transient display must normalize them to io.ErrShortWrite
+and end its animation worker.
