@@ -4413,3 +4413,17 @@ can begin on the continuation row, with the opening SGR offscreen. Make each
 continuation independently styled using the shared SGR state, and verify the
 painted viewport rather than only the full transcript. Cover inserted and
 explicit newlines, learned phrases and enclosing styles, and the closing reset.
+
+
+## New live checks must obey the shared skip policy (define #58)
+
+- A package's own tests can pass while a new conformance test breaks the
+  repository-wide skip guard. Route every absent external dependency through
+  `conformance.SkipOrFail`, including missing configuration, and run
+  `go test ./internal/conformance` whenever adding a live test. Check both default
+  skip and strict failure with an unavailable dependency; a live success does
+  not exercise the skip branches.
+
+- When adding a conformance entrypoint, update the atlas's named inventory and
+  count along with behavior documentation; describing the feature elsewhere
+  does not keep its verification map current.

@@ -1,12 +1,13 @@
 ---
 id: 000058
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-13
 updated: 2026-09-13
 estimate_hours: 2.634
 started: 2026-09-13T22:21:55-07:00
+actual_hours: 0.84
 ---
 
 # define: discover local proxy models and select by preference
@@ -168,15 +169,16 @@ so these values remain provisional.
 
 ## Plan
 
-- [ ] Approve the provider-first spec and land a reviewed durable implementation
+- [x] Approve the provider-first spec and land a reviewed durable implementation
   plan at `workshop/plans/000058-local-model-discovery-plan.md`.
-- [ ] Implement selection and discovery with regression tests through the shared
+- [x] Implement selection and discovery with regression tests through the shared
   transport, including diagnostics and provenance.
-- [ ] Verify, update docs/atlas, and close through the SDLC review gate.
+- [x] Verify and update docs/atlas. SDLC close review follows these deliverables.
 
 ## Log
 
 ### 2026-09-13
+- 2026-09-13: closed — Full define/llm suites and llm race tests passed; conformance guard passes after BR-1 fix; absent dependency skips by default and fails strict mode; live Claude plain/stream/structured passed; all provider routes fake-verified; release-stamp merge checks passed.; review verdict: SHIP
 
 - Created and claimed at design start. User confirmed discovery-based selection
   with explicit DEFINE_LLM_MODEL override, then clarified that the primary
@@ -199,6 +201,35 @@ so these values remain provisional.
   both request hashing and SDK parameters must consume the same effective
   request, now explicit in the plan. Awaiting implementation-plan approval under
   AGENTS.md Section 2; no product code changed.
+
+- Implementation completed on the issue branch. Selector/config, bounded HTTP
+  discovery/stateful fake, lazy client and provider rendering are shared in
+  internal/llm. Reflection and diagnostics report selected-model provenance.
+- TDD evidence: selector/config and discovery initially failed on missing APIs;
+  renderer wire assertions failed for absent JSON instructions/adaptive thinking;
+  consumer tests failed by reporting/storing claude-opus-5 despite selecting
+  GPT/Gemini. All now pass. Agents' changes integrated and inspected locally.
+- Verification: `go test ./internal/llm/... -count=1` passed; full
+  `go test ./cmd/define/... -count=1` passed (define 108.629s); final
+  `go test -race ./internal/llm/... -count=1` passed (13.150s/10.147s).
+  Selector, catalog parser and schema-rendering short fuzz runs passed.
+- Live `TestConformanceAutoSelection` passed plain, streaming, and schema-shaped
+  requests with anthropic/claude-opus-5. Catalog availability changed since the
+  initial empty probe. Codex/Antigravity are verified with the stateful HTTP fake,
+  not live. Concurrent discovery/cancellation and inherited deadlines are pinned
+  by deterministic tests. Commits group the independently tested tasks together
+  after integration rather than committing interdependent partial builds.
+
+- Close review round 1 returned REWORK for BR-1: three live-test skips bypassed
+  the shared conformance policy. Reproduced with TestEverySkipIsRoutedOrWaived;
+  routed every new skip through conformance.SkipOrFail. Conformance package tests
+  now pass; absent credentials skip by default and fail under strict mode.
+  Added the prevention rule to lessons. Merge-check release stamping also passed.
+
+- Close round 2 approved SHIP with no blocking findings. Addressed its advisory
+  atlas inventory omission by listing TestConformanceAutoSelection and the shared
+  strict/default policy. Full `go test ./... -count=1` passed, including
+  internal/conformance; all code is verified and only final publication remains.
 
 ## Revisions
 

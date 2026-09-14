@@ -150,8 +150,6 @@ var knownModels = map[string]bool{
 	"claude-sonnet-4-6": true, "claude-haiku-4-5-20251001": true,
 }
 
-func knownModel(m string) bool { return knownModels[m] }
-
 // splitInto chops s into n roughly equal pieces, so a multi-text-block response
 // can be served without inventing what the model said — only how it was framed.
 func splitInto(s string, n int) []string {
@@ -269,6 +267,7 @@ type Fake struct {
 	requests []Recorded
 	matchers []matcher
 	fallback Reply
+	catalog  catalogState
 	// closing is closed at test cleanup. A stalled handler waits on it rather
 	// than sleeping: httptest.Server.Close blocks on active connections, so a
 	// sleeping handler turns every stall test into a 30-second cleanup hang.
@@ -278,7 +277,7 @@ type Fake struct {
 // NewFake starts a fake and registers cleanup.
 func NewFake(t *testing.T) *Fake {
 	t.Helper()
-	f := &Fake{fallback: Reply{Text: "ok"}, closing: make(chan struct{})}
+	f := &Fake{fallback: Reply{Text: "ok"}, closing: make(chan struct{}), catalog: defaultCatalog()}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(func() { close(f.closing); f.Close() })
 	return f
@@ -313,7 +312,8 @@ func (f *Fake) ThenServeRecorded(match, name string) {
 	f.Script(match, Reply{Capture: name})
 }
 
-// Requests returns everything received, in order.
+// Requests returns inference requests received, in order. CatalogRequests
+// reports discovery separately so existing inference count assertions stay useful.
 func (f *Fake) Requests() []Recorded {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -321,6 +321,10 @@ func (f *Fake) Requests() []Recorded {
 }
 
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v1/models" {
+		f.serveCatalog(w, r)
+		return
+	}
 	var body map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
@@ -336,7 +340,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	// directly. Modelled here rather than invented, because the whole value of a
 	// shared obligation suite is that the fake and the live service answer the
 	// same way; a fake that 400s would make the suite pass here and fail there.
-	if m, _ := rec.Body["model"].(string); m != "" && !knownModel(m) {
+	if m, _ := rec.Body["model"].(string); m != "" && !f.acceptsModel(m) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"unknown provider for model %s"}}`, m)

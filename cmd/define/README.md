@@ -574,8 +574,10 @@ define --llm-check
 
 ```
   base url  http://127.0.0.1:8317
+  model     auto (effort high)
+  key       parley…ocal
+  provider  anthropic
   model     claude-opus-5 (effort high)
-  key       (set, short)
   latency   1.379s
   tokens    22 in, 5 out (0 thinking)
   preamble  1902 tokens injected upstream (not ours)
@@ -594,3 +596,27 @@ proxy's loopback handshake token itself, so questions work with nothing set at
 all. Point `DEFINE_LLM_BASE_URL` anywhere else and a key becomes required, since
 a token invented for a local proxy has no business being sent to a real
 provider.
+
+With no `DEFINE_LLM_MODEL`, `define` asks the default local proxy which providers
+and models it advertises, then chooses in this order:
+
+1. **Claude:** newest Opus.
+2. **Codex:** GPT-5.6, then GPT-6, then the newest recognized GPT text model.
+3. **Antigravity:** newest Gemini **Flash**, then Pro.
+
+Only advertised, recognized model IDs are selected. Provider ownership comes
+from the proxy, so an Antigravity-hosted Claude model does not count as a direct
+Claude provider. Custom aliases can be selected with `DEFINE_LLM_MODEL`; an
+explicit model bypasses discovery. Custom endpoints retain their existing model
+configuration behavior.
+
+Discovery happens when an LLM is first needed, never during an ordinary
+dictionary lookup, and a client reuses its selected model. `--llm-check` shows
+the selected provider and model. An empty catalog or a rejected proxy key is
+reported as unavailable. Selection does not switch models after a request fails.
+`DEFINE_LLM_API_KEY` still overrides `ANTHROPIC_API_KEY`, which overrides the
+local `parley-local` default; discovery cannot fix an incorrect key.
+
+For structured tasks through Codex or Antigravity, `define` supplies JSON-schema
+instructions and validates the returned JSON locally. Proxy translation does
+not guarantee provider-side schema enforcement.
