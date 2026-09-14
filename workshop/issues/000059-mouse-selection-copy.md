@@ -142,3 +142,22 @@ frame geometry. Native clipboard text-type behavior verified via local pbcopy
 manual; terminal motion/release encoding verified against primary xterm docs.
 No product code changed. Optional copy-on-release preference question pending;
 proposed default is copy on release.
+
+
+## Revisions
+
+- 2026-09-14: Fresh-context spec review approved for planning, with the copy trigger
+  still provisional. Carry three explicit obligations into the implementation plan:
+  resize invalidates pointer geometry at the watcher, not only when a busy loop
+  finally consumes the notification; keyboard type-ahead saturation must not block
+  pointer/interrupt dispatch; clipboard writes are serialized in gesture order and
+  failure notification must preserve access to the failed selection rather than
+  invalidating it by appending content. No product code changed.
+- 2026-09-14: Confirmed a native clipboard seam in the installed macOS SDK:
+  PasteboardCreate supports a unique isolated pasteboard, and PasteboardPutItemFlavor
+  accepts explicitly typed byte data. These APIs are not thread-safe and therefore
+  need one serialized owner. The existing binary already links macOS frameworks;
+  this avoids a shell command that infers RTF/EPS from selected text. Primary API
+  reference: https://developer.apple.com/documentation/applicationservices/applicationservices_functions
+  Final binding, lifecycle bounds and isolated conformance wiring belong in the
+  durable implementation plan after spec approval.
