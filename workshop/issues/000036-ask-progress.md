@@ -1,12 +1,13 @@
 ---
 id: 000036
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-30
-updated: 2026-09-13
+updated: 2026-09-14
 estimate_hours: 2.57
 started: 2026-09-13T23:05:26-07:00
+actual_hours: 1.42
 ---
 
 # a question has no progress indicator, and it is the one slow path
@@ -176,6 +177,8 @@ worker and overlay; no spinner frames remain in history or disk.
 
 ## Log
 
+
+- 2026-09-14: closed — go test ./... -count=1 passed; focused activity and wire-barrier race tests passed; go vet ./... passed; strict real PTY activity response/cancel check passed, repeated 3x and no-spinner mutation failed; frame fuzz 23410 executions; atlas/docs updated; git diff --check clean; review verdict: SHIP
 ### 2026-08-30
 
 Filed while diagnosing an unrelated key problem: with no model configured, a
