@@ -1,12 +1,13 @@
 ---
 id: 000060
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-14
 updated: 2026-09-14
 estimate_hours:
 started: 2026-09-14T11:00:40-07:00
+actual_hours: 0.06
 ---
 
 # define: highlight the active board marking option
@@ -33,6 +34,7 @@ The highlight follows the existing board mode as Tab cycles yes, no, and drop. I
 ## Log
 
 ### 2026-09-14
+- 2026-09-14: closed — go test ./cmd/define/... passed (112.055s); go vet ./cmd/define/... and git diff --check passed. All three modes, no-color, refusal, width and live frame wiring verified.; review verdict: SHIP
 
 - Small presentation-only correction: no new state, IO, resources, durable artifacts, or width changes. Existing mode owner and frame lifecycle remain authoritative. Skip the plan judge and estimate for this trivial styling correction; retain the close review. Reuse established palette rather than board grading colors (ARCH-PURPOSE).
 
