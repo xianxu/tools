@@ -367,7 +367,8 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 	if err != nil {
 		return unavailableToReflect(errOut)
 	}
-	model, err := llm.Run(ctx, d.newLLM(cfg), llm.Task[learnerModel]{
+	client := d.newLLM(cfg)
+	model, err := llm.Run(ctx, client, llm.Task[learnerModel]{
 		Name:   reflectTaskName,
 		System: reflectSystem,
 		Prompt: renderReflectPrompt(ev).Prompt,
@@ -411,13 +412,17 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 		fmt.Fprintf(errOut, "define: could not read the existing learner model: %v\n", err)
 		return 1
 	}
+	modelID := cfg.Model
+	if selected := llm.SelectionOf(client); selected.ID != "" {
+		modelID = selected.ID
+	}
 	generated := renderUserModel(model, modelMeta{
 		Updated:   d.clock.Now(),
 		From:      ev.From,
 		To:        ev.To,
 		Lookups:   ev.DeckLookups(), // BR-25: the count beside window: must be the count within it
 		Questions: ev.Questions,
-		Model:     cfg.Model,
+		Model:     modelID,
 	})
 	if err := d.deck.SetUserModel(spliceCorrections(existing, generated)); err != nil {
 		fmt.Fprintf(errOut, "define: could not write the learner model: %v\n", err)

@@ -201,3 +201,33 @@ func TestTheLocalKeyIsNotSentElsewhereAndNeverOverrides(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveAutoModelIntent(t *testing.T) {
+	for _, tc := range []struct {
+		name, base, model string
+		want              bool
+	}{
+		{"default", "", "", true},
+		{"explicit same endpoint", defaultBaseURL, "", true},
+		{"model override", "", "custom-alias", false},
+		{"custom endpoint", "https://api.anthropic.com", "", false},
+		{"other local port", "http://127.0.0.1:9999", "", false},
+		{"trailing slash", defaultBaseURL + "/", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Resolve(envOf(map[string]string{"DEFINE_LLM_BASE_URL": tc.base, "DEFINE_LLM_MODEL": tc.model, "DEFINE_LLM_API_KEY": "test"}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.AutoModel != tc.want {
+				t.Fatalf("AutoModel = %v, want %v", cfg.AutoModel, tc.want)
+			}
+			if tc.model == "" && cfg.Model != defaultModel {
+				t.Fatalf("lost concrete default: %q", cfg.Model)
+			}
+			if tc.model != "" && cfg.Model != tc.model {
+				t.Fatalf("lost override: %q", cfg.Model)
+			}
+		})
+	}
+}

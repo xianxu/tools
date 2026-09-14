@@ -37,7 +37,7 @@ Precedence, all resolved by a pure `Resolve(getenv)`:
 |---|---|---|
 | base URL | `DEFINE_LLM_BASE_URL` | `http://127.0.0.1:8317` |
 | key | `DEFINE_LLM_API_KEY` → `ANTHROPIC_API_KEY` | `parley-local` **for the local proxy only**; anywhere else, none → `ErrUnavailable` |
-| model | `DEFINE_LLM_MODEL` | `claude-opus-5` |
+| model | `DEFINE_LLM_MODEL` | automatic discovery at the default local endpoint; `claude-opus-5` for other endpoints |
 | effort | `DEFINE_LLM_EFFORT` | `high` |
 | timeout | `DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) | 5m |
 
@@ -64,6 +64,32 @@ nothing about. An explicit key always wins.
 would put a network round trip on the definition path, which must stay instant
 and offline. An unreachable proxy surfaces as `ErrUnavailable` at the first real
 call, the same path as having no key, so there is one degradation story.
+
+**Provider-first discovery.** `Resolve` records automatic intent in
+`Config.AutoModel`; it stays pure. `New` creates an `autoClient` which fetches
+authenticated `GET /v1/models` on its first Complete/Stream request. The pure
+`SelectModel` in `models.go` ranks ownership before model versions: direct Claude
+(`anthropic`) Opus, then Codex (`openai`, GPT-5.6 before GPT-6 before other
+recognized GPT versions), then Antigravity (`antigravity`, Flash before Pro).
+Aliases outside the supported numeric grammars require an explicit model.
+The proxy can collapse identical IDs across providers; its returned ownership
+is the routing view used here, not a complete inventory of configured accounts.
+
+`discovery.go` bounds the catalog to 1 MiB/4096 entries and five seconds within
+the total request deadline, validates identifiers, and refuses redirects.
+`auto.go` owns one discovery flight, with cancellable waiters, retry after a
+failed flight, and a successful immutable delegate retained for the client
+lifetime. It creates no background goroutines or durable cache. An explicit
+config/request model bypasses discovery; inference errors do not switch models.
+
+`SelectionOf` reports the pinned default without IO. Diagnostics and reflection
+use it for selected-model reporting/provenance. Unknown custom Client
+implementations have no reporter; reflection retains its configured fallback.
+For auto-selected Codex/Antigravity the effective request carries adaptive
+thinking and schema-derived JSON instructions because the proxy's Claude-source
+translators omit the JSON-schema output setting. The same effective request feeds
+both wire parameters and cassette hashing; typed decoding remains the local
+validation boundary, not a claim of upstream schema enforcement.
 
 **This package does not heal the proxy.** Parley owns that ladder, with a repair
 budget and one-shot guards. Ours is to say *which* thing is wrong.
@@ -206,8 +232,10 @@ since every other model-shaped feature degrades silently by design.
 
 ```
   base url  http://127.0.0.1:8317
+  model     auto (effort high)
+  key       parley…ocal
+  provider  anthropic
   model     claude-opus-5 (effort high)
-  key       (set, short)
   latency   1.379s
   tokens    22 in, 5 out (0 thinking)
   preamble  1902 tokens injected upstream (not ours)

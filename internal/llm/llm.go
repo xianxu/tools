@@ -4,7 +4,8 @@
 // no prompts: a prompt is domain knowledge and lives with the consumer that
 // needs it, as a Task[T] whose result type IS its schema.
 //
-// It also deliberately does NOT probe, restart or heal the proxy it talks to.
+// It discovers advertised local models lazily on first use, but does not restart
+// or heal the proxy it talks to.
 // Parley owns that ladder, with a repair budget and one-shot guards; a second
 // healing mechanism here would be a parallel track where one already works. Our
 // contribution is an error that says WHICH thing is wrong, so the right
@@ -47,6 +48,9 @@ type Request struct {
 	// Schema, when non-nil, constrains output. Callers must STILL handle
 	// ErrMalformed: an intermediary may drop the field.
 	Schema map[string]any
+
+	// adaptiveThinking records the effective wire mode for request hashing.
+	adaptiveThinking bool
 }
 
 // Response is one answer.

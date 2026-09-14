@@ -101,3 +101,22 @@ func TestRenderIsHumanReadable(t *testing.T) {
 		}
 	}
 }
+
+func TestAdaptiveThinkingChangesHashWithoutSchema(t *testing.T) {
+	r := Request{Task: "t", Model: "m", Effort: "high", System: "s", Prompt: "p"}
+	const legacy = "task:   t\nmodel:  m\neffort: high\n--- system ---\ns\n--- prompt ---\np\n--- schema ---\n(none)\n"
+	if got := RenderRequest(r); got != legacy {
+		t.Fatalf("legacy render changed: %q", got)
+	}
+	adaptive := r
+	adaptive.adaptiveThinking = true
+	if RequestHash(r) == RequestHash(adaptive) {
+		t.Fatal("thinking mode does not change hash")
+	}
+	adaptive.MaxTokens = 500
+	original := adaptive
+	adaptive.MaxTokens = 900
+	if RequestHash(original) != RequestHash(adaptive) {
+		t.Fatal("thinking mode changed MaxTokens exclusion")
+	}
+}

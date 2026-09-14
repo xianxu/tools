@@ -1,6 +1,6 @@
 # Local provider discovery implementation plan
 
-> **For agentic workers:** Consult AGENTS.md Section 3 (Subagent Strategy) to determine the appropriate execution approach: use superpowers-subagent-driven-development (if subagents are suitable per AGENTS.md) or superpowers-executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Consult AGENTS.md Section 3 (Subagent Strategy) to determine the appropriate execution approach: use superpowers-subagent-driven-development (if subagents are suitable per AGENTS.md) or superpowers-executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Let define select an advertised model from the user's configured local provider: Claude Opus, otherwise Codex, otherwise Antigravity Flash before Pro.
 
@@ -127,20 +127,18 @@ ARCH-FUNERAL: no files or global cache; client state ends with its owner.
 **Files:** create `internal/llm/models.go`, `internal/llm/models_test.go`; modify
 `internal/llm/config.go`, `internal/llm/config_test.go`.
 
-- [ ] Write table tests first: direct Claude wins over Codex, which wins over
-  Antigravity; Antigravity Claude IDs cannot masquerade as direct Claude;
-  Flash beats Pro even when Pro has a newer version; numeric 3.10 beats 3.9;
-  GPT 5.6 beats 6, which beats other recognized versions; canonical GPT beats
-  its -codex sibling; malformed/unknown/image/agent IDs are not auto-selected.
-  Cover empty inputs and all permutations of representative duplicate entries.
-- [ ] Run `go test ./internal/llm -run 'TestSelectModel|TestResolve' -count=1`;
+- [x] Test SelectModel against adversarial catalog grammar/order using table
+  oracles plus permutation and fuzz properties (chosen model belongs to input,
+  policy wins independent of ordering). Test Resolve with injected environment
+  maps to prove AutoModel intent and override precedence without IO.
+- [x] Run `go test ./internal/llm -run 'TestSelectModel|TestResolve' -count=1`;
   confirm new assertions fail before implementing.
-- [ ] Implement anchored, bounded grammars for direct Opus numeric versions
+- [x] Implement anchored, bounded grammars for direct Opus numeric versions
   with optional dated suffix, GPT numeric versions with optional -codex, and
   Gemini numeric versions plus flash/pro and documented high/low/lite suffixes.
   Use numeric tuple comparison and final exact-ID lexical tie-break. Implement
   AutoModel config intent without performing IO or changing key precedence.
-- [ ] Repeat the focused command and confirm success; commit task changes with
+- [x] Repeat the focused command and confirm success; commit task changes with
   an issue-referencing message and Co-Authored-By trailer.
 
 ### Task 2: Bounded discovery and fake catalog
@@ -149,16 +147,16 @@ ARCH-FUNERAL: no files or global cache; client state ends with its owner.
 `internal/llm/llmtest/models.go`; modify `internal/llm/llmtest/fake.go` and add
 `internal/llm/llmtest/models_test.go`.
 
-- [ ] Add stateful fake catalog configuration and GET history separately from
+- [x] Add stateful fake catalog configuration and GET history separately from
   message counts. Preserve existing fake default behavior; explicitly configured
   catalog models become valid completion targets. Inspect outgoing schema/prompt
   and model against expectations rather than answering every request blindly.
-- [ ] Add failing tests for valid/empty/unknown catalog, auth rejection, missing
-  or malformed data, trailing JSON, each size limit, bounded cancellation, and
-  a redirect target that must receive zero authenticated requests.
-- [ ] Run `go test ./internal/llm/... -run 'TestDiscover|TestCatalog' -count=1`,
+- [x] Test discoverModels against malformed/oversized HTTP and authentication
+  boundaries using the stateful fake, fuzz parseModels with arbitrary bytes,
+  and guard redirect/cancellation behavior with request counters and channels.
+- [x] Run `go test ./internal/llm/... -run 'TestDiscover|TestCatalog' -count=1`,
   implement the bounded HTTP parser using Config.Transport, and repeat to pass.
-- [ ] Commit the tested discovery/fake changes.
+- [x] Commit the tested discovery/fake changes.
 
 ### Task 3: Lazy client and cross-provider request contract
 
@@ -166,19 +164,15 @@ ARCH-FUNERAL: no files or global cache; client state ends with its owner.
 `internal/llm/anthropic.go`, `internal/llm/anthropic_test.go`, `internal/llm/llm.go`,
 `internal/llm/render.go`, `internal/llm/render_test.go`.
 
-- [ ] Write failing integration tests for no IO at construction, one successful
-  catalog fetch per client, Complete/Stream sharing selection, explicit config
-  and request model bypass, and every concurrency transition above. Capture the
-  HTTP request to prove selected IDs reach the wire, auth remains unchanged, and
-  errors cannot silently trigger a different model.
-- [ ] Add provider contract tests for schema-derived JSON instructions and
-  adaptive effort on auto-selected Codex/Antigravity; direct Claude unchanged.
-  Assert schema bytes/structure appear in the actual request, malformed answers
-  still fail the existing decoder, and effective-request hashes differ whenever
-  model, schema instructions, effort or thinking mode changes.
-- [ ] Run `go test ./internal/llm/... -count=1` and confirm new failures;
+- [x] Test autoClient.Complete/Stream against adversarial call/cancellation
+  orderings using controlled channels and wire counters; assert transitions
+  match the table, overrides bypass discovery, and inference never switches models.
+- [x] Test effective, params, and renderRequest against provider/schema/effort
+  variations with wire and hash oracles; fuzz schema instruction rendering to
+  guard panics/mutation and preserve strict typed decoding via llm.Run tests.
+- [x] Run `go test ./internal/llm/... -count=1` and confirm new failures;
   implement the wrapper/state transitions and shared effective renderer.
-- [ ] Run `go test -race ./internal/llm/... -count=1`; confirm deterministic
+- [x] Run `go test -race ./internal/llm/... -count=1`; confirm deterministic
   concurrency assertions pass, then commit.
 
 ### Task 4: Diagnostics, provenance, docs and closure
@@ -188,26 +182,26 @@ ARCH-FUNERAL: no files or global cache; client state ends with its owner.
 `cmd/define/askrun_test.go`, `cmd/define/harvest_test.go`,
 `internal/llm/conformance_test.go`, `cmd/define/README.md`, `atlas/llm.md`.
 
-- [ ] Add failing tests proving diagnostics display selected owner/ID, reflection
-  persists selected ID, ask/harvest inherit provider selection, and ordinary
-  dictionary plus fully cached harvest paths send no discovery requests.
+- [x] Test runLLMCheck, runReflect, runAsk and runHarvest against selected vs
+  configured metadata and no-work paths through the wire fake; use persisted
+  learner-model text and HTTP counters as independent provenance/IO oracles.
   Retain the same Client instance for selection inspection after typed Run.
-- [ ] Run `go test ./cmd/define -run 'TestLLMCheck|TestReflect|TestHarvest|TestAsk' -count=1`;
+- [x] Run `go test ./cmd/define -run 'TestLLMCheck|TestReflect|TestHarvest|TestAsk' -count=1`;
   implement reporting only at existing consumer seams and rerun to pass.
-- [ ] Extend opt-in conformance to record the discovered owner/ID and exercise
+- [x] Extend opt-in conformance to record the discovered owner/ID and exercise
   plain, streaming and schema-shaped answers for an available provider. Missing
   real providers skip with an explicit reason; never report a skipped case as
   verified compatibility. No inference calls are required to finish a unit test.
-- [ ] Update README/atlas with provider-first order, Flash before Pro, explicit
+- [x] Update README/atlas with provider-first order, Flash before Pro, explicit
   override, lazy discovery, auth and catalog limitations, selection-only fallback,
   and local JSON validation rather than upstream schema enforcement. Update
   atlas/index.md only if a new atlas page is introduced (none planned).
-- [ ] Run `go test ./internal/llm/... ./cmd/define/... -count=1`,
+- [x] Run `go test ./internal/llm/... ./cmd/define/... -count=1`,
   `go test -race ./internal/llm/... -count=1`, and `git diff --check`.
   Run `bash scripts/run-merge-checks.sh BASE_SHA HEAD` over this issue's
   implementation range using its actual branch-point SHA;
   record commands/results, including live cases unavailable on this machine.
-- [ ] Tick issue/plan tasks, record evidence, and use
+After implementation, tick issue/plan tasks, record evidence, and use
   `sdlc close --issue 58 --verified '<actual evidence>'`. Let that boundary
   dispatch its review; fix required findings, update lessons for code-review
   mistakes, then ship through `sdlc pr` and `sdlc merge`.
@@ -221,3 +215,23 @@ acceptance, as required by the gate.
 
 Fresh-context plan review: approved, with the effective-request data-flow
 detail above called out explicitly. No blocking findings remain.
+
+## Revisions
+
+- 2026-09-13 (PQ-1): Replaced enumerated test recipes throughout tasks with
+  named function-level strategies and adversarial input classes; concrete cases
+  live in executable tests, with fuzz/property and channel-based guards.
+- 2026-09-13 (PQ-2): Issue #54 is active and plans a typed reflection-core
+  extraction. #58 implements first on its own branch, touching only the existing
+  runReflect client binding/provenance and related tests; it does not extract or
+  redesign that core. #54 must integrate #58 before extracting reflection and
+  carry SelectionOf(client) into the shared core. There is no prerequisite on
+  #54, and no new dependency. Recheck main before merge and preserve either
+  landed core extraction or this metadata change when resolving overlap. This
+  ordering is recorded in both issue logs; it is a sequencing decision for this
+  checkout, not a claim of agreement from another running agent.
+
+- 2026-09-13: User approved implementation. Tasks integrated and verified; grouped
+  commits avoid interdependent partial builds from parallel tasks. Closure is a
+  following workflow action, not a self-referential unchecked deliverable.
+  Live conformance passed on Claude; other providers remain fake-verified only.
