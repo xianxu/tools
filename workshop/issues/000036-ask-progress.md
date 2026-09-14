@@ -170,7 +170,10 @@ worker and overlay; no spinner frames remain in history or disk.
 
 ## Plan
 
-- [ ] Brainstorm the five questions above, then design if it is more than wiring.
+- [x] Resolve presentation and lifecycle; review the durable plan in
+      `workshop/plans/000036-ask-progress-plan.md`.
+- [ ] Obtain plan approval, implement the shared spinner and foreground adapters,
+      verify terminal lifecycle and consumer paths, then close through SDLC.
 
 ## Log
 
@@ -217,3 +220,9 @@ distinguishes waiting from streaming — so the transport half of this exists.
   placement to a separate transient glyph row, preserving RenderLine cursor
   controls and shared paint/hit-test geometry. On a screen with no spare row,
   preserve the user's prompt and omit the glyph until space becomes available.
+
+- 2026-09-13: Fresh-context plan review approved after separating activity from
+  prompt text in the shared screen painter. Existing displayRows does not count
+  embedded newlines; explicitly budget the activity row and test exact footer and
+  cursor geometry. Durable plan is ready for operator approval. Product code is
+  unchanged; next action after approval is sdlc change-code --issue 36.
