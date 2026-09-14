@@ -225,7 +225,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// for every form by `chromeGap` — so this was one form's exception to
 			// a rule the frame did not yet have, and it also spent a buffer line
 			// on it, which the exit transcript then carried.
-			view.Draw(asChrome(boardPrompt(q, boardWhole), pal), boardFooter(q, fig, pal))
+			view.Draw(asChrome(boardPrompt(q, boardWhole, pal), pal), boardFooter(q, fig, pal))
 			return
 		}
 		if q != nil && written != s.Index {
@@ -601,11 +601,22 @@ func toInput(k Key) (play.Input, bool) {
 // It replaces the form's keys rather than joining them, because the two would
 // not both fit at the width where this happens, and a prompt that wraps is a
 // frame one row taller than the board was budgeted for.
-func boardPrompt(q play.Question, whole bool) string {
-	if whole {
-		return gradePrompt(q)
+func boardPrompt(q play.Question, whole bool, pal palette) string {
+	if !whole {
+		return boardRefusal
 	}
-	return boardRefusal
+	prompt := gradePrompt(q)
+	// Board.Keys owns the active option's brackets. Clear the surrounding
+	// chrome's dim attribute before highlighting, then restore it afterward.
+	before, selected, found := strings.Cut(prompt, "[")
+	if !found || pal.head == "" {
+		return prompt
+	}
+	active, after, found := strings.Cut(selected, "]")
+	if !found {
+		return prompt
+	}
+	return before + pal.off + pal.head + "[" + active + "]" + pal.off + pal.dim + after
 }
 
 // boardRefusal is the prompt row when the window cannot show the whole board.

@@ -3545,8 +3545,8 @@ var readmeBoardWords = []string{
 // not a fact anyone re-checks by eye.
 func TestTheRefusalRowIsNoWiderThanTheKeysRow(t *testing.T) {
 	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank"), 80, play.Palette{})
-	keys := boardPrompt(board, true)
-	refusal := boardPrompt(board, false)
+	keys := boardPrompt(board, true, palette{})
+	refusal := boardPrompt(board, false, palette{})
 	if refusal == keys {
 		t.Fatal("the two prompts are identical; this test asserts nothing")
 	}
@@ -3781,7 +3781,11 @@ func TestTheChromeBandIsDimmedTogether(t *testing.T) {
 						continue
 					}
 					seen = true
-					if got := strings.Contains(line, dim+text); got != tc.color {
+					styledText := text
+					if tc.board && row.what == "the action row" {
+						styledText = boardPrompt(qs[0], true, newPalette(tc.color))
+					}
+					if got := strings.Contains(line, dim+styledText); got != tc.color {
 						t.Errorf("%s dimmed = %v, want %v — the band must read as chrome in a "+
 							"sitting and carry no escape without a palette:\n\t%q",
 							row.what, got, tc.color, line)
@@ -4406,5 +4410,32 @@ func TestOneWordCostsOneFetchHoweverOftenItIsPlayed(t *testing.T) {
 	if _, ok := any(d.audio).(*audioSeam); !ok {
 		t.Errorf("deps.audio is %T; a field that can hold a bare AudioSource is a "+
 			"field some loop will hold one in", d.audio)
+	}
+}
+
+func TestBoardPromptHighlightsOnlyActiveMode(t *testing.T) {
+	b := play.NewBoard(boardCells("keel", "mesa"), 80, play.Palette{})
+	for _, active := range []string{"[yes]", "[no]", "[drop]"} {
+		p := newPalette(true)
+		plain := gradePrompt(b)
+		got := asChrome(boardPrompt(b, true, p), p)
+		before, after, found := strings.Cut(plain, active)
+		if !found {
+			t.Fatalf("mode prompt %q missing %q", plain, active)
+		}
+		want := p.dim + before + p.off + p.head + active + p.off + p.dim + after + p.off
+		if got != want {
+			t.Errorf("%s style: got %q, want %q", active, got, want)
+		}
+		if unstyled(got) != plain || displayRows(got, 40) != displayRows(plain, 40) {
+			t.Errorf("styling changed text or width: %q", got)
+		}
+		if got := boardPrompt(b, true, palette{}); got != plain {
+			t.Errorf("no-color prompt: %q", got)
+		}
+		if got := boardPrompt(b, false, p); got != boardRefusal {
+			t.Errorf("refusal changed: %q", got)
+		}
+		b.Toggle()
 	}
 }
