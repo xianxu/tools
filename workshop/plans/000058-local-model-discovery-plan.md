@@ -235,3 +235,9 @@ detail above called out explicitly. No blocking findings remain.
   commits avoid interdependent partial builds from parallel tasks. Closure is a
   following workflow action, not a self-referential unchecked deliverable.
   Live conformance passed on Claude; other providers remain fake-verified only.
+
+- 2026-09-13 (BR-1): All three absent-configuration/provider branches in the new
+  live discovery test now route through conformance.SkipOrFail. The existing
+  repository-wide skip guard reproduced the defect and passes after the fix;
+  strict/default behavior is checked with unavailable configuration. Added the
+  cross-package conformance guard to final verification, plus full-repo tests.

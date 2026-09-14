@@ -218,6 +218,12 @@ so these values remain provisional.
   by deterministic tests. Commits group the independently tested tasks together
   after integration rather than committing interdependent partial builds.
 
+- Close review round 1 returned REWORK for BR-1: three live-test skips bypassed
+  the shared conformance policy. Reproduced with TestEverySkipIsRoutedOrWaived;
+  routed every new skip through conformance.SkipOrFail. Conformance package tests
+  now pass; absent credentials skip by default and fail under strict mode.
+  Added the prevention rule to lessons. Merge-check release stamping also passed.
+
 ## Revisions
 
 - 2026-09-13: User requested Flash before Pro for Antigravity; reversed that

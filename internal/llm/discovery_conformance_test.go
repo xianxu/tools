@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/xianxu/tools/internal/conformance"
 	"github.com/xianxu/tools/internal/llm"
 )
 
@@ -15,15 +16,15 @@ import (
 func TestConformanceAutoSelection(t *testing.T) {
 	cfg, err := llm.Resolve(os.Getenv)
 	if err != nil {
-		t.Skipf("local model configuration unavailable: %v", err)
+		conformance.SkipOrFail(t, "local model configuration unavailable", err)
 	}
 	if !cfg.AutoModel {
-		t.Skip("automatic default-local discovery is not configured")
+		conformance.SkipOrFail(t, "automatic default-local discovery is not configured", nil)
 	}
 	c := llm.New(cfg)
 	resp, err := c.Complete(t.Context(), llm.Request{Prompt: "Reply with PONG."})
 	if errors.Is(err, llm.ErrUnavailable) {
-		t.Skipf("no available live provider: %v", err)
+		conformance.SkipOrFail(t, "no available live provider", err)
 	}
 	if err != nil {
 		t.Fatal(err)
