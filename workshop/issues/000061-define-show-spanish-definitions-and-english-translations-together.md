@@ -32,7 +32,7 @@ Use the same section renderer in one-shot/editor full lookups and full dictionar
 
 ## Plan
 
-- [ ] Complete and review the durable plan, including a native direction-selection probe.
+- [ ] Complete and review [the durable plan](../plans/000061-bilingual-definitions-plan.md), including a native direction-selection probe.
 - [ ] Implement dictionary sections, shared rendering, and consumer wiring with regression tests.
 - [ ] Verify, document, close review, and merge.
 
@@ -43,3 +43,5 @@ Use the same section renderer in one-shot/editor full lookups and full dictionar
 - Created and claimed at design start. User explicitly requires Spanish explanation first, then English.
 - ARCH-DRY: keep primary dictionary lookup authoritative for training; share full-definition composition between presentation consumers.
 - Live probe found DCSCopyTextDefinition(OxfordSpanish, "red") returns English red→Spanish rojo. Selecting the dictionary ID alone is insufficient; direction must be verified at the record level before implementation.
+
+- Native probe confirmed usable record search and copied XHTML/flat text. Root record IDs distinguish direction; title preference and deduplication are necessary. Read-only independent corpus: `/var/folders/07/b9wcwwld4_v2w9r3hk525bm80000gn/T/tools61-oxford-ch79mbjk`. Probe observed OxfordSpanish v1.1.
