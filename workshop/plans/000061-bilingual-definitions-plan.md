@@ -98,3 +98,44 @@ Files: main.go, play_loop.go, relevant main/editor/play/selection tests, README.
 ## Revisions
 
 - 2026-09-14: Fresh review corrected the original instruction “Pronounce the Spanish canonical headword once.” This would turn spoken madrugaste into madrugar and violate existing lookup-key audio identity. Preserve utteranceFor and RenderOpts.Word, using the canonical headword only for dictionary matching; add initial/replay inflection coverage. Corrected the navigation name buildQuestions to todaysQuestions. Otherwise review approved the plan.
+
+
+## Revision: /bilingual toggle (2026-09-14)
+
+**Reason:** The user requested a command to switch between selected-language-only definitions and selected-language definitions followed by English. This supersedes the unconditional two-section behavior above. Spanish remains the first bilingual source adapter; the setting is independent of the selected language.
+
+**Behavior:**
+
+- `/bilingual` toggles the current value and prints the resulting state. `/bilingual on` and `/bilingual off` set it explicitly; invalid arguments fail without mutation. `/help bilingual` is read-only.
+- On: render the selected language first, then English where a verified source adapter is available. Off: use the current primary-only display path, with no supplement lookups, section labels or missing-English warnings. `--raw` remains primary-only in either state.
+- Save the value per deck alongside the existing language preference; without an authorized writable deck, change the interactive session only and report that it was not saved, using the existing deck-permission policy. One-shot commands must report their actual durable effect and must not claim a session-only change when there is no session. A real persistence failure leaves the live value unchanged.
+- `/lang` reports both language and bilingual state. Switching `/lang` preserves the toggle while rebuilding language-derived sources. English mode does not repeat English as a second section. A language with no verified English adapter retains its primary definition and explains the unavailable supplement only when bilingual is on.
+- The changed setting applies to subsequent lookups and newly started practice sessions; it does not replay audio, recapture the previous lookup, or append an automatic duplicate definition.
+- New-deck default is awaiting the user's preference; if unanswered after a reasonable opportunity, use off to preserve current behavior. An explicit saved choice always wins.
+
+**Additional pure entities and integration:**
+
+| Name | Lives in | Status | Responsibility |
+|------|----------|--------|----------------|
+| parseBilingualArgs | cmd/define/bilingual_cmd.go | new | Toggle/on/off argument decision with no IO |
+| Bilingual setting read/write | cmd/define/store/bilingual.go | new | Per-deck boolean, absent/malformed default and atomic writes |
+| runBilingual / sessionSetBilingual | cmd/define/bilingual_cmd.go | new | Persistence-before-session-update, honest effect reporting |
+| command registry / commandCtx | cmd/define/command.go | modified | Shared dispatch, completion, help and setting callbacks |
+| deps / storeDeps / options propagation | cmd/define/main.go, command.go, replraw.go | modified | Startup state and session setting shared by lookup and practice |
+
+**Implementation additions to Task 2/3:**
+
+- [ ] Add table tests for no arguments, on, off, case policy, extra/invalid arguments, explicit idempotent sets, and help without mutation. Register `/bilingual [on|off]` through the existing command table; help and completion derive from it.
+- [ ] Persist `bilingual.txt` using the existing atomic writer. Read absence/malformed values with the agreed default, write bounded `on`/`off` content, and register the filename in RuntimeFiles and matching gitignore/runtime-artifact guards. The single file is overwritten per change and ends with deletion of the deck; no append-only log or migration is needed.
+- [ ] Thread the startup setting and persistence callback through every openStore/applyTo return path, including DEFINE_NO_CAPTURE and declined deck creation. Reuse the established permission gate, not a new approval mechanism. Audit raw editor and line-loop command contexts and one-shot dispatch; all must read the same effective setting.
+- [ ] Add a settings round-trip test across process startups plus invalid-file, failed-write, declined-deck, read-only/session-only, and one-shot effect tests. Preserve the existing language preference.
+- [ ] Gate supplemental resolution at the shared display-composition entry point. Test that off performs zero native supplemental searches and emits no English availability diagnostic, even with missing/broken Oxford installation; switching on enables them on the next lookup. Defer supplement availability diagnostics until this gate so startup in off mode stays primary-only.
+- [ ] Add es/on→en/on→es/on and on→off→on integration tests across ordinary lookup and nested practice startup. Assert no duplicate English section in English mode, no stale source after language switch, no extra capture/audio caused by toggling, and current options copied into a new sitting.
+- [ ] Update `/help`, command completion fixtures, README command table/usage block, setup example and atlas. Cover `/bilingual on`, Spanish-first order, `/bilingual off`, default and persistence semantics.
+
+**Additional review focus:** Settings lifetime is one value per deck/session, not per word or per language. Persistence succeeds before live mutation; deck-decline may intentionally produce session-only state. No new asynchronous work. Off must preserve legacy primary-only rendering, not render a one-section bilingual wrapper.
+
+
+## Revision: default on (2026-09-14)
+
+The user explicitly selected **on by default**. This supersedes the pending/default-off assumption in the preceding revision. Missing or malformed settings resolve to on; an explicit saved off remains off. Existing decks without a saved setting therefore gain bilingual display. Update default/read/startup tests and documentation accordingly.

@@ -47,3 +47,14 @@ Use the same section renderer in one-shot/editor full lookups and full dictionar
 - Native probe confirmed usable record search and copied XHTML/flat text. Root record IDs distinguish direction; title preference and deduplication are necessary. Read-only independent corpus: `/var/folders/07/b9wcwwld4_v2w9r3hk525bm80000gn/T/tools61-oxford-ch79mbjk`. Probe observed OxfordSpanish v1.1.
 
 - Fresh spec/plan review approved after correcting audio identity: keep existing lookup-key pronunciation and use canonical headwords only for supplemental matching. Added inflection playback/replay regression and lesson. Durable plan awaits user approval before change-code.
+
+
+## Revisions
+
+### 2026-09-14 — User-controlled bilingual display
+
+The user requests `/bilingual` to toggle the two behaviors: on means selected language first then English; off means selected language only. This supersedes unconditional bilingual display in the original Spec. The durable plan contains the command, persistence, startup/language-switch wiring and tests. Add explicit `/bilingual on|off`, save per deck like `/lang`, and report the new state. Off must perform no supplemental lookup and show no missing-English warning. New-deck default awaits the user preference; absent a reply, preserve current behavior with off. Plan remains awaiting approval.
+
+### 2026-09-14 — Default confirmed
+
+User chose **default on**. Missing or malformed settings resolve to on, including existing decks without this setting. Persisted off wins. This supersedes the previous fallback assumption.
