@@ -1,12 +1,13 @@
 ---
 id: 000059
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-14
 updated: 2026-09-14
 estimate_hours: 4.56
 started: 2026-09-14T01:07:15-07:00
+actual_hours: 2.20
 ---
 
 # define: mouse text selection and clipboard copy
@@ -131,6 +132,7 @@ clipboard (ARCH-MOCK/SECURE).
 ## Log
 
 ### 2026-09-14
+- 2026-09-14: closed — BR-1 reproduced with deterministic clipboard barriers then fixed across admitted/rejected keys, page/wheel, scoped/unscoped byte Ctrl-C and SIGINT; cancellation/selection race tests pass (1.853s), go test ./... passes (112.296s define), committed full package passes (111.666s), strict native/selection/PTY Ctrl-C checks all run with DEFINE_NO_CAPTURE=1 (15.295s), vet/Linux vet and prior Linux build/fuzz pass; atlas/docs updated.; review verdict: SHIP
 
 Created and claimed #59; ran start-plan. Read mouse mode/decoder/consumer seams.
 Existing KeyClick acts on press in both editor and practice, including stored review
@@ -244,3 +246,11 @@ scoped SIGINT could leave a drag alive. Cancellation now precedes admission and
 foreground interrupt callbacks across the complete ingress set. Observer lifetime
 belongs to the console and is detached on Stop. New tests failed before the fix;
 focused race verification passed. Re-running verification before a second close.
+
+
+2026-09-14: Boundary re-review returned SHIP, disposed BR-1, and raised no new
+findings. Reviewer independently passed the full package (112.492s), focused
+race checks and both cancellation mutations. The reviewer sandbox could not create
+an isolated native pasteboard (-4960); our unrestricted strict native/PTY run
+passed all selected checks (15.295s), including Ctrl-C session survival with
+DEFINE_NO_CAPTURE=1. SDLC adopted measured actual 2.20h. Publishing via PR.

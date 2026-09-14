@@ -76,3 +76,68 @@ findings:
     detail: |
       cmd/define/selection_input.go:177-182 drops keys before router cancellation; after saturation is established, typing or scrolling during a fresh drag leaves it active and release can copy. Scoped SIGINT likewise reaches interrupts.Fire at cmd/define/interrupt.go:85 without selection invalidation, allowing release before the cancelled operation redraws. Apply cancellation at observation across all ingress paths and add deterministic zero-copy regression tests (ARCH-ORDER, ARCH-PURPOSE).
 ```
+
+---
+
+## Re-review — 2026-09-14T07:02:16-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 59 — define: mouse text selection and clipboard copy |
+| repo | tools |
+| issue file | workshop/issues/000059-mouse-selection-copy.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | eec60c0c0d20cb45c55f656d7c3665e44f7e9973..fa48ac815c043704262621f51e6de8e3632d30eb |
+| command | sdlc close --issue 59 |
+| reviewer | codex |
+| timestamp | 2026-09-14T07:02:16-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: medium
+```
+
+The pinned implementation matches the selection/copy contract, and BR-1 is addressed with regression tests that fail when either fix is removed. No new blocking findings. Native clipboard verification remains limited by this environment’s inability to create an isolated pasteboard.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      selection_input.go:185-193 cancels rejected input before dropping it; interrupt.go:52-60 invokes selection observation before foreground cancellation. Independently removing each fix through temporary Go overlays caused its selection_cancel_test.go regression to fail with an unwanted clipboard write.
+```
+
+1. **Strengths**
+   - Shared painter geometry drives selection and immutable click targets.
+   - Editor, practice, and nested-screen tests check actual clipboard and grading effects.
+   - Clipboard execution has FIFO ordering, bounded admission, cancellation, and child cleanup.
+   - Help, the define README, atlas, and plan revisions document the delivered behavior.
+
+2. **Critical findings:** None.
+
+3. **Important findings:** None.
+
+4. **Minor findings:** None.
+
+5. **Test coverage**
+   - Full `cmd/define` suite passed: 112.492s.
+   - Focused race checks passed: 5.750s.
+   - Both BR-1 mutation checks failed as expected.
+   - Pinned diff whitespace check passed.
+   - Strict native and copy-through-PTY tests failed during isolated pasteboard creation (`-4960`), before exercising copying. Native behavior was therefore not independently confirmed here.
+
+6. **Architecture**
+   - **ARCH-DRY — pass:** shared layout, gesture policy, and target validation.
+   - **ARCH-PURE — pass:** gesture and extraction logic remain directly testable without IO.
+   - **ARCH-PURPOSE — pass:** all three interactive entry paths share selection ownership.
+   - **ARCH-MOCK — pass:** stateful clipboard/process doubles and isolated conformance seams; execution limitation noted above.
+   - **ARCH-CONSTRAINTS — pass:** explicit frame, payload, queue, and subprocess bounds.
+   - **ARCH-SECURE — pass:** validated helper input, literal stdin transport, isolated test targets.
+   - **ARCH-ORDER — pass:** cancellation precedes delivery; ownership generations reject stale effects.
+   - **ARCH-FUNERAL — pass:** console cleanup detaches observers, joins the worker, and releases retained state.
+
+7. **Plan revision recommendations:** None.

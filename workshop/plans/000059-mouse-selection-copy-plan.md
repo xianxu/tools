@@ -388,3 +388,7 @@ before change-code.
   Deterministic clipboard barriers prove zero selection writes after cancellation,
   without relying on a later foreground repaint. Both original bypasses failed
   the new tests before the fix. This completes the existing cancellation contract.
+
+- 2026-09-14: Close review returned SHIP after independently rejecting both
+  BR-1 mutations; no remaining findings. Product code and verification complete,
+  with publication following through the deterministic SDLC PR/merge gates.
