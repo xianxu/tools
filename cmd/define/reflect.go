@@ -368,7 +368,7 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 		return unavailableToReflect(errOut)
 	}
 	client := d.newLLM(cfg)
-	model, err := llm.Run(ctx, client, llm.Task[learnerModel]{
+	model, err := llm.Run(ctx, foregroundClient(client, out, opt), llm.Task[learnerModel]{
 		Name:   reflectTaskName,
 		System: reflectSystem,
 		Prompt: renderReflectPrompt(ev).Prompt,

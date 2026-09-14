@@ -175,6 +175,11 @@ To check additional help for commands, type `/help [command]`.
 **Type a question and it is answered instead of looked up.** There is no mode and
 no prefix to remember:
 
+While waiting for a model response, a Braille spinner appears without a label.
+It clears when answer text starts arriving, or when a non-streamed call returns.
+The same indicator covers questions, reflection, harvest and `--llm-check`.
+Piped output, `--no-color` and `--raw` suppress it.
+
 ```
 › sycophantic                            # a word: the dictionary entry
 › what's the difference to obsequious?   # a question: answered by the model

@@ -95,9 +95,8 @@ a speculative cross-binary library (AGENTS.local.md, ARCH-DRY).
   the glyph. Thus RenderLine's erase/cursor controls remain on the editor row.
   Existing displayRows remains a single-line helper: do not feed it CRLF content.
   The same painter owns geometry for RegionAtRow/FooterRowAt, including pinned
-  screens. Recompute on resize. Test exact two-row allocation for a short prompt
-  plus glyph, footer hits and cursor restoration; include one-column and wrapped
-  prompt cases and suppression when the prompt consumes the entire screen.
+  screens. Recompute on resize. Test activityRow and screen.paintActivity with generated dimensions and prompt
+  widths against independent row-allocation, cursor and hit-test oracles.
 - Suspend invalidates/clears the current lease before yielding terminal ownership;
   resume must not resurrect it. Stop invalidates the lease and stops any pending
   activity paint. A stale timer cannot repaint after screen stop or suspension.
@@ -149,7 +148,7 @@ timer and worker end with the activity; no animation remains in scrollback.
 ### Task 2 — Terminal and screen hosts
 
 **Files:** create `cmd/define/activity_terminal.go`, `activity_screen.go`,
-`activity_host_test.go`; modify `cmd/define/screen.go`, `screen_test.go`.
+`activity_terminal_test.go`, `activity_screen_test.go`; modify `cmd/define/screen.go`.
 
 - [ ] Test host begin/set/clear and activityRow with a stateful terminal
   oracle: adversarial writes, resize, suspension and replacement must preserve
@@ -225,10 +224,9 @@ redesign, and claiming that a spinner makes the model faster.
 
 ## Approval
 
-User corrected the presentation to pattern only, no Thinking label, stopping
-when the response arrives. That correction is incorporated. Fresh-context plan review approved. Awaiting user
-approval before `sdlc change-code`; estimate follows plan-quality
-acceptance rather than being assigned before the design gate.
+User approved implementation on 2026-09-14 after correcting presentation to
+pattern only, no Thinking label. The plan and estimate gates passed; work is on
+branch 000036-ask-progress.
 
 
 ## Revisions
@@ -247,3 +245,12 @@ acceptance rather than being assigned before the design gate.
 
 - 2026-09-13: Final bounded fresh-context review approved the revised plan with
   no remaining blockers. Implementation awaits user plan approval.
+
+- 2026-09-14: Implementation approved; change-code passed both gates. Components
+  built in parallel against a shared lease API and will commit as one integrated
+  change so all entity declarations and consumer wiring are present together.
+  PQ-1 addressed by compressing placement tests to function-level oracle strategy.
+  Tests discovered redundant RenderLine leading CR counted as a display cell;
+  shared painter removes that redundant control before measuring. Exact-width
+  regression covers Paint with and without activity. Shared writer records short
+  writes as io.ErrShortWrite for both hosts; no transport errors are altered.

@@ -2169,6 +2169,7 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `news_conformance_test.go` | the live RSS feed still parses, and its terms still say personal use |
 | `reflect_conformance_test.go` | the live model still answers in the shape the parser expects |
 | `live_property_test.go` | the no-data-loss predicate holds over the WHOLE dictionary, not a sample |
+| `activity_conformance_test.go` | real terminal Braille animation and cleanup at first answer text or cancellation, with held fake model responses |
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 | `harvest_conformance_test.go` | the live model's agreement across rounds stays above the floor the cache's premise needs |
 | `version_conformance_test.go` | `-ldflags -X main.version` still reaches the binary — the one row the merge gate runs, since its failure is silent |
@@ -3225,3 +3226,23 @@ moving on. **Revealing is idempotent**, so a second reveal does not play the
 pronunciation twice. **An empty queue is immediately done** — the message names
 its cause, and "nothing due today" is reserved for the schedule genuinely having
 nothing.
+
+
+## Foreground activity (#36)
+
+`activity.go` owns the glyph-only Braille cycle, ticker and cancellable display
+lease. `activity_terminal.go` owns a transient empty line; `activity_screen.go`
+owns a separate live-screen row. The shared painter budgets the original prompt,
+then activity, footer, gap and scrollable buffer. Activity never enters the
+transcript. Replacement, suspension, cancellation and stop invalidate the lease.
+`activityClient` in `llm_activity.go` decorates foreground calls from ask, reflect,
+harvest (including agreement) and diagnostics. It starts before lazy discovery,
+clears before the first nonempty stream delta, and clears on Complete return.
+Original clients remain the source of selected-model provenance. Terminal
+eligibility is `opt.tty && !opt.raw`; disabled paths start no ticker or worker.
+Dictionary and cached work make no client calls and show no spinner. Background
+work (#54) retains undecorated clients and owns its UI lifecycle separately.
+
+Lifecycle tests inject ticks and terminal failures; screen tests replay frames
+through the terminal oracle; consumer tests hold the fake wire response. The PTY
+conformance check verifies actual animation and a usable prompt after cleanup.

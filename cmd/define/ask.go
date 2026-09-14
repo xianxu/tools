@@ -175,6 +175,7 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	// removed: the screen owns line placement now, and two owners of line endings
 	// is how they drift. `#41` did the same for `--play`, which retired that
 	// writer from this binary entirely.
+	client := foregroundClient(d.newLLM(cfg), out, opt)
 	aw := newAnswerWrapWriter(out, opt.width)
 	hw := newHighlightWriter(aw, vocabularyFor(d, opt), knownOn)
 	defer func() {
@@ -199,7 +200,7 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 
 	req := renderAskPrompt(gatherAskContext(d, sess, q, errOut))
 	answer := &strings.Builder{}
-	_, err = d.newLLM(cfg).Stream(ctx, req, func(delta string) {
+	_, err = client.Stream(ctx, req, func(delta string) {
 		answer.WriteString(delta)
 		fmt.Fprint(out, delta)
 	})

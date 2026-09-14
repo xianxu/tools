@@ -484,6 +484,10 @@ func grantedGap(want, termRows, promptRows, footerRows int) int {
 // termRows and termCols are passed in rather than stored, so a resize is one
 // call site's business (the loop's SIGWINCH case) and not fields that go stale.
 func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, footer []string) {
+	s.paintActivity(w, termRows, termCols, prompt, footer, "")
+}
+
+func (s *screen) paintActivity(w io.Writer, termRows, termCols int, prompt string, footer []string, glyph string) {
 	var footerRows int
 	s.cols = termCols
 	// ONE row accounting, used twice: it budgets the buffer's share of the frame
@@ -505,13 +509,24 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, foote
 	// whole rows next — a dropdown in the editor, a status bar in --play, and in
 	// both cases the thing a reader can lose for a moment without being stuck. The buffer is scrollable, so it
 	// takes what is left.
+	// Paint positions the prompt at column zero; RenderLine's leading CR is
+	// redundant here and must not be charged as a printable cell.
+	prompt = strings.TrimPrefix(prompt, "\r")
 	prompt = clipVisible(prompt, termRows*max(s.cols, 1))
 	promptRows := displayRows(prompt, s.cols)
-	footer, footerRows = fitFooter(footer, termRows-promptRows, s.cols)
+	glyph = activityRow(prompt, glyph, termRows, termCols)
+	activityRows := 0
+	if glyph != "" {
+		activityRows = 1
+		if prompt == "" {
+			promptRows = 0
+		}
+	}
+	footer, footerRows = fitFooter(footer, termRows-promptRows-activityRows, s.cols)
 	// The footer keeps its full budget: it is worth more than the gap, so it is
 	// sized first and the gap takes only from what is left over.
-	gap := grantedGap(s.gap, termRows, promptRows, footerRows)
-	s.rows = termRows - promptRows - footerRows - gap
+	gap := grantedGap(s.gap, termRows, promptRows+activityRows, footerRows)
+	s.rows = termRows - promptRows - activityRows - footerRows - gap
 	if s.rows < 0 {
 		s.rows = 0
 	}
@@ -550,12 +565,18 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, foote
 	// COUNTED in the footer's origin, or every footer click lands one row out —
 	// and on a board the footer entries ARE the grid, so a click mapped one row
 	// high marks the wrong word, permanently.
-	s.footer, s.footerTop = footer, bufRows+gap+promptRows
+	s.footer, s.footerTop = footer, bufRows+gap+activityRows+promptRows
+	if glyph != "" {
+		b.WriteString(glyph)
+		if promptRows > 0 {
+			b.WriteString("\r\n")
+		}
+	}
 	b.WriteString(prompt)
 	for _, m := range footer {
 		b.WriteString("\r\n" + m)
 	}
-	if len(footer) > 0 {
+	if len(footer) > 0 && promptRows > 0 {
 		// Back to the prompt's FIRST row, in the rows the terminal actually
 		// moved: the menu's own height, plus the prompt's beyond its first row.
 		// Counting footer ENTRIES leaves the cursor low when a row wraps; omitting
@@ -593,10 +614,13 @@ type liveScreen struct {
 	// rows and cols are the terminal's SHAPE. Owned here rather than in `screen`
 	// because they are facts about the terminal, not about the text — and
 	// M1.4's SIGWINCH has exactly one place to update.
-	rows   int
-	cols   int
-	prompt string
-	footer []string
+	rows          int
+	cols          int
+	prompt        string
+	footer        []string
+	activity      *activityLease
+	activityGlyph string
+	paintErr      error
 	// stopped is set when the terminal has been handed back. Writes still reach
 	// the buffer — the exit transcript needs them — but painting must stop dead,
 	// or a farewell newline written after restore would draw a frame onto the
@@ -844,7 +868,9 @@ func (l *liveScreen) Size() (rows, cols int) {
 func (l *liveScreen) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.pending {
+	hadActivity := l.activity != nil
+	l.revokeActivity()
+	if l.pending || hadActivity {
 		l.repaint() // the last thing shown must not be what the throttle held
 	}
 	if l.timer != nil {
@@ -881,6 +907,10 @@ func (l *liveScreen) suspend() {
 	defer l.mu.Unlock()
 	if l.suspended {
 		return
+	}
+	if l.activity != nil {
+		l.revokeActivity()
+		l.repaint()
 	}
 	l.suspended = true
 	if l.timer != nil {
@@ -922,7 +952,14 @@ func (l *liveScreen) repaint() {
 	if l.stopped || l.suspended || l.tty == nil {
 		return
 	}
-	l.s.Paint(l.tty, l.rows, l.cols, l.prompt, l.footer)
+	w := &activityPaintWriter{writer: l.tty}
+	l.s.paintActivity(w, l.rows, l.cols, l.prompt, l.footer, l.activityGlyph)
+	if l.paintErr == nil {
+		l.paintErr = w.err
+	}
+	if w.err != nil {
+		l.revokeActivity()
+	}
 	l.painted, l.pending = time.Now(), false
 }
 

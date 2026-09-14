@@ -773,7 +773,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		return runVersion(stdout)
 	}
 	if *llmCheck {
-		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
+		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr, opt)
 	}
 
 	// The flag rides on the LINE, beside `literal`, because that is what it is:

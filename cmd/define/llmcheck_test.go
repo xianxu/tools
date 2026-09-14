@@ -39,7 +39,7 @@ func TestLLMCheckReportsAHealthyConfiguration(t *testing.T) {
 	var out, errOut bytes.Buffer
 	code := runLLMCheck(t.Context(),
 		envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}),
-		fakeClient(t, f), &out, &errOut)
+		fakeClient(t, f), &out, &errOut, options{})
 
 	if code != 0 {
 		t.Fatalf("exit %d, stderr: %s", code, errOut.String())
@@ -69,7 +69,7 @@ func TestLLMCheckNeverPrintsTheKey(t *testing.T) {
 	var out, errOut bytes.Buffer
 	f := llmtest.NewFake(t)
 	f.Script("PONG", llmtest.Reply{Text: "PONG"})
-	runLLMCheck(t.Context(), envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}), fakeClient(t, f), &out, &errOut)
+	runLLMCheck(t.Context(), envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}), fakeClient(t, f), &out, &errOut, options{})
 
 	both := out.String() + errOut.String()
 	if strings.Contains(both, testKey) || strings.Contains(both, "SUPERSECRET") {
@@ -117,7 +117,7 @@ func TestLLMCheckIsNonZeroAndSpecificWhenUnavailable(t *testing.T) {
 				}
 				cfg.Timeout = 5 * time.Second
 				return llm.New(cfg)
-			}, &out, &errOut)
+			}, &out, &errOut, options{})
 			if code == 0 {
 				t.Errorf("exit 0 for an unusable configuration; stdout:\n%s", out.String())
 			}
@@ -187,7 +187,7 @@ func TestLLMCheckHonoursCancellation(t *testing.T) {
 				cfg.BaseURL = "http://" + ln.Addr().String()
 				cfg.Timeout = 5 * time.Minute // deliberately long: cancellation must win
 				return llm.New(cfg)
-			}, &out, &errOut)
+			}, &out, &errOut, options{})
 	}()
 
 	// Bounded HERE rather than by the package timeout. With the fix reverted the
@@ -242,7 +242,7 @@ func TestLLMCheckReportsADeadline(t *testing.T) {
 		func(cfg llm.Config) llm.Client {
 			cfg.Transport = roundTripBlocker{}
 			return llm.New(cfg)
-		}, &out, &errOut)
+		}, &out, &errOut, options{})
 
 	if code == 0 {
 		t.Error("exit 0 on a deadline")

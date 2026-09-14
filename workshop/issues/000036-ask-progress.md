@@ -259,3 +259,25 @@ total: 2.57
 - Sole close boundary: allow two review rounds at 0.35 × 0.4 each.
 - Thorough-plan buffer adds 15% to design subtotal 0.67; implementation totals
   1.80, familiarity 1.0. Total 2.5705 rounded to 2.57 hours.
+
+
+### 2026-09-14 implementation progress
+
+User approved implementation. Plan-quality passed with advisory PQ-1 (compressed
+in the durable plan); estimate-quality passed with informational scope notes.
+Verification time is included in each implementation primitive; PTY uses the
+existing harness. The docs allowance groups the two atlas files as one map update
+plus README. Consumer wiring's 0.7 unscaled hours intentionally exceeds the usual
+0.5 maximum to cover five call routes and provenance. Residual design covers exact
+interfaces and terminal edge behavior; full-width RenderLine and short-write tests
+found concrete cases during implementation. These are estimate clarifications,
+not a retroactive change to the 2.57-hour estimate.
+
+Common runner/plain/screen hosts and all foreground consumers implemented.
+Test-first failures observed for missing activity API and missing consumer output;
+controlled wire barriers preserve captures. Focused component race and frame fuzz
+passed; strict real-PTY response/cancel checks passed three runs and a no-spinner
+build overlay failed as expected. Broad suite and final committed checks pending.
+ARCH-ORDER: stop joins animation and clears before forwarding response text.
+ARCH-DRY: shared short-write recorder and painter keep display/error accounting in
+one place; the original clients retain selected-model metadata.

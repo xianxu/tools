@@ -21,7 +21,7 @@ func TestLLMCheckReportsDiscoveredProviderAndModel(t *testing.T) {
 			f.SetCatalog([]llm.ModelInfo{{ID: "gemini-3-flash", OwnedBy: "antigravity"}, {ID: "gemini-3.1-pro-high", OwnedBy: "antigravity"}})
 			f.Script("PONG", llmtest.Reply{Text: "PONG", Status: status})
 			var out, errs bytes.Buffer
-			code := runLLMCheck(t.Context(), envOf(nil), discoveredClient(f), &out, &errs)
+			code := runLLMCheck(t.Context(), envOf(nil), discoveredClient(f), &out, &errs, options{})
 			if (code == 0) != (status == 0) {
 				t.Fatalf("code %d errors %s", code, errs.String())
 			}
@@ -41,7 +41,7 @@ func TestReflectRecordsDiscoveredModel(t *testing.T) {
 	f.Script("", llmtest.Reply{Text: reflectReply})
 	d.newLLM = discoveredClient(f)
 	var out, errs bytes.Buffer
-	if code := runReflect(t.Context(), d, options{}, &out, &errs); code != 0 {
+	if code := runReflect(t.Context(), d, options{tty: true}, &out, &errs); code != 0 {
 		t.Fatalf("code %d: %s", code, errs.String())
 	}
 	got, err := st.UserModel()
