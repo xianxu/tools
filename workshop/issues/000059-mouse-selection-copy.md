@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-14
 updated: 2026-09-14
-estimate_hours:
+estimate_hours: 4.56
 started: 2026-09-14T01:07:15-07:00
 ---
 
@@ -176,3 +176,37 @@ proposed default is copy on release.
   `go test ./cmd/define -run 'TestPlan|TestNoArtifact|TestARemoved' -count=1`
   passed (1.252s), and git diff --check passed. Awaiting durable-plan approval;
   implementation has not started.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec design=1.0 impl=0.08
+item: greenfield-go-module design=0.2 impl=0.32
+item: tui-screen design=0.3 impl=0.8
+item: api-integration design=0.3 impl=0.6
+item: cross-cutting-refactor design=0.12 impl=0.2
+item: atlas-docs design=0.04 impl=0.08
+item: milestone-review design=0.02 impl=0.2
+design-buffer: 0.15
+total: 4.56
+```
+
+Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only; calibration is marked stale by estimate-source.
+Issue/spec authoring counts the already completed design at the v2 midpoint,
+without discount. The remaining approved-plan design uses ×0.2: core 1.0,
+two TUI concerns (painter and routing) 1.5 combined, clipboard API 1.5,
+consumer refactor 0.6, docs 0.2, review 0.1. Implementation uses v3.1 ×0.4:
+authoring 0.2, core 0.8, two TUI concerns 2.0, native API 1.0 with bounded-novel
+familiarity ×1.5, refactor 0.5, docs 0.2, review 0.5. Other work is familiar ×1.
+Library check: existing painter/decoder/sgrState and standard os/exec supply the
+reusable pieces; a small Pasteboard transaction preserves explicit literal bytes
+and isolated named-board tests, so no additional library discount is claimed.
+Design 1.98 ×1.15 + implementation 2.28 = 4.557, rounded to 4.56 hours.
+
+## Revisions (implementation entry)
+
+- 2026-09-14: User approved the durable plan. Plan-quality accepted PQ-1's
+  independent child deadline refinement; derived estimate after acceptance.
