@@ -40,7 +40,8 @@ transport work.
 
 ## Spec
 
-Not designed. What follows is what a design has to answer.
+The original questions below are retained as design history. The proposed
+2026-09-13 design following them is the current specification.
 
 ### The indicator is EPHEMERAL, and this repo already has that doctrine
 
@@ -80,6 +81,76 @@ and a spinner is the same shape. Reuse the decision; do not re-litigate it.
    this the ask path only? One mechanism with several consumers is this repo's
    preference (`#30` is filed that way).
 
+### Proposed design — 2026-09-13
+
+Use a common UI activity component in `cmd/define/activity.go`, with a pure
+Braille frame selector and a small lifecycle runner. It is reusable for any
+waiting operation through a label and display host, not coupled to an LLM SDK
+or one command. All consumers currently belong to define, so no speculative
+cross-binary package is introduced (AGENTS.local.md; ARCH-DRY).
+
+The standard cycle is `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, advancing every 80 ms. Show the first
+frame immediately with `Thinking…`. Start only at an actual model call, before
+local model discovery. Complete calls remain active until return; Stream calls
+stop before forwarding the first nonempty answer-text delta. Empty deltas and
+thinking/tool events do not finish the wait. Error, timeout, cancellation, and
+an empty response all clear the spinner. A stopped activity cannot repaint.
+Whether streaming should instead retain the spinner to completion is an optional
+user preference currently pending; first answer text is the recommended default.
+
+A display host owns placement and terminal writes. In the raw REPL use a live
+screen overlay outside the transcript; ticks repaint through the existing screen
+lock/throttle and preserve prompt, footer, scroll position and partial output.
+In a one-shot terminal use one transient line and synchronously clear it before
+answer/error output. Serialize the animation's paints and teardown through that
+host. Use the existing opt.tty capability decision: no animation or escape bytes
+in pipes, redirected output, or other non-erasable output. No spinner on ordinary
+dictionary lookups or fully cached/no-work operations.
+
+Reuse the same component through a define-local LLM client decorator for ask,
+reflect, harvest (including agreement mode), and --llm-check. The decorator starts
+an activity around each Complete/Stream and joins its ticker worker before
+returning or forwarding first text. Keep the original client available for
+llm.SelectionOf in diagnostics/reflection: a wrapper must not regress #58's
+selected-model provenance. No model, retry, timeout, or error taxonomy changes.
+The transport's OnSlow remains a diagnostic callback rather than an animation
+clock: it starts after discovery, delays ten seconds by default, and its phase
+names do not identify the first user-visible text token.
+
+The current play/review implementation makes no LLM calls, so there is no
+invented spinner there. The component's display-host API also supports its screen
+when future model-backed work is introduced. Issue #54 plans background harvest
+and reflection: it must reuse the component in an appropriate status area and
+preserve the foreground prompt. This issue owns shared activity display and
+existing synchronous model-call adapters, not #54's background job lifecycle.
+Sequence this issue before #54's activity integration and preserve the selected
+model metadata added in #58.
+
+One alternative is using OnSlow as the animation clock; it misses discovery and
+couples UI cadence to transport diagnostics. Another is separate command-specific
+spinners; it duplicates cleanup/output ownership. The reusable activity component
+with screen and plain-terminal hosts satisfies all current call sites with one
+lifecycle (ARCH-PURE/DRY/PURPOSE).
+
+Tests name the risky functions and properties: activityFrame has periodicity
+and Unicode display-width oracles; activity lifecycle uses injected ticks and
+barriers to prove stop-before-output, cancellation, idempotent cleanup and no
+post-stop writes; display hosts use a stateful terminal model to assert cursor,
+transcript and footer preservation under resize and output failure. LLM adapters
+use the existing stateful llmtest fake to hold discovery/response frames, then
+release them and verify every real consumer. Run race tests and a focused PTY
+conformance check with all unavailable dependencies routed through the existing
+conformance.SkipOrFail policy (ARCH-MOCK/SECURE).
+
+ARCH-CONSTRAINTS: at most 12.5 repaint requests/sec per visible activity, within
+the screen's existing throttle; one bounded ticker worker per operation, joined
+on stop; no extra network calls or durable state. ARCH-ORDER: idle -> waiting ->
+stopped; first text/return/cancel/write-failure all stop, later ticks are ignored,
+and concurrent activities on a host must have distinct ownership so a stale stop
+cannot clear a newer activity. Host replacement/overlap policy must be made
+explicit in the implementation plan. ARCH-FUNERAL: stopping releases timer,
+worker and overlay; no spinner frames remain in history or disk.
+
 ## Done when
 
 - [ ] A question shows movement within a second of being asked, so "thinking" is
@@ -108,3 +179,13 @@ been felt in a while. Once it worked, the wait was the first thing noticed.
 
 Measured: `OnSlow` has no non-test consumer, and `Progress.Phase` already
 distinguishes waiting from streaming — so the transport half of this exists.
+
+
+## Revisions
+
+- 2026-09-13: User requests a reusable Braille spinner across LLM waiting states.
+  Claimed #36 and ran start-plan. Expanded the original ask-only sketch to all
+  current actual LLM consumers. Confirmed current play/review makes no model calls.
+  Corrected prior assumptions: defaultIndicator keeps playback records in pipes;
+  spinner suppression should reuse terminal capability, not playback record text.
+  OnSlow does not cover discovery or first visible text. No implementation yet.
