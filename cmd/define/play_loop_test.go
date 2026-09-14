@@ -972,13 +972,14 @@ func TestPlayClickOnThePromptWordPlaysIt(t *testing.T) {
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, 80)
+	pointer := newPointerRouter(live, nil)
 	live.interval = -1
 	var errb bytes.Buffer
 	keys := make(chan Key)
 	done := make(chan int, 1)
 	go func() {
 		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
-			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+			console{view: live, pointer: pointer, finish: func() {}, stdout: live, stderr: &errb})
 	}()
 
 	waitFor(t, func() bool { return strings.Contains(live.Transcript(), qs[0].Word()) })
@@ -994,7 +995,7 @@ func TestPlayClickOnThePromptWordPlaysIt(t *testing.T) {
 		t.Fatalf("the prompt word is not on a line of its own:\n%s", live.Transcript())
 	}
 
-	keys <- Key{Kind: KeyClick, Row: row, Col: 0}
+	keys <- completedPointerClick(t, pointer, row, 0)
 	waitFor(t, func() bool { return player.count() > 0 })
 	keys <- Key{Kind: KeyInterrupt}
 	<-done
@@ -1033,6 +1034,7 @@ func TestPlayClickActsAndIsNotAnAnswer(t *testing.T) {
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 200, opt.width)
+	pointer := newPointerRouter(live, nil)
 	live.interval = -1
 	var errb bytes.Buffer
 
@@ -1045,12 +1047,16 @@ func TestPlayClickActsAndIsNotAnAnswer(t *testing.T) {
 	// as the sitting's first write, so line 0 is the leading blank.
 	keys := make(chan Key, 3)
 	keys <- Key{Kind: KeyRune, Rune: []rune(gradeKey(t, qs[0], play.Wrong))[0]}
-	keys <- Key{Kind: KeyClick, Row: 1, Col: 0}
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: live, pointer: pointer, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+	waitFor(t, func() bool { return strings.Contains(livePromptOf(live), "any key = next word") })
+	keys <- completedPointerClick(t, pointer, 1, 0)
 	keys <- Key{Kind: KeyInterrupt}
 	close(keys)
-
-	playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
-		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	<-done
 
 	// The premise: the click landed on something. Without this the assertions
 	// below pass for a sitting where the region was never written.
@@ -2179,7 +2185,8 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 		{"no form at all", nil, 7, 0, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := formCell(view, tc.q, Key{Kind: KeyClick, Row: tc.row, Col: tc.col})
+			entry, offset, offered := view.FooterRowAt(tc.row)
+			got, ok := formCell(tc.q, pointerClick{point: selectionPoint{tc.row, tc.col}, footer: offered, footerEntry: entry, footerOffset: offset})
 			if ok != tc.wantOK || (ok && got != tc.want) {
 				t.Errorf("formCell = (%d, %v), want (%d, %v)", got, ok, tc.want, tc.wantOK)
 			}
@@ -2223,16 +2230,21 @@ func TestAClickOnABoardMarksIt(t *testing.T) {
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, termRows, opt.width)
+	pointer := newPointerRouter(live, nil)
 	live.interval = -1
 	var errb bytes.Buffer
 
 	keys := make(chan Key, 2)
-	keys <- Key{Kind: KeyClick, Row: gridRow, Col: col}
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+			console{view: live, pointer: pointer, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+	waitFor(t, func() bool { _, _, ok := live.FooterRowAt(gridRow); return ok })
+	keys <- completedPointerClick(t, pointer, gridRow, col)
 	keys <- Key{Kind: KeyInterrupt}
 	close(keys)
-
-	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
-		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	<-done
 
 	// THE PREMISE, checked against the PAINT rather than assumed: the grid really
 	// was drawn on the row that was clicked, and the click's column really was
@@ -3215,6 +3227,7 @@ func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, 80)
+	pointer := newPointerRouter(live, nil)
 	live.interval = -1
 	var errb bytes.Buffer
 
@@ -3298,12 +3311,12 @@ func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
 		}) {
 			return
 		}
-		keys <- Key{Kind: KeyClick, Row: row, Col: col + len("[1] ")}
+		keys <- completedPointerClick(t, pointer, row, col+len("[1] "))
 		keys <- Key{Kind: KeyInterrupt}
 	}()
 
 	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
-		console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
+		console{view: live, pointer: pointer, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
 
 	// THE PREMISE FIRST: the click landed at all. Without this the assertion
 	// below is a loop over nothing, which is what shipped and passed.
@@ -4074,6 +4087,7 @@ func TestDroppingAWordOnABoardRemovesItFromTheDeck(t *testing.T) {
 	// Set per subtest from the board's own layout, so a click lands where the
 	// form drew the word rather than where the test guessed.
 	var boardGridRow, boardCellCol int
+	var pointer *pointerRouter
 	for _, tc := range []struct {
 		name string
 		mark func(keys chan Key)
@@ -4089,7 +4103,7 @@ func TestDroppingAWordOnABoardRemovesItFromTheDeck(t *testing.T) {
 			// Prompt DREW rather than computed. Pinned, the footer sits at the
 			// bottom edge: the board's three rows plus the bar means the grid is
 			// at viewport row termRows-4.
-			keys <- Key{Kind: KeyClick, Row: boardGridRow, Col: boardCellCol}
+			keys <- completedPointerClick(t, pointer, boardGridRow, boardCellCol)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -4104,18 +4118,23 @@ func TestDroppingAWordOnABoardRemovesItFromTheDeck(t *testing.T) {
 
 			tty := &syncBuf{}
 			live := newPinnedScreen(tty, termRows, opt.width)
+			pointer = newPointerRouter(live, nil)
 			live.interval = -1
 			var errb bytes.Buffer
 
 			keys := make(chan Key, 5)
 			keys <- Key{Kind: KeyTab} // yes -> no
 			keys <- Key{Kind: KeyTab} // no -> drop
+			done := make(chan int, 1)
+			go func() {
+				done <- playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+					console{view: live, pointer: pointer, finish: func() {}, stdout: live, stderr: &errb})
+			}()
+			waitFor(t, func() bool { return strings.Contains(livePromptOf(live), "[drop]") })
 			tc.mark(keys)
 			keys <- Key{Kind: KeyInterrupt}
 			close(keys)
-
-			playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
-				console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+			<-done
 
 			deck, err := st.Deck()
 			if err != nil {
@@ -4165,6 +4184,7 @@ func TestADropOnABoardIsReportedOnce(t *testing.T) {
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, opt.width)
+	pointer := newPointerRouter(live, nil)
 	live.interval = -1
 	var errb bytes.Buffer
 
@@ -4175,12 +4195,18 @@ func TestADropOnABoardIsReportedOnce(t *testing.T) {
 	// Two more keystrokes AFTER the drop: a Tab and a refused click. Either one
 	// re-firing the removal is what a sticky `Dropped()` looks like.
 	keys <- Key{Kind: KeyTab}
-	keys <- Key{Kind: KeyClick, Row: 0, Col: 0}
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+			console{view: live, pointer: pointer, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+	waitFor(t, func() bool {
+		return strings.Contains(live.Transcript(), "removed") && strings.Contains(livePromptOf(live), "[yes]")
+	})
+	keys <- completedPointerClick(t, pointer, 0, 0)
 	keys <- Key{Kind: KeyInterrupt}
 	close(keys)
-
-	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
-		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	<-done
 
 	script := unstyled(live.Transcript())
 	if n := strings.Count(script, "removed"); n != 1 {

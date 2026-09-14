@@ -43,9 +43,11 @@ const (
 	// is enabled here rather than waiting for the clicks in M2.
 	KeyWheelUp
 	KeyWheelDown
-	// KeyClick is a mouse PRESS, and the one Key that carries a position — see
-	// Key.Row/Col below (#30 M2.2).
-	KeyClick
+	// Raw pointer phases carry positions. KeyClick is produced only on release.
+	KeyClick // completed gesture; only the pointer router creates it
+	KeyPointerPress
+	KeyPointerMotion
+	KeyPointerRelease
 )
 
 // Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
@@ -55,15 +57,10 @@ type Key struct {
 	Kind KeyKind
 	Rune rune
 	Raw  []byte
-	// Row and Col are where a KeyClick landed, 0-based, in the TERMINAL's
-	// coordinates — the loop adds the screen's scroll offset to reach a buffer
-	// line. Terminals report 1-based, and the conversion happens once, here,
-	// rather than at whichever consumer remembers.
-	//
-	// Meaningless for every other Kind, which is why they are on the Key rather
-	// than in a second channel: a click is a keypress that happens to have a
-	// place, and the loop's select already delivers keypresses.
+	// Row and Col are zero-based terminal cells for raw pointer phases and
+	// completed clicks. The wire conversion happens once in clickAt.
 	Row, Col int
+	click    *pointerClick // immutable ticket for a completed application click
 }
 
 // decodeKey converts the front of buf into a Key.
@@ -134,8 +131,8 @@ func decodeEscape(buf []byte) (Key, int) {
 		case 'M':
 			if buf[1] == '[' {
 				// The X10 mouse report, and the reason this case exists at all:
-				// enabling mode 1000 asks for the mouse, and a terminal that
-				// honours 1000 but ignores 1006 answers in X10 — ESC[M plus
+				// enabling mode 1002 asks for the mouse, and a terminal that
+				// honours 1002 but ignores 1006 answers in X10 — ESC[M plus
 				// THREE RAW BYTES that are not part of any CSI grammar. The scan
 				// below would stop at "M" as a final byte and hand the payload to
 				// the line as text: a left click at (1,1) typed " !!" into the
@@ -183,20 +180,8 @@ func decodeEscape(buf []byte) (Key, int) {
 	return Key{Kind: KeyUnknown, Raw: buf[:2]}, 2
 }
 
-// decodeWheel reads an SGR 1006 mouse report and answers only the WHEEL.
-//
-//	ESC [ < Cb ; Cx ; Cy M     press      (m for release)
-//
-// The sequence is already DELIMITED by the caller's scan — "<" is a parameter
-// byte and "M"/"m" are final bytes — so this only interprets what is inside, and
-// cannot consume past the end. That is the guarantee that matters here: #14
-// shipped a decoder that assumed a length, ate four bytes of a six-byte
-// sequence, and typed the remainder into the word being looked up.
-//
-// Only the wheel, deliberately. Buttons carry COORDINATES that mean nothing
-// until there is a region map to look them up in (M2), and a Key kind nothing
-// reads is a kind that drifts. A click therefore stays KeyUnknown — consumed
-// whole and inert, which is exactly what it should be for now.
+// decodeWheel decodes a complete SGR 1006 report: ESC[<button;col;rowM
+// (lowercase m for release). The caller owns framing; this owns button meaning.
 func decodeWheel(seq []byte) (Key, bool) {
 	// CSI, not SS3. decodeEscape handles `ESC [` and `ESC O` in one branch
 	// because the arrow keys arrive both ways, and without this check a
@@ -217,14 +202,13 @@ func decodeWheel(seq []byte) (Key, bool) {
 	if k, ok := wheelFromButton(params[0]); ok {
 		return k, true
 	}
-	// A PRESS, and only a press: "M" is the press and "m" the release, and
-	// acting on both would play every recording twice. The release is consumed
-	// and dropped, which is what an inert key means for a sequence that must not
-	// reach the line.
-	if final != 'M' || !isClickButton(params[0]) {
+	kind, ok := pointerButton(params[0], final == 'm', false)
+	if !ok {
 		return Key{}, false
 	}
-	return clickAt(params[1], params[2])
+	k, ok := clickAt(params[1], params[2])
+	k.Kind = kind
+	return k, ok
 }
 
 // clickAt builds a click from WIRE coordinates — 1-based, as every terminal
@@ -244,7 +228,7 @@ func clickAt(wireCol, wireRow int) (Key, bool) {
 	}
 	// 1-based on the wire, 0-based here — converted once, at the boundary,
 	// rather than at whichever consumer remembers.
-	return Key{Kind: KeyClick, Col: wireCol - 1, Row: wireRow - 1}, true
+	return Key{Kind: KeyPointerPress, Col: wireCol - 1, Row: wireRow - 1}, true
 }
 
 // isClickButton reports whether a button byte is a plain press we act on.
@@ -350,10 +334,6 @@ func atoiPrefix(b []byte) (int, bool) {
 // protocol decodeKey already has — because a report split across two reads must
 // not be half-decoded, and the payload bytes are otherwise indistinguishable
 // from typed characters.
-//
-// Only the wheel is answered, matching decodeWheel: a button carries coordinates
-// that mean nothing until M2 can look them up. The rest is inert, which for this
-// encoding means CONSUMED rather than ignored.
 func decodeX10Mouse(buf []byte) (Key, int) {
 	if len(buf) < 6 {
 		return Key{}, 0
@@ -362,15 +342,42 @@ func decodeX10Mouse(buf []byte) (Key, int) {
 	if k, ok := wheelFromButton(b); ok {
 		return k, 6
 	}
-	if isClickButton(b) {
-		// Coordinates are offset by 32, same as the button, and still 1-based —
-		// so clickAt does the subtracting and the checking. X10 cannot express a
-		// column past 223 (the byte wraps), which is why 1006 is asked for
-		// alongside 1000; a click out there lands wrong in a terminal that gave
-		// us no better encoding to ask for.
+	if kind, ok := pointerButton(b, false, true); ok {
 		if k, ok := clickAt(int(buf[4])-32, int(buf[5])-32); ok {
+			k.Kind = kind
 			return k, 6
 		}
 	}
 	return Key{Kind: KeyUnknown, Raw: buf[:6]}, 6
+}
+
+// pointerButton decodes the shared button bit field. Legacy release has no
+// button identity; only the gesture policy can decide whether it ends a drag.
+func pointerButton(b int, released, legacy bool) (KeyKind, bool) {
+	if b < 0 || b & ^63 != 0 {
+		return KeyUnknown, false
+	}
+	if legacy && b&3 == 3 && b&32 == 0 {
+		return KeyPointerRelease, true
+	}
+	if b&3 != 0 {
+		return KeyUnknown, false
+	}
+	if released {
+		if b&32 != 0 {
+			return KeyUnknown, false
+		}
+		return KeyPointerRelease, true
+	}
+	if b&32 != 0 {
+		return KeyPointerMotion, true
+	}
+	if isClickButton(b) {
+		return KeyPointerPress, true
+	}
+	return KeyUnknown, false
+}
+
+func isPointerKey(k KeyKind) bool {
+	return k == KeyPointerPress || k == KeyPointerMotion || k == KeyPointerRelease
 }

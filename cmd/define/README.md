@@ -60,6 +60,19 @@ brew install xianxu/tools/define
 ```
 macOS only, the definitions and the IPA come from Dictionary.app.
 
+### Select and copy text
+
+Drag with the left mouse button to highlight visible text; release to copy it to
+the local macOS clipboard. This works in the editor, answers and practice screens,
+including while a model or audio is busy. A click without dragging keeps its usual
+action. Dragging over a review choice never marks it.
+
+Copying keeps Unicode text and line breaks without styling, spinner glyphs or
+layout padding. Selection covers the visible viewport; it does not auto-scroll.
+Typing, scrolling or changing screens clears the highlight. If copying fails,
+click the failure notice to retry. When type-ahead is full, a notice reports that
+the newest key was ignored; mouse selection and interrupts remain responsive.
+
 ### The directory is the deck, so it asks first
 
 The directory you run `define` in **is** the deck. That makes running it in the

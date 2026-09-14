@@ -530,8 +530,7 @@ offers nothing is not an error.
 **The mark is an attribute, spliced by the SCREEN.** `markClickable` underlines a
 clickable span at paint time, turned off with `24` rather than `0` so the
 palette's colour survives. Static rather than on hover, because hover needs mode
-`1003` — an event per cell the pointer crosses — while `1000` reports presses
-only and never says where the pointer is. Emitted by `Render` it would leak into
+`1003` — an event per cell the pointer crosses — while `1002` reports motion only while a button is held. Emitted by `Render` it would leak into
 `define <word>`, a pipe, `-raw` and `> out.txt`: decoration claiming an
 affordance a file does not have. `writeRendered` is the seam — a writer that can
 hold a click map gets one, everything else gets bytes.
@@ -545,14 +544,14 @@ user asked to keep plain.
 
 **Scrolling, and why the mouse had to be reported.** PageUp/PageDown move the
 viewport by a screenful less one line of overlap; the wheel moves three lines. The
-wheel took mouse reporting (`1000` + `1006`) to arrange at all: in the alternate
+wheel took mouse reporting (`1002` + `1006`) to arrange at all: in the alternate
 screen a terminal translates the wheel into ARROW KEYS — the convention that lets
 `less` scroll with no mouse support — and this editor binds Up/Down to the history
 walk, so scrolling recalled words. The bytes are identical, so nothing can
 separate them; asking the terminal to report the mouse is the only way to be
 handed the gesture the user made.
 
-**Enabling a mode means accepting its whole grammar.** `1000` is answered in
+**Enabling a mode means accepting its whole grammar.** `1002` is answered in
 X10 — `ESC[M` plus three RAW bytes — by any terminal that ignores `1006`, and
 those bytes belong to no CSI grammar: the scan stops at `M` as a final byte and
 the payload reaches the line as text, so a click typed `" !!"` into the word
@@ -562,11 +561,27 @@ handles the SGR form, and both read one `wheelFromButton`. The rule to carry int
 `M2`: **for every mode we enable, the decoder answers every encoding that mode
 can reply in.**
 
-**The cost, decided rather than discovered:** with tracking on, drag-select
-belongs to this program, so copying text needs Option (iTerm2, Terminal.app,
-Ghostty) or Shift. `/help` says so, which is where a user meets it. Text
-selection of our own is a NON-GOAL — a whole model of anchors, extents and
-clipboard integration.
+**Selection shares the painter (#59).** `screen.layoutSelectionFrame` places
+buffer, prompt and footer once; the same physical rows feed painting and
+`selectionFrame`. `selectionStep` arbitrates press/motion/release. Dragging copies
+literal visible text through `selectedText`, with whole wide/combining characters,
+without layout padding, activity glyphs or ANSI. A drag never becomes a click.
+`pointerRouter` handles gestures before `readInput` admits ordinary type-ahead;
+completed clicks carry screen/frame identity and resolve an immutable hit under
+router→screen locks. Resize observation invalidates before a busy loop receives
+its notification. Keyboard/page/wheel cancellation also precedes admission,
+including rejected input. A console-owned interrupter observer invalidates before
+the scoped foreground callback for both byte Ctrl-C and SIGINT; shutdown detaches it. Editor, standalone practice and nested `/play` share ownership.
+
+`clipboardQueue` serializes a bounded FIFO behind `clipboardWriter`. The native
+writer runs inside a private child of the same executable, with a parent deadline
+and child-owned watchdog, so native IO cannot block input or terminal restoration.
+Failures retain one bounded payload in a transient click-to-retry notice. None of
+this feedback enters the transcript. Frame/payload sizes, pending writes and
+process lifetime have explicit bounds; newest ordinary input is refused visibly
+when its 256-entry queue fills. Tests use stateful clipboard doubles and isolated
+named pasteboards. The conformance build replaces only the target factory and
+refuses missing/general targets; production always uses the canonical clipboard.
 
 **Terminal state is one guarantee, not three.** Raw mode, the alternate screen
 and mouse reporting all hang off `rawSession`, which restores from a defer AND on
@@ -2169,6 +2184,9 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `news_conformance_test.go` | the live RSS feed still parses, and its terms still say personal use |
 | `reflect_conformance_test.go` | the live model still answers in the shape the parser expects |
 | `live_property_test.go` | the no-data-loss predicate holds over the WHOLE dictionary, not a sample |
+| `clipboard_target_conformance_test.go` | conformance-only target factory rejects missing and general clipboard targets |
+| `clipboard_conformance_test.go` | native literal text and flavor inventory on an isolated pasteboard |
+| `selection_conformance_test.go` | real mouse drag/highlight/copy during model waits and terminal restoration; isolated target fails closed |
 | `activity_conformance_test.go` | real terminal Braille animation and cleanup at first answer text or cancellation, with held fake model responses |
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 | `harvest_conformance_test.go` | the live model's agreement across rounds stays above the floor the cache's premise needs |

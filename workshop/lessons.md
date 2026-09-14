@@ -4438,3 +4438,24 @@ Normalize redundant controls at the painter's owned origin, and assert cursor
 and hit-test geometry with an independent terminal oracle. Test short writes
 with nil errors too: a transient display must normalize them to io.ErrShortWrite
 and end its animation worker.
+
+
+## Snapshot validation includes the action target (define #59)
+
+A frame token is not sufficient if code validates it, unlocks, and then resolves
+coordinates against a repainted display. Capture immutable region/footer metadata
+with validation under the same ownership locks. Exercise a repaint and screen
+handoff between input and action, and check the actual playback/grade effects.
+
+Clipboard conformance must wire the foreground process to an isolated target,
+not merely test the native helper on one. The test configuration must fail closed;
+otherwise a missing variable can mutate the user's clipboard during a green run.
+
+
+## Cancellation is independent of delivery (define #59 BR-1)
+
+Enumerate every ingress path when adding transient state: admitted and rejected
+keyboard/page/wheel events, byte interrupts and signal interrupts. Queue saturation
+and scoped callbacks must not bypass cancellation. Assert external effects with an
+ordered barrier: stopping a worker immediately can drop the bad write and make a
+zero-write assertion pass even though the cancelled gesture submitted it.

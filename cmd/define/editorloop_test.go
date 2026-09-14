@@ -775,6 +775,46 @@ func TestWatchResizeWithoutASignalTransport(t *testing.T) {
 	}
 }
 
+// scriptedPointer gives domain-only display fixtures an immutable published
+// hit frame. The real gesture policy still arbitrates press and release.
+func scriptedPointer(view *recordDisplay) *pointerRouter {
+	live := newLiveScreen(io.Discard, 24, 100)
+	rows := make([]selectionRow, 24)
+	view.mu.Lock()
+	for at, r := range view.at {
+		r.Col = at[1]
+		r.Width = max(1, visibleCells(r.Text))
+		rows[at[0]].regions = append(rows[at[0]].regions, r)
+		rows[at[0]].styled = strings.Repeat(" ", r.Col) + r.Text
+		rows[at[0]].selectable = true
+	}
+	view.mu.Unlock()
+	live.frame = newSelectionFrame(100, 24, rows)
+	live.frameID = 1
+	live.framePublished = true
+	return newPointerRouter(live, nil)
+}
+
+func completedPointerClick(t *testing.T, pointer *pointerRouter, row, col int) Key {
+	t.Helper()
+	press := fmt.Sprintf("\x1b[<0;%d;%dM", col+1, row+1)
+	release := fmt.Sprintf("\x1b[<0;%d;%dm", col+1, row+1)
+	for i, report := range []string{press, release} {
+		key, n := decodeKey([]byte(report))
+		if n != len(report) {
+			t.Fatalf("incomplete mouse report %q", report)
+		}
+		if click, ok := pointer.route(key); ok {
+			if i == 0 {
+				t.Fatal("mouse press acted before release")
+			}
+			return click
+		}
+	}
+	t.Fatalf("gesture at %d,%d did not complete", row, col)
+	return Key{}
+}
+
 // Clicking the headword plays it (#30 M2.4, Done-when 1).
 //
 // The click goes through replayInPlace — the same path a bare Enter takes — so
@@ -787,8 +827,9 @@ func TestClickOnHeadwordReplays(t *testing.T) {
 	view.offer(3, 5, Region{Kind: RegionHeadword, Text: "sycophantic", Word: "sycophantic"})
 
 	// Look the word up, then click its headword.
-	ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, Key{Kind: KeyClick, Row: 3, Col: 5})...)
-	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: finish, stdout: &out, stderr: &errb})
+	pointer := scriptedPointer(view)
+	ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, completedPointerClick(t, pointer, 3, 5))...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, pointer: pointer, finish: finish, stdout: &out, stderr: &errb})
 
 	// Three for the lookup, three for the click, and NO second fetch: the click
 	// replays rather than looking the word up again.
@@ -822,8 +863,9 @@ func TestClickOnOriginLanguagePlaysIt(t *testing.T) {
 	view := paintInto(&out)
 	view.offer(9, 4, Region{Kind: RegionOriginLang, Text: "French", Word: "concrete", Lang: "fr"})
 
-	ks := keySeq(append(runes("concrete"), Key{Kind: KeyEnter}, Key{Kind: KeyClick, Row: 9, Col: 4})...)
-	code := runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: func() {}, stdout: &out, stderr: &errb})
+	pointer := scriptedPointer(view)
+	ks := keySeq(append(runes("concrete"), Key{Kind: KeyEnter}, completedPointerClick(t, pointer, 9, 4))...)
+	code := runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, pointer: pointer, finish: func() {}, stdout: &out, stderr: &errb})
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
 	}
@@ -845,8 +887,9 @@ func TestClickOnNothingIsNothing(t *testing.T) {
 	view := paintInto(&out)
 	// No regions offered anywhere.
 
-	ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, Key{Kind: KeyClick, Row: 4, Col: 2})...)
-	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: finish, stdout: &out, stderr: &errb})
+	pointer := scriptedPointer(view)
+	ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, completedPointerClick(t, pointer, 4, 2))...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, pointer: pointer, finish: finish, stdout: &out, stderr: &errb})
 
 	if got := rig.player.count(); got != 3 {
 		t.Errorf("played %d times, want 3 — the click on empty text acted", got)
@@ -864,8 +907,9 @@ func TestClickDoesNotTouchTheLine(t *testing.T) {
 	view := paintInto(&out)
 	view.offer(1, 1, Region{Kind: RegionHeadword, Text: "sycophantic", Word: "sycophantic"})
 
-	ks := keySeq(append(runes("syc"), Key{Kind: KeyClick, Row: 1, Col: 1})...)
-	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: finish, stdout: &out, stderr: &errb})
+	pointer := scriptedPointer(view)
+	ks := keySeq(append(runes("syc"), completedPointerClick(t, pointer, 1, 1))...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, pointer: pointer, finish: finish, stdout: &out, stderr: &errb})
 
 	if last := view.lastPrompt(); !strings.Contains(last, "syc") {
 		t.Errorf("a click disturbed the line being typed: %q", last)
@@ -919,8 +963,9 @@ func TestEveryRegionKindIsActionable(t *testing.T) {
 		view := paintInto(&out)
 		view.offer(2, 0, Region{Kind: kind, Text: "sycophantic", Word: "sycophantic", Lang: "fr"})
 
-		ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, Key{Kind: KeyClick, Row: 2, Col: 0})...)
-		runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: finish, stdout: &out, stderr: &errb})
+		pointer := scriptedPointer(view)
+		ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, completedPointerClick(t, pointer, 2, 0))...)
+		runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, pointer: pointer, finish: finish, stdout: &out, stderr: &errb})
 
 		// Every kind must DO something: the lookup plays 3, so a kind that acted
 		// plays more. A kind added with no case in `clicked` reddens here.
@@ -1003,6 +1048,7 @@ func TestAClickAtAPaintedCellPlaysWhatIsUnderIt(t *testing.T) {
 	// reason it is not about.
 	var tty syncBuf
 	live := newLiveScreen(&tty, 24, 76)
+	pointer := newPointerRouter(live, nil)
 	live.interval = -1 // paint every write, so the frame under test is the real one
 
 	keys := make(chan Key, 32)
@@ -1015,7 +1061,7 @@ func TestAClickAtAPaintedCellPlaysWhatIsUnderIt(t *testing.T) {
 	var errb bytes.Buffer
 	go func() {
 		done <- runEditor(t.Context(), keys, nil, rig.deps, opt,
-			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+			console{view: live, pointer: pointer, finish: func() {}, stdout: live, stderr: &errb})
 	}()
 
 	// The cell to click is read from the frame the screen is CURRENTLY showing,
@@ -1051,12 +1097,7 @@ func TestAClickAtAPaintedCellPlaysWhatIsUnderIt(t *testing.T) {
 	// this test crosses rather than something it assumes. Constructing the Key
 	// directly left that conversion to a different test, which is the seam this
 	// row exists to close.
-	report := fmt.Sprintf("\x1b[<0;%d;%dM", col+1, row+1)
-	click, n := decodeKey([]byte(report))
-	if n != len(report) || click.Kind != KeyClick {
-		t.Fatalf("decodeKey(%q) = kind %v consumed %d; the report is not a click", report, click.Kind, n)
-	}
-	keys <- click
+	keys <- completedPointerClick(t, pointer, row, col)
 	waitFor(t, func() bool { return len(rig.cdn.Requested()) >= 2 })
 	close(keys)
 	<-done

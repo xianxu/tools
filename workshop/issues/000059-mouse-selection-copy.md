@@ -1,12 +1,13 @@
 ---
 id: 000059
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-14
 updated: 2026-09-14
 estimate_hours: 4.56
 started: 2026-09-14T01:07:15-07:00
+actual_hours: 2.20
 ---
 
 # define: mouse text selection and clipboard copy
@@ -108,29 +109,30 @@ clipboard (ARCH-MOCK/SECURE).
 
 ## Done when
 
-- [ ] Drag selects text visibly and copies the exact selected text on release.
-- [ ] Editor, answers and review screens share selection behavior; dragging over
+- [x] Drag selects text visibly and copies the exact selected text on release.
+- [x] Editor, answers and review screens share selection behavior; dragging over
       actions never activates them, while ordinary clicks still work once.
-- [ ] Unicode, multiline/wrapped content and clipped rows copy without styles,
+- [x] Unicode, multiline/wrapped content and clipped rows copy without styles,
       spinner glyphs or layout padding.
-- [ ] Streaming/playback, resize, scrolling, screen switching and exit cannot
+- [x] Streaming/playback, resize, scrolling, screen switching and exit cannot
       turn stale gestures into a copy or review action.
-- [ ] Clipboard errors are visible, tests isolate the user's clipboard, and
+- [x] Clipboard errors are visible, tests isolate the user's clipboard, and
       portable builds retain a valid unsupported-platform seam.
-- [ ] Help/README and atlas reflect app-owned selection; tests and terminal
+- [x] Help/README and atlas reflect app-owned selection; tests and terminal
       conformance demonstrate the behavior.
 
 ## Plan
 
 - [x] Review the interaction/spec, incorporate the copy-trigger preference.
-- [ ] Write and review the durable implementation plan, obtain approval, then
+- [x] Write and review the durable implementation plan, obtain approval, then
       enter implementation with sdlc change-code.
-- [ ] Implement and verify shared selection, clipboard integration and consumers;
+- [x] Implement and verify shared selection, clipboard integration and consumers;
       close through the sole SDLC boundary and publish via PR.
 
 ## Log
 
 ### 2026-09-14
+- 2026-09-14: closed — BR-1 reproduced with deterministic clipboard barriers then fixed across admitted/rejected keys, page/wheel, scoped/unscoped byte Ctrl-C and SIGINT; cancellation/selection race tests pass (1.853s), go test ./... passes (112.296s define), committed full package passes (111.666s), strict native/selection/PTY Ctrl-C checks all run with DEFINE_NO_CAPTURE=1 (15.295s), vet/Linux vet and prior Linux build/fuzz pass; atlas/docs updated.; review verdict: SHIP
 
 Created and claimed #59; ran start-plan. Read mouse mode/decoder/consumer seams.
 Existing KeyClick acts on press in both editor and practice, including stored review
@@ -210,3 +212,45 @@ Design 1.98 ×1.15 + implementation 2.28 = 4.557, rounded to 4.56 hours.
 
 - 2026-09-14: User approved the durable plan. Plan-quality accepted PQ-1's
   independent child deadline refinement; derived estimate after acceptance.
+
+
+## Implementation log
+
+2026-09-14: Implemented shared physical frames and gesture arbitration, input-side
+pointer routing, immutable click capture, ordered native clipboard writes and
+nested console ownership. Existing click fixtures now send press/release gestures;
+real editor and practice tests assert clipboard bytes and absence of accidental
+grades. Held model and nested-screen tests exercise the shared input seam.
+
+Focused race checks passed (8.077s); strict native and real PTY checks all ran and
+passed (8.871s). Native text remains literal across Unicode/NUL/RTF/EPS prefixes;
+all native tests use isolated boards. Mouse decoder fuzz passed 33,961 executions;
+selection text/gesture fuzz passed 26,802/539 executions. Portable Linux build/vet,
+repository vet, conformance skip guard and artifact checks pass. Full repository
+suite and committed-window verification remain before the sole close review.
+
+ARCH-DRY/PURE: layout and click target resolution have single owners. ARCH-ORDER:
+watcher-side resize invalidation and router generation prevent stale actions;
+clipboard child/queue shutdown is bounded and joins before terminal restoration.
+ARCH-MOCK: real PTY + isolated native board checks complement stateful clipboard,
+model, audio and screen fixtures. Nested ownership mutation was rejected by its
+integration test. Documentation and lessons updated with the new interaction.
+
+2026-09-14: Full repository tests passed (define 111.711s). Implementation
+deliverables are checked; proceeding to committed-window verification and close.
+
+
+2026-09-14: Close review BR-1 (cancellation-ingress-completeness) reproduced with
+stateful clipboard barriers: dropped typing/page/wheel/byte-interrupt events and
+scoped SIGINT could leave a drag alive. Cancellation now precedes admission and
+foreground interrupt callbacks across the complete ingress set. Observer lifetime
+belongs to the console and is detached on Stop. New tests failed before the fix;
+focused race verification passed. Re-running verification before a second close.
+
+
+2026-09-14: Boundary re-review returned SHIP, disposed BR-1, and raised no new
+findings. Reviewer independently passed the full package (112.492s), focused
+race checks and both cancellation mutations. The reviewer sandbox could not create
+an isolated native pasteboard (-4960); our unrestricted strict native/PTY run
+passed all selected checks (15.295s), including Ctrl-C session survival with
+DEFINE_NO_CAPTURE=1. SDLC adopted measured actual 2.20h. Publishing via PR.

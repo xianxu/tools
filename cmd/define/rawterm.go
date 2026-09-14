@@ -78,50 +78,7 @@ func (r *rawSession) restore() {
 // suite measured a \x03 arriving as a SIGINT. Both feed the same interrupter,
 // which is what decides the meaning (#16 D5).
 func readKeys(ctx context.Context, r io.Reader, interrupts *interrupter) <-chan Key {
-	// BUFFERED, and that is load-bearing. The loop stops reading while an answer
-	// streams; on an unbuffered channel the reader would block on the first key
-	// typed during it and never decode the bytes behind — including a Ctrl-C
-	// meant to stop that very answer. Buffering also gives type-ahead during a
-	// long answer for free: the keys are simply waiting when the prompt returns.
-	out := make(chan Key, 256)
-	go func() {
-		defer close(out)
-		var buf []byte
-		chunk := make([]byte, 256)
-		for {
-			n, err := r.Read(chunk)
-			if n > 0 {
-				buf = append(buf, chunk[:n]...)
-				for len(buf) > 0 {
-					k, used := decodeKey(buf)
-					if used == 0 {
-						break // a partial sequence: wait for more bytes
-					}
-					buf = buf[used:]
-					if k.Kind == KeyInterrupt {
-						// Fires the sink even mid-playback, when the loop is
-						// blocked and cannot act on anything itself.
-						if interrupts.Fire() {
-							// A scope consumed it — a streaming answer was
-							// cancelled. Delivering it as well would have the
-							// loop quit the session as soon as the answer ended,
-							// which is the opposite of what was asked for.
-							continue
-						}
-					}
-					select {
-					case out <- k:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	return out
+	return readInput(ctx, r, interrupts, nil)
 }
 
 // The alternate screen: one buffer, no scrollback, discarded on exit.
@@ -168,25 +125,11 @@ func (r *rawSession) leaveAlt() {
 	r.alt = false
 }
 
-// Mouse reporting, SGR 1006 encoding (#30 M1.4b).
-//
-// 1000 is BUTTON-PRESS tracking: presses, releases and the wheel, and nothing
-// while the pointer merely moves. 1002 and 1003 would stream an event per cell
-// crossed, which is what a hover effect needs and this program does not have.
-// 1006 is the encoding rather than a mode — without it coordinates past column
-// 223 wrap, because the legacy encoding spends one byte on each.
-//
-// Enabled for the WHEEL, which the alternate screen otherwise delivers as arrow
-// keys — indistinguishable from the history walk. The clicks it also turns on
-// are inert until M2 has a region map to look their coordinates up in.
-//
-// THE COST, decided in the issue and paid here: with tracking on, drag-select
-// belongs to this program rather than the terminal, so copying text needs Option
-// (iTerm2, Terminal.app, Ghostty) or Shift. /help says so, because that is where
-// a user meets it.
+// Button-event motion tracking (1002) and SGR coordinates (1006). Held drags
+// belong to the shared selection router; idle hover is not reported.
 const (
-	mouseOn  = "\x1b[?1000h\x1b[?1006h"
-	mouseOff = "\x1b[?1006l\x1b[?1000l"
+	mouseOn  = "\x1b[?1002h\x1b[?1006h"
+	mouseOff = "\x1b[?1006l\x1b[?1002l"
 )
 
 // enterMouse asks the terminal to report the mouse.

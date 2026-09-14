@@ -82,6 +82,8 @@ type deps struct {
 	// other builds a real client pointed at a real proxy.
 	getenv func(string) string
 	newLLM func(llm.Config) llm.Client
+	// newClipboard constructs the console-owned clipboard transport lazily.
+	newClipboard func() (clipboardWriter, error)
 	// notifySignals is the SIGNAL half of the interrupt story — the other half is
 	// the raw key reader's byte. Injected so a test can drive it without raising
 	// a real signal in the test binary, which `go test` would treat as a failure.
@@ -109,6 +111,7 @@ func realDeps() deps {
 		notifySignals:   notifySignals,
 		getenv:          os.Getenv,
 		newLLM:          llm.New,
+		newClipboard:    newProcessClipboardWriter,
 	}
 }
 
@@ -396,6 +399,13 @@ func openStore(opt options, warn io.Writer, perm *deckPermission) storeDeps {
 }
 
 func main() {
+	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], clipboardHelperFlag) {
+		if err := runClipboardHelper(os.Args[1:], os.Stdin, writeNativeClipboard); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	// NotifyContext rather than the default SIGINT handling: Ctrl-C now cancels
 	// the context, which stops afplay through exec.CommandContext and lets
 	// deferred cleanup run, instead of killing the process mid-playback and
