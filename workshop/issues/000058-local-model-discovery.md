@@ -164,6 +164,11 @@ introduced by discovery.
 - User corrected Antigravity preference to Flash before Pro; proceeding to
   implementation planning with that policy. The other provider/override decisions
   stand.
+- Durable implementation plan written and approved by fresh-context review at
+  `workshop/plans/000058-local-model-discovery-plan.md`. Review emphasized that
+  both request hashing and SDK parameters must consume the same effective
+  request, now explicit in the plan. Awaiting implementation-plan approval under
+  AGENTS.md Section 2; no product code changed.
 
 ## Revisions
 
