@@ -24,9 +24,8 @@ part of define itself while preserving its existing mouse actions.
 ### Proposed interaction
 
 - Left-button drag highlights a linear text range across displayed rows. Releasing
-  a nonempty drag copies the selected text to the macOS clipboard. This is the
-  proposed default; the optional question about copy-on-release versus a shortcut
-  is still open. A click with no drag keeps its current action, once, on release.
+  a nonempty drag copies the selected text to the macOS clipboard. The user
+  approved this copy-on-release design on 2026-09-14. A click with no drag keeps its current action, once, on release.
 - Covers displayed definitions, answers, and review screens, including visible
   prompt/footer text. Selection is text-only: ANSI styling, click markers added
   only as decoration, spinner glyphs and layout padding are not clipboard content.
@@ -123,7 +122,7 @@ clipboard (ARCH-MOCK/SECURE).
 
 ## Plan
 
-- [ ] Review the interaction/spec, incorporate the copy-trigger preference.
+- [x] Review the interaction/spec, incorporate the copy-trigger preference.
 - [ ] Write and review the durable implementation plan, obtain approval, then
       enter implementation with sdlc change-code.
 - [ ] Implement and verify shared selection, clipboard integration and consumers;
@@ -161,3 +160,12 @@ proposed default is copy on release.
   reference: https://developer.apple.com/documentation/applicationservices/applicationservices_functions
   Final binding, lifecycle bounds and isolated conformance wiring belong in the
   durable implementation plan after spec approval.
+
+- 2026-09-14: User approved the written spec, including copy on release. Authored
+  workshop/plans/000059-mouse-selection-copy-plan.md via writing-plans skill.
+  Clipboard lifetime uses a cancellable private helper in the existing executable
+  because native calls cannot be interrupted in-process. Failure retains a bounded
+  payload with a click-to-retry notice; type-ahead overflow explicitly rejects
+  newest input with feedback so pointer/interrupt decoding remains live. Click
+  validation and target capture share one lock to avoid action after layout drift.
+  Plan review and artifact guards are running. No product code changed.
