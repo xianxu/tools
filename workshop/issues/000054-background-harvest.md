@@ -257,3 +257,11 @@ pass over the plan's prose, now named in its guards section.
   provenance. When extracting the typed reflection core here, integrate #58 and
   preserve SelectionOf(client) rather than reverting to cfg.Model. No dependency
   from #58 on this work; recheck landed changes before merging either branch.
+
+### 2026-09-13 — activity ownership with #36
+
+- #36 designs a shared Braille spinner and foreground-only LLM client adapters
+  before this issue's background integration. When extracting harvest/reflect
+  cores, retain undecorated clients in the cores; reuse the activity display only
+  from the owning UI. Background jobs must not take over the foreground spinner,
+  and both adapters must preserve #58's selected-model provenance.
