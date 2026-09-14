@@ -50,7 +50,7 @@ func TestHarvestUsesDiscoveredModelAndCacheRemainsOffline(t *testing.T) {
 			scriptAll(f, 12)
 			d.newLLM = discoveredClient(f)
 			var out, errs bytes.Buffer
-			if code := runHarvest(t.Context(), d, options{}, harvestOptions{}, &out, &errs); code != 0 {
+			if code := runHarvest(t.Context(), d, options{tty: true}, harvestOptions{}, &out, &errs); code != 0 {
 				t.Fatalf("exit %d: %s", code, errs.String())
 			}
 			requests := f.Requests()
@@ -92,8 +92,11 @@ func TestHarvestUsesDiscoveredModelAndCacheRemainsOffline(t *testing.T) {
 			d.newLLM = discoveredClient(offline)
 			out.Reset()
 			errs.Reset()
-			if code := runHarvest(t.Context(), d, options{}, harvestOptions{}, &out, &errs); code != 0 {
+			if code := runHarvest(t.Context(), d, options{tty: true}, harvestOptions{}, &out, &errs); code != 0 {
 				t.Fatalf("cached exit %d: %s", code, errs.String())
+			}
+			if strings.ContainsAny(out.String(), "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏") {
+				t.Fatal("cached harvest drew activity")
 			}
 			if len(offline.CatalogRequests()) != 0 || len(offline.Requests()) != 0 {
 				t.Fatalf("cached harvest used network: discovery=%d inference=%d", len(offline.CatalogRequests()), len(offline.Requests()))

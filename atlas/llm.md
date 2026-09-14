@@ -277,3 +277,15 @@ Four tagged suites, all on-demand (`-tags conformance`), none in merge-check:
 - **The proxy prepends ~1,900 cached tokens of system preamble** (Claude Code's,
   via its OAuth path). `Request.System` is therefore *additive* to a prompt we do
   not control, and `Usage.PreambleTokens()` reports it.
+
+
+## Foreground waiting display
+
+The transport keeps UI outside its seam. Define's `activityClient` decorates
+foreground calls and uses a shared Braille display lease, including lazy model
+discovery before inference. It clears on the first nonempty answer delta or
+Complete return. Callers query `SelectionOf` on the original client, preserving
+its private selection metadata. `llmtest.Reply` provides cancellable barriers
+before the response and before/after its first text delta; these hold recorded
+responses without changing their bytes, so consumer tests verify waiting and
+cleanup against the real wire client.

@@ -1,12 +1,13 @@
 ---
 id: 000036
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-30
-updated: 2026-09-13
+updated: 2026-09-14
 estimate_hours: 2.57
 started: 2026-09-13T23:05:26-07:00
+actual_hours: 1.42
 ---
 
 # a question has no progress indicator, and it is the one slow path
@@ -156,27 +157,28 @@ worker and overlay; no spinner frames remain in history or disk.
 
 ## Done when
 
-- [ ] A question shows movement within a second of being asked, so "thinking" is
+- [x] A question shows movement within a second of being asked, so "thinking" is
       distinguishable from "hung".
-- [ ] The indicator is EPHEMERAL on a terminal and ABSENT from a pipe, `-raw`
-      and `> out.txt` — the same rule the playback indicator follows, reached
-      through the same decision rather than a second one.
-- [ ] It is gone the moment the answer starts arriving, and taken back cleanly
+- [x] The indicator is ephemeral on a terminal and absent from piped/redirected
+      output, `-raw` and `-no-color`, using existing terminal capability.
+- [x] It is gone the moment the answer starts arriving, and taken back cleanly
       when Ctrl-C cancels the answer.
-- [ ] It never appears on the FAST path: a lookup is instant and must stay
+- [x] It never appears on the FAST path: a lookup is instant and must stay
       visually silent.
-- [ ] `OnSlow` has a production consumer, or the design says why it is still the
+- [x] `OnSlow` has a production consumer, or the design says why it is still the
       wrong seam for this.
 
 ## Plan
 
 - [x] Resolve presentation and lifecycle; review the durable plan in
       `workshop/plans/000036-ask-progress-plan.md`.
-- [ ] Obtain plan approval, implement the shared spinner and foreground adapters,
+- [x] Obtain plan approval, implement the shared spinner and foreground adapters,
       verify terminal lifecycle and consumer paths, then close through SDLC.
 
 ## Log
 
+
+- 2026-09-14: closed — go test ./... -count=1 passed; focused activity and wire-barrier race tests passed; go vet ./... passed; strict real PTY activity response/cancel check passed, repeated 3x and no-spinner mutation failed; frame fuzz 23410 executions; atlas/docs updated; git diff --check clean; review verdict: SHIP
 ### 2026-08-30
 
 Filed while diagnosing an unrelated key problem: with no model configured, a
@@ -259,3 +261,44 @@ total: 2.57
 - Sole close boundary: allow two review rounds at 0.35 × 0.4 each.
 - Thorough-plan buffer adds 15% to design subtotal 0.67; implementation totals
   1.80, familiarity 1.0. Total 2.5705 rounded to 2.57 hours.
+
+
+### 2026-09-14 implementation progress
+
+User approved implementation. Plan-quality passed with advisory PQ-1 (compressed
+in the durable plan); estimate-quality passed with informational scope notes.
+Verification time is included in each implementation primitive; PTY uses the
+existing harness. The docs allowance groups the two atlas files as one map update
+plus README. Consumer wiring's 0.7 unscaled hours intentionally exceeds the usual
+0.5 maximum to cover five call routes and provenance. Residual design covers exact
+interfaces and terminal edge behavior; full-width RenderLine and short-write tests
+found concrete cases during implementation. These are estimate clarifications,
+not a retroactive change to the 2.57-hour estimate.
+
+Common runner/plain/screen hosts and all foreground consumers implemented.
+Test-first failures observed for missing activity API and missing consumer output;
+controlled wire barriers preserve captures. Focused component race and frame fuzz
+passed; strict real-PTY response/cancel checks passed three runs and a no-spinner
+build overlay failed as expected. Broad suite and final committed checks pending.
+ARCH-ORDER: stop joins animation and clears before forwarding response text.
+ARCH-DRY: shared short-write recorder and painter keep display/error accounting in
+one place; the original clients retain selected-model metadata.
+
+- 2026-09-14: Updated the original Done-when wording to the approved suppression
+  rule: playback can leave non-terminal records, whereas activity emits nothing.
+  Initial full-suite run caught an overly broad test count (the capture mentions
+  Obsequious twice per answer); corrected the independent answer-title count.
+  Focused paths and race checks passed after the correction; no product fix was
+  needed for that test assertion.
+
+
+### Verification — 2026-09-14
+
+On implementation commit 4856c97: `go test ./... -count=1` passed (define
+108.965s); focused activity/consumer/fake-barrier race tests passed; `go vet ./...`
+passed; shared `internal/conformance` checks passed. Strict
+`CONFORMANCE_STRICT=1 go test -tags conformance ./cmd/define -run '^TestPTYActivityWaitingAndCleanup$' -count=1`
+passed (4.260s). The PTY test was also repeated three times and a no-spinner
+build overlay correctly failed. Pure frame fuzz passed 23,410 executions.
+`git diff --check` passed. All implementation and verification tasks delivered;
+submitting the sole close boundary review next.

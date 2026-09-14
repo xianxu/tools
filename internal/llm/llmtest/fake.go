@@ -15,6 +15,7 @@
 package llmtest
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -104,6 +105,17 @@ func joinBlocks(v any) string {
 // transport failures. Capture names a committed artifact to serve verbatim —
 // which is how anything resembling real model output enters a test.
 type Reply struct {
+	// Barriers hold a response without changing its recorded bytes. Notifications
+	// and waits end on request cancellation or fake cleanup. Nil means no barrier.
+	Started chan<- struct{}
+	Release <-chan struct{}
+	// TextStarted/TextRelease gate the first answer delta, after thinking frames.
+	TextStarted chan<- struct{}
+	TextRelease <-chan struct{}
+	// AfterText/FinishRelease hold the stream after its first text was flushed.
+	AfterText     chan<- struct{}
+	FinishRelease <-chan struct{}
+
 	// Capture is a committed capture served verbatim. Status still WINS over it:
 	// serve() short-circuits on a scripted transport failure before any body is
 	// chosen, which is the right precedence and not what this used to claim.
@@ -355,6 +367,9 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	reply := f.next(rec.Prompt())
 	f.mu.Unlock()
 
+	if !f.waitReply(r.Context(), reply.Started, reply.Release) {
+		return
+	}
 	if reply.Status != 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(reply.Status)
@@ -362,7 +377,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rec.Streaming() {
-		f.serveStream(w, reply)
+		f.serveStream(r.Context(), w, reply)
 		return
 	}
 	f.serveJSON(w, reply)
@@ -461,7 +476,7 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 // an event sequence from memory is how a fake comes to model behaviour the
 // service does not have — this capture carries a `ping` event and space-padded
 // payloads that no one would have invented.
-func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
+func (f *Fake) serveStream(ctx context.Context, w http.ResponseWriter, reply Reply) {
 	if bad := misapplied(reply, true /*streaming*/); bad != "" {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, harnessBody(bad))
@@ -482,6 +497,7 @@ func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	flusher, _ := w.(http.Flusher)
+	firstText := true
 	for _, fr := range frames {
 		if fr == "" {
 			continue
@@ -493,6 +509,10 @@ func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
 			}
 			return
 		}
+		textBoundary := firstText && strings.Contains(fr, "text_delta")
+		if textBoundary && !f.waitReply(ctx, reply.TextStarted, reply.TextRelease) {
+			return
+		}
 		fmt.Fprint(w, fr)
 		if reply.JunkFrame && strings.Contains(fr, "text_delta") {
 			// AFTER a text delta: the point is that a stream dying mid-reply keeps
@@ -502,6 +522,12 @@ func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
 		}
 		if flusher != nil {
 			flusher.Flush()
+		}
+		if textBoundary {
+			firstText = false
+			if !f.waitReply(ctx, reply.AfterText, reply.FinishRelease) {
+				return
+			}
 		}
 		if reply.Stall && strings.Contains(fr, "text_delta") {
 			// Silence without closing: what a hung upstream actually looks like.
@@ -515,4 +541,28 @@ func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
 			return
 		}
 	}
+}
+
+// waitReply is shared by response and stream boundaries so shutdown has the
+// same semantics whether the server is notifying a test or awaiting release.
+func (f *Fake) waitReply(ctx context.Context, started chan<- struct{}, release <-chan struct{}) bool {
+	if started != nil {
+		select {
+		case started <- struct{}{}:
+		case <-ctx.Done():
+			return false
+		case <-f.closing:
+			return false
+		}
+	}
+	if release != nil {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return false
+		case <-f.closing:
+			return false
+		}
+	}
+	return ctx.Err() == nil
 }

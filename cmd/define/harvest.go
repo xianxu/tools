@@ -127,7 +127,7 @@ func runHarvest(ctx context.Context, d deps, opt options, ho harvestOptions, out
 	if err != nil {
 		return unavailableToHarvest(errOut)
 	}
-	client := d.newLLM(cfg)
+	client := foregroundClient(d.newLLM(cfg), out, opt)
 
 	if ho.agreement > 0 {
 		return runHarvestAgreement(ctx, d, client, deck, ho.agreement, out, errOut)

@@ -23,7 +23,7 @@ import (
 // context.Background() instead discards that, and a hung endpoint then holds the
 // terminal for the full Timeout with Ctrl-C doing nothing — measured at 5s+
 // against a socket that accepts and never answers.
-func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func(llm.Config) llm.Client, stdout, stderr io.Writer) int {
+func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func(llm.Config) llm.Client, stdout, stderr io.Writer, opt options) int {
 	cfg, err := llm.Resolve(getenv)
 	if err != nil {
 		// Non-zero, and the message says what to do. A cheerful empty result is
@@ -55,7 +55,7 @@ func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func
 	// --llm-check reported on a request the operator had not configured, which is
 	// the opposite of a diagnostic's job.
 	client := newClient(cfg)
-	resp, err := client.Complete(ctx, llm.Request{
+	resp, err := foregroundClient(client, stdout, opt).Complete(ctx, llm.Request{
 		Task:   "llm-check",
 		Prompt: "Reply with exactly the word PONG and nothing else.",
 	})

@@ -1,6 +1,6 @@
 # Shared Braille activity spinner implementation plan
 
-> **For agentic workers:** Consult AGENTS.md Section 3 (Subagent Strategy) to determine the appropriate execution approach: use superpowers-subagent-driven-development (if subagents are suitable per AGENTS.md) or superpowers-executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Consult AGENTS.md Section 3 (Subagent Strategy) to determine the appropriate execution approach: use superpowers-subagent-driven-development (if subagents are suitable per AGENTS.md) or superpowers-executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Show only an animated Braille glyph while define waits for an LLM response, using one reusable activity component across current consumers.
 
@@ -95,9 +95,8 @@ a speculative cross-binary library (AGENTS.local.md, ARCH-DRY).
   the glyph. Thus RenderLine's erase/cursor controls remain on the editor row.
   Existing displayRows remains a single-line helper: do not feed it CRLF content.
   The same painter owns geometry for RegionAtRow/FooterRowAt, including pinned
-  screens. Recompute on resize. Test exact two-row allocation for a short prompt
-  plus glyph, footer hits and cursor restoration; include one-column and wrapped
-  prompt cases and suppression when the prompt consumes the entire screen.
+  screens. Recompute on resize. Test activityRow and screen.paintActivity with generated dimensions and prompt
+  widths against independent row-allocation, cursor and hit-test oracles.
 - Suspend invalidates/clears the current lease before yielding terminal ownership;
   resume must not resurrect it. Stop invalidates the lease and stops any pending
   activity paint. A stale timer cannot repaint after screen stop or suspension.
@@ -135,23 +134,23 @@ timer and worker end with the activity; no animation remains in scrollback.
 
 **Files:** create `cmd/define/activity.go`, `cmd/define/activity_test.go`.
 
-- [ ] Write failing tests for activityFrame/activityEnabled with periodicity,
+- [x] Write failing tests for activityFrame/activityEnabled with periodicity,
   display-width and eligibility oracles; test the runner against injected tick,
   cancel and replacement orderings with write logs and worker-exit barriers.
-- [ ] Run `go test ./cmd/define -run '^TestActivity' -count=1` and observe red.
-- [ ] Implement the pure frame selector and lease-based runner under the ownership
+- [x] Run `go test ./cmd/define -run '^TestActivity' -count=1` and observe red.
+- [x] Implement the pure frame selector and lease-based runner under the ownership
   contract above. Keep worker exit separate from caller join and make stop safe
   to call repeatedly, including after an output failure.
-- [ ] Rerun focused tests to green; commit the tested component with #36 and the
+- [x] Rerun focused tests to green; commit the tested component with #36 and the
   authoring-model trailer. Run `go test ./cmd/define -count=1` on each resulting
   committed window to exercise declaration/status and other repository guards.
 
 ### Task 2 — Terminal and screen hosts
 
 **Files:** create `cmd/define/activity_terminal.go`, `activity_screen.go`,
-`activity_host_test.go`; modify `cmd/define/screen.go`, `screen_test.go`.
+`activity_terminal_test.go`, `activity_screen_test.go`; modify `cmd/define/screen.go`.
 
-- [ ] Test host begin/set/clear and activityRow with a stateful terminal
+- [x] Test host begin/set/clear and activityRow with a stateful terminal
   oracle: adversarial writes, resize, suspension and replacement must preserve
   prose, cursor/chrome ownership and final transcript. Include painted geometry
   and RegionAtRow/FooterRowAt oracles for activityRow rather than
@@ -159,10 +158,10 @@ timer and worker end with the activity; no animation remains in scrollback.
   for one-shot and scanner REPL, including redirected stdin with terminal stdout.
   Use deterministic ticks
   and failure-injecting writers, not sleeping screenshot assertions.
-- [ ] Run `go test ./cmd/define -run 'TestActivityHost|TestActivityScreen' -count=1`
+- [x] Run `go test ./cmd/define -run 'TestActivityHost|TestActivityScreen' -count=1`
   and observe red. Implement independent screen overlay and plain transient-line
   ownership, with first-error recording at the screen paint boundary.
-- [ ] Rerun to green, then `go test -race ./cmd/define -run 'TestActivity|TestLiveScreen' -count=1`.
+- [x] Rerun to green, then `go test -race ./cmd/define -run 'TestActivity|TestLiveScreen' -count=1`.
   Commit the tested hosts; run `go test ./cmd/define -count=1` on the commit.
 
 ### Task 3 — Shared LLM adapter and real consumer wiring
@@ -172,25 +171,25 @@ timer and worker end with the activity; no animation remains in scrollback.
 `llmcheck.go`, `llmcheck_test.go`, `main.go`, and `internal/llm/llmtest/fake.go`
 plus its colocated tests for the narrow hold/release extension.
 
-- [ ] Test activityClient.Complete/Stream against held discovery and response
+- [x] Test activityClient.Complete/Stream against held discovery and response
   boundaries through llmtest; extend replies with releasable barriers where the
   fake currently only supports indefinite stalls. Verify the fake honors the
   same stream/text distinctions as the consumed protocol (ARCH-MOCK).
-- [ ] Test each foreground consumer against no-work/disabled/streaming outcomes
+- [x] Test each foreground consumer against no-work/disabled/streaming outcomes
   using real host and fake model logs; model provenance and plain output are
   independent oracles. Run focused `TestLLMActivity|TestActivityPaths` tests red.
-- [ ] Implement the decorator. Retain the original client for SelectionOf in
+- [x] Implement the decorator. Retain the original client for SelectionOf in
   reflect/llmcheck; pass the decorated client to llm.Run/Complete. Capture the
   activity host from original stdout before ask adds wrapping/highlighting.
   In harvest decorate the client once so agreement and every typed subtask are
   covered. --llm-check has its own main dispatch bypassing deps.newLLM: pass
   terminal eligibility explicitly through its existing function seam and update
   callers/tests. Select the live-screen host when stdout is a liveScreen.
-- [ ] Do not decorate deps.newLLM globally. #54's background cores must continue
+- [x] Do not decorate deps.newLLM globally. #54's background cores must continue
   accepting undecorated clients; foreground UI owns its spinner. Current play
   makes no model calls. Its pinned screen remains a supported host, with no
   fabricated work or spinner added to review.
-- [ ] Rerun focused tests and race tests to green; commit the integrated paths.
+- [x] Rerun focused tests and race tests to green; commit the integrated paths.
 
 ### Task 4 — Verification, documentation and closure
 
@@ -198,14 +197,14 @@ plus its colocated tests for the narrow hold/release extension.
 extend `cmd/define/pty_conformance_test.go` or add
 `cmd/define/activity_conformance_test.go` if isolation is clearer.
 
-- [ ] Add a focused PTY check for animated waiting followed by response/cancel
+- [x] Add a focused PTY check for animated waiting followed by response/cancel
   cleanup. Route absent external dependencies through conformance.SkipOrFail;
   a missing in-repo artifact is a failure. The live-model transport remains
   replaced by the stateful fake so verification needs no paid inference.
-- [ ] Run `go test ./... -count=1`, focused activity race tests, the new PTY
+- [x] Run `go test ./... -count=1`, focused activity race tests, the new PTY
   conformance check, `go test ./internal/conformance -count=1`, and
   `git diff --check`. Record actual command outcomes, including any missing PTY.
-- [ ] Update docs with the glyph-only wait, first-text/end-of-call cleanup,
+- [x] Update docs with the glyph-only wait, first-text/end-of-call cleanup,
   all actual consumers and pipe/raw suppression; keep atlas test inventory current.
   Record evidence and tick delivered issue/plan tasks.
 
@@ -225,10 +224,9 @@ redesign, and claiming that a spinner makes the model faster.
 
 ## Approval
 
-User corrected the presentation to pattern only, no Thinking label, stopping
-when the response arrives. That correction is incorporated. Fresh-context plan review approved. Awaiting user
-approval before `sdlc change-code`; estimate follows plan-quality
-acceptance rather than being assigned before the design gate.
+User approved implementation on 2026-09-14 after correcting presentation to
+pattern only, no Thinking label. The plan and estimate gates passed; work is on
+branch 000036-ask-progress.
 
 
 ## Revisions
@@ -247,3 +245,12 @@ acceptance rather than being assigned before the design gate.
 
 - 2026-09-13: Final bounded fresh-context review approved the revised plan with
   no remaining blockers. Implementation awaits user plan approval.
+
+- 2026-09-14: Implementation approved; change-code passed both gates. Components
+  built in parallel against a shared lease API and will commit as one integrated
+  change so all entity declarations and consumer wiring are present together.
+  PQ-1 addressed by compressing placement tests to function-level oracle strategy.
+  Tests discovered redundant RenderLine leading CR counted as a display cell;
+  shared painter removes that redundant control before measuring. Exact-width
+  regression covers Paint with and without activity. Shared writer records short
+  writes as io.ErrShortWrite for both hosts; no transport errors are altered.
