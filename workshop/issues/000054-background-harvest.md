@@ -248,3 +248,12 @@ pass over the plan's prose, now named in its guards section.
   the operator.
 - **Two interleavings written down:** a word forgotten mid-job (ignored, and
   why), and which context the job derives from (the session's).
+
+
+## Revisions
+
+- 2026-09-13: Coordination with #58 (local model discovery): #58 implements
+  first and narrowly updates reflection's client binding and selected-model
+  provenance. When extracting the typed reflection core here, integrate #58 and
+  preserve SelectionOf(client) rather than reverting to cfg.Model. No dependency
+  from #58 on this work; recheck landed changes before merging either branch.
