@@ -43,6 +43,9 @@ plus a resolved target classification, so a release can be validated before acti
 | `screen.layoutSelectionFrame` | `cmd/define/screen.go` | new | existing frame budgeting and hit geometry |
 | `screen.paintActivity` | `cmd/define/screen.go` | modified | one shared layout and selection overlay |
 | `liveScreen` | `cmd/define/screen.go` | modified | snapshot, selection and copy-failure state under mu |
+| `interrupter` | `cmd/define/interrupt.go` | modified | console-owned input observation alongside foreground scope |
+| `interrupter.Fire` | `cmd/define/interrupt.go` | modified | byte and signal cancellation observation before foreground callback |
+| `interrupter.Observe` | `cmd/define/interrupt.go` | new | scoped console observer registration and cleanup |
 | `pointerRouter` | `cmd/define/selection_input.go` | new | active screen and input-side gesture handling |
 | `readKeys` | `cmd/define/rawterm.go` | modified | delegates to shared decoder/delivery implementation |
 | `readInput` | `cmd/define/selection_input.go` | new | decoding, routing and bounded type-ahead |
@@ -376,3 +379,12 @@ before change-code.
   record delivered code/test work; committed-window checks and the SDLC close/PR
   gates follow before publication. The previously pending plan approval was
   granted by the user before change-code.
+
+- 2026-09-14: Close BR-1 exposed cancellation paths that bypassed admission.
+  Enumerated admitted/rejected keyboard, page and wheel events, byte Ctrl-C
+  (scoped and unscoped), and scoped SIGINT. All now cancel at observation;
+  interrupter.Fire notifies a console-owned observer before its foreground callback.
+  Router Stop detaches that observer; stale cleanup cannot remove a newer owner.
+  Deterministic clipboard barriers prove zero selection writes after cancellation,
+  without relying on a later foreground repaint. Both original bypasses failed
+  the new tests before the fix. This completes the existing cancellation contract.

@@ -569,7 +569,9 @@ without layout padding, activity glyphs or ANSI. A drag never becomes a click.
 `pointerRouter` handles gestures before `readInput` admits ordinary type-ahead;
 completed clicks carry screen/frame identity and resolve an immutable hit under
 router→screen locks. Resize observation invalidates before a busy loop receives
-its notification. Editor, standalone practice and nested `/play` share ownership.
+its notification. Keyboard/page/wheel cancellation also precedes admission,
+including rejected input. A console-owned interrupter observer invalidates before
+the scoped foreground callback for both byte Ctrl-C and SIGINT; shutdown detaches it. Editor, standalone practice and nested `/play` share ownership.
 
 `clipboardQueue` serializes a bounded FIFO behind `clipboardWriter`. The native
 writer runs inside a private child of the same executable, with a parent deadline

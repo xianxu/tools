@@ -19,8 +19,10 @@ import (
 // does: the loop installs its own cancel by default, and the ask path points it
 // at one question for the duration of a stream.
 type interrupter struct {
-	mu sync.Mutex
-	fn context.CancelFunc
+	mu         sync.Mutex
+	fn         context.CancelFunc
+	observed   func()
+	observerID uint64
 	// scoped is set while something narrower than the session owns the
 	// interrupt — a streaming answer. It is what lets Fire tell its caller that
 	// the interrupt has been CONSUMED, which the key reader needs: an interrupt
@@ -49,8 +51,11 @@ func (i *interrupter) Set(fn context.CancelFunc) (restore func()) {
 // panic here would be a panic in the key reader's goroutine.
 func (i *interrupter) Fire() (consumed bool) {
 	i.mu.Lock()
-	fn, consumed := i.fn, i.scoped
+	fn, observed, consumed := i.fn, i.observed, i.scoped
 	i.mu.Unlock()
+	if observed != nil {
+		observed()
+	}
 	if fn != nil {
 		fn()
 	}
@@ -87,4 +92,22 @@ func detachedInterrupts(ctx context.Context, d deps) (context.Context, *interrup
 		}()
 	}
 	return ctx, interrupts, cancel
+}
+
+// Observe installs the console's input-side cancellation observer independently
+// of the foreground's Set scope. Both byte and signal transports call Fire.
+// The returned cleanup cannot remove a later console's observer.
+func (i *interrupter) Observe(fn func()) func() {
+	i.mu.Lock()
+	i.observerID++
+	id := i.observerID
+	i.observed = fn
+	i.mu.Unlock()
+	return func() {
+		i.mu.Lock()
+		defer i.mu.Unlock()
+		if i.observerID == id {
+			i.observed = nil
+		}
+	}
 }

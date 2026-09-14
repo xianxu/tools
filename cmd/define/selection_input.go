@@ -10,10 +10,11 @@ import (
 // pointerRouter owns the active screen, before input enters a busy loop's queue.
 // Lock order is router then screen. Clipboard IO and joins happen outside both.
 type pointerRouter struct {
-	mu        sync.Mutex
-	active    *liveScreen
-	owner     uint64
-	clipboard *clipboardQueue
+	mu               sync.Mutex
+	active           *liveScreen
+	owner            uint64
+	clipboard        *clipboardQueue
+	unwatchInterrupt func()
 }
 
 func newPointerRouter(l *liveScreen, w clipboardWriter) *pointerRouter {
@@ -45,10 +46,7 @@ func (r *pointerRouter) route(k Key) (Key, bool) {
 		click, text = l.pointerLocked(event, selectionPoint{k.Row, k.Col})
 		click.owner = r.owner
 	} else if k.Kind != KeyUnknown {
-		l.cancelSelectionLocked(true)
-		if k.Kind == KeyPageUp || k.Kind == KeyPageDown || k.Kind == KeyWheelUp || k.Kind == KeyWheelDown {
-			l.invalidateSelectionLocked()
-		}
+		cancelPointerInput(l, k, true)
 	}
 	var seq uint64
 	if text != "" {
@@ -138,6 +136,13 @@ func (r *pointerRouter) Stop() {
 		return
 	}
 	r.activate(nil)
+	r.mu.Lock()
+	unwatch := r.unwatchInterrupt
+	r.unwatchInterrupt = nil
+	r.mu.Unlock()
+	if unwatch != nil {
+		unwatch()
+	}
 	if r.clipboard != nil {
 		r.clipboard.Stop()
 	}
@@ -146,6 +151,9 @@ func (r *pointerRouter) Stop() {
 // readInput always decodes pointer and interrupt events even when type-ahead is
 // saturated. Accepted ordinary keys remain FIFO; only the newest is refused.
 func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, router *pointerRouter) <-chan Key {
+	if router != nil && interrupts != nil {
+		router.watchInterrupts(interrupts)
+	}
 	out := make(chan Key, 256)
 	go func() {
 		defer close(out)
@@ -175,6 +183,9 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 						continue
 					}
 					if !isPointerKey(k.Kind) && len(out) == cap(out) {
+						if router != nil {
+							router.cancelInput(k, false)
+						}
 						if !saturated && router != nil {
 							router.notice("input full — newest key ignored")
 						}
@@ -209,4 +220,41 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 		}
 	}()
 	return out
+}
+
+// cancelPointerInput runs under the screen lock for every observed non-pointer
+// input, including rejected type-ahead. Rejected input retains its overflow
+// notice, but can never retain an unfinished gesture or a stale viewport ticket.
+func cancelPointerInput(l *liveScreen, k Key, dismiss bool) {
+	if k.Kind == KeyUnknown {
+		return
+	}
+	l.cancelSelectionLocked(dismiss)
+	switch k.Kind {
+	case KeyPageUp, KeyPageDown, KeyWheelUp, KeyWheelDown, KeyInterrupt:
+		l.invalidateSelectionLocked()
+	}
+}
+
+func (r *pointerRouter) cancelInput(k Key, dismiss bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active == nil {
+		return
+	}
+	r.active.mu.Lock()
+	defer r.active.mu.Unlock()
+	cancelPointerInput(r.active, k, dismiss)
+}
+
+func (r *pointerRouter) watchInterrupts(i *interrupter) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active == nil {
+		return
+	}
+	if r.unwatchInterrupt != nil {
+		r.unwatchInterrupt()
+	}
+	r.unwatchInterrupt = i.Observe(func() { r.cancelInput(Key{Kind: KeyInterrupt}, true) })
 }

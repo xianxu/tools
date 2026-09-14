@@ -236,3 +236,11 @@ integration test. Documentation and lessons updated with the new interaction.
 
 2026-09-14: Full repository tests passed (define 111.711s). Implementation
 deliverables are checked; proceeding to committed-window verification and close.
+
+
+2026-09-14: Close review BR-1 (cancellation-ingress-completeness) reproduced with
+stateful clipboard barriers: dropped typing/page/wheel/byte-interrupt events and
+scoped SIGINT could leave a drag alive. Cancellation now precedes admission and
+foreground interrupt callbacks across the complete ingress set. Observer lifetime
+belongs to the console and is detached on Stop. New tests failed before the fix;
+focused race verification passed. Re-running verification before a second close.
