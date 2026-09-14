@@ -85,7 +85,7 @@ and a spinner is the same shape. Reuse the decision; do not re-litigate it.
 
 Use a common UI activity component in `cmd/define/activity.go`, with a pure
 Braille frame selector and a small lifecycle runner. It is reusable for any
-waiting operation through a label and display host, not coupled to an LLM SDK
+waiting operation through a display host, not coupled to an LLM SDK
 or one command. All consumers currently belong to define, so no speculative
 cross-binary package is introduced (AGENTS.local.md; ARCH-DRY).
 
@@ -211,3 +211,9 @@ distinguishes waiting from streaming — so the transport half of this exists.
   no Thinking label; stop when the response arrives. For streaming this means
   clearing before the first nonempty answer text; for Complete, on return.
   Proceeding to a durable implementation plan with that correction.
+
+- 2026-09-13: Implementation plan authored with named component/host/client
+  seams and function-level test strategies. Plan review refined raw-screen
+  placement to a separate transient glyph row, preserving RenderLine cursor
+  controls and shared paint/hit-test geometry. On a screen with no spare row,
+  preserve the user's prompt and omit the glyph until space becomes available.
