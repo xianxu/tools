@@ -406,45 +406,49 @@ func (b *Board) Word() string {
 // styled string. ASCII text throughout otherwise — `✓`/`✗` are East Asian
 // Ambiguous, so some terminals give them two columns, and a cell one column
 // wider than the board believes is exactly the failure D15 is written against.
-func (b *Board) Prompt() string {
-	// BUILT AS A SLICE, so len(lines) IS Rows() rather than merely equalling it.
-	//
-	// Concatenation got this wrong for an empty board: with no grid rows the
-	// separator's "\n\n" produced two blanks instead of one, so Prompt yielded
-	// four lines where Rows() said three. Unreachable — the caller never builds an
-	// empty board — but Word() and panelLine() both defend the empty case, and an
-	// invariant held in three places and dropped in a fourth is worse than one
-	// held nowhere.
-	lines := make([]string, 0, b.Rows())
+func (b *Board) Prompt() string { return b.PromptPresentation().Text }
+func (b *Board) PromptPresentation() Presentation {
+	var p promptBuilder
 	for r, rows := 0, b.gridRows(); r < rows; r++ {
-		line := ""
+		if r > 0 {
+			p.text("\n")
+		}
 		for c := 0; c < b.cols; c++ {
 			i := r*b.cols + c
 			if i >= len(b.cells) {
 				break
 			}
 			if c > 0 {
-				line += spaces(boardGutter)
+				p.text(spaces(boardGutter))
 			}
-			line += b.cellText(i)
+			b.emitCell(&p, i, c+1 < b.cols && i+1 < len(b.cells))
 		}
-		// The last cell on a row is padded to the column width like every other,
-		// and trailing blanks on a footer row are columns the screen has to
-		// erase for nothing.
-		lines = append(lines, trimRight(line))
 	}
-	// THE CHROME IS THE FORM'S TOO, and that is why it is here rather than
-	// assembled by the loop out of Mode() and a gloss. A form owns how it looks —
-	// Choice owns its option layout for the same reason — and the loop assembling
-	// it would make the board's appearance a thing two files agree about, on the
-	// surface where disagreeing marks the wrong word. All the loop adds is the
-	// bar, which belongs to the sitting rather than to this question.
-	lines = append(lines, "", b.panelLine())
+	if b.gridRows() > 0 {
+		p.text("\n")
+	}
+	p.text("\n")
+	panel := b.panelLine()
+	if panel != "" {
+		n := len(b.cells[b.last].Word)
+		if n > len(panel) {
+			n = len(panel)
+		}
+		p.owned(panel[:n], Target, false)
+		end := n + 2
+		if end > len(panel) {
+			end = len(panel)
+		}
+		p.text(panel[n:end])
+		p.owned(panel[end:], DictionarySource, false)
+	}
 	if b.panelRows == 2 {
-		lines = append(lines, b.helpLine())
+		p.text("\n")
+		p.help(b.helpLine())
 	}
-	return joinLines(lines)
+	return p.presentation()
 }
+func (b *Board) RevealPresentation() Presentation { return Presentation{} }
 
 // panelLine is the last-marked word and its gloss: the feedback moment, in the
 // place a definition would be on any other form.
@@ -493,12 +497,21 @@ func (b *Board) helpLine() string {
 // the columns an unstyled one does and the layout arithmetic never sees an
 // escape sequence.
 func (b *Board) cellText(i int) string {
+	var p promptBuilder
+	b.emitCell(&p, i, true)
+	return p.s
+}
+func (b *Board) emitCell(p *promptBuilder, i int, padded bool) {
 	word := truncate(b.cells[i].Word, b.wordCells)
-	text := "[" + string(boardLabels[i]) + "] " + word
-	if on := b.paint(i); on != "" {
-		text = on + text + b.pal.Off
+	on := b.paint(i)
+	p.text(on + "[" + string(boardLabels[i]) + "] ")
+	p.owned(word, Target, b.marks[i] != Unmarked)
+	if on != "" {
+		p.text(b.pal.Off)
 	}
-	return text + spaces(b.wordCells-columnsIn(word))
+	if padded {
+		p.text(spaces(b.wordCells - columnsIn(word)))
+	}
 }
 
 // paint is the sequence that starts this cell's style: empty for an unmarked
@@ -571,25 +584,45 @@ func (b *Board) Reveal() string { return "" }
 // something else: the prompt row is the one statement of what the next click will
 // mean, and R11 made it the last thing a short window gives up precisely because
 // every mark is irreversible. A map cannot silently answer for a key it lacks.
-func (b *Board) Keys() string {
-	if s, ok := modeSpellings[b.mode]; ok {
-		return s
+func (b *Board) Keys() string { return b.KeysPresentation().Text }
+func (b *Board) KeysPresentation() Presentation {
+	mode, ok := modeNames[b.mode]
+	if !ok {
+		mode = "?"
 	}
-	// UNREACHABLE, and it says so rather than guessing: TestEveryMarkHasASpelling
-	// derives its loop from Marks(), so a mark with no row fails the build. This
-	// arm exists because the alternative — returning any spelling — states a mode
-	// the board is not in, on the row a learner reads before an irreversible click.
-	return "marking ?, Tab cycles, click or key, Enter ends"
+	var p promptBuilder
+	p.owned("marking", English, false)
+	p.text(" ")
+	start := 0
+	for i := 0; i <= len(mode); i++ {
+		if i == len(mode) || mode[i] == ' ' {
+			token := mode[start:i]
+			p.owned(token, English, len(token) > 0 && token[0] == '[')
+			if i < len(mode) {
+				p.text(" ")
+			}
+			start = i + 1
+		}
+	}
+	p.text(", Tab ")
+	p.owned("cycles", English, false)
+	p.text(", ")
+	p.owned("click or key", English, false)
+	p.text(", Enter ")
+	p.owned("ends", English, false)
+	return p.presentation()
 }
 
-// modeSpellings is the prompt row per mark, and it is the ONE place the wording
-// lives. A map rather than a switch so `Marks()` can be walked against its keys —
-// an extent the code owns, checked rather than restated.
-var modeSpellings = map[Mark]string{
-	Yes:     "marking [yes] no drop, Tab cycles, click or key, Enter ends",
-	No:      "marking yes [no] drop, Tab cycles, click or key, Enter ends",
-	Dropped: "marking yes no [drop], Tab cycles, click or key, Enter ends",
-}
+var modeNames = map[Mark]string{Yes: "[yes] no drop", No: "yes [no] drop", Dropped: "yes no [drop]"}
+
+// Derived spelling inventory retained for the exhaustive mark guard.
+var modeSpellings = func() map[Mark]string {
+	out := map[Mark]string{}
+	for m := range modeNames {
+		out[m] = (&Board{mode: m}).Keys()
+	}
+	return out
+}()
 
 // Mode is the mark a click will land. Not on any interface — the form states its
 // own mode, on its prompt row — but the tests and the panel's story both read

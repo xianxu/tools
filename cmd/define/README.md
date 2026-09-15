@@ -275,6 +275,28 @@ report when no English supplement is supported. `-raw` always returns only the
 primary dictionary entry, regardless of the toggle.
 
 
+### Recognizing the language of a passage
+
+A subtle background marks text in your current `/lang`, across definitions,
+practice and model answers. With `/lang es`, Spanish phrases are tinted and
+English explanations keep the normal background. With `/lang en`, English is
+tinted. Unknown language stays neutral. Changing `/lang` affects new output;
+previously printed text keeps its original style.
+
+The default suits dark terminals. Choose a profile when starting `define`:
+
+```sh
+define -language-tint=light   # light terminal background
+define -language-tint=off     # disable language backgrounds
+```
+
+`-no-color`, redirected output and `TERM=dumb` also disable the background.
+Vocabulary foreground colors remain visible, and answer markings take precedence.
+English practice help uses normal readable text. Selection and copying preserve
+plain prose. Model language annotations are removed before display and storage,
+even with tint off; incomplete annotations fall back to neutral text.
+
+
 ## Periodical Reviewing
 
 **`/play` reviews what is due today**. There are four kinds of question.

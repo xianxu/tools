@@ -3,13 +3,16 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/xianxu/tools/cmd/define/store"
 	"strings"
 )
 
 type definitionSection struct {
-	label   string
-	entries []string
-	err     error
+	label    string
+	language store.Lang
+	entries  []string
+	source   []languageText
+	err      error
 }
 type definitionSet struct {
 	sections []definitionSection
@@ -25,7 +28,7 @@ type supplementalDictionary interface {
 // definitionsFor never re-fetches the primary entry. Raw and disabled callers
 // keep the original single-source contract, including error identity.
 func definitionsFor(dict Dictionary, word, primary string, primaryErr error, on bool) definitionSet {
-	first := definitionSection{entries: []string{primary}, err: primaryErr}
+	first := definitionSection{entries: []string{primary}, language: dictionarySourceLanguage(dict), err: primaryErr}
 	set := definitionSet{sections: []definitionSection{first}, err: primaryErr}
 	provider, ok := dict.(supplementalDictionary)
 	if !on || !ok {
@@ -63,12 +66,17 @@ func renderDefinitions(set definitionSet, opt RenderOpts) (string, []Region) {
 			}
 			continue
 		}
-		for _, raw := range section.entries {
+		for entryIndex, raw := range section.entries {
 			ro := opt
+			ro.Language = section.language
 			if index > 0 {
 				ro.Vocab = nil
 			}
-			rendered, rs := Render(ParseEntry(raw), ro)
+			entry := ParseEntry(raw)
+			if entryIndex < len(section.source) && section.source[entryIndex].text == raw {
+				entry.source = section.source[entryIndex]
+			}
+			rendered, rs := Render(entry, ro)
 			if index == 0 {
 				rs = mergeRegions(rs, wordRegions(rendered, opt.Vocab))
 			}
@@ -93,7 +101,12 @@ func (d spanishDefinitions) supplement(word, primary string) definitionSection {
 	section := definitionSection{label: "English — Oxford Spanish–English"}
 	records, err := d.english.Records(word)
 	if err == nil {
-		section.entries, err = selectSpanishRecords(records, word, entryIdentity(ParseEntry(primary)))
+		var selected []bilingualRecord
+		selected, err = selectedSpanishRecords(records, word, entryIdentity(ParseEntry(primary)))
+		for _, record := range selected {
+			section.entries = append(section.entries, record.Text)
+			section.source = append(section.source, bilingualLanguageText(record))
+		}
 	}
 	if err != nil {
 		switch {
@@ -148,4 +161,11 @@ type untranslatedDefinitions struct {
 func (d untranslatedDefinitions) primaryLabel() string { return d.language }
 func (d untranslatedDefinitions) supplement(string, string) definitionSection {
 	return definitionSection{label: "English", err: fmt.Errorf("English explanations are not supported for %s yet", d.language)}
+}
+
+func (d spanishDefinitions) primarySourceLanguage() store.Lang {
+	return dictionarySourceLanguage(d.Dictionary)
+}
+func (d untranslatedDefinitions) primarySourceLanguage() store.Lang {
+	return dictionarySourceLanguage(d.Dictionary)
 }

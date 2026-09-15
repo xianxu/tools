@@ -72,7 +72,7 @@ func (o *optionSet) keysFor(what string) string {
 	// No branch for fewer than two options: the builders refuse below two, so
 	// such a set is not constructible through production. One built by hand gets
 	// "1-1", which is honest about what it would actually grade.
-	return "1-" + string(rune('0'+len(o.options))) + " = " + what
+	return o.keysPresentation(what).Text
 }
 
 // correctIndex is where the answer sits, or -1. Both forms' reveals need it and
@@ -93,4 +93,11 @@ func (o *optionSet) wrongPick() int {
 		return -1
 	}
 	return o.chosen
+}
+
+func (o *optionSet) keysPresentation(what string) Presentation {
+	var p promptBuilder
+	p.text("1-" + string(rune('0'+len(o.options))) + " = ")
+	p.owned(what, English, false)
+	return p.presentation()
 }

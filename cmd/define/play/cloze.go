@@ -74,36 +74,37 @@ func (c *Cloze) SetHelp(english string) { c.help = english }
 // len(word)) is Choice's and does not hold here; a cloze prompt has no headword
 // to click, and #38 must not assume one.
 func (c *Cloze) Prompt() string {
-	s, _ := c.render()
-	return s
+	return c.PromptPresentation().Text
 }
 
 // HelpLines is which lines of Prompt are English help, as Choice.HelpLines
 // defines it. nil when no help is set.
 func (c *Cloze) HelpLines() []int {
-	_, lines := c.render()
-	return lines
+	return c.render().helps
 }
 
 // render is Prompt and HelpLines from one walk, for the reason Choice.render
 // gives. The stem may itself span lines, which is exactly the count a separate
 // index would get wrong.
-func (c *Cloze) render() (string, []int) {
+func (c *Cloze) render() promptBuilder {
 	var p promptBuilder
-	p.text(c.blanked)
+	p.blanked(c.blanked)
 	if c.help != "" {
 		p.text("\n")
 		p.help(c.help)
 	}
 	p.text("\n\n")
 	for i, o := range c.options {
-		p.text(optionLine(i, o.Word))
+		p.option(i, o.Word, Target)
 		if i < len(c.options)-1 {
 			p.text("\n")
 		}
 	}
-	return p.s, p.helps
+	return p
 }
+
+// PromptPresentation emits the prompt and its language ownership in one walk.
+func (c *Cloze) PromptPresentation() Presentation { return c.render().presentation() }
 
 // Reveal is the sentence RESTORED — which is the whole point of the form, and
 // the reason #10 authored a sentence at all: the learner sees the word doing its
@@ -111,15 +112,20 @@ func (c *Cloze) render() (string, []int) {
 //
 // Then what they picked, when it was wrong, and then the entry. The three-part
 // shape is Choice's, for the reason choice.go gives.
-func (c *Cloze) Reveal() string {
-	s := c.restored
+func (c *Cloze) Reveal() string { return c.RevealPresentation().Text }
+func (c *Cloze) RevealPresentation() Presentation {
+	var p promptBuilder
+	p.owned(c.restored, Target, false)
 	if i := c.wrongPick(); i >= 0 {
-		s += "\n\nyou chose\n" + optionLine(i, c.options[i].Word)
+		p.text("\n\n")
+		p.owned("you chose", English, false)
+		p.text("\n")
+		p.option(i, c.options[i].Word, Target)
 	}
 	if c.definition != "" {
-		s += "\n\n" + c.definition
+		p.text("\n\n" + c.definition)
 	}
-	return s
+	return p.presentation()
 }
 
 // FlagKey is what the learner presses to say the question itself is broken.
@@ -148,9 +154,17 @@ func (c *Cloze) Flag(k rune) ([]string, bool) {
 // Keys names the digits AND the flag, because the keys line is the only place a
 // learner is told what a key does. `?` documented nowhere is `?` nobody presses.
 func (c *Cloze) Keys() string {
-	return c.keysFor("pick the word") + ", " + string(FlagKey) + " = bad question"
+	return c.KeysPresentation().Text
 }
 
 // Form names this form in the log (#40 D4a). `cloze` rather than "2.2": a log
 // read years later by a script or a person needs no atlas to decode `cloze`.
 func (c *Cloze) Form() string { return "cloze" }
+
+func (c *Cloze) KeysPresentation() Presentation {
+	base := c.keysPresentation("pick the word")
+	p := promptBuilder{s: base.Text, spans: base.Spans}
+	p.text(", " + string(FlagKey) + " = ")
+	p.owned("bad question", English, false)
+	return p.presentation()
+}

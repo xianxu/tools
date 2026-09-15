@@ -156,54 +156,15 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		return unavailable(errOut, q)
 	}
 
-	// Highlighting wraps `out` for the whole rest of this function, and the
-	// Flush is DEFERRED rather than placed at each return.
-	//
-	// That is structural, not stylistic: held text is invisible until it is
-	// flushed, and this function returns on five paths — clean, interrupted,
-	// unavailable-after-sending, truncated, and our-fault. A flush at each is
-	// four chances to forget and one silently dropped last word per miss. The
-	// defer covers a path added later too.
-	//
-	// This is the OUTERMOST writer on the answer, and what it wraps is whatever
-	// the caller passed: the screen in the raw loop, the real stdout when piped.
-	// Highlighting therefore sees the answer's own logical text — no line-ending
-	// translation happens before it, so a match ending at a line break is decided
-	// against the same bytes every other analysis in this program sees.
-	//
-	// It used to sit INSIDE the raw loop's line-ending writer, which #30 D5
-	// removed: the screen owns line placement now, and two owners of line endings
-	// is how they drift. `#41` did the same for `--play`, which retired that
-	// writer from this binary entirely.
 	client := foregroundClient(d.newLLM(cfg), out, opt)
-	aw := newAnswerWrapWriter(out, opt.width)
-	hw := newHighlightWriter(aw, vocabularyFor(d, opt), knownOn)
-	defer func() {
-		// REPORTED, not discarded. The writer poisons on its first downstream
-		// failure, so one failed write silently drops the REST of an answer —
-		// before M3 the same failure lost a single delta. Flush returns the
-		// poisoning error, so checking it here covers every write the stream
-		// made without checking each delta.
-		//
-		// stderr, because stdout is what just failed.
-		// Release highlighting's tail before wrapping's tail. Width zero is a
-		// pass-through, and the answer builder below always keeps logical text.
-		err := hw.Flush()
-		if wrapErr := aw.Flush(); err == nil {
-			err = wrapErr
-		}
-		if err != nil {
-			fmt.Fprintf(errOut, "define: the answer could not be fully written: %v\n", err)
-		}
-	}()
-	out = hw
-
+	answer := newLanguageAnswer(out, opt.width, vocabularyFor(d, opt), opt.tintFor(d.lang))
 	req := renderAskPrompt(gatherAskContext(d, sess, q, errOut))
-	answer := &strings.Builder{}
-	_, err = client.Stream(ctx, req, func(delta string) {
-		answer.WriteString(delta)
-		fmt.Fprint(out, delta)
-	})
+	_, err = client.Stream(ctx, req, answer.decoder.Write)
+	// Finish before ANY termination branch: clean partial text belongs in
+	// history on cancellation and truncation, and never contains metadata.
+	if writeErr := answer.Finish(); writeErr != nil {
+		fmt.Fprintf(errOut, "define: the answer could not be fully written: %v\n", writeErr)
+	}
 
 	// Asked FIRST, and asked of the CONTEXT rather than the error. A cancelled
 	// request never reached a status, and mapError classifies statusless
@@ -221,20 +182,20 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	}()
 
 	if ctx.Err() != nil {
-		if answer.Len() > 0 {
+		if answer.plain.Len() > 0 {
 			fmt.Fprintln(out) // close the partial line the stream left open
 			// The user READ this before stopping it, and README promises a
 			// follow-up resolves against the answer before it. Dropping a
 			// stopped answer made that false in exactly the flow this milestone
 			// is named after — the same reason a TRUNCATED answer is kept below.
-			sess.recordExchange(q.text, answer.String())
+			sess.recordExchange(q.text, answer.plain.String())
 		}
 		return 0
 	}
 	switch {
 	case err == nil:
 	case errors.Is(err, llm.ErrUnavailable):
-		if answer.Len() > 0 {
+		if answer.plain.Len() > 0 {
 			break // the answer arrived; the failure was in the teardown
 		}
 		// Configured, and did not deliver — a different thing from having no
@@ -252,10 +213,10 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		return 1
 	}
 
-	if answer.Len() > 0 && !strings.HasSuffix(answer.String(), "\n") {
+	if answer.plain.Len() > 0 && !strings.HasSuffix(answer.plain.String(), "\n") {
 		fmt.Fprintln(out)
 	}
-	sess.recordExchange(q.text, answer.String())
+	sess.recordExchange(q.text, answer.plain.String())
 	return 0
 }
 
@@ -267,6 +228,7 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 func gatherAskContext(d deps, sess *session, q question, warnOut io.Writer) askContext {
 	c := askContext{
 		Question:     q.text,
+		Language:     d.lang,
 		CurrentWord:  sess.current,
 		CurrentEntry: sess.entry,
 		SessionWords: lastN(sess.words, maxContextWords),

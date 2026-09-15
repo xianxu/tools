@@ -455,12 +455,13 @@ func main() {
 // options are the session settings: parsed once, applied to every word, whether
 // that is one word from argv or many from the loop.
 type options struct {
-	raw     bool
-	color   bool
-	noAudio bool
-	noFlags bool
-	times   int
-	locale  string
+	raw            bool
+	color          bool
+	noAudio        bool
+	noFlags        bool
+	tintBackground string
+	times          int
+	locale         string
 	// count bounds a review session (#6). A flag rather than a constant because
 	// twenty is a guess about one learner's attention span — exactly the kind of
 	// guess that should be changeable without a rebuild. 0 means "no budget" and
@@ -520,6 +521,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	raw := fs.Bool("raw", false, "print the unparsed dictionary entry")
 	noColor := fs.Bool("no-color", false, "disable ANSI colour")
 	noFlags := fs.Bool("no-flags", false, "show language codes instead of flags in the prompt")
+	languageTint := fs.String("language-tint", "dark", "target-language background: dark, light, or off")
 	noAudio := fs.Bool("no-audio", false, "do not fetch or play the pronunciation")
 	sound := fs.Int("sound", 3, "how many times to play the pronunciation")
 	// The older name for -sound. Kept working rather than removed: it is
@@ -600,6 +602,14 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		}
 		return 2
 	}
+	background, tintErr := tintProfile(*languageTint)
+	if tintErr != nil {
+		fmt.Fprintf(stderr, "define: %v\n", tintErr)
+		return 2
+	}
+	if os.Getenv("TERM") == "dumb" {
+		background = ""
+	}
 	if isSet(fs, "sound") && isSet(fs, "times") {
 		fmt.Fprintln(stderr, "define: -sound and -times are the same setting; pass one")
 		return 2
@@ -657,9 +667,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		pron = parsed
 	}
 	opt := options{
-		raw:     *raw,
-		noFlags: *noFlags,
-		color:   !*noColor && isTerminal(stdout),
+		raw:            *raw,
+		noFlags:        *noFlags,
+		tintBackground: background,
+		color:          !*noColor && isTerminal(stdout),
 		// -no-color means "emit no ANSI", so it disables cursor control too — the
 		// flag exists for terminals that mangle escapes, and splitting its meaning
 		// would leave those users with erase sequences they cannot render.
@@ -1062,6 +1073,7 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	// recording by construction.
 	rendered, regions := renderDefinitions(set, RenderOpts{
 		Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d), Word: word,
+		Tint: opt.tintFor(d.lang),
 	})
 	// EVERY DECK WORD IN THE DEFINITION IS CLICKABLE TOO. Render already coloured
 	// them — with its own per-region base styles, which is why `already` is the

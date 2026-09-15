@@ -19,6 +19,7 @@ type answerWrapWriter struct {
 	tail       []byte   // only an incomplete rune or escape; rescans stay bounded
 	sgr        sgrState // style of emitted text, not of the unfinished word
 	err        error
+	background bool
 }
 
 const (
@@ -87,8 +88,8 @@ func (w *answerWrapWriter) consume() {
 		}
 		w.emitWord()
 		if r == '\n' {
-			w.emit(w.gap.String() + s)
-			w.emit(w.sgr.resume())
+			w.emit(w.gap.String())
+			w.newline()
 			w.gap.Reset()
 			w.col = 0
 		} else {
@@ -107,8 +108,7 @@ func (w *answerWrapWriter) emitWord() {
 	word, gap := w.word.String(), w.gap.String()
 	cells := visibleCells(word)
 	if cells > 0 && w.col > 0 && w.col+visibleCells(gap)+cells > w.width {
-		w.emit("\n")
-		w.emit(w.sgr.resume())
+		w.newline()
 		w.col, gap = 0, ""
 	}
 	w.emit(gap + word)
@@ -125,11 +125,22 @@ func (w *answerWrapWriter) emitWord() {
 			break // malformed final tail; preserved, not interpreted
 		}
 		w.sgr.observe(rest[i : i+n])
+		w.background = sourceBackground(rest[i:i+n], w.background)
 		rest = rest[i+n:]
 	}
 	w.col += visibleCells(gap) + cells
 	w.word.Reset()
 	w.gap.Reset()
+}
+
+// Newlines inserted after composition must not carry the language background
+// onto terminal padding. Replay the original style for the next physical row.
+func (w *answerWrapWriter) newline() {
+	if w.background {
+		w.emit(languageOff)
+	}
+	w.emit("\n")
+	w.emit(w.sgr.resume())
 }
 
 func (w *answerWrapWriter) Flush() error {

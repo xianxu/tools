@@ -32,3 +32,18 @@ text block; a 512-token budget returned a truncated answer; a trivial stream
 returned no thinking frames. Each artifact looked like evidence, was committed, and
 had something modelled on it. So the conditions live in the probe script beside the
 capture, and `verify` refuses a capture that does not demonstrate its own point.
+
+## Annotated language stream
+
+`stream-language.sse` was captured on 2026-09-15 from the production answer prompt
+with Spanish selected. It contains Spanish “buenos días” and “Buenos días, ¿me da
+un café?” inside English explanation, including markers split across real deltas.
+The answer integration fake replays these exact bytes. Regenerate separately from
+the generic transport captures, from the repository root:
+
+```sh
+CONFORMANCE_STRICT=1 DEFINE_LANGUAGE_CAPTURE="$PWD/internal/llm/llmtest/testdata/stream-language.sse" go test -tags conformance ./cmd/define -run '^TestLanguageAnnotationsAgainstLiveService$' -count=1 -v
+```
+
+Inspect the captured language ownership as well as the mechanical check: valid
+syntax alone does not establish that the model identified the languages correctly.

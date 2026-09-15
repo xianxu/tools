@@ -486,7 +486,7 @@ fails for a kind that draws, invites a click and does nothing.
   (`#31` measured it: Spanish writes none, Italian writes syllabification).
 - **`RegionOriginLang`** — play the word in the language its ORIGIN names.
 
-**`RenderOpts` is what a caller decides**, and one of its four fields is not
+**`RenderOpts` is what a caller decides**, and its lookup key is not
 about how the entry looks:
 
 | field | what it decides |
@@ -494,6 +494,8 @@ about how the entry looks:
 | `RenderOpts.Color` | whether the palette is emitted at all — `-no-color` makes the output a RECORD, and a record carries no escapes |
 | `RenderOpts.Width` | where prose wraps, in display cells. `0` means "do not wrap", which a pipe wants and a terminal under 20 columns also gets |
 | `RenderOpts.Vocab` | the deck words to highlight, resolved by `vocabularyFor` so no path can render against an empty set by forgetting to ask |
+| `RenderOpts.Language` | source language of primary dictionary prose; explicit mixed-source ranges take precedence |
+| `RenderOpts.Tint` | effective target language and invocation background profile, passed as data; zero policy disables tint |
 | `RenderOpts.Word` | the LOOKUP KEY — identity, not presentation. See "a shortcut must not re-derive its target" below; empty means "no click map wanted" |
 
 **A region is read out of the FINISHED output.** A position recorded while
@@ -1017,13 +1019,17 @@ Its contract, in the order the rules matter:
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
 **Streamed answers wrap before reaching the screen** (#55). `runAsk` chains
-`highlightWriter` → `answerWrapWriter` → stdout, so highlighting sees logical
-text and wrapping measures the resulting visible cells with `visibleCells`.
+`answerTextFilter` → `languageDecoder` → `languageAnswer` →
+`answerWrapWriter` → stdout. The decoder strips reserved `[lang=xx]` / `[/lang]`
+annotations, while the adapter records clean prose, preserves vocabulary
+foreground with `highlightWriter`/`highlightRegion`, and applies language tint.
+Wrapping measures the resulting visible cells with `visibleCells`.
 The wrapper emits completed words as they arrive and flushes its unfinished
 word after the highlighter on every exit. It reopens the active `sgrState` after
 both inserted and explicit newlines, so a viewport starting inside a highlighted
 phrase or styled paragraph does not depend on an offscreen opening escape.
-The raw session answer is unchanged.
+The session answer contains clean prose, without model annotations or terminal controls.
+Background is closed before physical newlines and restored for continuation text.
 `opt.width` supplies the terminal width; zero (pipes and terminals below
 `minWrapWidth`) passes bytes through. Words wider than the terminal stay intact;
 old output is not reflowed when the terminal shrinks during an answer. Spaces
@@ -2066,6 +2072,45 @@ share this composition through `play_loop.go` and `cloze.go`.
 `TestBilingualPracticeReveal` and `TestBilingualClozeReveal` cover both reveal
 forms. Lookup capture and initial audio still occur once for the requested word.
 
+**Language ownership and background** (#65). `languageText` carries exact UTF-8
+byte ranges; `styleLanguageText` validates them and applies only the background
+for ranges matching effective `/lang`. Invocation policy is
+`-language-tint=dark|light|off`: xterm 236/254, dark by default, disabled by
+`-no-color`, redirected stdout or `TERM=dumb`. Leading/trailing line whitespace
+and line breaks remain neutral; producer answer backgrounds take precedence.
+Selection keeps inverse video and copies clean text. Output already emitted is
+not restyled after a language switch.
+
+`dictionary_language.go` extracts validated Oxford HTML ownership (`hw`, `ex`,
+`idm`, `ind` Spanish; `trans` English), checks text alignment, and projects ranges
+through parser source offsets. Failed correspondence and transformed IPA/origin
+fields stay neutral. A supplement can contain both languages inside one gloss;
+its section heading cannot determine all its text ownership. `dictionaryFromInstalled` attaches source language only when every selected
+ID has matching monolingual metadata. `dictionarySourceLanguage` preserves this
+provenance through the lock and supplementary wrappers. Searching every active
+dictionary carries unknown ownership, regardless of `/lang`; `definitionsFor`
+snapshots that into each section and `renderDefinitions` owns the source input
+for lookup and both practice reveals. The dictionary lock preserves the
+supplement capability as well as primary lookup.
+
+`play.Presentation` exposes Target/DictionarySource/English/Neutral roles from the same builder
+that emits prompts and reveals. The import-free play package knows no language
+codes. Dictionary-derived option and panel glosses use verified dictionary source
+ownership, whereas deck words and authored cloze text use Target ownership.
+`practice_language.go` maps roles at rendering time; board footer, help,
+chrome and already-rendered dictionary reveals share the same policy. Answer
+marks explicitly suppress tint for their fragment.
+
+`answer_text.go` incrementally discards terminal controls and string payloads
+before parsing or storing model text. `language_decode.go` has one three-state
+transition core: neutral, segment and recovery. Closed valid segments own their
+language; malformed/nested/incomplete segments preserve neutral prose. Recovery
+ends at the first close, with 16 KiB segment and 64-byte header bounds. Entities
+are decoded after grammar and filtered again. `answer_language.go` owns the
+single stream adapter and flushes decoder, highlighting and wrapping before
+partial-answer history is recorded. Explicit foreign-language segments cannot
+acquire target-deck vocabulary foreground from ambiguous spelling.
+
 **English before answering.** With bilingual on in a non-English deck, practice
 shows English while the learner answers. `practice_help.go` is the pure core and
 `practice_help_client.go` the shell. `helpNeedsOf` reads the shown texts off the
@@ -2083,8 +2128,9 @@ line, refuses control and bidi characters, and requires a cloze translation to
 keep its blank count and not name its answer. A Choice gets English for every
 option or for none; Board cells are independent. A bilingual board reserves a
 second panel row from construction, and `packBoards`/`boardFits` select with the
-same budget. Help lines carry no deck-word actions or colour and are dimmed
-(`writeHelped`).
+same budget. Help lines carry no deck-word actions and use normal readable
+foreground. Their English ownership receives language tint only when English
+is the effective target language.
 
 Accepted translations are cached per deck in `practice-help.json`
 (`store/practice_help.go`: versioned, at most 512 entries and 1 MiB, replaced
@@ -2360,6 +2406,7 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `activity_conformance_test.go` | real terminal Braille animation and cleanup at first answer text or cancellation, with held fake model responses |
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 | `harvest_conformance_test.go` | the live model's agreement across rounds stays above the floor the cache's premise needs |
+| `language_conformance_test.go` | production answer prompt yields validated mixed language annotations; decoder preserves clean Spanish examples and English explanation |
 | `practice_help_conformance_test.go` | the live model's English practice help keeps a cloze's blank, never names its answer, and keeps the Spanish sense of `red` |
 | `version_conformance_test.go` | `-ldflags -X main.version` still reaches the binary — the one row the merge gate runs, since its failure is silent |
 

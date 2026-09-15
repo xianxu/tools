@@ -54,6 +54,46 @@ func (l lockedDictionary) Lookup(word string) (string, error) {
 func lockedDictionaries(build func(store.Lang, io.Writer) (Dictionary, string)) func(store.Lang, io.Writer) (Dictionary, string) {
 	return func(l store.Lang, w io.Writer) (Dictionary, string) {
 		d, name := build(l, w)
-		return lockedDictionary{inner: d}, name
+		locked := lockedDictionary{inner: d}
+		if provider, ok := d.(supplementalDictionary); ok {
+			return lockedSupplementalDictionary{lockedDictionary: locked, provider: provider}, name
+		}
+		return locked, name
 	}
+}
+
+// lockedSupplementalDictionary preserves the optional capability only for
+// sources that support it. Supplemental native reads share the primary lock.
+type lockedSupplementalDictionary struct {
+	lockedDictionary
+	provider supplementalDictionary
+}
+
+func (d lockedSupplementalDictionary) primaryLabel() string { return d.provider.primaryLabel() }
+func (d lockedSupplementalDictionary) supplement(word, primary string) definitionSection {
+	dictionaryMu.Lock()
+	defer dictionaryMu.Unlock()
+	return d.provider.supplement(word, primary)
+}
+
+// dictionarySourceLanguage reports producer-owned provenance. An absent
+// capability is unknown; neither the study language nor a display label proves
+// which language an all-active-dictionaries fallback returned.
+func dictionarySourceLanguage(dict Dictionary) store.Lang {
+	if source, ok := dict.(interface{ primarySourceLanguage() store.Lang }); ok {
+		return source.primarySourceLanguage()
+	}
+	return ""
+}
+
+// monolingualDictionary carries the language verified at selected-ID assembly.
+// It wraps only a primary source, before optional supplement adapters are added.
+type monolingualDictionary struct {
+	Dictionary
+	language store.Lang
+}
+
+func (d monolingualDictionary) primarySourceLanguage() store.Lang { return d.language }
+func (d lockedDictionary) primarySourceLanguage() store.Lang {
+	return dictionarySourceLanguage(d.inner)
 }

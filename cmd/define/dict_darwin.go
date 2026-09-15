@@ -263,7 +263,7 @@ func (d selectedDictionary) Lookup(word string) (string, error) {
 //
 // It stays because it is the FALLBACK. The symbols this file resolves are
 // private and undocumented; when one disappears on an OS update the tool
-// degrades to exactly what it shipped before #23 — a working English dictionary
+// degrades to exactly what it shipped before #23 — a working dictionary lookup
 // — rather than to a crash or a link failure.
 type noadDictionary struct{}
 
@@ -292,13 +292,9 @@ func systemDictionary(lang store.Lang, warn io.Writer) (Dictionary, string) {
 	if lang == "es" {
 		return spanishDictionaryFromInstalled(installed, func(ids []string) Dictionary { return selectedDictionary{ids: ids} }, newSpanishEnglishSource())
 	}
-	ids, name, complaint := dictionaryFor(installed, lang)
+	dictionary, name, complaint := dictionaryFromInstalled(installed, lang, func(ids []string) Dictionary { return selectedDictionary{ids: ids} }, noadDictionary{})
 	if complaint != "" {
 		warnTo(warn, "%s", complaint)
-	}
-	var dictionary Dictionary = noadDictionary{}
-	if len(ids) > 0 {
-		dictionary = selectedDictionary{ids: ids}
 	}
 	if lang != store.DefaultLang {
 		label := string(lang)

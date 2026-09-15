@@ -52,8 +52,67 @@ func TestProductionDictionariesAreLocked(t *testing.T) {
 	d := realDeps()
 	for _, l := range []store.Lang{store.DefaultLang, "es"} {
 		dict, _ := d.newDict(l, io.Discard)
-		if _, ok := dict.(lockedDictionary); !ok {
-			t.Errorf("realDeps().newDict(%s) built %T, not a lockedDictionary", l, dict)
+		switch dict.(type) {
+		case lockedDictionary, lockedSupplementalDictionary:
+		default:
+			t.Errorf("realDeps().newDict(%s) built unlocked %T", l, dict)
 		}
+	}
+}
+
+func TestLockedDictionaryPreservesSupplementalCapability(t *testing.T) {
+	primary := "red nombre femenino tejido"
+	inner := spanishDefinitions{Dictionary: &definitionFake{primary: primary}, english: &fakeRecordSource{installed: true, entries: map[string][]bilingualRecord{"red": bilingualFixture(t, "red")}}}
+	build := lockedDictionaries(func(store.Lang, io.Writer) (Dictionary, string) { return inner, "Spanish" })
+	dict, _ := build("es", io.Discard)
+	text, err := dict.Lookup("red")
+	set := definitionsFor(dict, "red", text, err, true)
+	out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "es", background: languageDark}})
+	if !set.labeled || len(set.sections) != 2 {
+		t.Fatal("locking erased the optional supplemental capability")
+	}
+	assertDictionaryTint(t, out, "subir a la red", true)
+	assertDictionaryTint(t, out, "to go up to", false)
+	monoBuild := lockedDictionaries(func(store.Lang, io.Writer) (Dictionary, string) { return &overlapDict{}, "English" })
+	mono, _ := monoBuild("en", io.Discard)
+	if _, ok := mono.(supplementalDictionary); ok {
+		t.Fatal("locking invented supplemental support for monolingual source")
+	}
+}
+
+type overlapSupplementalDictionary struct{ *overlapDict }
+
+func (d overlapSupplementalDictionary) primaryLabel() string { return "Spanish" }
+func (d overlapSupplementalDictionary) supplement(word, primary string) definitionSection {
+	d.Lookup(word)
+	return definitionSection{entries: []string{"red noun net"}}
+}
+
+func TestLockedDictionarySerializesSupplementAndPrimaryTogether(t *testing.T) {
+	inner := &overlapDict{}
+	build := lockedDictionaries(func(store.Lang, io.Writer) (Dictionary, string) {
+		return overlapSupplementalDictionary{inner}, "Spanish"
+	})
+	a, _ := build("es", io.Discard)
+	b, _ := build("es", io.Discard)
+	provider, ok := b.(supplementalDictionary)
+	if !ok {
+		t.Fatal("wrapper dropped supplement")
+	}
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if i%2 == 0 {
+				a.Lookup("red")
+			} else {
+				provider.supplement("red", "")
+			}
+		}()
+	}
+	wg.Wait()
+	if got := inner.max.Load(); got != 1 {
+		t.Fatalf("%d primary/supplement lookups overlapped", got)
 	}
 }

@@ -26,6 +26,7 @@ type exchange struct {
 // rather than trapped in a long-running process.
 type askContext struct {
 	Question string
+	Language store.Lang
 	// CurrentWord and CurrentEntry are set when the question FOLLOWS a lookup,
 	// which is the common case: you look a word up, then ask about it.
 	CurrentWord  string
@@ -104,6 +105,11 @@ func recentDeck(deck []store.Word, n int) []string {
 // the consumer owns the domain (AGENTS.local.md).
 func renderAskPrompt(c askContext) llm.Request {
 	var b strings.Builder
+	lang := c.Language
+	if lang == "" {
+		lang = store.DefaultLang
+	}
+	b.WriteString("## Study language\n" + string(lang) + "\n\n")
 	section := func(header, body string) {
 		if strings.TrimSpace(body) == "" {
 			return // omitted entirely — see the note on the headers above
@@ -144,7 +150,7 @@ func renderAskPrompt(c askContext) llm.Request {
 //
 // "Answer at the level the learner model implies" is the sentence that makes the
 // whole adaptive loop worth building — without it the context is decoration.
-const askSystem = `You are helping someone build their English vocabulary, inside a dictionary tool.
+const askSystem = `You are helping someone build vocabulary in the study language named in the context, inside a dictionary tool.
 
 Answer the question directly and briefly — a few sentences, not an essay. Prefer
 concrete usage over abstract definition: show the word working in a sentence
@@ -156,4 +162,13 @@ up when a comparison helps. If the learner model is absent, write for a capable
 adult reader and do not guess at their level.
 
 Never invent a definition that contradicts the dictionary entry you were given —
-it is authoritative and you are not. Say plainly when you are unsure.`
+it is authoritative and you are not. Say plainly when you are unsure.
+
+Annotate the language of your answer using short nonnested passages:
+[lang=es]Spanish text[/lang] and [lang=en]English text[/lang]. Use a two-letter
+language code, or und when unknown. Place boundaries at actual language changes,
+including an inline phrase in another language. Keep passages below 4000 characters.
+These annotations describe the language you write; they do not change which
+languages or proportions the question calls for. Untagged prose is neutral.
+To discuss these reserved markers literally, escape their brackets as &#91; and
+&#93;. Never emit terminal escape sequences or control characters.`

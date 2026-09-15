@@ -2414,7 +2414,7 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 	// The rows it counts below the board are the rows boardFooter actually
 	// DRAWS. Two owners of that number would put half a board on screen.
 	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80, play.Palette{})
-	footer := boardFooter(board, sittingFigures{}, palette{})
+	footer := boardFooter(board, sittingFigures{}, palette{}, deps{}, options{})
 	if got, want := len(footer)-board.Rows(), barRows; got != want {
 		t.Errorf("boardFooter adds %d rows below the board's own, but fitsABoard budgets %d", got, want)
 	}
@@ -3046,7 +3046,7 @@ func TestCtrlCOnABoardStillLeavesItsRelearnList(t *testing.T) {
 // live-edge form, or anything wanting a row above the grid, is where it breaks.
 func TestBoardFooterPutsTheFormsOwnRowsFirst(t *testing.T) {
 	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank", "set"), 80, play.Palette{})
-	footer := boardFooter(board, sittingFigures{}, palette{})
+	footer := boardFooter(board, sittingFigures{}, palette{}, deps{}, options{})
 	own := strings.Split(board.Prompt(), "\n")
 	if len(footer) < len(own) {
 		t.Fatalf("the footer is %d rows and the board draws %d", len(footer), len(own))

@@ -40,7 +40,7 @@ type sittingFigures struct {
 // line of the question — which is why the test asserts there is no newline in it
 // rather than trusting the format string.
 func sittingBar(f sittingFigures) string {
-	return fmt.Sprintf("%d of %d · %s", f.done, f.total, costPhrase(f))
+	return sittingBarPresentation(f).Text
 }
 
 // sittingSummary is the line finish() prints after the last answer. It carries
@@ -57,10 +57,7 @@ func sittingSummary(f sittingFigures) string {
 // like a rounding artifact, and the learner needs to know it is a wall rather
 // than a small number.
 func costPhrase(f sittingFigures) string {
-	if f.fresh <= 0 {
-		return fmt.Sprintf("~%.0f reviews/day · no room for new words at %d a sitting", f.load, f.budget)
-	}
-	return fmt.Sprintf("~%.0f reviews/day · %.1f new words/day at %d a sitting", f.load, f.fresh, f.budget)
+	return costPresentation(f).Text
 }
 
 // asChrome styles the live edge as CHROME rather than as content (#44).
@@ -234,4 +231,28 @@ func wrapMovedRegions(text string, rs []Region, width int) []Region {
 		out = append(out, r)
 	}
 	return out
+}
+
+func sittingBarPresentation(f sittingFigures) play.Presentation {
+	var p practiceBuilder
+	p.neutral(fmt.Sprintf("%d ", f.done))
+	p.english("of")
+	p.neutral(fmt.Sprintf(" %d · ", f.total))
+	p.append(costPresentation(f))
+	return p.Presentation
+}
+func costPresentation(f sittingFigures) play.Presentation {
+	var p practiceBuilder
+	p.neutral(fmt.Sprintf("~%.0f ", f.load))
+	p.english("reviews/day")
+	p.neutral(" · ")
+	if f.fresh <= 0 {
+		p.english("no room for new words at")
+	} else {
+		p.neutral(fmt.Sprintf("%.1f ", f.fresh))
+		p.english("new words/day at")
+	}
+	p.neutral(fmt.Sprintf(" %d ", f.budget))
+	p.english("a sitting")
+	return p.Presentation
 }
