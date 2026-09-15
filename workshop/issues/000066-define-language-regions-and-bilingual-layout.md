@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-15
 updated: 2026-09-15
-estimate_hours:
+estimate_hours: 7.117
 started: 2026-09-15T14:48:20-07:00
 ---
 
@@ -59,7 +59,7 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
 
 ## Plan
 
-- [ ] Trace source formatting and terminal painting; settle a concrete layout and
+- [x] Trace source formatting and terminal painting; settle a concrete layout and
   durable implementation plan with regressions and operator review.
 - [ ] Implement structural bilingual rendering and shared full-region painting;
   verify actual `rendir` output, all consumers and required checks, then close.
@@ -94,6 +94,11 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   important findings. Concrete layout/plan ready for operator review; no runtime
   code changed and estimate still deferred.
 
+- Implementation gate raised PQ-1 (function-level test strategy). Addressed by
+  naming parser/ownership functions and mapping each risky function to adversarial
+  classes and independent guards in the plan. Product design unchanged; gate
+  recheck pending, no runtime edits or estimate yet.
+
 ## Revisions
 
 ### 2026-09-15 — Uniform dictionary sections
@@ -110,3 +115,57 @@ Operator answered the pending layout question: “Keep bilingual pairs on one ro
 use the section background.” The preview and plan now keep each example and
 translation inline, with natural wrapping. Earlier separate-language-row drafts
 are superseded; this layout question is resolved.
+
+### 2026-09-15 — Approved for implementation
+
+Operator approved the corrected preview (“yes, looks great”). The selected design
+uses uniform dictionary-section backgrounds and inline bilingual example pairs.
+Proceeding through change-code; estimate follows plan-quality acceptance.
+
+## Estimate
+
+Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only, derived after the plan-quality gate accepted
+round 2 (PQ-1 addressed). Calibration is marked stale by `sdlc estimate-source`,
+so this is provisional focused ship-time, not an elapsed delivery promise.
+
+Decomposition follows the approved plan: one issue/spec and two visual iteration
+rounds; Oxford parsing; structured layout; painter; screen/selection; streaming;
+practice integration; regression harness; native/PTY discovery; docs; one close
+review. All implementation values below are v2 table values times 0.4, once.
+Familiarity is 1.0: these are the existing Go/XML/terminal/play/SSE seams from #65.
+The three TUI units separately own pure painting, screen lifecycle/selection,
+and streaming state, each including its direct tests; the harness unit only
+covers shared cell-oracle/mutation plumbing.
+
+Design derivation: spec 1.0 and each UX round 0.5 are not discounted (the operator
+decisions were the work). Resolved technical units use ×0.2: layout 1.5→0.3;
+three TUI units 1.5→0.3 each; integration 0.6→0.12; harness 0.3→0.06;
+docs 0.15→0.03; review 0.1→0.02. Library check: existing encoding/xml and the
+bounded ownership parser halve Oxford parser design 1.5→0.75 before ×0.2→0.15.
+No library supplies our output/click/selection ownership contract; existing
+geometry helpers are reused but that module's design is not halved.
+Implementation bases respectively: spec 0.2; UX 0.2 each; parser/layout 0.8 each;
+TUI 1.0 each; integration/harness 0.5 each; native discovery 0.6; docs 0.2;
+review 0.5. Design subtotal 3.58, implementation subtotal 3.0; thorough-plan
+buffer 15% on design gives 3.58 × 1.15 + 3.0 = 7.117 hours.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec design=1.0 impl=0.08
+item: ux-rename-iteration design=0.5 impl=0.08
+item: ux-rename-iteration design=0.5 impl=0.08
+item: greenfield-go-module design=0.15 impl=0.32
+item: greenfield-go-module design=0.3 impl=0.32
+item: tui-screen design=0.3 impl=0.4
+item: tui-screen design=0.3 impl=0.4
+item: tui-screen design=0.3 impl=0.4
+item: cross-cutting-refactor design=0.12 impl=0.2
+item: smaller-go-module design=0.06 impl=0.2
+item: real-api-discovery design=0 impl=0.24
+item: atlas-docs design=0.03 impl=0.08
+item: milestone-review design=0.02 impl=0.2
+design-buffer: 0.15
+total: 7.117
+```
