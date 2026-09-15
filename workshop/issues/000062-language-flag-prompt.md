@@ -1,12 +1,13 @@
 ---
 id: 000062
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-14
 updated: 2026-09-15
 estimate_hours: 2.338
 started: 2026-09-15T12:23:43-07:00
+actual_hours: 1.20
 ---
 
 # define: show language flag before prompt
@@ -66,6 +67,7 @@ total: 2.338
 - Requested by the user as a separate future feature during bilingual Spanish work. Task capture only; implementation has not started.
 
 ### 2026-09-15
+- 2026-09-15: closed — Effective language appears at saved/default/overridden startup and after successful or session-only switches; failed switches retain it. Both loops, submitted/history separation, no-color/no-flags, resize, full-flag copy and regions verified. Full Go suite, focused race, 10s fuzz, vet, Linux build, strict PTY and five caught mutations pass. Host-font visual check remains manual; explicit code fallback available.; review verdict: SHIP
 
 - Operator approved the durable plan; plan-quality round 2 passed and change-code created the issue branch. Estimate accepted with INFO notes: geometry/TUI allowances may be optimistic; PTY discovery overlaps routine verification. Preserve the approved estimate for calibration.
 - TDD regressions reproduced missing startup/switch prefixes, unrecognized -no-flags, hidden no-color prompt, and partial-flag clipping/wrapping/copy. Shared policy and display-unit implementation pass the focused regressions. Strict PTY verifies flag/code startup, color/raw editing, Ctrl-U, language switching and clean exit.

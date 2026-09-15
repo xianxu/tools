@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, existing ANSI screen and selection code, existing stateful terminal/dictionary test seams and PTY harness. No new dependency or persistent setting.
 
-**Status:** Implemented and verified 2026-09-15; awaiting SDLC close review.
+**Status:** Implemented and verified 2026-09-15; SDLC close review SHIP with no findings.
 
 ## Behavior
 
@@ -114,3 +114,5 @@ After verification: update issue/plan evidence, commit implementation, run the s
 - 2026-09-15: Operator approved implementation. PQ-1 requested function-level strategies rather than test-case/procedural inventories; compressed task sections into named surfaces, adversarial strategies and independent guards while preserving the approved behavior. Inspection also clarified plain-mode prompt ownership and the real PTY stdout needed for entry-point coverage.
 
 - 2026-09-15: Implementation complete. Literal screen, copy, cursor and resize tests cover both flag cells and width 1; local review also corrected clickable regions beginning inside a flag. Full suite, focused race, 10s fuzz, vet, Linux build and strict PTY passed. Mutation checks caught omitted live/submitted prefixes, frozen language, wrapping-policy width and rune-only geometry; originals restored. Host-font rendering is not directly observable here, so that visual check remains explicit.
+
+- 2026-09-15: SDLC close review independently verified focused/race/PTY behavior and returned SHIP, no findings. Close adopted measured actual 1.20h with transcript-attribution warnings; no hand-entered actual.
