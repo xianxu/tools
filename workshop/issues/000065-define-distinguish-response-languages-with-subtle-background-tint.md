@@ -1,12 +1,13 @@
 ---
 id: 000065
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-15
 updated: 2026-09-15
 estimate_hours: 5.526
 started: 2026-09-15T13:08:11-07:00
+actual_hours: 2.29
 ---
 
 # define: distinguish response languages with subtle background tint
@@ -122,6 +123,7 @@ total: 5.526
 ## Log
 
 ### 2026-09-15
+- 2026-09-15: closed — BR-1 source provenance corrected across native assembly, wrappers, lookup, Choice/Cloze reveals and dictionary-derived practice glosses. Unknown and foreign-source matrix red on prior HEAD then green; full go test ./... 131.708s; focused race 5.573s; vet, Linux build, strict native ownership and dark/light/off PTY rechecks pass. Original decoder fuzz 42274 executions, live model capture and all five mutation classes passed. PTY bytes/geometry verified; subjective contrast across all fonts/themes not claimed.; review verdict: SHIP
 
 - Captured the user's approved proposal: subtly highlight the background of text
   matching `/lang` so bilingual portions are immediately distinguishable.
@@ -187,6 +189,10 @@ total: 5.526
   Full Go suite, focused provenance/language/practice race (5.573s), vet, Linux
   build and diff check passed again. Strict native Oxford ownership and all
   dark/light/off PTY profiles passed again with the corrected source assembly.
+
+- Close re-review SHIP: BR-1 addressed, no remaining findings. Reviewer independently
+  verified package tests/vet and mutation rejection. Lessons capture source
+  provenance, wrapper capabilities and physical-wrap style boundaries.
 
 ## Revisions
 

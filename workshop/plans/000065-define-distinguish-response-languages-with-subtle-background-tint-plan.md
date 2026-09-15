@@ -4,7 +4,7 @@
 
 **Goal:** Make target-language passages easy to distinguish throughout bilingual definitions, practice and model answers.
 
-**Status:** Implementation and verification complete 2026-09-15; awaiting close review and publication.
+**Status:** Implementation, verification and close review complete 2026-09-15; SHIP, ready for publication.
 
 **Architecture:** Producers preserve explicit language ownership. One pure background composer consumes owned text and effective `/lang`. Dictionary source metadata, practice presentation roles and a bounded model-annotation decoder all feed that composer. Unknown text remains neutral.
 
@@ -134,7 +134,7 @@ The policy is passed as data into RenderOpts and practice/model adapters; pure r
 - [x] Implement shared ownership validation and tint composition, invocation policy and field/source provenance, with pure regressions and real dictionary corpus coverage.
 - [x] Emit practice ownership during existing layout walks and route prompt, board/footer, help and reveal through the shared composer while retaining no-import purity and answer/selection behavior.
 - [x] Implement bounded annotation decoding and the single answer-stream adapter, update effective-language model context, obtain a real annotated capture, and verify stateful fake plus live conformance.
-- [ ] Update README/atlas, demonstrate dark/light/disabled output, complete verification, commit and pass the single SDLC close review before PR and merge.
+- [x] Update README/atlas, demonstrate dark/light/disabled output, complete verification, commit and pass the single SDLC close review before PR and merge.
 
 ## Function-level verification strategy
 
@@ -181,3 +181,5 @@ Verification: `go test ./... -count=1`; focused race tests for language/ask/prac
 - 2026-09-15: Implementation and full verification passed; mutation checks rejected all five planned regression classes. Both per-session profiles retained after operator confirmed use of light and dark terminals. Final row remains pending close review/publication. See issue Log for exact commands, live capture evidence and manual visual limitation.
 
 - 2026-09-15: Close review BR-1 (`source-ownership-requires-provenance`) found that `/lang` can differ from a dictionary's actual source when native selection falls back to every active dictionary. Source ownership now comes only from verified monolingual metadata for the actual selected IDs, preserved through wrappers and carried by definition sections. Study language remains solely the tint comparison target. Enumerated consumers: ordinary lookup, Choice full reveal, Cloze full reveal, plus dictionary-derived Choice option/reveal glosses and Board panel/footer glosses. Unknown fallback remains neutral in every consumer; deck-authored words/cloze text retain Target ownership and English help retains English ownership. Added missing-source and known-other-source integration regressions for all three full-definition paths, and practice-source regressions. No change to fallback lookup behavior or #64 policy.
+
+- 2026-09-15: Close re-review returned SHIP with no new findings; BR-1 disposed as addressed. Implementation checklist complete, with PR/merge publication following the accepted boundary. Reviewer independently reran the package suite/vet and rejected a provenance-regression mutation.
