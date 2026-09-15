@@ -191,7 +191,7 @@ func editorOn(line string) Editor {
 }
 
 func TestRenderLineHighlightsAKnownWord(t *testing.T) {
-	got := RenderLine(editorOn("what is obsequious"), "", vocab("obsequious"), true)
+	got := RenderLine(editorOn("what is obsequious"), "", vocab("obsequious"), true, prompt)
 
 	// Literal bytes, not knownOn+"obsequious". Using the constant compares it
 	// against itself: aliasing knownOn to inputOn produces no visible highlight
@@ -211,7 +211,7 @@ func TestRenderLineHighlightsAKnownWord(t *testing.T) {
 // highlight ends the rest of the line must be told to be bold again. Without
 // this the tail of every line goes plain after the first known word.
 func TestRenderLineResumesInputStyleAfterAHighlight(t *testing.T) {
-	got := RenderLine(editorOn("obsequious manner"), "", vocab("obsequious"), true)
+	got := RenderLine(editorOn("obsequious manner"), "", vocab("obsequious"), true, prompt)
 
 	const lit = "\x1b[1;32mobsequious"
 	i := strings.Index(got, lit)
@@ -225,7 +225,7 @@ func TestRenderLineResumesInputStyleAfterAHighlight(t *testing.T) {
 }
 
 func TestRenderLineWithoutColourEmitsNoStyle(t *testing.T) {
-	got := RenderLine(editorOn("what is obsequious"), "ly", vocab("obsequious"), false)
+	got := RenderLine(editorOn("what is obsequious"), "ly", vocab("obsequious"), false, prompt)
 
 	for _, style := range []string{knownOn, inputOn, promptOn, greyOn, sgrOff} {
 		if strings.Contains(got, style) {
@@ -244,8 +244,8 @@ func TestHighlightingDoesNotMoveTheCursor(t *testing.T) {
 	e := editorOn("what is obsequious")
 	e.Cursor = 4 // mid-line, so there is a real park to compute
 
-	plain := RenderLine(e, "sug", nil, true)
-	lit := RenderLine(e, "sug", vocab("obsequious"), true)
+	plain := RenderLine(e, "sug", nil, true, prompt)
+	lit := RenderLine(e, "sug", vocab("obsequious"), true, prompt)
 
 	park := func(s string) string {
 		i := strings.LastIndex(s, "\x1b[")
@@ -261,7 +261,7 @@ func TestHighlightingDoesNotMoveTheCursor(t *testing.T) {
 func TestRenderLineWithoutAVocabularyIsUnchanged(t *testing.T) {
 	e := editorOn("what is obsequious")
 
-	if got := RenderLine(e, "", nil, true); !strings.Contains(got, inputOn+"what is obsequious"+sgrOff) {
+	if got := RenderLine(e, "", nil, true, prompt); !strings.Contains(got, inputOn+"what is obsequious"+sgrOff) {
 		t.Errorf("nil vocabulary changed the render: %q", got)
 	}
 }
@@ -321,7 +321,7 @@ func TestAPunctuatedKeyIsNotMatchable(t *testing.T) {
 // which reads as the vocabulary feature leaking across that boundary — the same
 // boundary #20 was careful to decide exactly once, on the whole line.
 func TestACommandLineIsNotHighlighted(t *testing.T) {
-	got := RenderLine(editorOn("/history 7"), "", vocab("history"), true)
+	got := RenderLine(editorOn("/history 7"), "", vocab("history"), true, prompt)
 
 	if strings.Contains(got, "\x1b[1;32m") {
 		t.Errorf("the command namespace was highlighted: %q", got)
@@ -331,7 +331,7 @@ func TestACommandLineIsNotHighlighted(t *testing.T) {
 // ...and the same word outside the command namespace still highlights, so the
 // suppression is scoped to command lines rather than to the word.
 func TestTheSameWordHighlightsOutsideACommandLine(t *testing.T) {
-	got := RenderLine(editorOn("my history"), "", vocab("history"), true)
+	got := RenderLine(editorOn("my history"), "", vocab("history"), true, prompt)
 
 	if !strings.Contains(got, "\x1b[1;32mhistory") {
 		t.Errorf("the word stopped highlighting everywhere: %q", got)

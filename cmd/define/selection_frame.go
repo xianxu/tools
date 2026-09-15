@@ -103,8 +103,7 @@ func selectionCells(styled string, width int) ([]selectionCell, error) {
 			i += skip
 			continue
 		}
-		r, n := utf8.DecodeRuneInString(styled[i:])
-		w := cellWidth(r)
+		n, w := nextDisplayUnit(styled[i:])
 		if w == 0 {
 			if last >= 0 {
 				glyph.WriteString(styled[i : i+n])

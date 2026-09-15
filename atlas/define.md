@@ -198,6 +198,23 @@ It guarantees **fidelity, not completeness** — see Limits.
 
 ## The line editor (raw mode)
 
+`languagePrompt` supplies the effective session-language prefix at each render:
+English 🇺🇸, Spanish 🇪🇸, Italian 🇮🇹, plus the explicit fr/de/pt/zh/ja/ko
+mapping. Unknown valid tags use `[xx]`; malformed tags use `[??]`. The prefix
+ends with `› ` and remains outside editable input, history, and completion.
+The submitted line keeps the language in effect before dispatch; a successful
+`/lang` change affects the next prompt. `-no-flags` requests a code prefix while
+retaining raw editing; `-no-color` uses codes with plain line input. Both input
+and output must be terminals for prompts to appear.
+
+Flag rendering assumes two columns per adjacent regional-indicator pair.
+`nextDisplayUnit` keeps the pair whole across measurement, clipping, wrapping,
+selection, and copying. A true terminal width below two columns chooses a code
+prompt; `-no-flags` is the explicit fallback for fonts with different flag
+widths. `TestPTYLanguagePrompt` checks startup, switching, submitted identity,
+and Ctrl-U editing through the real isolated PTY harness; it does not measure
+the host font.
+
 When `define` owns the terminal (**stdin and stdout both a tty, and not
 `-no-color`**) it enters raw mode, takes the alternate screen (see "The screen"
 below) and runs its own editor:

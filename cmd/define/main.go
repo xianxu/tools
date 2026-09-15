@@ -458,6 +458,7 @@ type options struct {
 	raw     bool
 	color   bool
 	noAudio bool
+	noFlags bool
 	times   int
 	locale  string
 	// count bounds a review session (#6). A flag rather than a constant because
@@ -518,6 +519,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	fs.SetOutput(stderr)
 	raw := fs.Bool("raw", false, "print the unparsed dictionary entry")
 	noColor := fs.Bool("no-color", false, "disable ANSI colour")
+	noFlags := fs.Bool("no-flags", false, "show language codes instead of flags in the prompt")
 	noAudio := fs.Bool("no-audio", false, "do not fetch or play the pronunciation")
 	sound := fs.Int("sound", 3, "how many times to play the pronunciation")
 	// The older name for -sound. Kept working rather than removed: it is
@@ -655,8 +657,9 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		pron = parsed
 	}
 	opt := options{
-		raw:   *raw,
-		color: !*noColor && isTerminal(stdout),
+		raw:     *raw,
+		noFlags: *noFlags,
+		color:   !*noColor && isTerminal(stdout),
 		// -no-color means "emit no ANSI", so it disables cursor control too — the
 		// flag exists for terminals that mangle escapes, and splitting its meaning
 		// would leave those users with erase sequences they cannot render.

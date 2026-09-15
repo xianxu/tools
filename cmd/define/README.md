@@ -220,6 +220,19 @@ One interesting cross language feature is the ability to hear pronunciation in o
 language of a borrowed word. For example, try `arrondissement`, which is from French. 
 Click on the `French` link in the ORIGIN section to hear French pronunciation of it.
 
+The interactive prompt shows the current language: `🇺🇸 › ` for English,
+`🇪🇸 › ` for Spanish, and `🇮🇹 › ` for Italian. `/lang es` changes the next
+prompt; the submitted command keeps its previous language indicator. French,
+German, Portuguese, Chinese, Japanese, and Korean use 🇫🇷, 🇩🇪, 🇵🇹, 🇨🇳,
+🇯🇵, and 🇰🇷. Other valid language codes appear as `[xx] › `; these
+indicators do not imply that a dictionary is installed.
+
+Use `-no-flags` for a text prompt such as `[es] › ` while keeping color and
+normal line editing. This also helps terminals whose fonts do not display a
+flag in two columns. `-no-color` uses the text prompt with plain line input;
+terminals narrower than two columns also use text. Pipes and redirected output
+remain prompt-free. The indicator is outside the text you type or submit.
+
 The dictionary follows the language. `/lang` reports the selected language, its
 dictionary and whether bilingual display is on. The curated primary dictionaries:
 
@@ -624,6 +637,7 @@ define -lang it pizza       # and in Italian: the Devoto-Oli, not NOAD
 define -pron fr arrondissement  # the French recording, English everything else
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
+define -lang es -no-flags   # [es] prompt, with color and raw editing
 ```
 
 Two of those flags, in the words `define -h` uses:

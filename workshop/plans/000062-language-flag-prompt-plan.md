@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, existing ANSI screen and selection code, existing stateful terminal/dictionary test seams and PTY harness. No new dependency or persistent setting.
 
-**Status:** Proposed; awaiting operator approval before `sdlc change-code`.
+**Status:** Implemented and verified 2026-09-15; awaiting SDLC close review.
 
 ## Behavior
 
@@ -35,19 +35,7 @@ ARCH-DRY: `languagePrompt(lang store.Lang, flags bool, cols int) string` owns th
 
 ARCH-PURE: `RenderLine` takes an explicit prefix argument, not deps or environment access. Update every call in `replraw.go`, `editorloop_test.go`, `highlight_test.go`, and `activity_screen_test.go`; existing unrelated editor fixtures explicitly pass `prompt` to retain their isolated input-style assertions.
 
-Display unit contract (caller has already skipped escape sequences):
-
-```go
-func nextDisplayUnit(s string) (size, cells int) {
-    if s == "" { return 0, 0 }
-    r, n := utf8.DecodeRuneInString(s)
-    if r >= 0x1f1e6 && r <= 0x1f1ff && n < len(s) {
-        next, m := utf8.DecodeRuneInString(s[n:])
-        if next >= 0x1f1e6 && next <= 0x1f1ff { return n+m, 2 }
-    }
-    return n, cellWidth(r)
-}
-```
+`nextDisplayUnit` reads one rune or one adjacent regional-indicator pair after the caller skips ANSI escapes. It returns byte length and display columns; a complete pair occupies two cells, empty input is zero, and other input retains `cellWidth` behavior.
 
 Consume complete units in `visibleCells`, `visibleIndex`, `clipVisible`, `walkSelectionRows`, `selectionCells`, and `markClickable`. Audit `cellSlice`, the test-only slice helper, for the same contract. `wrapText` already uses `visibleCells`. Byte-only ANSI scans stay unchanged because they do not decide columns. Test RI pairs directly with independently stated strings/columns, not only the existing terminal simulator, which also uses rune widths.
 
@@ -64,36 +52,56 @@ Consume complete units in `visibleCells`, `visibleIndex`, `clipVisible`, `walkSe
 
 ### Task 1: Pure prompt policy and display units
 
-Files: create `language_prompt.go`, `language_prompt_test.go`, `display_unit.go`, `display_unit_test.go`; modify `render.go`, `screen.go`, `selection_frame.go` and their colocated tests as needed.
+Files: `cmd/define/language_prompt.go`, `language_prompt_test.go`, `display_unit.go`, `display_unit_test.go`, `render.go`, `screen.go`, `selection_frame.go`, and their existing tests.
 
-- [ ] Write table tests `TestLanguagePrompt` for every mapping, empty/default, unknown valid language, invalid/control-bearing tags, flag preference and plain fallback. Assert exact prefixes.
-- [ ] Write `TestFlagDisplayBoundaries` with literal expectations: flag prefix width 5; code prefix width 7; clipping `🇪🇸x` at 1 yields empty and at 2 yields the full flag; physical rows for `a🇪🇸b` at width 2 equal `a`, `🇪🇸`, `b`. Include colored versions, adjacent flags, lone indicators, CJK and combining marks.
-- [ ] Write `TestFlagSelectionCells` proving either of the two occupied columns selects/copies the whole flag; `visibleIndex` assigns all flag bytes the same starting column. Region marking must not insert escape sequences between RI runes. Include clips at odd/even widths. At a tiny 1-column screen, assert the live prefix is code-only, its emitted rows and selection agree, and an old leading-flag record emits no partial flag but returns intact after widening.
-- [ ] Run `go test ./cmd/define -run 'TestLanguagePrompt|TestFlag' -count=1`; observe the missing API or geometry assertions fail before production changes.
-- [ ] Implement the two pure helpers and route the enumerated column consumers through the display-unit reader. Preserve existing combining-mark attachment and ANSI styling behavior.
-- [ ] Rerun focused tests. Add `FuzzFlagDisplayBoundaries` with independent RI-pair seeds, arbitrary surrounding text and widths: terminating walks, valid generated UTF-8, no partial generated pair under clipping, and round-trip complete flag selection. Keep byte-invalid input behavior compatible with existing functions.
+- [x] Implement and verify the shared prompt policy and whole-flag display units with test-first regression coverage; preserve current non-flag Unicode and ANSI behavior.
 
-### Task 2: Connect current language to every prompt
+### Task 2: Prompt integration and terminal behavior
 
-Files: modify `main.go`, `editor.go`, `repl.go`, `replraw.go`; add integration tests in `language_prompt_test.go`; update explicit-prefix calls in existing editor/highlight/activity tests.
+Files: `cmd/define/main.go`, `editor.go`, `repl.go`, `replraw.go`, `language_prompt_paths_test.go`, and existing editor/highlight/activity tests.
 
-- [ ] Write `TestLanguagePromptResolvedStartup` through `run` and a captured console in a temporary deck: persist es, supply no `-lang`, and assert the first prompt is Spanish; supply `-lang it` against that deck and assert Italian wins. Include default startup with no saved language.
-- [ ] Write `TestLanguagePromptStartupAndSwitch` through both `runEditor` and interactive `replLines` using existing session/dictionary seams: default en, startup es, en→es→it, failed persistence, session-only switch, unknown tag. Assert submitted-line versus next-prompt identity and dispatched text/history contain no decoration.
-- [ ] Write `TestNoFlagsKeepsEditorAndColor` through flag parsing and the existing console seam, and extend `TestREPLPromptRequiresBothStreams`/`TestREPLPromptOnlyWhenInteractive` for no prompt under pipes/redirects and code fallback under `-no-color`. Test invalid flag arguments normally fail usage.
-- [ ] Write `TestLanguagePromptEditorGeometry` using a real pinned screen with completion, edits in the middle of input, narrow widths, and resize. Assert literal cursor/footer positions or an independent terminal oracle, and copy an existing definition word beneath the changed prompt budget. Do not calculate expected positions with production display helpers.
-- [ ] Run `go test ./cmd/define -run 'TestLanguagePrompt|TestNoFlags|TestREPLPrompt' -count=1` and observe the missing indicator/policy failures.
-- [ ] Add `-no-flags` and `options.noFlags`; change `RenderLine` to accept prefix explicitly. Supply `languagePrompt(d.lang, !opt.noFlags && opt.color, cols)` at live and submitted raw sites, where cols is read from `view.Size()` inside one local current-prefix closure. Use the same helper with `terminalCols(stdout)` at the interactive line-loop prompt. Do not cache the prefix across /lang. Update all required call sites.
-- [ ] Run those tests plus `go test ./cmd/define -run 'RenderLine|Highlight|Activity|Selection|Screen|LangSwitch' -count=1`. Mutation-check removing the live prefix, freezing its language, omitting submitted decoration, and reverting display-unit consumers; relevant tests must fail.
+- [x] Integrate effective-language prefixes into both interactive shells and submitted lines, with explicit flag fallback and independent geometry regressions.
 
-### Task 3: Documentation, terminal check and close readiness
+The existing `opt.tty` is permission for ANSI/raw editing, not proof that stdout is a terminal. Plain mode currently suppresses every prompt. To deliver the approved code fallback, distinguish interactive prompt ownership (both streams are terminals) from raw editing permission. Reuse the stdout terminal probe and existing injectable opt.tty test path; no-color sessions use a code prompt and line input, while pipes/redirects remain prompt-free. Entry-point tests must use a real PTY stdout because `run` probes it; non-file scripted stdin deliberately exercises the existing line fallback. Do not invent a new console-factory dependency just for these tests.
 
-Files: modify `cmd/define/README.md`, `atlas/define.md`; add `TestPTYLanguagePrompt` to existing `pty_conformance_test.go`; update this plan and issue log.
+### Task 3: Documentation and close readiness
 
-- [ ] Document the mapping as visual conventions, unknown-code behavior, `-no-flags`, and plain-mode fallback. Update flag/help synchronization expectations using existing doc guards. Atlas explains the shared prompt helper and complete flag units; existing atlas index entry already links define.
-- [ ] Add PTY test that starts with `-lang es -no-audio` in a temporary directory, observes the Spanish indicator, submits `/lang en`, observes the next English indicator, and exits cleanly; add a `-no-flags` case. Use the existing no-background environment and deck-permission harness so no real user data/model is touched.
-- [ ] Run `go test ./... -count=1`, focused `go test -race ./cmd/define -run 'LanguagePrompt|NoFlags|Flag|REPLPrompt' -count=1`, `go vet ./...`, `GOOS=linux CGO_ENABLED=0 go build ./...`, and `git diff --check`; all must pass.
-- [ ] Run `go test ./cmd/define -run '^$' -fuzz '^FuzzFlagDisplayBoundaries$' -fuzztime 10s` and `CONFORMANCE_STRICT=1 go test -tags conformance ./cmd/define -run '^TestPTYLanguagePrompt$' -count=1 -v`. Record results. Manually compare flag/code rendering in the operator's terminal, including a narrow resize; if not directly observable, record the remaining host-font check rather than claiming PTY proves it.
-- [ ] Update issue log, check only evidenced tasks, commit implementation and run `sdlc close --issue 62 --verified '<behavior evidence>'`. Resolve boundary findings, commit the review record, then `sdlc pr` and `sdlc merge --yes` within the authorized work sequence. Proceed to #65 after #62 is complete.
+Files: `cmd/define/README.md`, `atlas/define.md`, `cmd/define/pty_conformance_test.go`, issue and plan records.
+
+- [x] Document prompt mappings and fallback, verify actual terminal integration, and record evidence before close review and publication.
+
+## Function-level verification strategy
+
+| Production surface | Adversarial strategy | Independent mechanical guard |
+|---|---|---|
+| `languagePrompt` | Table-driven normalized, empty, unknown, malformed language and terminal-policy inputs | Literal expected prefixes; no control-bearing fallback; language remains visible when flag policy is disabled |
+| `nextDisplayUnit` | Boundary and fuzz tests over RI runs, surrounding Unicode, truncation and widths | Positive byte progress for nonempty input; complete generated pairs remain indivisible; existing non-flag widths unchanged |
+| `visibleCells` / `visibleIndex` | Composed flag/text/control sequences | Independently specified column totals and byte-to-column maps; neither indicator's bytes acquire a separate starting column |
+| `clipVisible` / `walkSelectionRows` | Boundary-straddling complete flags with ANSI styles and narrow widths | Literal clipped strings/physical rows; no half-flag in output; width-one prompt policy and historical viewport clipping agree with painting |
+| `selectionCells` / `markClickable` | Select/mark either column of a flag beside ordinary selectable text | Actual copy result preserves the entire original glyph; styles cannot split its bytes; neighboring action identity remains correct |
+| `RenderLine` | Editing, completion and cursor positioning with varying prefixes | Independently specified emitted prefix and cursor controls; editable/history text excludes decoration |
+| `run` / `repl` | Real PTY stdout plus scripted stdin, temporary saved deck, explicit overrides, default startup, plain-mode and redirection | First emitted prompt reflects resolved language and flag preference; no ANSI in no-color; no prompt when either stream is noninteractive |
+| `runEditor` / `replLines` with `sessionSetLang` | Stateful dictionary/store seams driving successful, failed and session-only changes | Next observed prompt follows actual language effect; submitted line keeps pre-dispatch identity; recorded input never contains decoration |
+| Pinned screen with live language prompt | Input/resize/selection sequences against an independently specified terminal layout | Cursor/footer coordinates and copied definition text stay correct; one-column fallback and later widening never expose half a generated flag |
+| PTY child process | Existing isolated terminal harness, startup/switch/fallback/exit sequences with background work disabled | Emitted flag/code prompts follow commands and process exits cleanly; no real user deck/model/clipboard access |
+
+Use mutation checks to demonstrate that incorrect prefix omission, stale-language caching, missing submitted decoration and split-unit consumers fail the corresponding regressions. Fuzz `FuzzFlagDisplayBoundaries`; compare results to independently constructed flag tokens rather than using production widths as the oracle. These tests implement the behavioral requirements above; individual cases belong in executable tests.
+
+Verification commands (all must pass):
+
+```sh
+go test ./... -count=1
+go test -race ./cmd/define -run 'LanguagePrompt|NoFlags|Flag|REPLPrompt' -count=1
+go test ./cmd/define -run '^$' -fuzz '^FuzzFlagDisplayBoundaries$' -fuzztime 10s
+go vet ./...
+GOOS=linux CGO_ENABLED=0 go build ./...
+CONFORMANCE_STRICT=1 go test -tags conformance ./cmd/define -run '^TestPTYLanguagePrompt$' -count=1 -v
+git diff --check
+```
+
+PTY checks establish emitted bytes and raw-session lifecycle, not a host font's glyph width. Inspect flag/code rendering and a narrow resize in the operator's actual terminal before release; if that is not directly observable, record the remaining visual check explicitly. The fallback remains available regardless of that check.
+
+After verification: update issue/plan evidence, commit implementation, run the single `sdlc close --issue 62 --verified '<behavior evidence>'` boundary review, resolve findings, commit the verdict and publish with `sdlc pr` → `sdlc merge --yes`. Proceed to #65 after #62 completes.
 
 ## Revisions
 
@@ -102,3 +110,7 @@ Files: modify `cmd/define/README.md`, `atlas/define.md`; add `TestPTYLanguagePro
 - 2026-09-15: Fresh review found undefined one-column behavior and missing persisted-startup coverage. Added true-width code fallback using the display Size seam (not wrapping-policy width), historical-record clipping/resize expectations, and run-level saved-language plus explicit-override tests.
 
 - 2026-09-15: Fresh plan re-review approved both corrections with no remaining gaps. Operator approval remains pending.
+
+- 2026-09-15: Operator approved implementation. PQ-1 requested function-level strategies rather than test-case/procedural inventories; compressed task sections into named surfaces, adversarial strategies and independent guards while preserving the approved behavior. Inspection also clarified plain-mode prompt ownership and the real PTY stdout needed for entry-point coverage.
+
+- 2026-09-15: Implementation complete. Literal screen, copy, cursor and resize tests cover both flag cells and width 1; local review also corrected clickable regions beginning inside a flag. Full suite, focused race, 10s fuzz, vet, Linux build and strict PTY passed. Mutation checks caught omitted live/submitted prefixes, frozen language, wrapping-policy width and rune-only geometry; originals restored. Host-font rendering is not directly observable here, so that visual check remains explicit.

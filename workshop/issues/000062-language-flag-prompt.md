@@ -57,13 +57,21 @@ total: 2.338
 
 ## Plan
 
-- [ ] Approve and gate [the implementation plan](../plans/000062-language-flag-prompt-plan.md), implement shared prompt indicators and atomic flag geometry, and verify both loop paths before close review.
+- [x] Approve and gate [the implementation plan](../plans/000062-language-flag-prompt-plan.md), implement shared prompt indicators and atomic flag geometry, and verify both loop paths before close review.
 
 ## Log
 
 ### 2026-09-14
 
 - Requested by the user as a separate future feature during bilingual Spanish work. Task capture only; implementation has not started.
+
+### 2026-09-15
+
+- Operator approved the durable plan; plan-quality round 2 passed and change-code created the issue branch. Estimate accepted with INFO notes: geometry/TUI allowances may be optimistic; PTY discovery overlaps routine verification. Preserve the approved estimate for calibration.
+- TDD regressions reproduced missing startup/switch prefixes, unrecognized -no-flags, hidden no-color prompt, and partial-flag clipping/wrapping/copy. Shared policy and display-unit implementation pass the focused regressions. Strict PTY verifies flag/code startup, color/raw editing, Ctrl-U, language switching and clean exit.
+
+- Final verification: `go test ./... -count=1` passed (define 132.215s); focused race passed (3.963s); FuzzFlagDisplayBoundaries passed 10,359 executions in 11.859s; `go vet ./...`, Linux CGO-disabled build, strict TestPTYLanguagePrompt, and diff check passed. Five mutations were caught by behavioral assertions and restored. Tests cover saved/overridden/default startup, both switch loops, failed/session-only changes, history/input separation, plain output and true-width resize fallback.
+- Local review found second-cell clickable regions could block later annotations; a failing regression now protects whole-unit intersection and later regions. Added the general lesson. Host-font glyph width remains a manual visual check; automated PTY evidence confirms bytes/editing/lifecycle, and -no-flags remains the explicit fallback.
 
 ## Revisions
 

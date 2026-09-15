@@ -171,6 +171,65 @@ func (o *ptyOut) take(d time.Duration) string {
 	return o.buf.TakeAll()
 }
 
+// This checks terminal bytes and raw editing, not the host font's flag width.
+func TestPTYLanguagePrompt(t *testing.T) {
+	for _, noFlags := range []bool{false, true} {
+		name, spanish, english := "flags", "🇪🇸 › ", "🇺🇸 › "
+		args := []string{"--no-audio"}
+		if noFlags {
+			name, spanish, english = "codes", "[es] › ", "[en] › "
+			args = append(args, "--no-flags")
+		}
+		t.Run(name, func(t *testing.T) {
+			deck := t.TempDir()
+			if err := store.WriteLang(deck, store.Lang("es")); err != nil {
+				t.Fatal(err)
+			}
+			cmd, f := startDefineInDir(t, deck, []string{"DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, args...)
+			if err := pty.Setsize(f, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+				t.Fatal(err)
+			}
+			out := watch(f)
+			started := awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(unstyled(s), spanish) })
+			if !strings.Contains(started, "\x1b[?1049h") {
+				t.Fatalf("language prompt did not enter the raw editor screen: %q", started)
+			}
+			if !strings.Contains(started, promptOn+spanish+sgrOff) {
+				t.Fatalf("language prompt lost its color: %q", started)
+			}
+			write := func(s string) {
+				t.Helper()
+				if _, err := f.WriteString(s); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Editing must stay raw even with --no-flags: Ctrl-U removes the
+			// junk before dispatch, leaving an actual successful /lang command.
+			write("discard me")
+			awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(unstyled(s), spanish+"discard me") })
+			write("\x15/lang en\r")
+			changed := awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(unstyled(s), english) })
+			if !strings.Contains(unstyled(changed), spanish+"/lang en") {
+				t.Fatalf("submitted command lost its previous language prompt: %q", changed)
+			}
+			if got := store.ReadLang(deck); got != "en" {
+				t.Fatalf("edited command did not switch the saved language: %q", got)
+			}
+			write("\x04")
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("exit: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("Ctrl-D did not end the prompt session")
+			}
+		})
+	}
+}
+
 func TestPTYSuggestionAndAcceptance(t *testing.T) {
 	_, f := startDefine(t, "--times", "1")
 	out := watch(f)

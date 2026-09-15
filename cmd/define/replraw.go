@@ -387,6 +387,10 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	//
 	// Computing here means there is one answer to "what does the current line
 	// match", and no way to hand this function a stale one.
+	currentPrompt := func() string {
+		_, cols := view.Size()
+		return languagePrompt(d.lang, opt.color && !opt.noFlags, cols)
+	}
 	draw := func() {
 		// completionsFor rather than candidatesFor: draw renders only the grey
 		// tail, so resolving the pair here would build a recall list per
@@ -397,7 +401,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// that is the whole of this loop's change: they are the live edge,
 		// rewritten on every keystroke, so buffering them would file a copy of
 		// the prompt per character typed.
-		view.Draw(RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color),
+		view.Draw(RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color, currentPrompt()),
 			menuLines(e.String(), commands, opt.width))
 	}
 	draw()
@@ -558,7 +562,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// typing at a line that does not exist.
 				view.Draw("", nil)
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
-					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color))
+					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color, currentPrompt()))
 				}
 				if cmd.kind == cmdCommand {
 					// Commands print multiple lines, and the screen places every

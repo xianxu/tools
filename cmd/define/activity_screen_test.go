@@ -20,7 +20,7 @@ func TestActivityScreenGeometry(t *testing.T) {
 					live.s.gap = chromeGap
 				}
 				live.interval = -1
-				prompt := RenderLine(Editor{Line: []rune("ab"), Cursor: 2}, "", nil, false)
+				prompt := RenderLine(Editor{Line: []rune("ab"), Cursor: 2}, "", nil, false, prompt)
 				live.Write([]byte("history\n"))
 				live.Draw(prompt, []string{"menu"})
 				lease, err := (&screenActivityHost{screen: live}).begin("⠋")
@@ -160,7 +160,7 @@ func TestActivityScreenPromptAllocation(t *testing.T) {
 	for _, glyph := range []string{"", "⠋"} {
 		var out bytes.Buffer
 		s := &screen{}
-		prompt := RenderLine(Editor{Line: []rune("ab"), Cursor: 2}, "", nil, false)
+		prompt := RenderLine(Editor{Line: []rune("ab"), Cursor: 2}, "", nil, false, prompt)
 		s.paintActivity(&out, 4, 4, prompt, []string{"menu"}, glyph)
 		frame := readFrame(t, out.String(), 4)
 		wantPromptRow := 0
@@ -182,7 +182,7 @@ func TestActivityScreenPromptAllocation(t *testing.T) {
 	}
 	var out bytes.Buffer
 	live := newLiveScreen(&out, 4, 20)
-	prompt := RenderLine(Editor{Line: []rune("ab"), Cursor: 1}, "cd", nil, false)
+	prompt := RenderLine(Editor{Line: []rune("ab"), Cursor: 1}, "cd", nil, false, prompt)
 	live.Draw(prompt, nil)
 	lease, err := (&screenActivityHost{screen: live}).begin("⠋")
 	if err != nil {
@@ -201,7 +201,7 @@ func TestActivityScreenResizeScroll(t *testing.T) {
 	live := newPinnedScreen(&out, 8, 20)
 	live.interval = -1
 	live.WriteRegions("one\ntwo\nthree\nfour\nfive\nsix\n", []Region{{Line: 0, Col: 0, Width: 3}})
-	prompt := RenderLine(Editor{Line: []rune("ab"), Cursor: 2}, "", nil, false)
+	prompt := RenderLine(Editor{Line: []rune("ab"), Cursor: 2}, "", nil, false, prompt)
 	live.Draw(prompt, []string{"menu"})
 	lease, err := (&screenActivityHost{screen: live}).begin("⠋")
 	if err != nil {
