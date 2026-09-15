@@ -61,7 +61,7 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
 
 - [x] Trace source formatting and terminal painting; settle a concrete layout and
   durable implementation plan with regressions and operator review.
-- [ ] Implement structural bilingual rendering and shared full-region painting;
+- [x] Implement structural bilingual rendering and shared full-region painting;
   verify actual `rendir` output, all consumers and required checks, then close.
 
 
@@ -110,6 +110,38 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
 - Context checkpoint before implementation under AGENTS §14. Final design and
   approval are durable; no runtime code changed yet. Next: failing source and
   cell-background tests, shared output contract, then bounded parallel work.
+
+- Resumed from checksum-verified continuation; `sdlc state` confirmed the approved
+  branch/gate. Preserved Pair thread/history and unrelated untracked #48.
+- Regressions reproduced native Oxford flattened structure and unfilled terminal
+  cells. Implemented shared unpadded output/row-paint contract; bounded parser,
+  painter and streaming work delegated after interfaces settled (ARCH-DRY/PURE).
+- Native parser, screen selection/resize, section ownership, practice metadata and
+  streaming focused tests pass. Integration caught and fixed producer SGR loss,
+  mutable exclusion aliases, width-zero stream override and key-decoration ownership.
+- Strict actual native rendir conformance passes for es/en, dark/light, widths32/80.
+  Actual ANSI/text captures and rendered HTML are under `/tmp/define66-actual*`.
+  Source-boundary and mixed-row ownership mutations were killed; bounded parser
+  and decoder fuzz passed. Full verification and SDLC close review remain.
+
+- Real PTY checks passed: native rendir at 32/80 columns in dark/light/off, plus
+  interactive language switches in all three profiles. Inspected actual ANSI-derived
+  dark/light screenshot `/tmp/define66-visual.png`; shared it with the operator.
+- Mutation verification killed parser boundary removal, mixed-row ownership,
+  missing padding/reset, source-padding contamination and layout-background loss.
+  Live footer metadata removal initially survived producer-only tests; added a
+  DrawOutput/frame/cell regression and confirmed that mutation now fails.
+- Full-suite recovery separated unpadded Transcript from PaintedTranscript; nested
+  sitting handoff now transfers structured metadata. Cancellation tests wait for a
+  completed row, matching the approved pending-row buffering policy. Focused tests,
+  race checks, strict native/PTY checks, vet and Linux build pass after fixes.
+
+- Final verification: `go test ./... -count=1` passed (define 131.235s);
+  focused `go test -race ./cmd/define/...` passed; `go vet ./...`, Linux
+  CGO-disabled build, strict native/PTY 32/80 dark/light/off and diff check passed.
+  The amended cancellation readiness test passed three consecutive runs. Full
+  history stays unpadded; PaintedTranscript is only terminal handback, and nested
+  screens transfer OutputTranscript metadata. Preparing the single close review.
 
 ## Revisions
 

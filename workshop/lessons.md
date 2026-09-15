@@ -4649,3 +4649,12 @@ ownership from actual selected dictionary metadata, never the session language o
 display label. Test source/target mismatch and unknown-source composition through
 ordinary lookup, full reveals and dictionary-derived practice glosses. A fallback
 selection test and a tint test in isolation do not prove their composition.
+
+## Region paint needs consumer and blank-cell guards (define #66)
+
+ANSI token checks can pass while a background covers only ink. Assert every
+terminal cell, including indentation, trailing cells and blank rows, then verify
+the live consumer. A footer producer test passed after its screen metadata was
+removed; a DrawOutput-to-frame cell test killed that mutation. Keep unpadded
+source and immutable copied metadata separate, and preserve producer SGR across
+physical row boundaries when a painter resets after padding.

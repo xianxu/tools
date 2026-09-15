@@ -277,11 +277,18 @@ primary dictionary entry, regardless of the toggle.
 
 ### Recognizing the language of a passage
 
-A subtle background marks text in your current `/lang`, across definitions,
-practice and model answers. With `/lang es`, Spanish phrases are tinted and
-English explanations keep the normal background. With `/lang en`, English is
-tinted. Unknown language stays neutral. Changing `/lang` affects new output;
-previously printed text keeps its original style.
+A subtle full-row background groups output in your current `/lang`, including
+indentation, trailing space and blank rows inside dictionary sections. Each
+returned dictionary uses one background: with `/lang es`, the Spanish primary is
+tinted and the entire Oxford English explanation stays neutral, including its
+Spanish examples. Oxford keeps its grammatical groups, senses and inline bilingual
+example pairs. With `/lang en`, shown English sections are tinted. Unknown dictionary
+sources stay neutral.
+
+Practice and model rows are tinted when their prose belongs to the current language;
+mixed or unknown rows stay neutral. Model output holds one unfinished display row
+until its ownership is settled. Changing `/lang` affects new output; previously
+printed text keeps its original style. Resizing clips history without reflowing it.
 
 The default suits dark terminals. Choose a profile when starting `define`:
 

@@ -90,7 +90,8 @@ type Choice struct {
 	// examples, its other senses and its origin. Form 2.1 revealed the full entry
 	// for exactly this reason before #42 deleted it, and a recognition form that
 	// revealed less would have taught less than the easier form did.
-	definition string
+	definition        string
+	definitionRegions []PresentationRegion
 }
 
 // NewChoice takes finished options — glosses already extracted, axes already
@@ -266,7 +267,7 @@ func (c *Choice) RevealPresentation() Presentation {
 	if c.definition != "" {
 		p.text("\n\n" + c.definition)
 	}
-	return p.presentation()
+	return withDefinitionRegions(p.presentation(), c.definition, c.definitionRegions)
 }
 
 // Keys names the digits, and what they mean for THIS form.
@@ -289,4 +290,9 @@ func (c *Choice) MissedAxis() Axis {
 		return AxisNone
 	}
 	return c.options[i].Axis
+}
+
+func (c *Choice) WithDefinitionRegions(rs []PresentationRegion) *Choice {
+	c.definitionRegions = rs
+	return c
 }

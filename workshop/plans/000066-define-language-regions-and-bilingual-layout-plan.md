@@ -103,25 +103,25 @@ Direct pure-core tests use independent source-order and terminal-cell oracles; i
 
 ### Task 1 — Source structure and regression oracle
 
-- [ ] Promote exact native `rendir` capture with provenance; add the direct parser and render regressions above, run against the flat path and record failures.
-- [ ] Implement the bounded structural core and integrate with `definitionSection`/`renderDefinitions`, preserving ordinary primary parsing and the source-conservation guards.
+- [x] Promote exact native `rendir` capture with provenance; add the direct parser and render regressions above, run against the flat path and record failures.
+- [x] Implement the bounded structural core and integrate with `definitionSection`/`renderDefinitions`, preserving ordinary primary parsing and the source-conservation guards.
 
 ### Task 2 — Shared physical-row paint
 
-- [ ] Add the direct layout/painter/selection regressions above and demonstrate the current text-strip failure.
-- [ ] Implement validated structured output and shared geometry projection; wire screen buffer/paint, `selectionRow`, selection repaint, terminal/plain serializers and exit transcript. Keep synthetic fill out of source strings/cells.
+- [x] Add the direct layout/painter/selection regressions above and demonstrate the current text-strip failure.
+- [x] Implement validated structured output and shared geometry projection; wire screen buffer/paint, `selectionRow`, selection repaint, terminal/plain serializers and exit transcript. Keep synthetic fill out of source strings/cells.
 
 ### Task 3 — Consumer sweep
 
-- [ ] Wire ordinary dictionary lookup and both full practice reveals; preserve headword/vocabulary/origin action regions through new Oxford rows.
-- [ ] Wire Choice/Cloze/Board prompt/reveal/help/footer and semantic answer exclusions via producer metadata. Dictionary glosses continue using verified dictionary-source ownership.
-- [ ] Replace model text-run tint with row metadata using `advanceRowOwnership`; demonstrate the streaming guards above through the existing real-capture SSE fake.
+- [x] Wire ordinary dictionary lookup and both full practice reveals; preserve headword/vocabulary/origin action regions through new Oxford rows.
+- [x] Wire Choice/Cloze/Board prompt/reveal/help/footer and semantic answer exclusions via producer metadata. Dictionary glosses continue using verified dictionary-source ownership.
+- [x] Replace model text-run tint with row metadata using `advanceRowOwnership`; demonstrate the streaming guards above through the existing real-capture SSE fake.
 
 ### Task 4 — Demonstrate and close
 
-- [ ] Update README/atlas to supersede text-only tint. Add integration-registry rows if new conformance files are introduced.
-- [ ] Run full Go suite, focused race checks, bounded source/stream fuzz, vet, Linux build and diff check. Run strict native `rendir` conformance and real PTY dark/light/off tests at multiple widths.
-- [ ] Capture actual rendered `rendir`, inspect dark/light output visually, and show the operator concrete output. Use the terminal-state oracle above; no visual-completion claim based solely on the design mockup.
+- [x] Update README/atlas to supersede text-only tint. Add integration-registry rows if new conformance files are introduced.
+- [x] Run full Go suite, focused race checks, bounded source/stream fuzz, vet, Linux build and diff check. Run strict native `rendir` conformance and real PTY dark/light/off tests at multiple widths.
+- [x] Capture actual rendered `rendir`, inspect dark/light output visually, and show the operator concrete output. Use the terminal-state oracle above; no visual-completion claim based solely on the design mockup.
 - [ ] Run the function-level mutations above, commit, pass the single SDLC close review, then publish.
 
 Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bounded new fuzz targets; `go vet ./...`; `GOOS=linux CGO_ENABLED=0 go build ./...`; strict relevant `-tags conformance` tests; `git diff --check`. Exact focused test names land with each regression; passing requires the independent behavioral assertions above, not only unchanged text snapshots.
@@ -152,3 +152,8 @@ Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bo
 - 2026-09-15: Operator explicitly approved the final preview (“yes, looks great”): uniform dictionary-section backgrounds and inline bilingual pairs. Proceed to change-code, estimate and implementation without further layout approval.
 
 - 2026-09-15: Plan-quality finding PQ-1 requested named pure-function test strategies. Named `parseBilingualDocument` and `advanceRowOwnership`; replaced duplicated case inventories with one function/input-class/independent-guard matrix. Integration commands and actual visual acceptance remain. Approved product behavior and scope are unchanged.
+
+- 2026-09-15: Implementation preserves the established unpadded `Transcript()` API.
+  `PaintedTranscript()` owns terminal handback and `OutputTranscript()` transfers
+  text/actions/paint between nested screens. This avoids clipping or padding logical
+  history when current-width painting occurs. Added a nested-transfer regression.

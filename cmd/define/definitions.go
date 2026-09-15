@@ -8,11 +8,14 @@ import (
 )
 
 type definitionSection struct {
-	label    string
-	language store.Lang
-	entries  []string
-	source   []languageText
-	err      error
+	label        string
+	language     store.Lang
+	entries      []string
+	source       []languageText
+	documents    []bilingualDocument
+	presentation store.Lang
+	formatErr    error
+	err          error
 }
 type definitionSet struct {
 	sections []definitionSection
@@ -50,9 +53,23 @@ func definitionsFor(dict Dictionary, word, primary string, primaryErr error, on 
 // Regions are complete here, so callers must not run an unscoped vocabulary
 // pass over the composed bilingual string afterward.
 func renderDefinitions(set definitionSet, opt RenderOpts) (string, []Region) {
+	o := renderDefinitionOutput(set, opt)
+	return renderOutputText(o), o.regions
+}
+
+func renderDefinitionOutput(set definitionSet, opt RenderOpts) renderedOutput {
 	var out strings.Builder
 	var regions []Region
+	var paints []rowPaint
 	for index, section := range set.sections {
+		startLine := strings.Count(out.String(), "\n")
+		role := section.language
+		if section.presentation != "" {
+			role = section.presentation
+		}
+		if section.formatErr != nil {
+			role = ""
+		}
 		if set.labeled {
 			if index > 0 {
 				out.WriteString("\n")
@@ -69,6 +86,7 @@ func renderDefinitions(set definitionSet, opt RenderOpts) (string, []Region) {
 		for entryIndex, raw := range section.entries {
 			ro := opt
 			ro.Language = section.language
+			ro.Tint = tintPolicy{}
 			if index > 0 {
 				ro.Vocab = nil
 			}
@@ -76,7 +94,15 @@ func renderDefinitions(set definitionSet, opt RenderOpts) (string, []Region) {
 			if entryIndex < len(section.source) && section.source[entryIndex].text == raw {
 				entry.source = section.source[entryIndex]
 			}
-			rendered, rs := Render(entry, ro)
+			var rendered string
+			var rs []Region
+			if entryIndex < len(section.documents) && section.documents[entryIndex].root != nil {
+				rendered, rs = renderBilingualDocument(section.documents[entryIndex], ro)
+			} else if section.formatErr != nil {
+				rendered = wrapWritten(raw, opt.Width) + "\n"
+			} else {
+				rendered, rs = Render(entry, ro)
+			}
 			if index == 0 {
 				rs = mergeRegions(rs, wordRegions(rendered, opt.Vocab))
 			}
@@ -87,8 +113,20 @@ func renderDefinitions(set definitionSet, opt RenderOpts) (string, []Region) {
 			}
 			out.WriteString(rendered)
 		}
+		if section.formatErr != nil {
+			out.WriteString("[Oxford formatting unavailable; showing source text]\n")
+		}
+		endLine := strings.Count(out.String(), "\n")
+		for len(paints) < endLine {
+			paints = append(paints, rowPaint{})
+		}
+		if opt.Color && role != "" && normalizedLang(role) == normalizedLang(opt.Tint.lang) {
+			for i := startLine; i < endLine; i++ {
+				paints[i].background = opt.Tint.background
+			}
+		}
 	}
-	return out.String(), regions
+	return renderedOutput{text: out.String(), regions: regions, rows: paints}
 }
 
 type spanishDefinitions struct {
@@ -98,14 +136,21 @@ type spanishDefinitions struct {
 
 func (d spanishDefinitions) primaryLabel() string { return "Spanish — Larousse Diccionario General" }
 func (d spanishDefinitions) supplement(word, primary string) definitionSection {
-	section := definitionSection{label: "English — Oxford Spanish–English"}
+	section := definitionSection{label: "English — Oxford Spanish–English", presentation: "en"}
 	records, err := d.english.Records(word)
 	if err == nil {
 		var selected []bilingualRecord
 		selected, err = selectedSpanishRecords(records, word, entryIdentity(ParseEntry(primary)))
 		for _, record := range selected {
 			section.entries = append(section.entries, record.Text)
-			section.source = append(section.source, bilingualLanguageText(record))
+			doc, parseErr := parseBilingualDocument(record)
+			section.documents = append(section.documents, doc)
+			if parseErr != nil {
+				section.formatErr = parseErr
+				section.source = append(section.source, languageText{text: record.Text})
+			} else {
+				section.source = append(section.source, doc.native)
+			}
 		}
 	}
 	if err != nil {

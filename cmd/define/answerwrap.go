@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/xianxu/tools/cmd/define/store"
 	"io"
 	"strings"
 	"unicode"
@@ -165,4 +166,226 @@ func (w *answerWrapWriter) emit(s string) {
 		err = io.ErrShortWrite
 	}
 	w.err = err
+}
+
+// rowOwnership is independent of terminal styling. Empty decorations never
+// establish ownership; unknown or foreign prose absorbs later known prose.
+type rowOwnership struct {
+	lang  string
+	mixed bool
+}
+type rowOwnershipEvent struct {
+	lang        string
+	substantive bool
+	finalize    bool
+}
+
+func advanceRowOwnership(s rowOwnership, e rowOwnershipEvent) rowOwnership {
+	if e.finalize {
+		return rowOwnership{}
+	}
+	if !e.substantive || s.mixed {
+		return s
+	}
+	if e.lang == "" || s.lang != "" && s.lang != e.lang {
+		return rowOwnership{mixed: true}
+	}
+	return rowOwnership{lang: e.lang}
+}
+
+// isLanguageProse separates unowned list numbers and punctuation from prose.
+// Explicit ownership can establish language for any non-whitespace glyph.
+func isLanguageProse(r rune, owned bool) bool {
+	return unicode.IsLetter(r) || owned && !unicode.IsSpace(r)
+}
+
+type answerUnit struct {
+	text, lang string
+	cells      int
+	space      bool
+}
+
+// ownedAnswerWrapWriter buffers only the unfinished physical row and word.
+// Ownership travels with display units through wrapping, so a later foreign
+// word cannot change the immutable rows already sent to either kind of sink.
+type ownedAnswerWrapWriter struct {
+	out            io.Writer
+	width          int
+	policy         tintPolicy
+	row, word, gap []answerUnit
+	col, pending   int
+	sgr            sgrState
+	err            error
+}
+
+func newOwnedAnswerWrapWriter(out io.Writer, width int, p tintPolicy) *ownedAnswerWrapWriter {
+	if p.lang == "" {
+		p.lang = store.DefaultLang
+	}
+	if lang, err := store.ParseLang(string(p.lang)); err == nil {
+		p.lang = lang
+	} else {
+		p.background = ""
+	}
+	return &ownedAnswerWrapWriter{out: out, width: width, policy: p}
+}
+func (w *ownedAnswerWrapWriter) WriteOwned(s, lang string) error {
+	if w.err != nil {
+		return w.err
+	}
+	if source, ok := w.out.(interface{ OutputWidth() int }); ok && w.width > 0 {
+		width := source.OutputWidth()
+		if width > 0 && width != w.width {
+			w.resize(width)
+		}
+	}
+	if w.width <= 0 {
+		n, err := io.WriteString(w.out, s)
+		if err == nil && n != len(s) {
+			err = io.ErrShortWrite
+		}
+		w.err = err
+		return err
+	}
+	for len(s) > 0 && w.err == nil {
+		n := escapeLen(s)
+		cells := 0
+		space := false
+		if n == 0 {
+			n, cells = nextDisplayUnit(s)
+			r, _ := utf8.DecodeRuneInString(s)
+			space = unicode.IsSpace(r)
+		}
+		u := answerUnit{text: s[:n], lang: lang, cells: cells, space: space}
+		s = s[n:]
+		if u.text == "\t" {
+			u.text = " "
+			u.cells = 1
+		}
+		w.pending += len(u.text)
+		if w.pending > maxAnswerWrapPending {
+			w.err = fmt.Errorf("answer wrapping: unfinished text exceeds %d bytes", maxAnswerWrapPending)
+			break
+		}
+		w.acceptUnit(u)
+	}
+	return w.err
+}
+func (w *ownedAnswerWrapWriter) acceptUnit(u answerUnit) {
+	if !u.space {
+		if len(w.word) > 0 && u.cells > 0 {
+			last := &w.word[len(w.word)-1]
+			if last.cells > 0 && last.lang == u.lang {
+				joined := last.text + u.text
+				if n, cells := nextDisplayUnit(joined); n == len(joined) {
+					last.text, last.cells = joined, cells
+					return
+				}
+			}
+		}
+		w.word = append(w.word, u)
+		return
+	}
+	w.emitWord()
+	if u.text == "\n" {
+		w.appendRow(w.gap)
+		w.gap = nil
+		w.pending -= len(u.text)
+		w.finalize(true)
+	} else {
+		w.gap = append(w.gap, u)
+	}
+}
+func unitCells(units []answerUnit) (n int) {
+	for _, u := range units {
+		n += u.cells
+	}
+	return
+}
+func unitBytes(units []answerUnit) (n int) {
+	for _, u := range units {
+		n += len(u.text)
+	}
+	return
+}
+func (w *ownedAnswerWrapWriter) emitWord() {
+	if len(w.word) == 0 || w.err != nil {
+		return
+	}
+	if w.col > 0 && w.col+unitCells(w.gap)+unitCells(w.word) > w.width {
+		w.pending -= unitBytes(w.gap)
+		w.gap = nil
+		w.finalize(true)
+	}
+	units := append(w.gap, w.word...)
+	w.gap = nil
+	w.word = nil
+	w.appendRow(units)
+}
+func (w *ownedAnswerWrapWriter) appendRow(units []answerUnit) {
+	for _, u := range units {
+		if u.cells > 0 && w.col > 0 && w.col+u.cells > w.width {
+			w.finalize(true)
+		}
+		w.row = append(w.row, u)
+		w.col += u.cells
+	}
+}
+func (w *ownedAnswerWrapWriter) finalize(newline bool) {
+	if w.err != nil {
+		return
+	}
+	var text strings.Builder
+	text.WriteString(w.sgr.resume())
+	owner := rowOwnership{}
+	for _, u := range w.row {
+		text.WriteString(u.text)
+		if isSGR(u.text) {
+			w.sgr.observe(u.text)
+		}
+		r, _ := utf8.DecodeRuneInString(u.text)
+		owner = advanceRowOwnership(owner, rowOwnershipEvent{lang: u.lang, substantive: u.cells > 0 && isLanguageProse(r, u.lang != "")})
+	}
+	bg := ""
+	target := string(w.policy.lang)
+
+	if !owner.mixed && owner.lang == target && (w.policy.background == languageDark || w.policy.background == languageLight) {
+		bg = w.policy.background
+	}
+	if newline {
+		text.WriteByte('\n')
+	}
+	w.err = writeOutput(w.out, renderedOutput{text: text.String(), rows: []rowPaint{{background: bg}}}, w.width)
+	w.pending -= unitBytes(w.row)
+	w.row = nil
+	w.col = 0
+}
+func (w *ownedAnswerWrapWriter) resize(width int) {
+	// Only uncommitted text is replayed. Already emitted rows remain unchanged.
+	pending := append(append(append([]answerUnit{}, w.row...), w.gap...), w.word...)
+	w.row = nil
+	w.gap = nil
+	w.word = nil
+	w.col = 0
+	w.width = width
+	for _, u := range pending {
+		w.acceptUnit(u)
+	}
+}
+func (w *ownedAnswerWrapWriter) Flush() error {
+	if w.err != nil {
+		return w.err
+	}
+	if source, ok := w.out.(interface{ OutputWidth() int }); ok && w.width > 0 {
+		if width := source.OutputWidth(); width > 0 && width != w.width {
+			w.resize(width)
+		}
+	}
+	w.emitWord()
+	w.appendRow(w.gap)
+	w.gap = nil
+	if len(w.row) > 0 {
+		w.finalize(false)
+	}
+	return w.err
 }

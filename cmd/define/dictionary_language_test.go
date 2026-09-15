@@ -144,8 +144,11 @@ func TestDictionaryDefinitionsRetainSourceAndRegions(t *testing.T) {
 	vocab.Add("net")
 	opt := RenderOpts{Color: true, Word: "red", Vocab: vocab, Tint: tintPolicy{lang: "es", background: languageDark}}
 	out, regions := renderDefinitions(set, opt)
-	assertDictionaryTint(t, out, "subir a la red", true)
+	assertDictionaryTint(t, out, "subir a la red", false)
 	assertDictionaryTint(t, out, "to go up to", false)
+	english, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "en", background: languageDark}})
+	assertDictionaryTint(t, english, "subir a la red", true)
+	assertDictionaryTint(t, english, "to go up to", true)
 	opt.Tint = tintPolicy{}
 	untinted, baseline := renderDefinitions(set, opt)
 	if !reflect.DeepEqual(regions, baseline) || stripEscapes(out) != stripEscapes(untinted) {

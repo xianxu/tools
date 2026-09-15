@@ -151,7 +151,7 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 		// back, which is what --play achieves by printing on exit.
 		finish: func() {
 			sitting.Stop()
-			fmt.Fprint(repl, sitting.Transcript())
+			repl.WriteOutput(sitting.OutputTranscript())
 		},
 		stdout: sitting, stderr: sitting,
 	}

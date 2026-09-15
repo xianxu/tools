@@ -13,14 +13,14 @@ type languageAnswer struct {
 	plain     strings.Builder
 	decoder   *languageDecoder
 	highlight *highlightWriter
-	wrap      *answerWrapWriter
+	wrap      *ownedAnswerWrapWriter
 	policy    tintPolicy
 	vocab     Vocabulary
 	err       error
 }
 
 func newLanguageAnswer(out io.Writer, width int, v Vocabulary, policy tintPolicy) *languageAnswer {
-	a := &languageAnswer{wrap: newAnswerWrapWriter(out, width), policy: policy, vocab: v}
+	a := &languageAnswer{wrap: newOwnedAnswerWrapWriter(out, width, policy), policy: policy, vocab: v}
 	a.highlight = newHighlightWriter(a, v, knownOn)
 	a.decoder = newLanguageDecoder(a.accept)
 	return a
@@ -40,10 +40,8 @@ func (a *languageAnswer) accept(v languageText) {
 			vocabulary = nil
 		}
 		rendered := highlightRegion(v.text[sp.start:sp.end], vocabulary, knownOn, "")
-		owned := languageText{text: rendered, spans: []languageSpan{{start: 0, end: len(rendered), lang: sp.lang}}}
 		if a.err == nil {
-			_, err := io.WriteString(a.wrap, styleLanguageText(owned, a.policy))
-			a.remember(err)
+			a.remember(a.wrap.WriteOwned(rendered, string(sp.lang)))
 		}
 		at = sp.end
 	}
@@ -67,7 +65,7 @@ func (a *languageAnswer) Write(p []byte) (int, error) {
 	if a.err != nil {
 		return 0, a.err
 	}
-	_, err := a.wrap.Write(p)
+	err := a.wrap.WriteOwned(string(p), "")
 	a.remember(err)
 	if err != nil {
 		return 0, err

@@ -225,7 +225,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// for every form by `chromeGap` — so this was one form's exception to
 			// a rule the frame did not yet have, and it also spent a buffer line
 			// on it, which the exit transcript then carried.
-			view.Draw(asChrome(styledBoardPrompt(q, boardWhole, pal, d, opt), pal), boardFooter(q, fig, pal, d, opt))
+			drawPracticeOutput(view, boardPromptOutput(q, boardWhole, pal, d, opt), boardFooterOutput(q, fig, pal, d, opt))
 			return
 		}
 		if q != nil && written != s.Index {
@@ -240,7 +240,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// and drops footer rows first, and a learner who cannot see the keys
 		// cannot answer at all, while one who cannot see their daily load loses
 		// nothing this minute.
-		view.Draw(asChrome(practiceChrome(livePromptPresentation(s), d, opt), pal), []string{asChrome(practiceChrome(sittingBarPresentation(fig), d, opt), pal)})
+		drawPracticeOutput(view, practiceChromeOutput(livePromptPresentation(s), d, opt, pal), practiceChromeOutput(sittingBarPresentation(fig), d, opt, pal))
 	}
 
 	// Every exit is the summary and THEN the terminal, in that order. The summary
@@ -1030,7 +1030,7 @@ func todaysQuestions(ctx context.Context, d deps, opt options, stdout, stderr io
 		// them — it is mechanically guarded pure and `Region` lives in main — so
 		// the loop keeps its own word→regions map, built here, where the entry is
 		// rendered and the coordinates are true.
-		rendered, rs := renderDefinitions(definitionsFor(d.dict, key, entry.Raw, nil, d.bilingualEnabled()), RenderOpts{
+		output := renderDefinitionOutput(definitionsFor(d.dict, key, entry.Raw, nil, d.bilingualEnabled()), RenderOpts{
 			// Word is IDENTITY, not presentation, and RenderOpts says so: a
 			// click on the headword replays the word the deck holds, and
 			// deriving it from the entry instead lets the two disagree —
@@ -1040,8 +1040,9 @@ func todaysQuestions(ctx context.Context, d deps, opt options, stdout, stderr io
 			Tint:  opt.tintFor(d.lang),
 			Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
 		})
+		rendered, rs := output.text, output.regions
 		marks[key] = clickable{text: rendered, regions: rs}
-		return play.NewChoice(key, rendered, opts)
+		return play.NewChoice(key, rendered, opts).WithDefinitionRegions(definitionPresentationRegions(output))
 	}
 
 	for _, key := range keys {

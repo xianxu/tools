@@ -67,12 +67,12 @@ func TestBoardPresentationTruncatedAndAnswerOwned(t *testing.T) {
 	if p.Text != b.Prompt() {
 		t.Fatal("layout drift")
 	}
-	if len(p.Spans) == 0 || p.Text[p.Spans[0].Start:p.Spans[0].End] != "larg~" {
+	if len(p.Spans) < 2 || p.Spans[0].Role != Decoration || p.Spans[1].Role != Target || p.Text[p.Spans[1].Start:p.Spans[1].End] != "larg~" {
 		t.Fatalf("truncated ownership %#v %q", p.Spans, p.Text)
 	}
 	b.Grade('0')
 	p = b.PromptPresentation()
-	if !p.Spans[0].AnswerStyled {
+	if !p.Spans[0].AnswerStyled || !p.Spans[1].AnswerStyled {
 		t.Fatal("marked word must suppress tint")
 	}
 	found := false

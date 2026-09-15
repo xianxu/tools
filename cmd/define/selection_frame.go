@@ -14,6 +14,7 @@ var errSelectionBounds = errors.New("selection exceeds display limit")
 
 type selectionRow struct {
 	styled                    string
+	paint                     rowPaint
 	selectable                bool
 	regions                   []Region
 	footerEntry, footerOffset int
@@ -66,6 +67,7 @@ func newSelectionFrame(width, height int, rows []selectionRow) selectionFrame {
 	for i, row := range rows {
 		row.styled = strings.Clone(row.styled)
 		row.regions = slices.Clone(row.regions)
+		row.paint.exclusions = slices.Clone(row.paint.exclusions)
 		for j := range row.regions {
 			row.regions[j].Text = strings.Clone(row.regions[j].Text)
 			row.regions[j].Word = strings.Clone(row.regions[j].Word)
@@ -185,7 +187,7 @@ func (f selectionFrame) same(other selectionFrame) bool {
 	}
 	for i, r := range f.rows {
 		s := other.rows[i]
-		if r.selectable != s.selectable || r.footer != s.footer || r.retry != s.retry || r.footerEntry != s.footerEntry || r.footerOffset != s.footerOffset || !slices.Equal(r.regions, s.regions) {
+		if r.paint.background != s.paint.background || !slices.Equal(r.paint.exclusions, s.paint.exclusions) || r.selectable != s.selectable || r.footer != s.footer || r.retry != s.retry || r.footerEntry != s.footerEntry || r.footerOffset != s.footerOffset || !slices.Equal(r.regions, s.regions) {
 			return false
 		}
 		if !r.selectable {

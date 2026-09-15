@@ -1020,18 +1020,20 @@ Its contract, in the order the rules matter:
 
 **Streamed answers wrap before reaching the screen** (#55). `runAsk` chains
 `answerTextFilter` → `languageDecoder` → `languageAnswer` →
-`answerWrapWriter` → stdout. The decoder strips reserved `[lang=xx]` / `[/lang]`
+`ownedAnswerWrapWriter` → structured output → stdout. The decoder strips reserved `[lang=xx]` / `[/lang]`
 annotations, while the adapter records clean prose, preserves vocabulary
 foreground with `highlightWriter`/`highlightRegion`, and applies language tint.
 Wrapping measures the resulting visible cells with `visibleCells`.
-The wrapper emits completed words as they arrive and flushes its unfinished
-word after the highlighter on every exit. It reopens the active `sgrState` after
+The wrapper buffers one unfinished physical row, finalizing on wrap, newline or
+finish for both live and append-only sinks. `advanceRowOwnership` makes mixed/unknown
+prose neutral; later text cannot change an emitted row. Pending text alone is relaid
+out after resize. It flushes after the highlighter on every exit. It reopens the active `sgrState` after
 both inserted and explicit newlines, so a viewport starting inside a highlighted
 phrase or styled paragraph does not depend on an offscreen opening escape.
 The session answer contains clean prose, without model annotations or terminal controls.
 Background is closed before physical newlines and restored for continuation text.
 `opt.width` supplies the terminal width; zero (pipes and terminals below
-`minWrapWidth`) passes bytes through. Words wider than the terminal stay intact;
+`minWrapWidth`) passes bytes through. Long words split at display-unit boundaries;
 old output is not reflowed when the terminal shrinks during an answer. Spaces
 and paragraph breaks are preserved when they fit; tabs become single spaces in
 wrapped prose. Pending text is capped at 64 KiB and incomplete escapes at 256
@@ -2072,32 +2074,38 @@ share this composition through `play_loop.go` and `cloze.go`.
 `TestBilingualPracticeReveal` and `TestBilingualClozeReveal` cover both reveal
 forms. Lookup capture and initial audio still occur once for the requested word.
 
-**Language ownership and background** (#65). `languageText` carries exact UTF-8
-byte ranges; `styleLanguageText` validates them and applies only the background
-for ranges matching effective `/lang`. Invocation policy is
-`-language-tint=dark|light|off`: xterm 236/254, dark by default, disabled by
-`-no-color`, redirected stdout or `TERM=dumb`. Leading/trailing line whitespace
-and line breaks remain neutral; producer answer backgrounds take precedence.
-Selection keeps inverse video and copies clean text. Output already emitted is
-not restyled after a language switch.
+**Language ownership and background** (#65, #66). `languageText` retains exact
+UTF-8 source ownership. `renderedOutput` carries unpadded styled text, click regions,
+and independently resolved physical-row paint. `layoutOutput` projects clicks and
+answer exclusions through wrapping; `paintLanguageRow` fills every terminal cell,
+including indentation, trailing cells and producer-owned blank rows. Screen history
+clips on resize and paints at the current width; selection uses the same composer
+but copies only original source cells. Foreground/emphasis and answer exclusions
+survive fill. `-language-tint=dark|light|off` uses xterm 236/254 (dark default), disabled
+by `-no-color`, redirected stdout or `TERM=dumb`. Completed output keeps its policy.
 
-`dictionary_language.go` extracts validated Oxford HTML ownership (`hw`, `ex`,
-`idm`, `ind` Spanish; `trans` English), checks text alignment, and projects ranges
-through parser source offsets. Failed correspondence and transformed IPA/origin
-fields stay neutral. A supplement can contain both languages inside one gloss;
-its section heading cannot determine all its text ownership. `dictionaryFromInstalled` attaches source language only when every selected
-ID has matching monolingual metadata. `dictionarySourceLanguage` preserves this
-provenance through the lock and supplementary wrappers. Searching every active
-dictionary carries unknown ownership, regardless of `/lang`; `definitionsFor`
-snapshots that into each section and `renderDefinitions` owns the source input
-for lookup and both practice reveals. The dictionary lock preserves the
-supplement capability as well as primary lookup.
+Each dictionary section has one presentation role, distinct from source provenance.
+Verified primary sections use source language; Oxford explicitly supplies English
+explanations. With `/lang es`, the entire primary is tinted and Oxford stays neutral,
+including its Spanish examples. With `/lang en`, a shown Oxford section is uniformly
+tinted. Unknown all-active-dictionary fallback stays neutral.
+
+`parseBilingualDocument` consolidates bounded Oxford structure and ownership parsing:
+A/B/C grammatical groups, numbered/lettered senses, inline example/translation pairs,
+idioms, and emphasis retain source order. Native Text correspondence and identity are
+validated before ownership is trusted. Formatting failure preserves readable neutral
+source text with a concise diagnostic. The exact native `rendir` fixture and strict
+conformance test defend this shape. `dictionarySourceLanguage` preserves verified
+metadata through dictionary locks and supplemental wrappers; display labels and study
+language never establish source provenance. Lookup and both full practice reveals use
+`renderDefinitionOutput` and carry section paint through `play.Presentation.Regions`.
 
 `play.Presentation` exposes Target/DictionarySource/English/Neutral roles from the same builder
 that emits prompts and reveals. The import-free play package knows no language
 codes. Dictionary-derived option and panel glosses use verified dictionary source
 ownership, whereas deck words and authored cloze text use Target ownership.
-`practice_language.go` maps roles at rendering time; board footer, help,
+`practice_output.go` maps roles at rendering time; producer `Decoration` spans
+identify key glyphs/numbers without claiming prose ownership. Board footer, help,
 chrome and already-rendered dictionary reveals share the same policy. Answer
 marks explicitly suppress tint for their fragment.
 
@@ -2393,6 +2401,7 @@ Every seam has one, and each pins the assumption that seam rests on:
 | check | asserts |
 |---|---|
 | `bilingual_conformance_test.go` | installed Oxford records select Spanish-source `red` and enforce native record limits |
+| `bilingual_layout_conformance_test.go` | installed native `rendir` retains Oxford hierarchy and uniform complete section fill at widths 32/80 in dark/light es/en; optional actual ANSI captures |
 | `bilingual_system_conformance_test.go` | assembled Spanish dictionary preserves raw/off output and adds the correct English direction when on |
 | `dict_conformance_test.go` | live lookups still byte-match every fixture |
 | `fetch_conformance_test.go` | the CDN path survey still holds (2022 generation dominates) |
@@ -2404,6 +2413,7 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `clipboard_conformance_test.go` | native literal text and flavor inventory on an isolated pasteboard |
 | `selection_conformance_test.go` | real mouse drag/highlight/copy during model waits and terminal restoration; isolated target fails closed |
 | `activity_conformance_test.go` | real terminal Braille animation and cleanup at first answer text or cancellation, with held fake model responses |
+| `pty_layout_conformance_test.go` | actual one-shot native `rendir` preserves structure and full section backgrounds at widths 32/80 in dark/light/off; off has no paint padding |
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 | `harvest_conformance_test.go` | the live model's agreement across rounds stays above the floor the cache's premise needs |
 | `language_conformance_test.go` | production answer prompt yields validated mixed language annotations; decoder preserves clean Spanish examples and English explanation |

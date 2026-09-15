@@ -43,9 +43,7 @@ func TestLanguageTintSourceAcrossLookupAndReveals(t *testing.T) {
 						if !strings.Contains(stripANSI(text), "sycophantic") {
 							t.Fatalf("missing definition: %q", text)
 						}
-						if got := strings.Contains(text, languageDark); got != want {
-							t.Fatalf("source=%q target=%q tint=%v want=%v: %q", source, target, got, want, text)
-						}
+						assertDictionaryTint(t, text, "sycophantically", want)
 					}
 					if path == "lookup" {
 						var out bytes.Buffer
@@ -76,7 +74,12 @@ func TestLanguageTintSourceAcrossLookupAndReveals(t *testing.T) {
 								t.Fatalf("got %T, want Cloze", q)
 							}
 						}
-						assert(q.Reveal())
+						p, ok := q.(practicePresenter)
+						if !ok {
+							t.Fatalf("question %T lacks presentation", q)
+						}
+						output := renderPracticeOutput(p.RevealPresentation(), target, source, opt.tintFor(target), nil, surfaceProse, q.Word(), 80)
+						assert(serializeOutput(output, 80))
 						return
 					}
 					t.Fatal("sycophantic question not built")

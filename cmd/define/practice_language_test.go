@@ -28,37 +28,34 @@ func TestPracticePresentationTintAndEnglishNeutral(t *testing.T) {
 	b := play.NewBoard([]play.Cell{{Word: "rojo", Gloss: "color"}}, 30, play.Palette{Yes: "\x1b[32m", Off: "\x1b[0m"})
 	b.Grade('0')
 	got = renderPracticePresentation(b.PromptPresentation(), "es", "es", policy, nil, surfaceProse, "")
-	if strings.Contains(strings.Split(got, "\n")[0], policy.background) {
-		t.Fatalf("answer mark tinted: %q", got)
-	}
+	assertDictionaryTint(t, got, "rojo", false)
 }
 
 func TestPracticePresentationRealPromptAndFooter(t *testing.T) {
-	opt := options{color: true, tintBackground: languageDark}
+	opt := options{color: true, width: 80, tintBackground: languageDark}
 	d := deps{lang: "es", dict: practiceSourceDictionary{source: "es"}}
 	c := play.NewCloze("rojo", "Es ___", "Es rojo", "", []play.Option{{Word: "rojo", Correct: true}})
 	c.SetHelp("It is ___")
 	var out strings.Builder
 	writePrompt(&out, c, d, opt)
-	if !strings.Contains(out.String(), languageDark+"Es") || strings.Contains(out.String(), languageDark+"It") {
-		t.Fatalf("prompt ownership %q", out.String())
-	}
-	if stripANSI(out.String()) != "\n"+c.Prompt()+"\n" {
+	assertDictionaryTint(t, out.String(), "Es", true)
+	assertDictionaryTint(t, out.String(), "It", false)
+	if trimPaintPadding(out.String()) != "\n"+c.Prompt()+"\n" {
 		t.Fatal("prompt text changed")
 	}
 	b := play.NewBoardPanel([]play.Cell{{Word: "rojo", Gloss: "color", Help: "red color"}, {Word: "azul", Gloss: "otro"}}, 40, play.Palette{Yes: "\x1b[32m", Off: "\x1b[0m"}, 2)
 	b.Grade('0')
-	rows := boardFooter(b, sittingFigures{}, palette{}, d, opt)
-	if !strings.Contains(rows[0], languageDark+"azul") || strings.Contains(rows[0], languageDark+"rojo") {
-		t.Fatalf("board mark ownership %q", rows[0])
-	}
+	rows := paintedBoardFooterForTest(b, sittingFigures{}, palette{}, d, opt)
+	assertDictionaryTint(t, rows[0], "azul", true)
+	assertDictionaryTint(t, rows[0], "rojo", false)
 	if strings.Contains(rows[len(rows)-2], languageDark) {
 		t.Fatalf("English footer tinted %q", rows)
 	}
 	frame := newSelectionFrame(40, len(rows), func() []selectionRow {
 		var r []selectionRow
-		for _, s := range rows {
-			r = append(r, selectionRow{styled: s, selectable: true})
+		source := boardFooterOutput(b, sittingFigures{}, palette{}, d, opt)
+		for i, line := range strings.Split(source.text, "\n") {
+			r = append(r, selectionRow{styled: line, selectable: true, paint: paintAt(source.rows, i)})
 		}
 		return r
 	}())
@@ -67,15 +64,13 @@ func TestPracticePresentationRealPromptAndFooter(t *testing.T) {
 		t.Fatalf("board copy %q %v", copied, err)
 	}
 	selected := frame.highlightRow(0, selectionPoint{0, 4}, selectionPoint{0, 7})
-	if !strings.Contains(selected, "\x1b[7m") || stripANSI(selected) != stripANSI(rows[0]) {
+	if !strings.Contains(selected, "\x1b[7m") || stripANSI(selected) != strings.TrimRight(stripANSI(rows[0]), " ") {
 		t.Fatalf("selection %q", selected)
 	}
 	d.lang = "en"
 	d.dict = practiceSourceDictionary{source: "en"}
-	rows = boardFooter(b, sittingFigures{}, palette{}, d, opt)
-	if !strings.Contains(rows[len(rows)-2], languageDark+"red color") {
-		t.Fatalf("English-selected help lacks tint %q", rows)
-	}
+	rows = paintedBoardFooterForTest(b, sittingFigures{}, palette{}, d, opt)
+	assertDictionaryTint(t, rows[len(rows)-2], "red color", true)
 }
 
 func TestPracticePresentationVocabularyRetainsForeground(t *testing.T) {
@@ -99,27 +94,32 @@ func TestPracticeChromeOwnership(t *testing.T) {
 		t.Fatal("keys layout differs")
 	}
 	got := renderPracticePresentation(p, "en", "en", tintPolicy{"en", languageDark}, nil, surfaceProse, "")
-	if strings.Contains(got, languageDark+"1-") || !strings.Contains(got, languageDark+"pick the definition") || !strings.Contains(got, languageDark+"to stop") {
-		t.Fatalf("keys ownership %q", got)
+	assertDictionaryTint(t, got, "1-1", true)
+	assertDictionaryTint(t, got, "pick the definition", true)
+	assertDictionaryTint(t, got, "Ctrl-C", true)
+	assertDictionaryTint(t, got, "to stop", true)
+	output := renderPracticeOutput(p, "en", "en", tintPolicy{"en", languageDark}, nil, surfaceProse, "", 80)
+	cells, _ := rowTestCells(t, serializeOutput(output, 80), 80)
+	for col, c := range cells {
+		if c.bg != 236 {
+			t.Fatalf("chrome column %d not filled", col)
+		}
 	}
 	bar := sittingBarPresentation(sittingFigures{done: 2, total: 4, load: 8, budget: 10})
 	got = renderPracticePresentation(bar, "en", "en", tintPolicy{"en", languageDark}, nil, surfaceProse, "")
-	if strings.Contains(got, languageDark+"2") || !strings.Contains(got, languageDark+"reviews/day") {
-		t.Fatalf("counter ownership %q", got)
-	}
+	assertDictionaryTint(t, got, "2", true)
+	assertDictionaryTint(t, got, "reviews/day", true)
 }
 
 func TestPracticeSubsequentEnglishOutputAndAllAnswerMarks(t *testing.T) {
-	opt := options{color: true, tintBackground: languageDark}
+	opt := options{color: true, width: 80, tintBackground: languageDark}
 	d := deps{lang: "es", dict: practiceSourceDictionary{source: "es"}}
 	spanish := play.NewChoice("rojo", "", []play.Option{{Gloss: "color vivo", Correct: true}})
 	spanish.SetHelp([]string{"bright color"})
 	var transcript strings.Builder
 	writePrompt(&transcript, spanish, d, opt)
 	before := transcript.String()
-	if strings.Contains(before, languageDark+"bright color") {
-		t.Fatalf("Spanish sitting tinted English help %q", before)
-	}
+	assertDictionaryTint(t, before, "bright color", false)
 	d.lang = "en"
 	d.dict = practiceSourceDictionary{source: "en"}
 	english := play.NewChoice("red", "", []play.Option{{Gloss: "bright color", Correct: true}})
@@ -128,9 +128,8 @@ func TestPracticeSubsequentEnglishOutputAndAllAnswerMarks(t *testing.T) {
 		t.Fatal("language switch rewrote previous output")
 	}
 	after := transcript.String()[len(before):]
-	if !strings.Contains(after, languageDark+"red") || !strings.Contains(after, languageDark+"bright color") {
-		t.Fatalf("English subsequent output %q", after)
-	}
+	assertDictionaryTint(t, after, "red", true)
+	assertDictionaryTint(t, after, "bright color", true)
 	for _, lang := range []store.Lang{"es", "en"} {
 		for toggles := 0; toggles < 3; toggles++ {
 			b := play.NewBoard([]play.Cell{{Word: "red", Gloss: "color"}, {Word: "blue", Gloss: "other"}}, 40, boardPalette(opt))
@@ -138,18 +137,27 @@ func TestPracticeSubsequentEnglishOutputAndAllAnswerMarks(t *testing.T) {
 				b.Toggle()
 			}
 			b.Grade('0')
-			rows := boardFooter(b, sittingFigures{}, newPalette(true), deps{lang: lang}, opt)
+			rows := paintedBoardFooterForTest(b, sittingFigures{}, newPalette(true), deps{lang: lang}, opt)
 			markedPrefix, _, ok := strings.Cut(rows[0], "[1]")
-			if !ok || strings.Contains(markedPrefix, languageDark) {
+			if !ok {
 				t.Fatalf("lang=%s mark=%v language tint over answer: %q", lang, b.Marked(0), rows[0])
 			}
 			want := boardPalette(opt).For(b.Marked(0)) + "[0] red" + boardPalette(opt).Off
-			if !strings.Contains(markedPrefix, want) {
-				t.Fatalf("answer style lost: got %q want %q", markedPrefix, want)
+			expectedCells, _ := rowTestCells(t, want, 7)
+			actualCells, _ := rowTestCells(t, rows[0], opt.width)
+			for col, wantCell := range expectedCells {
+				if actualCells[col].fg != wantCell.fg {
+					t.Fatalf("answer cell %d foreground=%d want %d", col, actualCells[col].fg, wantCell.fg)
+				}
+				if actualCells[col].bg != wantCell.bg {
+					t.Fatalf("answer key/word cell %d background=%d want %d", col, actualCells[col].bg, wantCell.bg)
+				}
 			}
-			if !strings.Contains(rows[0], languageDark+"blue") {
-				t.Fatalf("neighbor lost tint: %q", rows[0])
+			if !strings.Contains(markedPrefix, boardPalette(opt).For(b.Marked(0))) {
+				t.Fatalf("answer emphasis lost: %q", markedPrefix)
 			}
+			assertDictionaryTint(t, rows[0], "red", false)
+			assertDictionaryTint(t, rows[0], "blue", true)
 		}
 	}
 }
@@ -171,29 +179,20 @@ func TestPracticeDictionaryGlossOwnership(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := deps{lang: "it", dict: practiceSourceDictionary{source: tc.source}}
-			opt := options{color: true, tintBackground: languageDark}
+			opt := options{color: true, width: 80, tintBackground: languageDark}
 			q := play.NewChoice("rosso", "", []play.Option{{Gloss: "a bright color", Correct: true}})
 			var out strings.Builder
 			writePrompt(&out, q, d, opt)
-			wantGloss := languageDark + "a bright color" + languageOff
-			if got := strings.Contains(out.String(), wantGloss); got != tc.wantTint {
-				t.Fatalf("choice source=%q gloss tint=%v want=%v: %q", tc.source, got, tc.wantTint, out.String())
-			}
-			if !strings.Contains(out.String(), languageDark+"rosso") {
-				t.Fatal("deck headword lost target ownership")
-			}
+			assertDictionaryTint(t, out.String(), "a bright color", tc.wantTint)
+			assertDictionaryTint(t, out.String(), "rosso", true)
 			out.Reset()
 			writePracticePresentation(&out, q.RevealPresentation(), nil, d, opt, surfaceProse, "", "")
-			if got := strings.Contains(out.String(), wantGloss); got != tc.wantTint {
-				t.Fatalf("reveal source=%q gloss tint=%v: %q", tc.source, got, out.String())
-			}
+			assertDictionaryTint(t, out.String(), "a bright color", tc.wantTint)
 			b := play.NewBoard([]play.Cell{{Word: "rosso", Gloss: "a bright color"}}, 60, boardPalette(opt))
 			b.Grade('0')
-			rows := boardFooter(b, sittingFigures{}, palette{}, d, opt)
+			rows := paintedBoardFooterForTest(b, sittingFigures{}, palette{}, d, opt)
 			panel := rows[len(rows)-2]
-			if got := strings.Contains(panel, wantGloss); got != tc.wantTint {
-				t.Fatalf("footer source=%q gloss tint=%v want=%v: %q", tc.source, got, tc.wantTint, panel)
-			}
+			assertDictionaryTint(t, panel, "a bright color", tc.wantTint)
 		})
 	}
 }
@@ -201,7 +200,19 @@ func TestPracticeDictionaryGlossOwnership(t *testing.T) {
 func TestPracticeDictionaryRoleResolvesToActualSource(t *testing.T) {
 	q := play.NewChoice("rosso", "", []play.Option{{Gloss: "a bright color", Correct: true}})
 	got := renderPracticePresentation(q.PromptPresentation(), "it", "en", tintPolicy{"en", languageDark}, nil, surfaceProse, "")
-	if strings.Contains(got, languageDark+"rosso") || !strings.Contains(got, languageDark+"a bright color") {
-		t.Fatalf("dictionary source was replaced with deck language: %q", got)
+	assertDictionaryTint(t, got, "rosso", false)
+	assertDictionaryTint(t, got, "a bright color", true)
+}
+
+// Paint-only padding is absent from the producer text and clipboard model.
+func trimPaintPadding(s string) string {
+	rows := strings.Split(stripANSI(s), "\n")
+	for i := range rows {
+		rows[i] = strings.TrimRight(rows[i], " ")
 	}
+	return strings.Join(rows, "\n")
+}
+
+func paintedBoardFooterForTest(q play.Question, fig sittingFigures, pal palette, d deps, opt options) []string {
+	return strings.Split(serializeOutput(boardFooterOutput(q, fig, pal, d, opt), opt.width), "\n")
 }

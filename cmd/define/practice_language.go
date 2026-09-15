@@ -17,31 +17,7 @@ type practicePresenter interface {
 // Vocabulary and language styling share the form's emitted boundaries. Neutral
 // fragments include pre-rendered dictionary entries, which must stay untouched.
 func renderPracticePresentation(p play.Presentation, lang, source store.Lang, policy tintPolicy, vocab Vocabulary, sf surface, subject string) string {
-	var out strings.Builder
-	at := 0
-	for _, s := range p.Spans {
-		out.WriteString(p.Text[at:s.Start])
-		text := p.Text[s.Start:s.End]
-		owned := store.Lang("")
-		switch s.Role {
-		case play.Target:
-			owned = lang
-		case play.English:
-			owned = "en"
-		case play.DictionarySource:
-			owned = source
-		}
-		if (s.Role == play.Target || s.Role == play.DictionarySource) && !s.AnswerStyled && vocab != nil && sf.admitsColour() {
-			text = highlightRegion(text, withoutWord(vocab, subject), knownOn, "")
-		}
-		if !s.AnswerStyled && owned != "" {
-			text = styleLanguageText(languageText{text: text, spans: []languageSpan{{start: 0, end: len(text), lang: owned}}}, policy)
-		}
-		out.WriteString(text)
-		at = s.End
-	}
-	out.WriteString(p.Text[at:])
-	return out.String()
+	return renderOutputText(renderPracticeOutput(p, lang, source, policy, vocab, sf, subject, 0))
 }
 
 func writePracticePresentation(w io.Writer, p play.Presentation, rs []Region, d deps, opt options, sf surface, subject, already string) {
@@ -66,14 +42,23 @@ func writePracticePresentation(w io.Writer, p play.Presentation, rs []Region, d 
 	if !opt.color {
 		v = nil
 	}
-	styled := renderPracticePresentation(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), v, sf, subject)
-	writeRendered(w, "\n"+styled+"\n", mergeRegions(rs, own))
+	output := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), v, sf, subject, opt.width)
+	output.text = "\n" + output.text + "\n"
+	output.rows = append([]rowPaint{{}}, output.rows...)
+	output.regions = wrapMovedRegions(text, mergeRegions(rs, own), opt.width)
+	writeOutput(w, output, opt.width)
 }
 
 // practiceBuilder records generated chrome beside its numbers and key glyphs.
 type practiceBuilder struct{ play.Presentation }
 
-func (b *practiceBuilder) neutral(s string) { b.Text += s }
+func (b *practiceBuilder) neutral(s string) {
+	start := len(b.Text)
+	b.Text += s
+	if len(s) > 0 {
+		b.Spans = append(b.Spans, play.LanguageSpan{Start: start, End: len(b.Text), Role: play.Decoration})
+	}
+}
 func (b *practiceBuilder) english(s string) {
 	start := len(b.Text)
 	b.Text += s
@@ -156,6 +141,6 @@ func finishStyled(w io.Writer, s play.Session, fig sittingFigures, d deps, opt o
 	p.neutral("\n")
 	p.append(costPresentation(fig))
 	p.neutral("\n")
-	io.WriteString(w, renderPracticePresentation(p.Presentation, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, ""))
+	writeOutput(w, renderPracticeOutput(p.Presentation, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "", opt.width), opt.width)
 	return 0
 }
