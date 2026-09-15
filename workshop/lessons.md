@@ -4574,3 +4574,11 @@ Moving a foreground request into a reusable core can move provenance lookup
 across a decorator boundary. Test the discovered model recorded in durable
 output with activity enabled; keep background clients undecorated and inspect
 the original transport when reporting which model actually answered.
+
+
+## Interface guards must use complete method sets (#54 BR-18)
+
+Scanning declared method names misses implementations created by embedding and
+can mistake signature lookalikes for real interfaces. Use Go's type checker and
+check both value and pointer method sets. Include counterexamples with missing,
+shadowed and promoted methods; preserve a runtime test through another wrapper.

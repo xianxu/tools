@@ -206,9 +206,90 @@ rounds:
           family: shared-state-across-the-job-boundary
           round: 4
       blocked: false
+    - "n": 5
+      timestamp: "2026-09-14T20:49:47-07:00"
+      agent: codex
+      dispose:
+        - id: BR-17
+          disposition: not-addressed
+          note: Done-when boxes are checked at the pinned head, but plan Task 1.7 Step 3 remains open and lines 485–498 defer the smoke test. Commit its evidence or record an explicit verification waiver; this remains the existing Minor finding.
+          round: 5
+        - id: BR-18
+          disposition: not-addressed
+          note: 'Quieter and forwarding are implemented, but background_test.go:589–630 scans only directly declared methods. A scratch production wrapper embedding store.Store, with no Quiet method, compiled and passed TestEveryStoreHasAQuietView. ARCH-PURPOSE: complete the existing family rule with interface-aware enumeration and regression coverage for an additional wrapper.'
+          round: 5
+        - id: BR-19
+          disposition: addressed
+          note: background.go:254–298 keys both memory fields by the job's language. TestBgMemoryIsKeptPerLanguage passes at head and fails when start and received share the default-language key again.
+          round: 5
+        - id: BR-1
+          disposition: addressed
+          note: Refused bands enter failed through markUnfinished; TestABandRefusalIsRetriedOncePerSession exercises successive jobs and verifies no further calls.
+          round: 5
+        - id: BR-2
+          disposition: addressed
+          note: Current YAML and gated stores provide quiet views; TestTheJobWritesNothingToTheTerminal tests both with a warning-producing control. The future-wrapper enforcement gap remains BR-18.
+          round: 5
+        - id: BR-3
+          disposition: addressed
+          note: The pinned plan lists pendingWords under Integration points, matching its Store reads and in-memory-store test.
+          round: 5
+        - id: BR-4
+          disposition: addressed
+          note: assertNoJob counts constructed clients and asserts after end(), replacing the absence poll.
+          round: 5
+        - id: BR-5
+          disposition: addressed
+          note: bgNoticeFor says the model did not answer; README and atlas explicitly include rate limits, consistent with stopMeans handling ErrUnavailable.
+          round: 5
+        - id: BR-6
+          disposition: addressed
+          note: backgroundEnabled and runBackgroundJob use the shared hasModelSeam guard.
+          round: 5
+        - id: BR-7
+          disposition: addressed
+          note: runBackgroundJob reads Deck once and passes it through pendingWords and harvestDeck to runAuthoring.
+          round: 5
+        - id: BR-8
+          disposition: addressed
+          note: Authoring budget checks break before failure returns, and TestMarkUnfinishedLeavesABudgetCutPending pins the shared exclusion rule.
+          round: 5
+        - id: BR-9
+          disposition: addressed
+          note: deckperm.go:42–49 names background readers and the decided-state invariant; resolve and settleQuietly return without changing a decided state.
+          round: 5
+        - id: BR-10
+          disposition: addressed
+          note: deckIO and stopMeans propagate store failures into a session notice and off state; store-read and store-write regression tests cover the path.
+          round: 5
+        - id: BR-11
+          disposition: addressed
+          note: TestAMissedLookupDoesNotCountTowardTheCheck tests misses against successful-lookup controls through the editor.
+          round: 5
+        - id: BR-12
+          disposition: addressed
+          note: The atlas identifies a second Forget as cleanup; YAML.Forget removes owned files even when the word is absent from the deck.
+          round: 5
+        - id: BR-13
+          disposition: addressed
+          note: bgNoticeFor folds completed effects before the stop notice; TestBgNoticeForSaysEveryEffectInJobOrder and the transition test cover combined results.
+          round: 5
+        - id: BR-14
+          disposition: addressed
+          note: Pinned plan tables and current descriptions include deckErr, both memory fields, revised signatures, and per-check reflection reads, matching the implementation.
+          round: 5
+        - id: BR-15
+          disposition: addressed
+          note: The pinned plan and atlas name operator edits and manual reflection as competing writers; reflectDeck reads immediately before splicing Corrections and writing.
+          round: 5
+        - id: BR-16
+          disposition: addressed
+          note: reflectIfDue reads the model before Events and skips the log when reflectCouldBeDue is false; TestAHandEditedModelCostsNoLogRead includes a readable-model control.
+          round: 5
+      blocked: false
 ---
 
-# Gate ledger — tools#54 (boundary-review)
+# Gate ledger — tools-54-close#54 (boundary-review)
 
 Findings this gate raised, the stable ids the binary assigned them, and how
 later rounds disposed of them. Generated — edit the gate, not this file.
@@ -293,8 +374,31 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-19** [Minor] `shared-state-across-the-job-boundary` bgMemory survives /lang, so a word or reflect that failed in one language is skipped in the next this session
   This is the 3rd finding in family shared-state-across-the-job-boundary. Rule: session memory that outlives a store switch is keyed by the store it was learned against, or reset on the switch. Prevalence: both fields of bgMemory (background.go:233-236, merged at :281-286); no test covers a two-language session.
 
+## Round 5 — 2026-09-14T20:49:47-07:00 (codex) — passed
+
+### Disposed
+
+- BR-17 — not-addressed — Done-when boxes are checked at the pinned head, but plan Task 1.7 Step 3 remains open and lines 485–498 defer the smoke test. Commit its evidence or record an explicit verification waiver; this remains the existing Minor finding.
+- BR-18 — not-addressed — Quieter and forwarding are implemented, but background_test.go:589–630 scans only directly declared methods. A scratch production wrapper embedding store.Store, with no Quiet method, compiled and passed TestEveryStoreHasAQuietView. ARCH-PURPOSE: complete the existing family rule with interface-aware enumeration and regression coverage for an additional wrapper.
+- BR-19 — addressed — background.go:254–298 keys both memory fields by the job's language. TestBgMemoryIsKeptPerLanguage passes at head and fails when start and received share the default-language key again.
+- BR-1 — addressed — Refused bands enter failed through markUnfinished; TestABandRefusalIsRetriedOncePerSession exercises successive jobs and verifies no further calls.
+- BR-2 — addressed — Current YAML and gated stores provide quiet views; TestTheJobWritesNothingToTheTerminal tests both with a warning-producing control. The future-wrapper enforcement gap remains BR-18.
+- BR-3 — addressed — The pinned plan lists pendingWords under Integration points, matching its Store reads and in-memory-store test.
+- BR-4 — addressed — assertNoJob counts constructed clients and asserts after end(), replacing the absence poll.
+- BR-5 — addressed — bgNoticeFor says the model did not answer; README and atlas explicitly include rate limits, consistent with stopMeans handling ErrUnavailable.
+- BR-6 — addressed — backgroundEnabled and runBackgroundJob use the shared hasModelSeam guard.
+- BR-7 — addressed — runBackgroundJob reads Deck once and passes it through pendingWords and harvestDeck to runAuthoring.
+- BR-8 — addressed — Authoring budget checks break before failure returns, and TestMarkUnfinishedLeavesABudgetCutPending pins the shared exclusion rule.
+- BR-9 — addressed — deckperm.go:42–49 names background readers and the decided-state invariant; resolve and settleQuietly return without changing a decided state.
+- BR-10 — addressed — deckIO and stopMeans propagate store failures into a session notice and off state; store-read and store-write regression tests cover the path.
+- BR-11 — addressed — TestAMissedLookupDoesNotCountTowardTheCheck tests misses against successful-lookup controls through the editor.
+- BR-12 — addressed — The atlas identifies a second Forget as cleanup; YAML.Forget removes owned files even when the word is absent from the deck.
+- BR-13 — addressed — bgNoticeFor folds completed effects before the stop notice; TestBgNoticeForSaysEveryEffectInJobOrder and the transition test cover combined results.
+- BR-14 — addressed — Pinned plan tables and current descriptions include deckErr, both memory fields, revised signatures, and per-check reflection reads, matching the implementation.
+- BR-15 — addressed — The pinned plan and atlas name operator edits and manual reflection as competing writers; reflectDeck reads immediately before splicing Corrections and writing.
+- BR-16 — addressed — reflectIfDue reads the model before Events and skips the log when reflectCouldBeDue is false; TestAHandEditedModelCostsNoLogRead includes a readable-model control.
+
 ## Open findings
 
 - **BR-17** [Minor] `checklist-state-matches-delivery` The operator smoke test (Task 1.7 Step 3) and the issue's ten Done-when boxes are unticked at close
 - **BR-18** [Minor] `background-never-writes-outside-the-loop` quietStore is a type switch over two concrete shapes, so any other production store wrapper reads loudly again
-- **BR-19** [Minor] `shared-state-across-the-job-boundary` bgMemory survives /lang, so a word or reflect that failed in one language is skipped in the next this session

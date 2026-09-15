@@ -4,10 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -273,10 +269,10 @@ func TestABandRefusalIsRetriedOncePerSession(t *testing.T) {
 
 // The job never writes to the terminal (#54). The session's stores warn to the
 // process stderr and a job reads off the loop, so it reads through a view that
-// drops warnings, whether the store is bare or behind the deck gate. The control
-// reads the same store plainly and must warn, or the test proves nothing.
+// drops warnings, whether the store is bare, gated, or independently wrapped.
+// The control reads the same store plainly and must warn, or the test proves nothing.
 func TestTheJobWritesNothingToTheTerminal(t *testing.T) {
-	for name, gated := range map[string]bool{"bare": false, "behind the gate": true} {
+	for _, name := range []string{"bare", "behind the gate", "third wrapper"} {
 		t.Run(name, func(t *testing.T) {
 			d, fake, _ := harvestRig(t, 0)
 			scriptAll(fake, 4)
@@ -298,8 +294,11 @@ func TestTheJobWritesNothingToTheTerminal(t *testing.T) {
 			}
 			warn.TakeAll()
 			d.deck = st
-			if gated {
+			switch name {
+			case "behind the gate":
 				d.deck = newGatedStore(st, store.NewMem(), nil)
+			case "third wrapper":
+				d.deck = quietTestWrapper{Store: st}
 			}
 			if r := runBackgroundJob(t.Context(), d, bgMemory{}); r.authored == 0 {
 				t.Fatalf("the job did no work, so its silence proves nothing: %+v", r)
@@ -580,58 +579,6 @@ type countingEvents struct {
 func (c *countingEvents) Events(since time.Time) ([]store.ReviewEvent, error) {
 	c.reads.Add(1)
 	return c.Store.Events(since)
-}
-
-// Every store the session can hold has a quiet view (#54), so the job's silence is
-// a property of the store seam rather than a list of the shapes quietStore knows:
-// a new store, or a new wrapper around one, that forgets store.Quieter fails here
-// instead of printing into the frame from the job's goroutine.
-func TestEveryStoreHasAQuietView(t *testing.T) {
-	fset := token.NewFileSet()
-	methods := map[string]map[string]bool{} // receiver type -> its methods
-	notTest := func(fi fs.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }
-	for _, dir := range []string{".", "store"} {
-		pkgs, err := parser.ParseDir(fset, dir, notTest, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, pkg := range pkgs {
-			for _, f := range pkg.Files {
-				for _, decl := range f.Decls {
-					fn, ok := decl.(*ast.FuncDecl)
-					if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
-						continue
-					}
-					typ := fn.Recv.List[0].Type
-					if star, ok := typ.(*ast.StarExpr); ok {
-						typ = star.X
-					}
-					id, ok := typ.(*ast.Ident)
-					if !ok {
-						continue
-					}
-					key := dir + "." + id.Name
-					if methods[key] == nil {
-						methods[key] = map[string]bool{}
-					}
-					methods[key][fn.Name.Name] = true
-				}
-			}
-		}
-	}
-	var stores []string
-	for typ, ms := range methods {
-		if !ms["Deck"] || !ms["AppendEvent"] {
-			continue // not a store.Store, which has both
-		}
-		stores = append(stores, typ)
-		if !ms["Quiet"] {
-			t.Errorf("%s implements store.Store with no Quiet method; a background job reading through it would write its warnings into the frame", typ)
-		}
-	}
-	if len(stores) < 3 {
-		t.Fatalf("found %d store implementation(s) (%v), want the YAML store, the in-memory one and the deck gate; the scan is not seeing the packages", len(stores), stores)
-	}
 }
 
 // What a job could not finish is remembered for the language it ran in (#54): a

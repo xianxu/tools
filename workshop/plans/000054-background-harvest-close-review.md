@@ -127,3 +127,160 @@ findings:
     detail: |
       This is the 3rd finding in family shared-state-across-the-job-boundary. Rule: session memory that outlives a store switch is keyed by the store it was learned against, or reset on the switch. Prevalence: both fields of bgMemory (background.go:233-236, merged at :281-286); no test covers a two-language session.
 ```
+
+---
+
+## Re-review — 2026-09-14T20:49:47-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 54 — the TUI keeps practice material current in the background, so new words get cloze questions without a command |
+| repo | tools-54-close |
+| issue file | workshop/issues/000054-background-harvest.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 602aab61cc5b3de1532d5cb4418e892d59dbb751..aca25369429ef5f8fb3e48106a55af6e544a90b1 |
+| command | sdlc close --issue 54 |
+| reviewer | codex |
+| timestamp | 2026-09-14T20:49:47-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The implementation delivers background harvest and reflection through shared cores, with bounded work, cancellation, and terminal output owned by the editor loop. Package tests and focused race checks pass. Two existing Minor findings remain incomplete at the pinned head; no new blocking findings were found. Uncommitted tracker edits were excluded from review.
+
+## 1. Strengths
+
+- `harvestDeck` and `reflectDeck` serve both CLI and background callers without duplicating model workflows.
+- Controlled model replies test continued input processing and cancellation (`background_loop_test.go:157`, `:180`).
+- Reflection precedes harvest, and notices preserve completed work even when a later operation stops.
+- Per-language failure memory has meaningful regression coverage: restoring shared memory makes `TestBgMemoryIsKeptPerLanguage` fail.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+None.
+
+## 4. Minor findings
+
+- **BR-17 — not-addressed, partially corrected.** The committed issue’s Done-when boxes are checked, but plan Task 1.7 Step 3 remains open (`workshop/plans/000054-background-harvest-plan.md:365`). Record completed smoke-test evidence or an explicit waiver in the verification record.
+- **BR-18 — not-addressed, partially corrected.** `Quieter` replaces the concrete type switch, but its guard ignores inherited methods (`cmd/define/background_test.go:589–630`). A valid `struct { store.Store }` wrapper without `Quiet` passes the guard; I reproduced this in a scratch copy. **ARCH-PURPOSE:** finish the existing family-wide rule using interface-aware method-set checking, and add a regression exercising quieting through a third wrapper.
+
+## 5. Test coverage notes
+
+- Passed: `go test ./cmd/define/... ./internal/llm/...`.
+- Passed: focused race checks covering transitions, cancellation, runner memory, and nonblocking lookups.
+- BR-19 mutation: shared language memory fails the regression; restored implementation passes.
+- BR-18 counterexample: adding an embedded store without `Quiet` leaves the guard green.
+- A network-dependent mutation run encountered sandbox listener restrictions; no behavioral conclusion relies on that failed run.
+- Repository files were unchanged.
+
+## 6. Architectural notes
+
+| Principle | Result |
+|---|---|
+| ARCH-DRY | Pass — shared harvest/reflect cores and centralized stop classification. |
+| ARCH-PURE | Pass — scheduling and parsing remain pure; IO entities are classified separately. |
+| ARCH-PURPOSE | Flag — BR-18’s promised enforcement does not cover embedded store implementations. |
+| ARCH-MOCK | Pass — existing model seam, stateful fake, portable stores, and conformance tests are reused. |
+| ARCH-CONSTRAINTS | Pass — bounded batch, call budget, single job, and bounded shutdown wait. |
+| ARCH-SECURE | Pass — malformed model metadata is handled conservatively; no new credential surface. |
+| ARCH-ORDER | Pass — production scheduling uses the transition function; controlled ordering tests cover cancellation and concurrent input. |
+| ARCH-FUNERAL | Pass — existing replacement/removal paths are reused; the documented forgotten-word cleanup remains as previously disposed. |
+
+Core-concept entities exist at their documented paths, with consistent classifications. Both `cmd/define/README.md` and `atlas/define.md` document the new surface.
+
+## 7. Plan revision recommendations
+
+Add a `## Revisions` entry that:
+
+- Resolves Task 1.7 Step 3 with pinned smoke evidence or an explicit waiver.
+- Describes BR-18’s guard accurately after extending it to inherited method sets.
+
+```findings
+dispose:
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      Done-when boxes are checked at the pinned head, but plan Task 1.7 Step 3 remains open and lines 485–498 defer the smoke test. Commit its evidence or record an explicit verification waiver; this remains the existing Minor finding.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      Quieter and forwarding are implemented, but background_test.go:589–630 scans only directly declared methods. A scratch production wrapper embedding store.Store, with no Quiet method, compiled and passed TestEveryStoreHasAQuietView. ARCH-PURPOSE: complete the existing family rule with interface-aware enumeration and regression coverage for an additional wrapper.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      background.go:254–298 keys both memory fields by the job's language. TestBgMemoryIsKeptPerLanguage passes at head and fails when start and received share the default-language key again.
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Refused bands enter failed through markUnfinished; TestABandRefusalIsRetriedOncePerSession exercises successive jobs and verifies no further calls.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Current YAML and gated stores provide quiet views; TestTheJobWritesNothingToTheTerminal tests both with a warning-producing control. The future-wrapper enforcement gap remains BR-18.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      The pinned plan lists pendingWords under Integration points, matching its Store reads and in-memory-store test.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      assertNoJob counts constructed clients and asserts after end(), replacing the absence poll.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      bgNoticeFor says the model did not answer; README and atlas explicitly include rate limits, consistent with stopMeans handling ErrUnavailable.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      backgroundEnabled and runBackgroundJob use the shared hasModelSeam guard.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      runBackgroundJob reads Deck once and passes it through pendingWords and harvestDeck to runAuthoring.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      Authoring budget checks break before failure returns, and TestMarkUnfinishedLeavesABudgetCutPending pins the shared exclusion rule.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      deckperm.go:42–49 names background readers and the decided-state invariant; resolve and settleQuietly return without changing a decided state.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      deckIO and stopMeans propagate store failures into a session notice and off state; store-read and store-write regression tests cover the path.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      TestAMissedLookupDoesNotCountTowardTheCheck tests misses against successful-lookup controls through the editor.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      The atlas identifies a second Forget as cleanup; YAML.Forget removes owned files even when the word is absent from the deck.
+  - id: BR-13
+    disposition: addressed
+    note: |
+      bgNoticeFor folds completed effects before the stop notice; TestBgNoticeForSaysEveryEffectInJobOrder and the transition test cover combined results.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Pinned plan tables and current descriptions include deckErr, both memory fields, revised signatures, and per-check reflection reads, matching the implementation.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      The pinned plan and atlas name operator edits and manual reflection as competing writers; reflectDeck reads immediately before splicing Corrections and writing.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      reflectIfDue reads the model before Events and skips the log when reflectCouldBeDue is false; TestAHandEditedModelCostsNoLogRead includes a readable-model control.
+```

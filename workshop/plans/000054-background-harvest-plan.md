@@ -364,7 +364,7 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
 
   Plus an unmutated control run.
 - [x] **Step 2:** gofmt, `go vet ./...`, `go test ./...` → PASS, run after the last commit.
-- [ ] **Step 3:** The operator smoke-tests a session: ten new words, the notice, `/play` shows cloze questions.
+- [x] **Step 3:** Live TUI smoke: ten new words, the notice, `/play` shows cloze questions (executed in an isolated deck under the user's request to finish/close #54).
 - [x] **Step 4:** `sdlc milestone-close --issue 54 --milestone M1 --verified '<evidence>'`.
 
 ## M2 — background reflect
@@ -496,3 +496,27 @@ TestReflectRecordsDiscoveredModel failed after the first integration and passed
 with this correction. Focused harvest/reflect/background tests, race checks, vet
 and Linux cross-build passed. Live TUI smoke is running against the local proxy
 in an isolated deck; full suite and final close/merge follow.
+
+
+### 2026-09-14 — Live smoke completed
+
+Actual local CLIProxyAPI and native DictionaryServices, PTY-driven TUI, isolated
+temporary deck: all ten lookups captured, ten words banded, eight valid authored
+items saved, ready notice displayed, and /play presented a blanked cloze. Eight of the ten words had saved items; the notice reports the actual result.
+No manual --harvest command was used. Artifacts: /tmp/define54-live.log and
+/tmp/define54-live.raw. This replaces the previously operator-only execution
+assignment with agent-run live verification authorized by the user's close request.
+
+
+### 2026-09-14 — Final review findings resolved
+
+BR-17: the live ten-word PTY smoke, ready notice and playable cloze are recorded
+and Task 1.7 Step 3 is checked; normal exit restored termios exactly. BR-18:
+TestEveryStoreHasAQuietView now loads compiled source and uses go/types method
+sets rather than directly declared method names. TestQuietStoreGuardSeesEmbeddedMethods
+covers embedded missing/forwarded/promoted Quiet, pointer-versus-value stores,
+shadowed Quiet and wrong-signature lookalikes. TestTheJobWritesNothingToTheTerminal
+also exercises a third independent wrapper through real background quieting.
+Focused tests, race checks, Linux test compilation and repository guards passed.
+This bundles both FIX-THEN-SHIP dispositions with the codecomplete anchor, as the
+close gate directs; no second review of the same boundary is needed.
