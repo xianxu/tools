@@ -38,10 +38,10 @@ Preview: `/tmp/define66-region-preview.html` (dark/light and es/en toggles). The
 | Name | Lives in | Status | Responsibility |
 |---|---|---|---|
 | `parseBilingualDocument` → `bilingualDocument` | `cmd/define/bilingual_layout.go` | new | Ordered structural nodes and inline runs from one bounded Oxford XML walk |
-| `languageText` | `cmd/define/language_text.go` | modified | Preserve verified byte ownership; add explicit region boundaries/decorations independently of source prose |
+| `languageText` | `cmd/define/language_text.go` | unchanged | Verified byte ownership; presentation regions live separately in renderedOutput and Presentation |
 | `renderedOutput` | `cmd/define/output_layout.go` | new | Unpadded styled text, click regions and semantic region metadata in one validated value |
 | `layoutOutput` | `cmd/define/output_layout.go` | new | Shared wrap/clip projection of text, click coordinates and row ownership |
-| `paintLanguageRow` | `cmd/define/language_style.go` | new | Paint physical row fill and exclusions at current width without altering source text |
+| `paintLanguageRow` | `cmd/define/language_row.go` | new | Paint physical row fill and exclusions at current width without altering source text |
 | `selectionRow` | `cmd/define/selection_frame.go` | modified | Paint metadata separate from selectable cells |
 | `Presentation` | `cmd/define/play/presentation.go` | modified | Producer-owned row/region ownership and answer-state exclusions; no imports |
 
@@ -49,11 +49,15 @@ Preview: `/tmp/define66-region-preview.html` (dark/light and es/en toggles). The
 
 | Name | Lives in | Status | Wraps |
 |---|---|---|---|
-| `renderDefinitions` | `cmd/define/definitions.go` | modified | Primary renderer and structured Oxford output, shared by lookup/Choice/Cloze reveals |
-| `liveScreen` | `cmd/define/screen.go` | modified | Atomic structured output, current-width paint, selection, resize and exit transcript |
-| `answerWrapWriter` | `cmd/define/answerwrap.go` | modified | Bounded structured physical-row emission before any sink receives paint |
+| `renderDefinitions` | `cmd/define/definitions.go` | modified | String adapter around the structured definition core |
+| `renderDefinitionOutput` | `cmd/define/definitions.go` | new | Primary and structural Oxford output shared by lookup/Choice/Cloze reveals |
+| `liveScreen` | `cmd/define/screen.go` | unchanged | Existing synchronized IO shell; new methods carry structured output |
+| `screen` | `cmd/define/screen.go` | modified | Stores immutable row paint beside unpadded text and actions |
+| `WriteOutput` | `cmd/define/output_screen.go` | new | Atomic structured text/action/paint ingress |
+| `answerWrapWriter` | `cmd/define/answerwrap.go` | unchanged | Legacy unannotated wrapping API retained for existing callers |
+| `ownedAnswerWrapWriter` | `cmd/define/answerwrap.go` | new | Bounded structured physical-row emission before any sink receives paint |
 | `languageAnswer` | `cmd/define/answer_language.go` | modified | Existing decoded stream and plain history, explicit row-ownership accumulation |
-| Practice output adapters | `cmd/define/practice_language.go` | modified | Prompt/reveal/chrome/footer regions and dictionary-source roles |
+| `renderPracticeOutput` | `cmd/define/practice_output.go` | new | Prompt/reveal/chrome/footer regions and dictionary-section paint |
 
 ## Detailed contracts
 
@@ -97,9 +101,9 @@ Direct pure-core tests use independent source-order and terminal-cell oracles; i
 | `layoutOutput` | Narrow/wide Unicode, exact-edge wrapping, embedded multi-language dictionary sections, interior blanks, invalid metadata and narrow→wide→narrow clipping | Literal physical rows and click-cell coordinates at fixed widths, source-text conservation and bounds assertions; mutating section ownership or retaining stale width must fail |
 | `paintLanguageRow` | Short/indented/blank rows, embedded SGR resets, semantic answer exclusions, selection inverse, tint off and width changes | Independent terminal-state emulator asserts every cell's background including blank cells, unchanged foreground/excluded cells, reset before movement and no extra wrap/scroll; mutations removing padding/reset must fail |
 | `advanceRowOwnership` | Exhaustive empty/known/mixed states crossed with same/foreign/unknown prose, decorations, finalize/wrap/finish events | Literal transition table, mixed-state absorption until finalize, no language from decoration, explicit blank-region inheritance and dictionary-role bypass; mutation assigning mixed rows to target must fail |
-| `answerWrapWriter` / `languageAnswer` | Every-byte splits of real SSE capture, multiple pure wrapped rows followed by mixed prose, pending-row resize, cancellation/truncation/error and 64 KiB overflow | Identical finalized physical rows across chunk splits/live/append sinks, unchanged decoded logical history, immutable completed-row ownership and bounded pending text; no display-only newlines/padding in history |
+| `ownedAnswerWrapWriter` / `languageAnswer` | Every-byte splits of real SSE capture, multiple pure wrapped rows followed by mixed prose, pending-row resize, cancellation/truncation/error and 64 KiB overflow | Identical finalized physical rows across chunk splits/live/append sinks, unchanged decoded logical history, immutable completed-row ownership and bounded pending text; no display-only newlines/padding in history |
 | `selectionCells` / `selectedText` | Selection across synthetic padding, clipped wide glyphs and source spaces at multiple widths | Literal clipboard text derived from unpadded source; paint-padding mutation must fail |
-| `renderDefinitions` / `renderPracticePresentation` / `boardFooter` | Lookup, both full reveals, prompt/help/answer rows, footer and unknown dictionary fallback | Literal text/action coordinates plus terminal-cell section-role assertions; mutation losing footer metadata or alternating backgrounds within a dictionary must fail |
+| `renderDefinitionOutput` / `renderPracticeOutput` / `boardFooterOutput` | Lookup, both full reveals, prompt/help/answer rows, footer and unknown dictionary fallback | Literal text/action coordinates plus terminal-cell section-role assertions; mutation losing footer metadata or alternating backgrounds within a dictionary must fail |
 
 ### Task 1 — Source structure and regression oracle
 
@@ -157,3 +161,10 @@ Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bo
   `PaintedTranscript()` owns terminal handback and `OutputTranscript()` transfers
   text/actions/paint between nested screens. This avoids clipping or padding logical
   history when current-width painting occurs. Added a nested-transfer regression.
+
+- 2026-09-15 — Close review BR-2: reconcile Core concepts with declaration-level
+  implementation. languageText/liveScreen/legacy answerWrapWriter declarations are
+  unchanged; screen storage changed, and ownedAnswerWrapWriter, WriteOutput,
+  renderDefinitionOutput and renderPracticeOutput are new. The painter lives in
+  language_row.go. BR-1 extends streaming verification through runAsk's terminating
+  plain newline, for success and cancellation, plus the shared screen append policy.

@@ -4658,3 +4658,11 @@ the live consumer. A footer producer test passed after its screen metadata was
 removed; a DrawOutput-to-frame cell test killed that mutation. Keep unpadded
 source and immutable copied metadata separate, and preserve producer SGR across
 physical row boundaries when a painter resets after padding.
+
+## Finalization includes the caller's next write (define #66 close)
+
+Testing a stream adapter's Finish is insufficient when its caller then writes a
+newline. Cover the complete caller success/cancellation path and every writer
+capability: terminator-only writes preserve finalized row metadata, while added
+unclassified source invalidates it. Also run plan declaration/status guards after
+committing: an uncommitted green run cannot prove claims about the committed window.

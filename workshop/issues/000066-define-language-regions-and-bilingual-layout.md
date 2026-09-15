@@ -143,6 +143,16 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   history stays unpadded; PaintedTranscript is only terminal handback, and nested
   screens transfer OutputTranscript metadata. Preparing the single close review.
 
+- Close round 1: REWORK, BR-1 finalized-row metadata and BR-2 Core concepts
+  traceability. Reproduced BR-1 through real captured SSE on runAsk success and
+  cancellation: append sinks passed, live final rows lost paint. Swept both plain
+  and structured append paths; shared invalidatePartialPaint preserves newline /
+  CRLF termination and clears ownership on additional source (including structured
+  writes without metadata). New regressions fail before and pass after the fix.
+- BR-2: reconciled entity declarations, paths and consumer names throughout the
+  plan table/test matrix; appended the revision. Focused declaration-status tests
+  pass; post-commit full verification follows before close round 2.
+
 ## Revisions
 
 ### 2026-09-15 — Uniform dictionary sections

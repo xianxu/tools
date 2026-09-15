@@ -879,9 +879,7 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 // the axis the fifth did not enumerate: that one closed which LINES are wrapped
 // and left which PATHS. Callers hold mu.
 func (l *liveScreen) writeBuffer(text string) error {
-	if text != "" && l.s.partial {
-		delete(l.s.paints, len(l.s.lines)-1)
-	}
+	l.s.invalidatePartialPaint(text)
 	if text != "" {
 		l.invalidateSelectionLocked()
 	}

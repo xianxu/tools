@@ -50,6 +50,7 @@ func (l *liveScreen) WriteOutput(o renderedOutput) error {
 	// Metadata is attached under the same lock as its unpadded source. A partial
 	// plain prefix cannot inherit ownership from a later structured fragment.
 	partial := l.s.partial
+	l.s.invalidatePartialPaint(o.text)
 	_, err := l.s.Write([]byte(o.text))
 	if l.s.paints == nil {
 		l.s.paints = make(map[int]rowPaint)
@@ -59,7 +60,6 @@ func (l *liveScreen) WriteOutput(o renderedOutput) error {
 			break
 		}
 		if i == 0 && partial {
-			delete(l.s.paints, base)
 			continue
 		}
 		p.exclusions = slices.Clone(p.exclusions)
@@ -171,4 +171,17 @@ func (l *liveScreen) OutputTranscript() renderedOutput {
 		}
 	}
 	return o
+}
+
+// A terminator commits an existing row without adding unknown source prose.
+// Appending any other source bytes invalidates ownership of that partial row;
+// later rows start independently. Plain and structured writers share this rule.
+func (s *screen) invalidatePartialPaint(text string) {
+	if !s.partial {
+		return
+	}
+	prefix, _, _ := strings.Cut(text, "\n")
+	if strings.Trim(prefix, "\r") != "" {
+		delete(s.paints, len(s.lines)-1)
+	}
 }
