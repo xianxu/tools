@@ -4624,3 +4624,19 @@ A renderer's escape scanner may support only the sequences the app emits.
 Before using it on external text, check string controls such as OSC/DCS, their
 terminators, incomplete sequences and bounded state. Verify both display and
 stored prose; dropping only the introducer can leave the payload behind.
+
+
+## Preserve optional capabilities through production wrappers (define #65)
+
+A locking decorator can preserve Lookup while silently hiding a supplemental
+interface from a later type assertion. Exercise the assembled production factory
+through the consumer, preserve only capabilities the inner object actually has,
+and serialize supplemental/native reads with the same lock as primary lookups.
+
+
+## Wrapping is a style boundary too (define #65)
+
+Language styling before wrapping cannot protect new physical newlines inserted
+later. The wrapper must suspend backgrounds before those newlines and restore
+styles for continuation text. Test literal escape transitions at inserted breaks,
+not just visible text or total width.

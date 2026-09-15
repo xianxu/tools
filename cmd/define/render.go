@@ -11,6 +11,8 @@ import (
 // RenderOpts controls presentation only. Render is pure: it never probes the
 // terminal — the caller decides Color.
 type RenderOpts struct {
+	Language store.Lang // primary monolingual source language
+	Tint     tintPolicy
 	// Word is the KEY this entry was looked up by, and it is identity rather
 	// than presentation — the one field here that is not about how the entry
 	// looks. Regions address a word, and which word that is belongs to the
@@ -124,6 +126,7 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 	// a whole parenthetical — so emitting fields in a guessed order reorders the
 	// entry. Nothing is hidden here, including a syllabification equal to the
 	// headword: suppression is how content goes missing.
+	headAt := 0
 	for i, t := range e.Head {
 		sep := " "
 		switch {
@@ -141,10 +144,18 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 		case HeadPOS:
 			color = p.pos
 		}
+		headAt += len(e.Raw[headAt:]) - len(strings.TrimLeftFunc(e.Raw[headAt:], unicode.IsSpace))
+		text := t.Text
+		if t.Kind == HeadWord || t.Kind == HeadSyllables {
+			text = opt.dictionaryText(e, t.Text, t.Text, headAt, strings.HasPrefix(e.Raw[headAt:], t.Text))
+		}
+		if strings.HasPrefix(e.Raw[headAt:], t.Text) {
+			headAt += len(t.Text)
+		}
 		if color != "" {
-			fmt.Fprintf(&b, "%s%s%s%s", sep, color, t.Text, p.off)
+			fmt.Fprintf(&b, "%s%s%s%s", sep, color, text, p.off)
 		} else {
-			fmt.Fprintf(&b, "%s%s", sep, t.Text)
+			fmt.Fprintf(&b, "%s%s", sep, text)
 		}
 	}
 	b.WriteString("\n")
@@ -189,7 +200,7 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 				// text it measures. Wrapping first also means a phrase cannot span
 				// a line break, which is the writer's rule 2 falling out rather
 				// than being enforced twice.
-				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, opt.prose(wrapText(body, opt.Width, lead), ""))
+				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, opt.dictionaryText(e, s.Gloss, opt.prose(wrapText(body, opt.Width, lead), ""), s.sourceAt, s.sourceKnown))
 			} else if marker != "" {
 				fmt.Fprintf(&b, "%s%s\n", indent, strings.TrimSpace(marker))
 			}
@@ -207,7 +218,7 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 				// stays readable: “"This blows," she sighs” rather than
 				// ""This blows," she sighs".
 				fmt.Fprintf(&b, "%s\u201c%s\u201d%s\n", p.ex,
-					opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex), p.off)
+					opt.dictionaryText(e, ex.Text, opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex), ex.sourceAt, ex.sourceKnown), p.off)
 			}
 		}
 	}
@@ -219,7 +230,8 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 			// ("…played some great football into the bargain | save yourself
 			// money…"). Rendering it as one paragraph left NOAD's raw "|" on
 			// screen; each segment gets its own line instead.
-			for i, seg := range strings.Split(prettyPronunciations(sec.Text, p), "|") {
+			sectionText := prettyPronunciations(sec.Text, p)
+			for i, seg := range strings.Split(sectionText, "|") {
 				if seg = strings.TrimSpace(seg); seg == "" {
 					continue
 				}
@@ -227,7 +239,11 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 				if i > 0 {
 					indent = "      "
 				}
-				fmt.Fprintf(&b, "%s%s\n", indent, opt.prose(wrapText(seg, opt.Width, len(indent)), ""))
+				text := opt.prose(wrapText(seg, opt.Width, len(indent)), "")
+				if sec.Name != "ORIGIN" && sectionText == sec.Text {
+					text = opt.dictionaryText(e, seg, text, 0, false)
+				}
+				fmt.Fprintf(&b, "%s%s\n", indent, text)
 			}
 		}
 	}

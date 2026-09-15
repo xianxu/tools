@@ -54,6 +54,24 @@ func (l lockedDictionary) Lookup(word string) (string, error) {
 func lockedDictionaries(build func(store.Lang, io.Writer) (Dictionary, string)) func(store.Lang, io.Writer) (Dictionary, string) {
 	return func(l store.Lang, w io.Writer) (Dictionary, string) {
 		d, name := build(l, w)
-		return lockedDictionary{inner: d}, name
+		locked := lockedDictionary{inner: d}
+		if provider, ok := d.(supplementalDictionary); ok {
+			return lockedSupplementalDictionary{lockedDictionary: locked, provider: provider}, name
+		}
+		return locked, name
 	}
+}
+
+// lockedSupplementalDictionary preserves the optional capability only for
+// sources that support it. Supplemental native reads share the primary lock.
+type lockedSupplementalDictionary struct {
+	lockedDictionary
+	provider supplementalDictionary
+}
+
+func (d lockedSupplementalDictionary) primaryLabel() string { return d.provider.primaryLabel() }
+func (d lockedSupplementalDictionary) supplement(word, primary string) definitionSection {
+	dictionaryMu.Lock()
+	defer dictionaryMu.Unlock()
+	return d.provider.supplement(word, primary)
 }

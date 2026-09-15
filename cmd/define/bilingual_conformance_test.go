@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/conformance"
 )
 
@@ -103,5 +104,34 @@ func TestBilingualNativeLimits(t *testing.T) {
 	}
 	if _, err := source.Records("red\x00mesa"); !errors.Is(err, ErrBilingualMalformed) {
 		t.Fatalf("embedded null: %v", err)
+	}
+}
+
+// Exercise the installed native source, not the committed capture, so changed
+// Apple HTML classes or Text normalization cannot silently disable ownership.
+func TestBilingualNativeLanguageOwnership(t *testing.T) {
+	source := bilingualNativeProbe(t)
+	records, err := source.Records("red")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := selectedSpanishRecords(records, "red", "red")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range selected {
+		entry := ParseEntry(record.Text)
+		entry.source = bilingualLanguageText(record)
+		if len(entry.source.spans) == 0 {
+			t.Fatal("installed Oxford record has no proven language ranges")
+		}
+		for _, lang := range []store.Lang{"es", "en"} {
+			rendered, _ := Render(entry, RenderOpts{Color: true, Tint: tintPolicy{lang: lang, background: languageDark}})
+			assertDictionaryTint(t, rendered, "subir a la red", lang == "es")
+			assertDictionaryTint(t, rendered, "to go up to", lang == "en")
+			assertDictionaryTint(t, rendered, "caer en las redes de alguien", lang == "es")
+			assertDictionaryTint(t, rendered, "to fall into somebody's clutches", lang == "en")
+		}
+		t.Logf("native red: %d source bytes, %d validated language ranges", len(record.Text), len(entry.source.spans))
 	}
 }

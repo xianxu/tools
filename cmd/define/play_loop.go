@@ -225,7 +225,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// for every form by `chromeGap` — so this was one form's exception to
 			// a rule the frame did not yet have, and it also spent a buffer line
 			// on it, which the exit transcript then carried.
-			view.Draw(asChrome(boardPrompt(q, boardWhole, pal), pal), boardFooter(q, fig, pal))
+			view.Draw(asChrome(styledBoardPrompt(q, boardWhole, pal, d, opt), pal), boardFooter(q, fig, pal, d, opt))
 			return
 		}
 		if q != nil && written != s.Index {
@@ -240,7 +240,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// and drops footer rows first, and a learner who cannot see the keys
 		// cannot answer at all, while one who cannot see their daily load loses
 		// nothing this minute.
-		view.Draw(asChrome(livePrompt(s), pal), []string{asChrome(sittingBar(fig), pal)})
+		view.Draw(asChrome(practiceChrome(livePromptPresentation(s), d, opt), pal), []string{asChrome(practiceChrome(sittingBarPresentation(fig), d, opt), pal)})
 	}
 
 	// Every exit is the summary and THEN the terminal, in that order. The summary
@@ -249,7 +249,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// into a screen nobody paints again and would be missing from the transcript
 	// as well as from the terminal.
 	over := func() int {
-		code := finish(stdout, s, fig)
+		code := finishStyled(stdout, s, fig, d, opt)
 		con.finish()
 		return code
 	}
@@ -500,8 +500,11 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					// NO SUBJECT HELD OUT: the reveal has already shown the word
 					// and restored its sentence, so marking it is information
 					// rather than the answer to a question still being asked.
-					writeWords(stdout, reveal, held.marksIn(asked.Word(), reveal),
-						d, opt, surfaceProse, "", held.renderOf(asked.Word()))
+					if p, ok := asked.(practicePresenter); ok {
+						writePracticePresentation(stdout, p.RevealPresentation(), held.marksIn(asked.Word(), reveal), d, opt, surfaceProse, "", held.renderOf(asked.Word()))
+					} else {
+						writeWords(stdout, reveal, held.marksIn(asked.Word(), reveal), d, opt, surfaceProse, "", held.renderOf(asked.Word()))
+					}
 				}
 				// THE PREDICATE, not a fifth hand-copy of `!opt.noAudio &&
 				// opt.times > 0` (T0). playAnnounced applies it itself, so being
@@ -602,13 +605,32 @@ func toInput(k Key) (play.Input, bool) {
 // not both fit at the width where this happens, and a prompt that wraps is a
 // frame one row taller than the board was budgeted for.
 func boardPrompt(q play.Question, whole bool, pal palette) string {
+	return highlightBoardPrompt(gradePrompt(q), whole, pal)
+}
+func highlightBoardPrompt(prompt string, whole bool, pal palette) string {
 	if !whole {
 		return boardRefusal
 	}
-	prompt := gradePrompt(q)
 	// Board.Keys owns the active option's brackets. Clear the surrounding
 	// chrome's dim attribute before highlighting, then restore it afterward.
-	before, selected, found := strings.Cut(prompt, "[")
+	at := -1
+	for i := 0; i < len(prompt); {
+		if prompt[i] == 0x1b {
+			if n := scanEscape(prompt[i:]); n > 0 {
+				i += n
+				continue
+			}
+		}
+		if prompt[i] == '[' {
+			at = i
+			break
+		}
+		i++
+	}
+	before, selected, found := "", "", at >= 0
+	if found {
+		before, selected = prompt[:at], prompt[at+1:]
+	}
 	if !found || pal.head == "" {
 		return prompt
 	}
@@ -713,8 +735,12 @@ func boardPalette(opt options) play.Palette {
 // `boardPalette` sits on: `main` owns the terminal's colours and the form takes
 // finished sequences. It styles only the BAR — the grid above it is the board's
 // own rendering, already painted through `play.Palette` (#44).
-func boardFooter(q play.Question, fig sittingFigures, pal palette) []string {
-	return append(strings.Split(q.Prompt(), "\n"), asChrome(sittingBar(fig), pal))
+func boardFooter(q play.Question, fig sittingFigures, pal palette, d deps, opt options) []string {
+	text := q.Prompt()
+	if p, ok := q.(practicePresenter); ok {
+		text = renderPracticePresentation(p.PromptPresentation(), d.lang, opt.tintFor(d.lang), nil, surfaceOf(q.Form()), q.Word())
+	}
+	return append(strings.Split(text, "\n"), asChrome(practiceChrome(sittingBarPresentation(fig), d, opt), pal))
 }
 
 // barRows is the ONE row the bar is guaranteed below the board.
@@ -1010,7 +1036,8 @@ func todaysQuestions(ctx context.Context, d deps, opt options, stdout, stderr io
 			// deriving it from the entry instead lets the two disagree —
 			// `jalapeno` in the deck against `jalapeño` on the head line, for
 			// which the CDN answers different URLs.
-			Word:  key,
+			Word:     key,
+			Language: d.lang, Tint: opt.tintFor(d.lang),
 			Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
 		})
 		marks[key] = clickable{text: rendered, regions: rs}
@@ -1275,6 +1302,10 @@ func (sd *sittingDeck) marksIn(word, written string) []Region {
 // swapping `subject` and `already` compiles and silently re-colours the embedded
 // render. With one q there is nothing to swap.
 func writePrompt(w io.Writer, q play.Question, d deps, opt options) {
+	if p, ok := q.(practicePresenter); ok {
+		writePracticePresentation(w, p.PromptPresentation(), promptRegions(q), d, opt, surfaceOf(q.Form()), q.Word(), "")
+		return
+	}
 	// Plain \n: the screen places every row, so nothing here decides where a
 	// line goes (D1).
 	text := "\n" + q.Prompt() + "\n"
@@ -1297,9 +1328,7 @@ func writePrompt(w io.Writer, q play.Question, d deps, opt options) {
 //
 // DECK VOCABULARY IS THE DECK'S LANGUAGE. An English line that happens to spell
 // a Spanish deck word ("red", "son", "once") must not colour it or turn it into
-// a Spanish word action, so help lines get neither. They are dimmed instead, so
-// the two languages read apart; the style starts AFTER the indent, because
-// wrapWritten measures a continuation's indent from the leading spaces.
+// a Spanish word action, so help lines get neither. Their explicit language ownership supplies the background distinction.
 func writeHelped(w io.Writer, text string, rs []Region, help map[int]bool, d deps, opt options, sf surface, subject string) {
 	v := deckVocabulary(d)
 	var own []Region
@@ -1310,12 +1339,8 @@ func writeHelped(w io.Writer, text string, rs []Region, help map[int]bool, d dep
 	}
 	rs = mergeRegions(rs, own)
 	lines := strings.Split(text, "\n")
-	p := newPalette(opt.color)
 	for i, l := range lines {
 		switch {
-		case help[i] && p.dim != "":
-			k := len(l) - len(strings.TrimLeft(l, " "))
-			lines[i] = l[:k] + p.dim + l[k:] + p.off
 		case !help[i] && v != nil && opt.color && sf.admitsColour():
 			lines[i] = highlightRegion(l, withoutWord(v, subject), knownOn, "")
 		}
@@ -1398,27 +1423,7 @@ var anyTime time.Time
 // space to reveal" instead — so every correct answer cost a keystroke that
 // carried no information, and the slow one at that, since a reveal fetches and
 // plays the pronunciation (#24).
-func livePrompt(s play.Session) string {
-	q := s.Current()
-	if q == nil {
-		// Between the last answer and the summary. An empty prompt is a frame
-		// with nothing to press, which is the truth for that moment.
-		return ""
-	}
-	if s.Graded {
-		// Answered, and the answer is on screen. The only thing left is to read
-		// it and move on — offering y/n here would invite a second verdict on a
-		// question that already has one.
-		//
-		// EXCEPT the flag, which is not a second verdict and is most useful
-		// exactly here: a learner discovers a question was broken by reading the
-		// reveal. Derived from the FORM rather than a constant, because "any key
-		// = next word" is a lie on a form where `?` does something else — the
-		// same class gradePrompt below was created to fix.
-		return gradedPromptFor(q)
-	}
-	return gradePrompt(q)
-}
+func livePrompt(s play.Session) string { return livePromptPresentation(s).Text }
 
 // gradedPromptFor is the post-answer line, naming the flag when the form has one.
 //
@@ -1481,12 +1486,7 @@ func reservedKeys(q play.Question) string {
 // y/n, so the moment a second form shipped the learner was being told to press a
 // key that did nothing — a bug no test could see, because every test typed the
 // keys the const named.
-func gradePrompt(q play.Question) string {
-	// No nil guard: draw returns before this when Current() is nil, so a nil
-	// here would be a bug in the loop rather than a state to render politely.
-	// The guard that was here shipped as dead code and would have hidden that.
-	return q.Keys() + ", " + reservedKeys(q)
-}
+func gradePrompt(q play.Question) string { return gradePromptPresentation(q).Text }
 
 // finish prints the sitting's score AND what the deck now costs per day.
 //
@@ -1507,14 +1507,7 @@ func gradePrompt(q play.Question) string {
 // The failure branches go with the reads. There is nothing left here that can
 // fail, so a summary can no longer cost a sitting whose reviews are recorded.
 func finish(w io.Writer, s play.Session, fig sittingFigures) int {
-	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)
-	// Through the SHARED formatter, so this line and the pinned bar cannot
-	// describe the same deck differently or word the -count assumption two ways.
-	// The budget is -count: the number of questions a sitting asks, which is the
-	// DAILY budget for a learner who sits down once a day, and it is NAMED in
-	// the line rather than hidden so someone who sits twice knows to double it.
-	fmt.Fprintln(w, sittingSummary(fig))
-	return 0
+	return finishStyled(w, s, fig, deps{}, options{})
 }
 
 // emptyQueueReason names WHY the sitting is empty.

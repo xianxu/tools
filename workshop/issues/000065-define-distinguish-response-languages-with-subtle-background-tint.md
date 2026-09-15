@@ -115,7 +115,7 @@ total: 5.526
 
 ## Plan
 
-- [ ] Design language ownership and shared styling across all response surfaces,
+- [x] Design language ownership and shared styling across all response surfaces,
   choose and preview the tint, and write the durable implementation plan with
   annotation/streaming contracts and verification before implementation.
 
@@ -133,6 +133,44 @@ total: 5.526
   these consumers and generated replies rather than duplicate styling rules.
 
 - After #62 merged, claimed #65 and entered planning. The durable design and interactive dark/light preview are ready. Fresh review found that the existing escape grammar cannot sanitize full OSC/DCS model controls; the revised plan adds bounded constant-state filtering before annotation decoding, rendering and transcript storage. Re-review approved with no remaining Important gaps. Runtime implementation awaits operator approval; estimate deferred to the gate.
+
+- Operator approved the complete plan; plan-quality and estimate gates passed and
+  implementation began on the issue branch. Shared style/CLI, source ownership,
+  practice presentations and model decoder/adapter are implemented uncommitted.
+  Focused tests and live production model annotations passed. Initial full suite
+  found intended prompt-golden/docs drift, plan table formatting and misplaced
+  doc comments; those are being corrected before final verification.
+- Integration exposed physical wrap newlines retaining background and the real
+  dictionary lock hiding its supplementary interface. Both require fixes and
+  regressions; native Oxford ownership itself passed. No #64 runtime work.
+- Estimate mapping: the three greenfield units cover dictionary source projection,
+  annotation decoding and terminal-control filtering. Their implementation costs
+  include adversarial/race/fuzz checks; the UI unit includes PTY/selection checks.
+  Most dictionary class discovery used existing committed records within its
+  source-module allowance; the live discovery allowance principally covers the
+  new model semantics. Mutation checks and boundary review remain outstanding.
+
+- Operator clarified they use both light and dark terminal backgrounds depending
+  on the session. Both explicit invocation profiles are retained and documented;
+  default dark remains the approved design, without automatic theme inference.
+
+- Implementation complete before close review. Full `go test ./... -count=1`
+  passed (define 125.250s); focused language/ask/practice/selection race suite
+  passed (40.544s), dictionary locking race passed (2.071s); `go vet ./...`,
+  Linux CGO-disabled build and diff check passed. Decoder fuzz passed 42,274
+  executions. Strict native dictionary and dark/light/off PTY checks passed,
+  including `/lang en`, subsequent tinted English output and terminal restoration.
+  Strict production-prompt live model conformance passed (5.85s): captured
+  Spanish greetings and coffee question belong to Spanish, explanatory prose
+  and “good morning” to English. Real bytes are committed as stream-language.sse.
+- All planned mutation classes rejected: whole-supplement English or Spanish
+  ownership, missing board/footer ownership, foreground-reset losing tint,
+  raw model text reaching history, and missing finish on cancelled answers.
+  Mutations ran in isolated snapshots; shared code restored/unmodified.
+- Dark/light/off ANSI profiles were exercised in a real PTY and captured at
+  `/tmp/define65-language-tint-pty/`. Automated byte/geometry evidence and the
+  browser color preview do not establish subjective contrast in every terminal
+  font/theme; no claim of manual terminal screenshot inspection is made.
 
 ## Revisions
 

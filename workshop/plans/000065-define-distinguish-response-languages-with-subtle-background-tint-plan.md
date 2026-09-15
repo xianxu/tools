@@ -4,7 +4,7 @@
 
 **Goal:** Make target-language passages easy to distinguish throughout bilingual definitions, practice and model answers.
 
-**Status:** Fresh design review approved after one correction; operator approval required before implementation.
+**Status:** Implementation and verification complete 2026-09-15; awaiting close review and publication.
 
 **Architecture:** Producers preserve explicit language ownership. One pure background composer consumes owned text and effective `/lang`. Dictionary source metadata, practice presentation roles and a bounded model-annotation decoder all feed that composer. Unknown text remains neutral.
 
@@ -37,9 +37,9 @@ A browser preview at `/tmp/define-language-tint-preview.html` demonstrates both 
 | `languageText` / `languageSpan` | `cmd/define/language_text.go` | new | Exact text plus nonoverlapping UTF-8 byte ranges with validated language, unknown outside ranges |
 | `tintPolicy` / `styleLanguageText` | `cmd/define/language_style.go` | new | Current language and profile determine background; compose it without changing prose, foreground, or semantic state |
 | `play.Presentation` / `LanguageRole` | `cmd/define/play/presentation.go` | new | Form-owned emitted text and byte ranges: Target, English, Neutral; explicit answer-style suppression |
-| `promptBuilder` and form render walks | `cmd/define/play/choice.go`, `cloze.go`, `board.go` | modified | Prompt/reveal text and ownership derive from one layout walk, including truncation |
-| Selected bilingual records and source projection | `cmd/define/bilingual.go`, new `dictionary_language.go` | modified/new | Preserve HTML-owned language spans beside source text; project only proven ownership into rendered fragments |
-| `definitionSection`, `RenderOpts` and field rendering | `cmd/define/definitions.go`, `parse.go`, `render.go` | modified | Preserve section/source language separately from lookup language; annotate headword and prose at known boundaries |
+| `promptBuilder` and form render walks | `cmd/define/play/choice.go` | modified | Prompt/reveal text and ownership derive from one layout walk, including truncation |
+| Selected bilingual records and source projection | `cmd/define/bilingual.go` | modified | Preserve HTML-owned language spans beside source text; project only proven ownership into rendered fragments |
+| `RenderOpts` and field rendering | `cmd/define/render.go` | modified | Preserve section/source language separately from lookup language; annotate headword and prose at known boundaries |
 | `answerTextFilter` | `cmd/define/answer_text.go` | new | Incremental UTF-8 and terminal-control filtering before annotation parsing, bounded state and no retained control payload |
 | `languageDecoder` | `cmd/define/language_decode.go` | new | Incremental model markers → clean owned spans, with bounded buffering and neutral recovery |
 | `askContext` / `renderAskPrompt` | `cmd/define/askctx.go` | modified | Tell the model effective language and annotation grammar; retain current answer-level policy |
@@ -51,9 +51,9 @@ The main package owns actual language codes. `play` remains import-free: its rol
 | Name | Lives in | Status | Wraps |
 |---|---|---|---|
 | Invocation tint policy | `cmd/define/main.go` | modified | CLI flags and existing stdout/environment checks |
-| Dictionary orchestration | `definitions.go`, `main.go`, `cloze.go`, `play_loop.go` | modified | Selected dictionaries and pre-rendered reveals |
+| Dictionary orchestration | `cmd/define/definitions.go` | modified | Selected dictionaries and pre-rendered reveals |
 | Practice presentation adapter | `play_loop.go` | modified | Form presentations, word regions, board footer and reveal output |
-| Annotated answer writer | `ask.go` (including `gatherAskContext`) | modified | LLM stream, clean session transcript, highlighting and wrapping |
+| Annotated answer writer | `cmd/define/ask.go` | modified | LLM stream, clean session transcript, highlighting and wrapping |
 | Native/source/model conformance | existing conformance tests plus `language_conformance_test.go` | new/modified | Installed dictionary records, real model requests, PTY lifecycle |
 
 No persistent deck schema changes. Ownership lasts as long as its response; completed session text stores clean prose. Future #64 can choose language proportions through the same annotated response seam.
@@ -102,9 +102,24 @@ Request short nonnested passages using reserved markers `[lang=es]…[/lang]`; l
 | Literal marker examples | Model must spell reserved brackets as entities; decode those only as literal prose after marker parsing, never recursively |
 | Model-supplied controls | Pass through `answerTextFilter` before marker decoding: retain newline/tab and printable Unicode; discard complete control sequences and their payloads before display/storage |
 
+### Authoritative annotation transition model
+
+`stepLanguageDecode(state, event)` owns all changes of annotation state and emits append/flush effects; the byte lexer only produces events. Legal states are `neutral`, `segment` (bounded held body and validated/unknown language), and `recovery` (no held body, neutral streaming). No separate depth counter exists: recovery resynchronizes at the **first** closing marker.
+
+| Event | neutral | segment | recovery |
+|---|---|---|---|
+| `text` | Emit neutral | Append held body; overflow raises `limit` | Emit neutral |
+| `open(code)` | Enter segment with validated code or unknown | Flush held body neutral, discard new opener, enter recovery | Discard opener; remain recovery |
+| `close` | Discard orphan marker | Emit held body with ownership; clear and enter neutral | Discard marker, enter neutral |
+| `badHeader` | Enter recovery | Flush held body neutral; enter recovery | Stay recovery |
+| `limit` | Reject/no state or output change | Flush held body neutral; enter recovery | Reject/no state or output change |
+| `finish` | Remain neutral | Flush held body neutral; clear and enter neutral | Enter neutral |
+
+A later closing marker from an invalid outer segment is an orphan and is discarded. After recovery's first close, a new opening marker starts an independent segment. EOF is the only other way out of recovery; newline does not resynchronize it. Subsequent openers during recovery never re-enable tint or allocate a body. `limit` in non-segment states is a rejected internal event, covered by generated transition sequences. Chunking cannot change emitted text or ownership. The lexer retains only a bounded candidate marker (64 bytes); a completed reserved opener/closer becomes one event. At EOF, an unfinished candidate beginning `[lang` or `[/lang` is removed as reserved syntax; shorter ordinary bracket prefixes are emitted as text before `finish`.
+
 Define exact recovery for overlong headers in tests: after 64 bytes discard the reserved header prefix and resume neutral text; no unbounded “wait for closing bracket” state. Ordinary bracketed prose that does not start a reserved marker is preserved. Buffer at most one incomplete UTF-8 rune across deltas; normalization and terminal-control filtering must be independent of chunking. Replace invalid UTF-8 with the replacement character under one documented policy; do not let entity decoding reintroduce controls.
 
-`answerTextFilter` must not reuse `scanEscape` as a complete sanitizer: that helper only recognizes CSI and two-byte escapes. Use a small pure incremental automaton for ESC/CSI, OSC, DCS, SOS, PM and APC, including C1 introducers/terminators. OSC ends at BEL or ST; the other string controls end at ST. Discard control bytes/payloads immediately while retaining only state (and a possible ESC before ST), never accumulating the payload. CSI consumes parameters/intermediates through its final byte; malformed CSI abandons its control state at the first non-grammar character and reprocesses that character as prose. EOF/cancellation discards incomplete control state and UTF-8 follows the documented replacement policy. Thus an unterminated control string stays a discarded payload through EOF without growing memory; readable prose after a valid terminator always resumes. Apply the same control filter to decoded literal entities before they reach spans. Test all states across every byte split, long/unterminated OSC/DCS/CSI, and valid prose after terminators. This filter owns untrusted answer controls only; it does not change the renderer's trusted ANSI grammar.
+`answerTextFilter` must not reuse `scanEscape` as a complete sanitizer: that helper only recognizes CSI and two-byte escapes. Use a small pure incremental automaton for ESC/CSI, OSC, DCS, SOS, PM and APC, including C1 introducers/terminators. OSC ends at BEL or ST; the other string controls end at ST. Discard control bytes/payloads immediately while retaining only state (and a possible ESC before ST), never accumulating the payload. CSI consumes parameters/intermediates through its final byte; malformed CSI abandons its control state at the first non-grammar character and reprocesses that character as prose. EOF/cancellation discards incomplete control state and UTF-8 follows the documented replacement policy. Thus an unterminated control string stays a discarded payload through EOF without growing memory; readable prose after a valid terminator always resumes. Apply the same control filter to decoded literal entities before they reach spans. This filter owns untrusted answer controls only; it does not change the renderer's trusted ANSI grammar.
 
 `runAsk` feeds deltas through the control filter and decoder before *both* transcript accumulation and display. The display adapter composes tint with vocabulary foreground and `answerWrapWriter`; it flushes the highlight tail before ownership changes so delayed words cannot acquire the next span's language. At termination finish the control filter, then flush decoder, highlight and wrap in that order, then store the resulting clean prose. Preserve cancellation, partial-answer history, truncation, and downstream write-error behavior on all existing paths. Annotation parsing is presentation-domain code under `cmd/define`, not transport code under `internal/llm`.
 
@@ -116,20 +131,20 @@ The policy is passed as data into RenderOpts and practice/model adapters; pure r
 
 ## Implementation tasks
 
-- [ ] Implement shared ownership validation and tint composition, invocation policy and field/source provenance, with pure regressions and real dictionary corpus coverage.
-- [ ] Emit practice ownership during existing layout walks and route prompt, board/footer, help and reveal through the shared composer while retaining no-import purity and answer/selection behavior.
-- [ ] Implement bounded annotation decoding and the single answer-stream adapter, update effective-language model context, obtain a real annotated capture, and verify stateful fake plus live conformance.
+- [x] Implement shared ownership validation and tint composition, invocation policy and field/source provenance, with pure regressions and real dictionary corpus coverage.
+- [x] Emit practice ownership during existing layout walks and route prompt, board/footer, help and reveal through the shared composer while retaining no-import purity and answer/selection behavior.
+- [x] Implement bounded annotation decoding and the single answer-stream adapter, update effective-language model context, obtain a real annotated capture, and verify stateful fake plus live conformance.
 - [ ] Update README/atlas, demonstrate dark/light/disabled output, complete verification, commit and pass the single SDLC close review before PR and merge.
 
 ## Function-level verification strategy
 
 | Surface | Adversarial strategy | Independent guard |
 |---|---|---|
-| Ownership validation/projection | Repeated bilingual spellings, unmatched HTML/text, transformed fields, unknown classes | Literal source-span ownership on committed real records; exact plain-text preservation; ambiguous matches neutral |
+| `validateLanguageText`, `dictionaryLanguageText`, `projectSourceLanguages` | Repeated bilingual spellings, unmatched HTML/text, transformed fields, unknown classes | Literal source-span ownership on committed real records; exact plain-text preservation; ambiguous matches neutral |
 | `styleLanguageText` | Nested foreground/reset sequences, whitespace, marked answers, malformed ranges | Exact expected SGR transitions; unchanged visible bytes/columns and no background outside matching text |
-| Form presentation builders | Narrow truncation, help toggles, wrong/right/selected answers, absent definitions | Exact emitted range slices/roles, unchanged keys/grade/region coordinates; no imports added to play |
+| `promptBuilder` emission methods; Choice/Cloze/Board `PromptPresentation` and `RevealPresentation` | Narrow truncation, help toggles, wrong/right/selected answers, absent definitions | Exact emitted range slices/roles, unchanged keys/grade/region coordinates; no imports added to play |
 | `answerTextFilter` | CSI/OSC/DCS and other string controls, missing terminators, C1 and malformed UTF-8 | Chunk-independent sanitized prose, constant control-state memory, no control payload in either display or transcript |
-| `languageDecoder` | Every byte split, nested/incomplete headers, Unicode/entities, oversize/control-bearing input | Chunk-independent clean text and ownership, bounded pending memory, no emitted metadata/control injection; fuzz progress and preservation |
+| `stepLanguageDecode`, decoder lexer/write/finish | Generated state/event sequences (including rejected events), every byte split, nested/incomplete headers, Unicode/entities, oversize/control-bearing input | Chunk-independent clean text and ownership, bounded pending memory, no emitted metadata/control injection; fuzz progress and preservation |
 | `runAsk` | Stateful SSE fake with real annotated capture, interrupted/failed/truncated streams, output failures | Clean visible/stored partial answer agreement; correct request language; no metadata in transcript or geometry |
 | Real loop/screen integration | Switch language, copy tinted content, resize, prompt/board/footer/reveal interactions | Literal styles/physical rows and copied prose; #62 prompt indicator agrees with new output |
 | Native dictionary/model/PTY seams | Production extraction/requests and actual raw lifecycle | Captures match class semantics; model emits validated mixed spans; no-color/pipes and explicit off remain clean |
@@ -156,3 +171,11 @@ Verification: `go test ./... -count=1`; focused race tests for language/ask/prac
 - 2026-09-15: Fresh design review found existing `scanEscape` is insufficient for untrusted OSC/DCS and incomplete controls. Added an explicit incremental answer-text filter with constant control-state memory, byte-split/termination contracts and display/transcript guards; no runtime code changed.
 
 - 2026-09-15: Fresh reviewer re-read the corrected plan and approved it with no remaining Important gaps. Runtime implementation and estimate remain pending operator approval and change-code gate.
+
+- 2026-09-15: Operator approved the complete implementation plan. Proceed through plan-quality and estimate gates, then implement without further design approval unless scope materially changes.
+
+- 2026-09-15: Plan-quality PQ-1 requested explicit recovery states, transition ownership and resynchronization. Added the three-state `stepLanguageDecode` model with first-close recovery and rejected-event verification. Addressed the strategy-format minor by naming production functions and removing repeated control-test prose. Renamed the plan to match the issue basename so gate discovery supplies it directly. Approved feature scope is unchanged.
+
+- 2026-09-15: Implementation checkpoint: plan-quality and estimate passed; shared rendering, source metadata, practice presentations and model adapter are implemented. Normalized Core concepts table locations to one owning file per row for the repository guard. Integrated tests exposed tint across physical wrap newlines and a dictionary wrapper hiding supplemental capability; both receive root-cause fixes and regressions within approved scope. Documentation and final verification remain in progress.
+
+- 2026-09-15: Implementation and full verification passed; mutation checks rejected all five planned regression classes. Both per-session profiles retained after operator confirmed use of light and dark terminals. Final row remains pending close review/publication. See issue Log for exact commands, live capture evidence and manual visual limitation.

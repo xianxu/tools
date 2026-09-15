@@ -1,0 +1,2 @@
+# SSE records end with a blank line; preserve captured wire bytes exactly.
+internal/llm/llmtest/testdata/*.sse whitespace=-blank-at-eof

@@ -156,15 +156,16 @@ func spanishTitleFold(s string) string {
 	return out.String()
 }
 
-// selectSpanishRecords keeps all homographs at the best verified title match.
+// selectedSpanishRecords keeps all homographs at the best verified title match.
 // Exact query spelling precedes accent equivalents, then the primary entry's
 // canonical headword. It never guesses an inflection from unrelated candidates.
-func selectSpanishRecords(records []bilingualRecord, word, canonical string) ([]string, error) {
+func selectedSpanishRecords(records []bilingualRecord, word, canonical string) ([]bilingualRecord, error) {
 	if len(records) > bilingualMaxRecords || len(word) > bilingualMaxBytes || len(canonical) > bilingualMaxBytes {
 		return nil, ErrBilingualLimit
 	}
 	type selected struct {
 		id, text string
+		record   bilingualRecord
 		rank     int
 	}
 	matches := map[string]selected{}
@@ -199,8 +200,8 @@ func selectSpanishRecords(records []bilingualRecord, word, canonical string) ([]
 		}
 		best = min(best, rank)
 		old, exists := matches[identity.id]
-		if !exists || rank < old.rank || rank == old.rank && r.Text < old.text {
-			matches[identity.id] = selected{identity.id, r.Text, rank}
+		if !exists || rank < old.rank || rank == old.rank && (r.Text < old.text || r.Text == old.text && r.HTML < old.record.HTML) {
+			matches[identity.id] = selected{identity.id, r.Text, r, rank}
 		}
 	}
 	var ordered []selected
@@ -216,9 +217,22 @@ func selectSpanishRecords(records []bilingualRecord, word, canonical string) ([]
 		}
 		return nil, fmt.Errorf("Spanish–English %q: %w", word, ErrNoEntry)
 	}
-	out := make([]string, len(ordered))
+	out := make([]bilingualRecord, len(ordered))
 	for i, m := range ordered {
-		out[i] = m.text
+		out[i] = m.record
+	}
+	return out, nil
+}
+
+// selectSpanishRecords preserves the text-only API for raw/native callers.
+func selectSpanishRecords(records []bilingualRecord, word, canonical string) ([]string, error) {
+	selected, err := selectedSpanishRecords(records, word, canonical)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(selected))
+	for i, r := range selected {
+		out[i] = r.Text
 	}
 	return out, nil
 }

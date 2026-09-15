@@ -1231,3 +1231,93 @@ func TestPTYDeckQuestionArrivesBeforeTheEditor(t *testing.T) {
 		t.Errorf("declining on a real terminal still created %v", names)
 	}
 }
+
+// Native PTY byte conformance: profile selection and /lang flow through the
+// production raw loop. This does not make claims about terminal font rendering.
+func TestPTYLanguageTint(t *testing.T) {
+	bilingualNativeProbe(t)
+	for _, profile := range []struct{ name, background string }{{"dark", languageDark}, {"light", languageLight}, {"off", ""}} {
+		t.Run(profile.name, func(t *testing.T) {
+			deck := t.TempDir()
+			if err := store.WriteLang(deck, "es"); err != nil {
+				t.Fatal(err)
+			}
+			cmd, f := startDefineInDir(t, deck, []string{"TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio", "--no-flags", "--language-tint="+profile.name)
+			if err := pty.Setsize(f, &pty.Winsize{Rows: 160, Cols: 160}); err != nil {
+				t.Fatal(err)
+			}
+			out := watch(f)
+			var transcript strings.Builder
+			take := func(ready func(string) bool) string {
+				t.Helper()
+				var latest string
+				defer func() { transcript.WriteString(latest) }()
+				return awaitActivityPTY(t, out, func(s string) bool { latest = s; return ready(s) })
+			}
+			t.Cleanup(func() {
+				if dir := os.Getenv("DEFINE_TINT_PTY_CAPTURE_DIR"); dir != "" {
+					if err := os.MkdirAll(dir, 0700); err != nil {
+						t.Error(err)
+						return
+					}
+					path := filepath.Join(dir, "language-tint-"+profile.name+".raw")
+					if err := os.WriteFile(path, []byte(transcript.String()), 0600); err != nil {
+						t.Error(err)
+					} else {
+						t.Logf("PTY byte capture: %s", path)
+					}
+				}
+			})
+			started := take(func(s string) bool { return strings.Contains(unstyled(s), "[es] › ") })
+			if !strings.Contains(started, "\x1b[?1049h") {
+				t.Fatal("did not enter actual raw editor")
+			}
+			write := func(s string) {
+				t.Helper()
+				if _, err := f.WriteString(s); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write("red\r")
+			spanish := take(func(s string) bool { return strings.Contains(unstyled(s), "clutches") })
+			assertDictionaryTint(t, spanish, "subir a la red", profile.background != "")
+			assertDictionaryTint(t, spanish, "to go up to", false)
+			write("/lang en\r")
+			take(func(s string) bool { return strings.Contains(unstyled(s), "[en] › ") })
+			if got := store.ReadLang(deck); got != "en" {
+				t.Fatalf("/lang was not applied: %s", got)
+			}
+			write("sycophantic\r")
+			english := take(func(s string) bool { return strings.Contains(unstyled(s), "obsequious") })
+			assertDictionaryTint(t, english, "obsequious", profile.background != "")
+			if profile.background != "" && (!strings.Contains(spanish, profile.background) || !strings.Contains(english, profile.background)) {
+				t.Fatal("chosen tint profile did not reach both dictionary languages")
+			}
+			for _, background := range []string{languageDark, languageLight} {
+				if background != profile.background && strings.Contains(transcript.String(), background) {
+					t.Fatalf("unexpected background %q in %s profile", background, profile.name)
+				}
+			}
+			write("\x04")
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("exit: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("Ctrl-D did not end session")
+			}
+			take(func(s string) bool { return strings.Contains(s, "\x1b[?1049l") })
+			fd := int(f.Fd())
+			state, err := term.MakeRaw(fd)
+			if err != nil {
+				t.Fatalf("terminal unusable after exit: %v", err)
+			}
+			if err := term.Restore(fd, state); err != nil {
+				t.Fatalf("terminal state round trip failed: %v", err)
+			}
+		})
+	}
+}

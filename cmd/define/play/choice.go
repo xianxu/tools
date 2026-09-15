@@ -113,26 +113,25 @@ func (c *Choice) Word() string { return c.word }
 // silently in an issue nobody is reading. D1a records the constraint on both
 // sides.
 func (c *Choice) Prompt() string {
-	s, _ := c.render()
-	return s
+	return c.PromptPresentation().Text
 }
 
 // HelpLines is which lines of Prompt are English help, as 0-based indices into
 // its "\n"-split lines, continuations included — so the caller can keep deck
 // colouring and word clicks off them. nil when no help is set.
 func (c *Choice) HelpLines() []int {
-	_, lines := c.render()
-	return lines
+	return c.render().helps
 }
 
 // render is Prompt and HelpLines from ONE walk. An index computed beside the
 // prompt would be a second owner of its layout, and the day the two drifted a
 // click on an English line would act on a deck word.
-func (c *Choice) render() (string, []int) {
+func (c *Choice) render() promptBuilder {
 	var p promptBuilder
-	p.text(c.word + "\n\n")
+	p.owned(c.word, Target, false)
+	p.text("\n\n")
 	for i, o := range c.options {
-		p.text(optionLine(i, o.Gloss))
+		p.option(i, o.Gloss)
 		if o.Help != "" {
 			p.text("\n")
 			p.help(indentHelp(o.Help))
@@ -141,7 +140,7 @@ func (c *Choice) render() (string, []int) {
 			p.text("\n")
 		}
 	}
-	return p.s, p.helps
+	return p
 }
 
 // SetHelp gives every option its English, or none of them.
@@ -221,6 +220,7 @@ func indentHelp(help string) string {
 // form records its help lines as it writes them rather than recounting later.
 type promptBuilder struct {
 	s     string
+	spans []LanguageSpan
 	line  int // the 0-based line the next byte lands on
 	helps []int
 }
@@ -239,36 +239,39 @@ func (p *promptBuilder) text(s string) {
 // starts on and one more per newline inside it.
 func (p *promptBuilder) help(s string) {
 	first := p.line
-	p.text(s)
+	p.owned(s, English, false)
 	for l := first; l <= p.line; l++ {
 		p.helps = append(p.helps, l)
 	}
 }
 
+// PromptPresentation emits the prompt and its language ownership in one walk.
+func (c *Choice) PromptPresentation() Presentation { return c.render().presentation() }
+
 // Reveal names the answer AND what they picked, because the miss is the moment
 // the word is actually learned. Showing only the right answer leaves the learner
 // to work out which of four they had chosen.
-func (c *Choice) Reveal() string {
-	var s string
+func (c *Choice) Reveal() string { return c.RevealPresentation().Text }
+func (c *Choice) RevealPresentation() Presentation {
+	var p promptBuilder
 	if i := c.correctIndex(); i >= 0 {
-		s = optionLine(i, c.options[i].Gloss)
+		p.option(i, c.options[i].Gloss)
 	}
 	if i := c.wrongPick(); i >= 0 {
-		// The label gets its OWN line, and that is a consequence of the gloss
-		// arriving pre-wrapped: "you chose " in front of it would push the first
-		// line ten columns past the width it was wrapped to, and a frame clips
-		// what does not fit. Wrapping every option ten columns narrower to buy
-		// room for one line in one state is the worse trade.
-		s += "\n\nyou chose\n" + optionLine(i, c.options[i].Gloss)
+		p.text("\n\n")
+		p.owned("you chose", English, false)
+		p.text("\n")
+		p.option(i, c.options[i].Gloss)
 	}
 	if c.definition != "" {
-		s += "\n\n" + c.definition
+		p.text("\n\n" + c.definition)
 	}
-	return s
+	return p.presentation()
 }
 
 // Keys names the digits, and what they mean for THIS form.
-func (c *Choice) Keys() string { return c.keysFor("pick the definition") }
+func (c *Choice) Keys() string                   { return c.KeysPresentation().Text }
+func (c *Choice) KeysPresentation() Presentation { return c.keysPresentation("pick the definition") }
 
 // Form names this form in the log (#40 D4a). `meaning` rather than "2.3",
 // because that is what the learner types to reach it.

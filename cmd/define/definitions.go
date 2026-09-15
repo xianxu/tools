@@ -9,6 +9,7 @@ import (
 type definitionSection struct {
 	label   string
 	entries []string
+	source  []languageText
 	err     error
 }
 type definitionSet struct {
@@ -63,12 +64,17 @@ func renderDefinitions(set definitionSet, opt RenderOpts) (string, []Region) {
 			}
 			continue
 		}
-		for _, raw := range section.entries {
+		for entryIndex, raw := range section.entries {
 			ro := opt
 			if index > 0 {
 				ro.Vocab = nil
+				ro.Language = ""
 			}
-			rendered, rs := Render(ParseEntry(raw), ro)
+			entry := ParseEntry(raw)
+			if entryIndex < len(section.source) && section.source[entryIndex].text == raw {
+				entry.source = section.source[entryIndex]
+			}
+			rendered, rs := Render(entry, ro)
 			if index == 0 {
 				rs = mergeRegions(rs, wordRegions(rendered, opt.Vocab))
 			}
@@ -93,7 +99,12 @@ func (d spanishDefinitions) supplement(word, primary string) definitionSection {
 	section := definitionSection{label: "English — Oxford Spanish–English"}
 	records, err := d.english.Records(word)
 	if err == nil {
-		section.entries, err = selectSpanishRecords(records, word, entryIdentity(ParseEntry(primary)))
+		var selected []bilingualRecord
+		selected, err = selectedSpanishRecords(records, word, entryIdentity(ParseEntry(primary)))
+		for _, record := range selected {
+			section.entries = append(section.entries, record.Text)
+			section.source = append(section.source, bilingualLanguageText(record))
+		}
 	}
 	if err != nil {
 		switch {
