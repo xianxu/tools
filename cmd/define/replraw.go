@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -334,6 +335,33 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	voc := vocabularyFor(d, opt)
 	e := NewEditor()
 	var sess session
+	// Background preparation (#54): the session keeps practice material current,
+	// off this loop. Only where a deck is open, the directory already agreed to be
+	// one, and the operator has not turned it off. With no runner bgResults is nil,
+	// and a nil channel never fires in the select below.
+	var bgs bgState
+	var bg *bgRunner
+	var bgResults <-chan bgJobResult
+	if backgroundEnabled(d) {
+		bg = newBgRunner(ctx, runBackgroundJob)
+		bgResults = bg.results
+		defer bg.stop(2 * time.Second)
+	}
+	applyBg := func(ev bgEvent) {
+		if bg == nil {
+			return
+		}
+		var effects []bgEffect
+		bgs, effects = stepBackground(bgs, ev)
+		for _, eff := range effects {
+			if eff.runJob {
+				bg.start(d) // the session's deps as they are now, language included
+			}
+			if eff.notice != "" {
+				fmt.Fprintf(stderr, "define: %s\r\n", eff.notice)
+			}
+		}
+	}
 	// Apply gets the candidate list computed BEFORE the keystroke, which is
 	// correct: it is deciding what to do with that keystroke given the line as
 	// it stands, and a history walk anchors on it. draw() computes its own from
@@ -373,6 +401,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			menuLines(e.String(), commands, opt.width))
 	}
 	draw()
+	applyBg(bgEvent{kind: bgSessionStart})
 
 	// The click actions, as a REGISTRY rather than two special cases — which is
 	// what #30 is filed as: "the affordance is ONE mechanism, so a third
@@ -460,6 +489,15 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			// frame is briefly stale rather than concurrently painted by two
 			// goroutines.
 			applyShape(&opt, view, sz)
+			draw()
+			continue
+		case res := <-bgResults:
+			// A background job finished. What it did prints between prompts like any
+			// line the loop writes, so the frame is cleared first: a write with the
+			// prompt on screen lands inside it (TestNothingIsWrittenWhileAPromptIsShown).
+			view.Draw("", nil)
+			bg.received(res)
+			applyBg(bgEvent{kind: bgJobDone, result: res})
 			draw()
 			continue
 		case k, open := <-keys:
@@ -621,6 +659,11 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// and left the session's current word alone.
 					askInSession(question{text: out.ask})
 					continue
+				}
+				// A lookup that found its word counts toward the next background check
+				// (#54). A question never does: it adds no word to the deck.
+				if out.code == 0 {
+					applyBg(bgEvent{kind: bgLookedUp})
 				}
 				// A blank line between the entry and the next prompt: without it
 				// the prompt butts against the last line of the definition and

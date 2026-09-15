@@ -355,3 +355,5 @@ needs explicit plan approval under AGENTS.md §2 before new implementation.
 - 2026-09-14: User confirmed English assistance must be available before answering because pure Spanish exceeds their current level. Added the assisted-practice design above; this supersedes earlier post-answer-only statements. Existing implementation is retained but the issue remains open pending this extension.
 
 - 2026-09-14: Fresh assistance-plan review identified panel row budgeting and per-question cache validation. Added a shared two-row bilingual Board budget and mandatory structural/current-answer validation on cache hits; both findings are resolved in the design.
+
+- 2026-09-14: During #54 integration, moved the record boundary to the end so later approved scope revisions remain visible to repository guards. No #61 implementation or behavior is included in this maintenance correction.

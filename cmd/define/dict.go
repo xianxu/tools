@@ -1,6 +1,12 @@
 package main
 
-import "errors"
+import (
+	"errors"
+	"io"
+	"sync"
+
+	"github.com/xianxu/tools/cmd/define/store"
+)
 
 // ErrNoEntry means the dictionary has no entry for the word. It is a normal
 // outcome, not a malfunction: NOAD genuinely lacks recent coinages such as
@@ -23,4 +29,31 @@ var ErrLookupFailed = errors.New("dictionary lookup failed")
 // Lookup operates on a plain string.
 type Dictionary interface {
 	Lookup(word string) (string, error)
+}
+
+// dictionaryMu serializes every dictionary lookup in the process (#54). The
+// system dictionary is reached through cgo (dict_darwin.go) with no lock of its
+// own and no documented thread-safety, and the background job looks words up
+// while the editor loop does. ONE package-level mutex rather than one per
+// instance, so the loop's dictionary and a job's copy after /lang still take
+// turns: they are different values over the same DictionaryServices.
+var dictionaryMu sync.Mutex
+
+// lockedDictionary is a Dictionary whose every lookup holds dictionaryMu.
+type lockedDictionary struct{ inner Dictionary }
+
+func (l lockedDictionary) Lookup(word string) (string, error) {
+	dictionaryMu.Lock()
+	defer dictionaryMu.Unlock()
+	return l.inner.Lookup(word)
+}
+
+// lockedDictionaries wraps a dictionary builder so everything it builds is
+// locked. realDeps wraps its one builder with it, and that builder is the seam
+// both the startup dictionary and every /lang switch already go through.
+func lockedDictionaries(build func(store.Lang, io.Writer) (Dictionary, string)) func(store.Lang, io.Writer) (Dictionary, string) {
+	return func(l store.Lang, w io.Writer) (Dictionary, string) {
+		d, name := build(l, w)
+		return lockedDictionary{inner: d}, name
+	}
 }

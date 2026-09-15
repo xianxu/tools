@@ -7,11 +7,21 @@ import (
 	"github.com/xianxu/tools/internal/llm"
 )
 
-// activityClient owns only foreground waiting. Keep the underlying client for
-// llm.SelectionOf: transport provenance belongs to that original instance.
+// activityClient owns only foreground waiting. clientModelSelection unwraps it
+// when a shared caller needs the underlying transport's provenance.
 type activityClient struct {
 	client llm.Client
 	host   activityHost
+}
+
+func clientModelSelection(client llm.Client) llm.ModelSelection {
+	for {
+		activity, ok := client.(*activityClient)
+		if !ok {
+			return llm.SelectionOf(client)
+		}
+		client = activity.client
+	}
 }
 
 // foregroundClient chooses the display before answer writers wrap stdout.

@@ -105,7 +105,7 @@ type deps struct {
 
 func realDeps() deps {
 	return deps{
-		newDict:         systemDictionary, // dict itself is language-dependent, built in run()
+		newDict:         lockedDictionaries(systemDictionary), // dict itself is language-dependent, built in run()
 		audio:           newAudioSeam(newHTTPAudioSource()),
 		player:          afplayPlayer{},
 		newStore:        openStore,
@@ -566,7 +566,9 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"not is kept as history only, so typos never become vocabulary. -raw\n"+
 			"records nothing, because it is for scripts.\n"+
 			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+
-			"session-only, because the event log is what persists it.\n\n"+
+			"session-only, because the event log is what persists it.\n"+
+			"In a session define prepares practice questions in the background, at\n"+
+			"start and every 10 lookups; DEFINE_NO_BACKGROUND=1 turns that off.\n\n"+
 			"--version names the build; --llm-check reports whether the model seam is configured and reachable.\n"+
 			"Model features degrade silently by design, so this is where they are loud.\n\nFlags:\n")
 		fs.PrintDefaults()

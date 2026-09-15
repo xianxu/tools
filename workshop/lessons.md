@@ -4406,6 +4406,105 @@ unresolved. The pass now starts by resolving names that certainly exist and
 refuses to report if it cannot: a checker that cannot run is #51's false zero,
 inverted into a false alarm.
 
+## A cap equal to its batch's worst case cannot be tested, and does nothing today (`#54`)
+
+`bgBudget` is 60 model calls, and a batch of ten words costs at most 60 (band,
+author, entail, three vetoes each). So the budget never binds, and replacing it
+with the CLI's 200 changed nothing a test could see: the mutation run reported it
+NOT CAUGHT, and it could not have come out otherwise. **When a cap and a batch
+bound the same work, name which one binds.** Here the batch does; the budget stays
+as a backstop for an item that costs more calls, its test says so, and the
+mutation table records the row as not observable instead of claiming a pin.
+
+## A retry bound covers every failure kind only when one place decides it (`#54`)
+
+A session skips, for the rest of the session, a word a job could not finish, so a
+word the model cannot handle costs a call once rather than at every check. M1
+applied that to authoring and missed banding: a refused band left the word
+pending, and it took a batch slot at every check (round 1, BR-1). Round 2 found
+the same family again (`retry-bound-covers-every-failure-kind`), because each of
+seven return sites spelled its own `append(failed, c.Word)`, and a store error
+inside a job still vanished without a word. **When a rule says "every failure of
+kind X", write it as one function every site calls, and mark an error's kind
+where it is born**: `markUnfinished` decides which words a pass gives up on,
+`stopMeans` what a stop means for the session, and `errDeckIO` marks a store
+error at the store call rather than at the job that reads it.
+
+## Work moved off a loop inherits every writer its deps hold (`#54`)
+
+The background job took a copy of the session's deps, and with it the store,
+whose warning writer is the process stderr, set before the raw terminal exists. A
+stray file under `words/` would have printed into the live frame from the job's
+goroutine at an arbitrary moment (M1 review, BR-2). Nothing in the job wrote to
+stderr on purpose; the store did. **When work moves off the loop that owns the
+screen, list every writer reachable from what it carries (store warnings, a
+client's slow-call hook, a dictionary's warnings) and silence or reroute each**,
+then pin it with a planted fault and a control read that proves the fault is loud
+without the fix (`quietStore`, `TestTheJobWritesNothingToTheTerminal`).
+
+## A review finding is a claim about the code; read the cited lines first (`#54`)
+
+Round 2 said a budget cut at the author and entail calls marked the word
+unfinished, and cited the lines. At both, `errBudget` breaks out before the
+return it cited, so the instance was false, and a change there would have changed
+nothing a test could see. The family behind it was real, so its rule went into
+one function with a direct pin. **Read the cited lines before acting on a
+finding, dispose a false instance with the evidence, and still weigh the rule it
+points at.**
+
+## A notice list is a fold over what the job did; an early return for the stop hides the rest (`#54`)
+
+`bgNoticeFor` returned the stop's line the moment it saw one, so a job that wrote
+the learner model and then met a rate limit said only that the model did not
+answer: the file was on disk and the learner was never told (M2 review, the
+second finding in `notice-wording-matches-cause`). **Build a report as one line
+per effect, in the order they happened, with the stop's line last and no early
+return**, and pin a result that carries both an effect and a stop.
+
+## A plan revision edits every row and signature it changes (`#54`)
+
+M1's review fixes went into the plan's Revisions and left the tables and prose
+that describe the same code: the state machine without the deck-error row,
+`bgJobResult` without its new fields, the job and runner still taking a `skip`
+map, the envelope pricing per reflect a read that now happens per check (M2
+review, four sites, the family's second finding). The judge reads the tables.
+**A Revisions entry that changes a behavior also edits every table row and prose
+signature that describes it, in the same commit, and the pre-gate pass checks
+for stale phrases and signatures as well as names.**
+
+## Name every writer of every file a background job writes, the person included (`#54`)
+
+The plan named a second `define` and `--forget` as the other writers of the facts
+and items the job writes, and missed the learner model's: the operator, whom the
+README invites to edit its Corrections (M2 review). The splice already kept the
+edit, but nobody had said so or priced the race. **For each file a background
+actor writes, list every other writer, the operator's editor included, and name
+what governs each.**
+
+## A checkbox is ticked when its evidence exists, or left open out loud (`#54`)
+
+The close review found the issue's ten Done-when boxes unticked at close though
+every one had a pin, and the plan's operator smoke test unticked with nothing
+saying why. A reader could not tell done from forgotten. **Tick a box as soon as
+its evidence exists, citing the evidence, and name every box left open, with its
+reason, before the boundary.**
+
+## A property of a seam belongs to the seam, not to a list of the shapes you know (`#54`)
+
+`quietStore` silenced the store with a type switch over the deck gate and the
+YAML store; a third store, or a new wrapper around one, would have read loudly
+again from the job's goroutine (close review, the second finding in
+`background-never-writes-outside-the-loop`). **Make the property an interface
+every implementation carries (`store.Quieter`), and guard that each one does**,
+so a new shape fails a test instead of printing into the frame.
+
+## Session memory that outlives a switch is keyed by what it describes (`#54`)
+
+The runner's memory of what a job could not finish survived `/lang`, so a word or
+a learner model that failed in English would have been skipped in Spanish (close
+review, the third finding in `shared-state-across-the-job-boundary`). **State a
+session carries across a switch of the thing it describes is keyed by that thing,
+or reset when it changes.**
 ## Styling survives the viewport boundary (define #55)
 
 Text preservation across a wrap does not prove styling preservation. A screen
@@ -4482,3 +4581,19 @@ test both screen actions and copied text with a word shared across languages.
 Availability has three states: present, absent after successful enumeration, and
 unknown because enumeration failed. Test the effective factory/lookup diagnostic,
 not only its status label, so an unavailable API never becomes installation advice.
+
+
+## Client decoration must preserve provenance at shared cores (#54 integration)
+
+Moving a foreground request into a reusable core can move provenance lookup
+across a decorator boundary. Test the discovered model recorded in durable
+output with activity enabled; keep background clients undecorated and inspect
+the original transport when reporting which model actually answered.
+
+
+## Interface guards must use complete method sets (#54 BR-18)
+
+Scanning declared method names misses implementations created by embedding and
+can mistake signature lookalikes for real interfaces. Use Go's type checker and
+check both value and pointer method sets. Include counterexamples with missing,
+shadowed and promoted methods; preserve a runtime test through another wrapper.
