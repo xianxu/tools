@@ -174,6 +174,7 @@ char *noad_lookup(const char *word, int *status) {
 import "C"
 
 import (
+	"fmt"
 	"io"
 	"unsafe"
 
@@ -288,12 +289,29 @@ func (noadDictionary) Lookup(word string) (string, error) {
 // the seam. The policy is pure and lives in dictselect.go, which is what lets
 // its three outcomes be tested on a machine with no dictionaries at all.
 func systemDictionary(lang store.Lang, warn io.Writer) (Dictionary, string) {
-	ids, name, complaint := dictionaryFor(installedDictionaries(), lang)
+	installed := installedDictionaries()
+	if lang == "es" {
+		ids, name := spanishDictionarySources(installed)
+		var primary Dictionary = unavailableDictionary{fmt.Errorf("Spanish dictionary unavailable: enable Spanish (Larousse Diccionario General) in Dictionary → Settings and wait for the download")}
+		if len(ids) > 0 {
+			primary = selectedDictionary{ids: ids}
+		}
+		return spanishDefinitions{Dictionary: primary, english: newSpanishEnglishSource()}, name
+	}
+	ids, name, complaint := dictionaryFor(installed, lang)
 	if complaint != "" {
 		warnTo(warn, "%s", complaint)
 	}
-	if len(ids) == 0 {
-		return noadDictionary{}, name
+	var dictionary Dictionary = noadDictionary{}
+	if len(ids) > 0 {
+		dictionary = selectedDictionary{ids: ids}
 	}
-	return selectedDictionary{ids: ids}, name
+	if lang != store.DefaultLang {
+		label := string(lang)
+		if lang == "it" {
+			label = "Italian"
+		}
+		dictionary = untranslatedDefinitions{Dictionary: dictionary, language: label}
+	}
+	return dictionary, name
 }

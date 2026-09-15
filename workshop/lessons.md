@@ -4467,3 +4467,14 @@ Use canonical dictionary headwords to match related records without replacing th
 user's typed/deck word. An inflected lookup can resolve to a lemma for definition
 but must retain the existing pronunciation policy on initial playback and replay.
 Test both paths with an inflection, not only accent-equivalent spellings.
+
+## Dictionary grammar is not a practice answer (define #61)
+
+When adding a dictionary language, test actual entries through candidate extraction,
+distractors, compact glosses and question-authoring facts. Rendering alone can
+preserve every character while a missing part-of-speech token turns grammar metadata
+into the correct quiz answer.
+
+Bilingual renderers own language-specific action regions. Consumer passes must
+preserve that ownership through composition, including partial first/last lines;
+test both screen actions and copied text with a word shared across languages.

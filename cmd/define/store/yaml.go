@@ -123,6 +123,7 @@ var RuntimeFiles = []string{
 	userModelLegacy,
 	UserModelName("??"), // the per-language family, built by its own producer
 	langFileName,
+	bilingualFileName,
 	tmpPattern,
 }
 

@@ -205,9 +205,13 @@ func clozeAsk(d deps, opt options, key string, entry Entry, marks map[string]cli
 		// event, so nothing is printed.
 		return nil
 	}
-	rendered, rs := Render(entry, RenderOpts{
+	// Validate the question before doing optional supplemental dictionary IO.
+	if clozeFor(key, items, "", seedFor(key, day)) == nil {
+		return nil
+	}
+	rendered, rs := renderDefinitions(definitionsFor(d.dict, key, entry.Raw, nil, d.bilingualEnabled()), RenderOpts{
 		Word:  key,
-		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
+		Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
 	})
 	q := clozeFor(key, items, rendered, seedFor(key, day))
 	if q == nil {

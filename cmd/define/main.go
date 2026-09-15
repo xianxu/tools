@@ -20,7 +20,9 @@ import (
 // driven end-to-end by fakes (ARCH-PURE): main() supplies the real ones, tests
 // supply recorders.
 type deps struct {
-	dict Dictionary
+	bilingual        *bool // nil means the default, on; an explicit false stays off
+	persistBilingual func(bool) error
+	dict             Dictionary
 	// audio is the seam AND its memo. A *audioSeam rather than an AudioSource so
 	// there is no unwrapped source to hold: the type is what guarantees a caller
 	// cannot reach the network twice for one key, however it obtained its deps.
@@ -143,7 +145,9 @@ type langDeps struct {
 }
 
 type storeDeps struct {
-	history History
+	bilingual        *bool
+	persistBilingual func(bool) error
+	history          History
 	langDeps
 	// lang is the language openStore RESOLVED — the flag if one was given, else
 	// the directory's setting, else English. The flag half lives in options; this
@@ -207,6 +211,12 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	}
 	if d.newLangDeps == nil {
 		d.newLangDeps = sd.newLangDeps
+	}
+	if d.bilingual == nil {
+		d.bilingual = sd.bilingual
+	}
+	if d.persistBilingual == nil {
+		d.persistBilingual = sd.persistBilingual
 	}
 	if d.persistLang == nil {
 		d.persistLang = sd.persistLang
@@ -373,8 +383,16 @@ func openStore(opt options, warn io.Writer, perm *deckPermission) storeDeps {
 		}
 	}
 	ld := newLangDeps(lang)
+	bilingual := store.ReadBilingual(dir)
 
 	sd := storeDeps{
+		bilingual: &bilingual,
+		persistBilingual: func(on bool) error {
+			if !perm.allowed() {
+				return errDeckDeclined
+			}
+			return store.WriteBilingual(dir, on)
+		},
 		history:     newStoreHistory(flat, warn),
 		clock:       clk,
 		lang:        lang,
@@ -977,6 +995,11 @@ type lookupOutcome struct {
 func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Writer) lookupOutcome {
 	word := cmd.word
 	text, err := d.dict.Lookup(word)
+	set := definitionSet{}
+	if !opt.raw {
+		set = definitionsFor(d.dict, word, text, err, d.bilingualEnabled())
+		err = set.err
+	}
 	if err != nil {
 		// The route decision comes BEFORE capture, and that order is the point:
 		// a question recorded as a not-found lookup lands in the event log that
@@ -1013,8 +1036,8 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	// rather than a second opinion: it is exactly what `sess.current` becomes,
 	// so a click on the headword and the bare Enter beside it ask for the same
 	// recording by construction.
-	rendered, regions := Render(ParseEntry(text), RenderOpts{
-		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt), Word: word,
+	rendered, regions := renderDefinitions(set, RenderOpts{
+		Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d), Word: word,
 	})
 	// EVERY DECK WORD IN THE DEFINITION IS CLICKABLE TOO. Render already coloured
 	// them — with its own per-region base styles, which is why `already` is the
@@ -1080,7 +1103,7 @@ func writeWords(w io.Writer, text string, rs []Region, d deps, opt options, sf s
 	// The SUBJECT is held out of the colour pass but not out of the click map: a
 	// learner may still want to hear the word they are being asked about.
 	v := deckVocabulary(d)
-	rs = mergeRegions(rs, wordRegions(text, v))
+	rs = mergeRegions(rs, wordRegionsOutside(text, already, v))
 	if v != nil && opt.color && sf.admitsColour() {
 		text = colourOutside(text, already, withoutWord(v, subject))
 	}

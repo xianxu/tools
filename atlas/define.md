@@ -8,14 +8,13 @@ bundles it — which is why `define sycophantic` shows `/ˌsikəˈfan(t)ik/`,
 character-for-character what the browser shows. That notation is **not** standard
 IPA: NOAD writes `i` for /ɪ/, `a` for /æ/, and `(t)` for the optional flap.
 
-**The lookup is not NOAD-only.** `DCSCopyTextDefinition` takes a
-`DCSDictionaryRef`, and the SDK exports no way to construct one — so the tool
-passes NULL, which means *search every active dictionary*. NOAD answers for
-ordinary English words; `iPhone` and `MacBook` come from Apple Dictionary (which
-is why they have no pronunciation), and with the Chinese dictionaries enabled
-some words return Han-script entries this parser does not model. What `define`
-shows depends on the host's Dictionary.app configuration — and so does whether
-the conformance tests pass.
+**The lookup follows the selected language.** English searches NOAD and Apple
+Dictionary; Spanish uses Larousse and, with bilingual display on, verified
+Spanish-source Oxford records for English explanations. Dictionary.app's
+installed books determine which sections are available. The NULL search remains
+a fallback for the primary resolver outside the strict Spanish path; it searches
+active dictionaries and can return entries the parser does not model. See the
+language and bilingual maps below for selection and failure behavior.
 
 ## Shape
 
@@ -1147,6 +1146,7 @@ until both pages catch up.
 <!-- command-list -->
 | command | does |
 |---|---|
+| `/bilingual` | toggle English explanations after the selected language |
 | `/help` | list the commands, or explain one |
 | `/history` | words looked up recently |
 | `/stats` | deck, streak and accuracy figures |
@@ -1165,6 +1165,7 @@ print them, and this page quotes them, generated from the registry the way the
 list above is and pinned the same way:
 
 <!-- command-usage -->
+- `/bilingual [on|off]` — Toggle bilingual definitions. With on or off, set it explicitly. On shows the selected language followed by English; off shows only the selected language. Default on; saved per deck, for this session otherwise.
 - `/help [command]` — With nothing, list the commands. With a command's name, say how to use it, which --help or -h after any command also does.
 - `/history [N | --days N | --days=N]` — The words looked up in the last N days. With nothing, the last 2; N is at most 3650.
 - `/stats` — The deck, streak and accuracy figures for this directory. Takes no arguments.
@@ -1928,6 +1929,39 @@ so they are distinguishable; the gap is not paid after the last one.
 A missing recording is **not** a failed lookup: the definition has already been
 printed, so audio failures warn on stderr and leave the exit code at 0.
 
+### Bilingual definitions (`#61`)
+
+`/bilingual` toggles display; `/bilingual on|off` sets it explicitly. It defaults
+on, including existing decks without a setting. `store/bilingual.go` owns the
+bounded parser and atomic `bilingual.txt` setting; an explicit saved off survives
+restart. `sessionSetBilingual` persists before changing live state. Declined deck
+creation or interactive no-capture mode changes only the session. `/lang` reports
+both values, and language switches preserve the bilingual choice.
+
+`definitions.go` composes the selected-language entry with a supplemental source.
+Spanish displays Larousse first and Oxford Spanish–English second. Dictionary.app
+Settings must enable both Spanish (Larousse) and Spanish–English (Oxford), with
+downloads complete. Successful sections survive missing books, absent entries and
+lookup failures in the other section; diagnostics retain those distinctions.
+Both sections failing remains a lookup failure. Off and raw stay primary-only;
+English never repeats itself, and unsupported languages report an unavailable
+English supplement while retaining their primary entry.
+
+`bilingual.go` selects Spanish-source records by entry identity, preventing an
+ambiguous spelling such as Spanish `red` from selecting English `red` → `rojo`.
+`bilingual_darwin.go` bounds native record enumeration and copied data; its
+non-darwin sibling reports the unavailable capability. The stateful record fake
+and captured Oxford records exercise direction, malformed data and failures.
+
+`renderDefinitions` retains section language ownership through rendering and
+region offsets: English prose does not acquire Spanish deck-word actions.
+Ordinary lookup and the full post-answer `play.Choice` and `play.Cloze` reveals
+share this composition through `play_loop.go` and `cloze.go`. Questions, options,
+compact glosses and grading remain based on the primary Spanish entry; there is
+no pre-answer English help. `TestBilingualPracticeReveal` and
+`TestBilingualClozeReveal` cover both reveal forms. Lookup
+capture and initial audio still occur once for the requested word.
+
 ### The dictionary follows the language (`#23 M2`)
 
 `systemDictionary(lang, warn)` returns the dictionary for a language, and the
@@ -2180,6 +2214,8 @@ Every seam has one, and each pins the assumption that seam rests on:
 
 | check | asserts |
 |---|---|
+| `bilingual_conformance_test.go` | installed Oxford records select Spanish-source `red` and enforce native record limits |
+| `bilingual_system_conformance_test.go` | assembled Spanish dictionary preserves raw/off output and adds the correct English direction when on |
 | `dict_conformance_test.go` | live lookups still byte-match every fixture |
 | `fetch_conformance_test.go` | the CDN path survey still holds (2022 generation dominates) |
 | `player_conformance_test.go` | `afplay` **blocks** until playback finishes |

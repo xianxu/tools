@@ -533,6 +533,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// opt is this loop's own copy, so a command can change
 					// the session by writing through here.
 					cc.setTimes = func(n int) { opt.times = n }
+					cc.setBilingual = sessionSetBilingual(&d, d.persistBilingual)
 					// And &voc, because THIS loop caches the highlight set in
 					// a local before the loop starts (see above). Reassigning
 					// d alone would leave the editor highlighting from the

@@ -156,6 +156,7 @@ Inside the session, everything besides looking a word up is a `/` command:
 <!-- command-list -->
 | command | does |
 |---|---|
+| `/bilingual` | toggle English explanations after the selected language |
 | `/help` | list the commands, or explain one |
 | `/history` | words looked up recently |
 | `/stats` | deck, streak and accuracy figures |
@@ -172,6 +173,7 @@ with the session's summary in the scrollback above you.
 To check additional help for commands, type `/help [command]`.
 
 <!-- command-usage -->
+- `/bilingual [on|off]` — Toggle bilingual definitions. With on or off, set it explicitly. On shows the selected language followed by English; off shows only the selected language. Default on; saved per deck, for this session otherwise.
 - `/help [command]` — With nothing, list the commands. With a command's name, say how to use it, which --help or -h after any command also does.
 - `/history [N | --days N | --days=N]` — The words looked up in the last N days. With nothing, the last 2; N is at most 3650.
 - `/stats` — The deck, streak and accuracy figures for this directory. Takes no arguments.
@@ -218,7 +220,8 @@ One interesting cross language feature is the ability to hear pronunciation in o
 language of a borrowed word. For example, try `arrondissement`, which is from French. 
 Click on the `French` link in the ORIGIN section to hear French pronunciation of it.
 
-The dictionary follows the language, and `/lang` says which one is answering. The curated ones:
+The dictionary follows the language. `/lang` reports the selected language, its
+dictionary and whether bilingual display is on. The curated primary dictionaries:
 
 <!-- curated-languages -->
 - **English** — the New Oxford American Dictionary (hence the Google-matching
@@ -230,10 +233,43 @@ The dictionary follows the language, and `/lang` says which one is answering. Th
   a phonetic transcription.
 <!-- /curated-languages -->
 
+Bilingual display is **on by default**. For Spanish, the Larousse definition comes
+first, followed by English translations and explanations from Oxford
+Spanish–English. Enable both **Spanish (Larousse)** and **Spanish–English
+(Oxford)** in **Dictionary.app → Settings**, then wait for their downloads.
+
+At the prompt:
+
+```text
+/lang es
+/bilingual on
+red
+/bilingual off
+red
+```
+
+The first lookup shows Spanish then English; the second shows Spanish alone.
+`/bilingual` with no argument toggles the setting. The choice is saved per deck
+and survives restarts and language switches. If you decline deck creation or
+use an interactive session without capture, it applies only to that session.
+A missing or malformed setting defaults to on; a saved off stays off.
+
+A successful section remains visible when the other is unavailable. The message
+identifies a missing dictionary, missing entry or lookup failure; enable the
+requested dictionary when setup guidance appears. English mode never adds a
+second English section. Other languages retain their primary definition and
+report when no English supplement is supported. `-raw` always returns only the
+primary dictionary entry, regardless of the toggle.
+
 
 ## Periodical Reviewing
 
 **`/play` reviews what is due today**. There are four kinds of question.
+
+In both multiple-choice and sentence-cloze questions, the full dictionary reveal
+after an answer follows `/bilingual`: Spanish first, then English when on.
+Questions, answer options, compact glosses and grading remain Spanish. English
+help is not shown before answering.
 
 ### The sentence, once a word has one
 
@@ -522,6 +558,7 @@ items/en/sycophantic.yaml  practice items authored ahead of time by
                            and the words vetoed to sit beside it. This is what
                            a cloze question is built from
 lang.txt                   which language this directory is in
+bilingual.txt              bilingual display on/off for this deck (default on)
 user-model.en.md           written by --reflect, read to pitch answers; one per
                            language, because it is read off that language's
                            deck. Its ## Corrections section is yours and is
@@ -554,7 +591,7 @@ define --sound 1 record     # play once instead of three times
 define -no-audio bank       # no fetch, no sound
 define -locale gb schedule  # British pronunciation
 define -lang es -locale us jalapeño   # Latin American, not Castilian
-define -lang es madrugar    # one lookup in Spanish, without switching
+define -lang es madrugar    # Spanish then English, with bilingual on
 define -lang it pizza       # and in Italian: the Devoto-Oli, not NOAD
 define -pron fr arrondissement  # the French recording, English everything else
 define -raw record          # the unparsed dictionary entry

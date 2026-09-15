@@ -44,6 +44,7 @@ func (c command) synopsis() string {
 // usage is required (TestEveryRegisteredCommandIsRunnable): /help <name> prints
 // it and the docs quote it.
 var commands = []command{
+	{name: "bilingual", summary: "toggle English explanations after the selected language", args: "[on|off]", usage: bilingualUsage, run: runBilingual},
 	{name: "help", summary: "list the commands, or explain one", args: "[command]", usage: helpUsage, run: runHelp},
 	{name: "history", summary: "words looked up recently", args: "[N | --days N | --days=N]", usage: historyUsage, run: runHistory},
 	{name: "stats", summary: "deck, streak and accuracy figures", usage: statsUsage, run: runStatsCommand},
@@ -181,8 +182,10 @@ func editDistance(a, b string) int {
 // cmds is here so /help can list the table it was dispatched from, which keeps
 // the fixture set in tests honest — help lists what dispatch would actually run.
 type commandCtx struct {
-	cmds []command
-	deck store.Store // nil when there is nowhere to read
+	bilingual    bool
+	setBilingual func(bool) (bool, error)
+	cmds         []command
+	deck         store.Store // nil when there is nowhere to read
 	// deckPermission answers "is anything written here going to survive", WITHOUT
 	// asking. /stats needs to say so and must not turn reading into a question.
 	deckPermission *deckPermission
@@ -251,7 +254,8 @@ type commandCtx struct {
 // with opt.width across a resize.
 func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 	return commandCtx{
-		deck: d.deck, clock: d.clock, deckPermission: d.deckPermission,
+		bilingual:    d.bilingualEnabled(),
+		setBilingual: durableBilingualSetter(d.persistBilingual), deck: d.deck, clock: d.clock, deckPermission: d.deckPermission,
 		stdout: stdout, stderr: stderr,
 		width: opt.width, noCapture: opt.noCapture,
 		times:    opt.times,

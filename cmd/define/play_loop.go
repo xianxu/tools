@@ -1003,14 +1003,14 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// them — it is mechanically guarded pure and `Region` lives in main — so
 		// the loop keeps its own word→regions map, built here, where the entry is
 		// rendered and the coordinates are true.
-		rendered, rs := Render(entry, RenderOpts{
+		rendered, rs := renderDefinitions(definitionsFor(d.dict, key, entry.Raw, nil, d.bilingualEnabled()), RenderOpts{
 			// Word is IDENTITY, not presentation, and RenderOpts says so: a
 			// click on the headword replays the word the deck holds, and
 			// deriving it from the entry instead lets the two disagree —
 			// `jalapeno` in the deck against `jalapeño` on the head line, for
 			// which the CDN answers different URLs.
 			Word:  key,
-			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
+			Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
 		})
 		marks[key] = clickable{text: rendered, regions: rs}
 		return play.NewChoice(key, rendered, opts)
