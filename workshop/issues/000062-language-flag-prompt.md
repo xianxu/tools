@@ -1,11 +1,12 @@
 ---
 id: 000062
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-14
-updated: 2026-09-14
+updated: 2026-09-15
 estimate_hours:
+started: 2026-09-15T12:23:43-07:00
 ---
 
 # define: show language flag before prompt
