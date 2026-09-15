@@ -78,7 +78,32 @@ rounds:
           family: cross-issue-dep-declared
           round: 3
       blocked: true
-content_hash: c0efa636ad42ecd0e665b0d0496ae70b33a3e8f24feb99ef16552ac7d69b4636
+    - "n": 4
+      timestamp: "2026-09-15T08:54:02-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-4
+          disposition: addressed
+          note: Three-clause invariant with named panicking/counting-seam tests; existing pins verified as English sittings.
+          round: 4
+        - id: PQ-5
+          disposition: addressed
+          note: Per-surface verification table and Done-when rows cover all six new concepts; case lists compressed.
+          round: 4
+        - id: PQ-6
+          disposition: addressed
+          note: Each budget has value, basis, derived load and exceeded behavior; latency marked assumed pending one live run.
+          round: 4
+        - id: PQ-7
+          disposition: addressed
+          note: PQ-2 cadence reworded to govern the native and live translation checks alike.
+          round: 4
+        - id: PQ-8
+          disposition: addressed
+          note: Issue 54 confirmed merged at c346955; lock, writers, ordering, model concurrency and permission stated against real symbols.
+          round: 4
+      blocked: false
+content_hash: d6fdd8d75488d185414c49d3fd0adf7310a2926a4952bf55ecbe0d7b8d4a7c48
 ---
 
 # Gate ledger — tools#61 (plan-quality)
@@ -120,10 +145,16 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **PQ-8** [Minor] `cross-issue-dep-declared` Undeclared overlap with in-flight issue 54 at the practice startup seam and per-deck writes.
   Issue 54 (working, branch 000054-background-harvest) adds a session state machine, a lock for every dictionary call, and background per-deck writes. This extension adds foreground model preparation in todaysQuestions and a new per-deck cache file. Declare the ordering and the lock/concurrent-writer interaction (ARCH-ORDER).
 
+## Round 4 — 2026-09-15T08:54:02-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-4 — addressed — Three-clause invariant with named panicking/counting-seam tests; existing pins verified as English sittings.
+- PQ-5 — addressed — Per-surface verification table and Done-when rows cover all six new concepts; case lists compressed.
+- PQ-6 — addressed — Each budget has value, basis, derived load and exceeded behavior; latency marked assumed pending one live run.
+- PQ-7 — addressed — PQ-2 cadence reworded to govern the native and live translation checks alike.
+- PQ-8 — addressed — Issue 54 confirmed merged at c346955; lock, writers, ordering, model concurrency and permission stated against real symbols.
+
 ## Open findings
 
-- **PQ-4** [Important] `invariant-reversal-names-enforcer` Name the tests that pin practice as offline and the narrowed invariant they must assert.
-- **PQ-5** [Important] `function-level-test-strategy` Extension task rows are prose case lists; no test is named per new production surface.
-- **PQ-6** [Minor] `explicit-operating-envelope` Assistance budgets state values without basis or derived first-run load.
-- **PQ-7** [Minor] `live-conformance-cadence` Opt-in live translation conformance has no cadence.
-- **PQ-8** [Minor] `cross-issue-dep-declared` Undeclared overlap with in-flight issue 54 at the practice startup seam and per-deck writes.
+(none — every finding has been disposed)

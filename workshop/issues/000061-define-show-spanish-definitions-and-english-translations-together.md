@@ -97,6 +97,13 @@ Extension (assisted practice before answering, added after the scope pivot recor
 - Additional integration tests cover partial dictionary availability, malformed/native errors, one capture, typed Spanish audio/replay, copy/action coordinates, explicit idempotent settings, help without effects and real editor nested-practice state propagation.
 - Estimate cross-cutting unit includes consumer regression tests and three presentation paths; native probe discovery was performed before the estimate and informs the reduced design allowance.
 
+### 2026-09-15 — Plan gate passed for assisted practice
+
+- Merged main (`c346955`), bringing #54's background preparation; resolved plan/lessons conflicts by keeping both revision trails.
+- Plan gate: round 3 raised PQ-4..PQ-8 (offline invariant, per-surface tests, envelope basis, live-check cadence, #54 interaction); round 4 disposed all as addressed. Estimate extended to 6.02 h.
+- Estimate-quality returned INFO, not a block. It judged the derivation genuine and additive, and flagged: one first-half `cross-cutting-refactor` impl above its scaled band; the extension's cross-cutting and TUI units likely light; no items for the toggle/parser scope events, the BR-1 rework cycle, or live-proxy discovery. Recorded rather than re-priced mid-flight so the close-time calibration sees the original derivation.
+- Filed #64 for the generalisation the user asked for: per-deck interaction stages (English with sprinkled Spanish → Spanish only), inferred from how the learner asks or set by natural-language instruction.
+
 ## Revisions
 
 ### 2026-09-14 — User-controlled bilingual display
