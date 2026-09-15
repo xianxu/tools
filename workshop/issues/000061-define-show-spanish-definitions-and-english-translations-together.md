@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-14
 updated: 2026-09-14
-estimate_hours:
+estimate_hours: 3.35
 started: 2026-09-14T16:22:35-07:00
 ---
 
@@ -60,3 +60,25 @@ The user requests `/bilingual` to toggle the two behaviors: on means selected la
 User chose **default on**. Missing or malformed settings resolve to on, including existing decks without this setting. Persisted off wins. This supersedes the previous fallback assumption.
 
 - Fresh review approved the toggle/default-on revisions. Recorded callback and bool-resolution details so no-capture sessions can toggle and saved off cannot become default on.
+
+## Estimate
+
+Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only. Calibration is marked stale; values are provisional.
+
+The native bridge uses already-probed DictionaryServices and existing cgo patterns; parsing uses encoding/xml and existing Entry/Render helpers, and persistence reuses writeBytesAtomic. No external library replaces direction selection. Thorough plan discounts implementation-unit design by 0.2 and uses 15% design buffer; issue authoring retains its observed scope. Implementation values are 40% of v2 table values, familiarity 1.0 for this familiar codebase. Units below correspond in order to spec, native adapter, pure selector, persisted setting, command, composed display, consumer integration, docs, and one close review.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec design=0.5 impl=0.08
+item: api-integration design=0.2 impl=0.4
+item: greenfield-go-module design=0.1 impl=0.2
+item: smaller-go-module design=0.02 impl=0.12
+item: smaller-go-module design=0.04 impl=0.16
+item: tui-screen design=0.2 impl=0.28
+item: cross-cutting-refactor design=0.2 impl=0.4
+item: atlas-docs design=0.02 impl=0.08
+item: milestone-review design=0 impl=0.16
+design-buffer: 0.15
+total: 3.35
+```
