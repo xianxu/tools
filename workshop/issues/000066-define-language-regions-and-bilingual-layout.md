@@ -25,15 +25,18 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   including indentation, internal spacing, trailing area and blank rows inside
   the region. Preserve foreground colors, bold/italic emphasis, sense numbering,
   headings, examples, selection and semantic answer markings.
-- Use verified source ownership and the effective `/lang` comparison from #65.
-  A region's grammar/numbering/spacing belongs to its containing language block;
-  unknown fallback dictionaries remain neutral. Do not guess ownership by words.
+- Each returned dictionary section has one uniform full-width background,
+  including its headings, blank rows and embedded foreign-language examples.
+  Primary sections use verified source language; Oxford uses its explicit
+  English-explanation presentation role. With `/lang es`, Spanish primary is
+  tinted and all of Oxford is normal. Keep source provenance separate from this
+  visual role; unknown fallback dictionaries remain neutral.
 - Preserve Oxford's structural HTML through parsing/rendering: part-of-speech
   groups, senses, sub-senses, example/translation pairs and idioms must remain
   readable. Coloring must not collapse or reorder content.
-- Draft mixed-language policy: Spanish examples and their English translations
-  occupy separate consecutive rows, enabling one coherent background per row.
-  Optional operator clarification requested; keep this assumption visible.
+- Preserve readable example/translation pairing and source structure without
+  splitting rows merely to assign different backgrounds. No zebra striping
+  inside dictionary definitions. Full practice reveals follow the same rule.
 - Keep dark/light/off, no-color/pipes, clean clipboard/history, mouse regions,
   wrapping and terminal resize behavior. Cover ordinary lookup and full practice
   reveals; apply the same region treatment to practice and model output.
@@ -49,7 +52,8 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   bytes; tests verify background on blank cells, not only text cells.
 - Selection/copy, historical scrollback, resize, click maps, practice answer marks,
   model streaming termination and no-color/plain output remain correct.
-- Unknown dictionary source remains neutral; mixed-language boundaries are explicit.
+- Unknown dictionary source remains neutral; embedded foreign examples never
+  introduce background stripes within an otherwise uniform dictionary section.
 
 
 ## Plan
@@ -88,3 +92,13 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   chunk/sink/cancel/resize agreement tests. Re-review approved with no remaining
   important findings. Concrete layout/plan ready for operator review; no runtime
   code changed and estimate still deferred.
+
+## Revisions
+
+### 2026-09-15 — Uniform dictionary sections
+
+Operator accepts the general preview but rejects changing background within a
+single dictionary definition. One dictionary result is one visual region, even
+when it contains both languages. Supersedes the draft separate-language-row tint
+policy for dictionary output; structural formatting and foreground emphasis stay.
+The preview and durable plan now reflect this correction. Runtime remains unchanged.
