@@ -99,6 +99,18 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   classes and independent guards in the plan. Product design unchanged; gate
   recheck pending, no runtime edits or estimate yet.
 
+- Change-code passed: plan-quality round 2 accepted PQ-1; estimate-quality INFO
+  (no blocking findings); implementation branch created. Review notes optimistic
+  streaming/verification allowances. Estimate is full-issue ship wall-clock,
+  including completed planning, not remaining time. Plan review/revision is in
+  issue-spec design; unit/race/fuzz/mutation execution is in each owning technical
+  item; full-suite/build and final review verification are in close-review;
+  actual native/PTY dark/light inspection is in real-api-discovery. These are
+  small provisional allowances; do not reduce required verification to fit them.
+- Context checkpoint before implementation under AGENTS §14. Final design and
+  approval are durable; no runtime code changed yet. Next: failing source and
+  cell-background tests, shared output contract, then bounded parallel work.
+
 ## Revisions
 
 ### 2026-09-15 — Uniform dictionary sections
