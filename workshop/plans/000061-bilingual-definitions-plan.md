@@ -95,7 +95,7 @@ Files: main.go, play_loop.go, relevant main/editor/play/selection tests, README.
 - ARCH-ORDER: lookup composition is synchronous and has no persistent pending state; existing editor serializes language switches and capture. Rebuild the whole dictionary composition on switch. No additional goroutines survive a lookup.
 - ARCH-FUNERAL: lookup values die with the call or existing practice question/session; native copied refs released on every path. No new durable runtime artifact or cache.
 
-## Revisions
+## Review corrections
 
 - 2026-09-14: Fresh review corrected the original instruction “Pronounce the Spanish canonical headword once.” This would turn spoken madrugaste into madrugar and violate existing lookup-key audio identity. Preserve utteranceFor and RenderOpts.Word, using the canonical headword only for dictionary matching; add initial/replay inflection coverage. Corrected the navigation name buildQuestions to todaysQuestions. Otherwise review approved the plan.
 
@@ -144,3 +144,8 @@ The user explicitly selected **on by default**. This supersedes the pending/defa
 ### Toggle review clarifications (2026-09-14)
 
 Fresh review approved the toggle/default-on revisions without blockers. Implement interactive session-only mutation even when no persistence callback exists: do not copy sessionSetLang's nil-callback refusal. Wire both repl.go and replraw.go. Carry an explicitly resolved setting at startup (or an optional value before resolution); never treat false as unspecified, because saved off must survive default-on fallback. The planned restart, DEFINE_NO_CAPTURE, failed-write and declined-deck tests cover these cases.
+
+
+## Revisions
+
+- 2026-09-14: During #54 integration, moved the record boundary to the end so later approved scope revisions remain visible to repository guards. No #61 implementation or behavior is included in this maintenance correction.

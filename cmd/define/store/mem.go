@@ -253,3 +253,6 @@ func (m *Mem) Forget(key string) (bool, error) {
 	}
 	return inDeck, nil
 }
+
+// Quiet is the store itself: the in-memory store never warns (#54).
+func (m *Mem) Quiet() Store { return m }

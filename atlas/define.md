@@ -30,7 +30,8 @@ and there is no second consumer yet.
 | `Player` | `afplay(1)` | `fakePlayer`, recording play count |
 | `deps.newLLM` + `getenv` | `internal/llm` (the model) | `llmtest.Fake`, an httptest server on the wire |
 | `deps.notifySignals` | `signal.Notify` | a channel a test writes to |
-| `--reflect` | the model, batch | `llmtest.Fake` + a live conformance check |
+| `--reflect` | the model, batch, and the session's background job (`#54`) | `llmtest.Fake` + a live conformance check |
+| `bgRunner` → `runBackgroundJob` | the model, from the session's background | `llmtest.Fake`, and a blocking stub `llm.Client` where a test must hold a call |
 
 Pure: `ParseEntry` (flat text → `Entry`), `Render` (`Entry` → string),
 `AudioCandidates` (word → ordered URLs), `isPronunciation`, `opensBlock`,
@@ -1401,9 +1402,11 @@ still collapsed, because that changes no meaning.
 ## The learner model
 
 `define --reflect` folds the deck and the lookup log into the learner model, the
-third artifact in the working directory. Batch and on demand: no model call ever
-sits on the lookup or review path, which is what keeps a lookup instant and
-offline.
+third artifact in the working directory. Batch, and nothing waits on it: no model
+call ever sits on the lookup or review path, which is what keeps a lookup instant
+and offline. A session also writes it in the background (`#54`, see Background
+preparation): at the reflect floor when there is none, and again when the deck's
+lookups have doubled since the count its frontmatter records.
 
 **Every claim names its evidence, and the evidence is CHECKED.** The typed answer
 carries the deck words behind each claim and `checkEvidence` drops any claim
@@ -1482,10 +1485,12 @@ time. The fourth and fifth artifacts in the working directory: `facts/<lang>/`
 holds one record per word — a CEFR band and a subject domain — and `items/<lang>/`
 holds the practice items authored from them (`#10 M2`).
 
-**Batch, and the only path here that may block.** Nothing a sitting does reaches
-it, asserted with the model seam made to PANIC rather than left nil — nil passes
-on a loop that reaches for a model behind a `!= nil` guard, which is how a
-network dependency creeps into a path that promises to be offline.
+**Batch, and nothing waits on it.** `--harvest` runs it by hand, and since `#54`
+the session's background job runs the same core, `harvestDeck`, off the editor
+loop (see *Background preparation* below). A sitting still never reaches it,
+asserted with the model seam made to PANIC rather than left nil — nil passes on
+a loop that reaches for a model behind a `!= nil` guard, which is how a network
+dependency creeps into a path that promises to be offline.
 
 **Assigned once, re-read forever.** The cache check precedes anything that
 touches the network, so a second run over an unchanged deck makes ZERO calls. The
@@ -1752,6 +1757,79 @@ the first thing to suspect and the hand-labelled sample the issue defers is the
 thing to build. The live run's own bands are worth reading in that light —
 `run` and `set` at A1 and `ephemeral` at C1 are right, while `quokka` at C2 says
 more about rarity than about any level a learner is at.
+
+## Background preparation (`#54`)
+
+The interactive session keeps practice material current without a command. Once
+at session start, and after every `bgThreshold` (10) lookups that found their
+word, it checks the store. A job first writes the learner model when it is due
+(`reflectDue`: none yet and the deck at the reflect floor, or the deck's lookups
+doubled since the count the model records, which `modelLookups` reads from its
+frontmatter), because authoring reads it; it reads the lookup log only when the
+model on disk could be due (`reflectCouldBeDue`). Then, when at least ten words still
+need work (no band, or no practice item: `pendingWords`), it bands and authors
+the ten newest within `bgBudget` (60) model calls. Only the raw editor (`runEditor`) does this: not
+`-raw`, a pipe, a one-shot lookup, or any mode flag.
+
+**One table decides when a job runs** (`stepBackground`, `background.go`): idle,
+running, or off once the model did not answer or the deck's files failed, fed
+three events (session start, a lookup that found its word, a finished job). The table is the whole state; the loop only
+applies its effects. **A job runs on one goroutine** (`bgRunner`) with a copy of
+the session's deps taken when it starts, so it finishes the language it started
+in. It hands back one `bgJobResult` on a channel the loop selects on beside
+resizes, and the loop clears the frame, prints the notice and redraws, which keeps
+every screen write on the loop and between prompts. The job reads the store
+through `quietStore`, the store's own quiet view (`store.Quieter`, which every store
+implements; `TestEveryStoreHasAQuietView` holds each to it), so nothing it does
+reaches the terminal. The runner's context is a
+child of the session's: quitting cancels the job, the loop waits at most two
+seconds for it, and every store write is an atomic rename, so any stop leaves each
+file old or new.
+
+**The batch is the point.** `harvestDeck` bands a batch before authoring the same
+batch, so a backlog drains on both halves under a small budget; the CLI passes a
+nil batch and gets the whole deck, unchanged. **What a job could not finish is
+retried at most once a session**: a word (a refused band, authoring that kept
+nothing, or a model or store error on it, one rule in `markUnfinished`, where a
+budget cut leaves the word pending), and a learner model it could not write. The
+runner keeps both in a `bgMemory` per language, which the next job in it skips. **A model that does not
+answer, or a deck whose files fail, is said once**, and the session stops asking.
+`stopMeans` reads a stop's kind in one place: `noModel` from `llm.ErrUnavailable`
+(which a rate limit or a 5xx also is) or `llm.ErrRequest`, and `deckErr` from
+`errDeckIO`, which the harvest and reflect cores wrap around a store error where
+the store returns it. `llm.Resolve` cannot tell whether a model is there, so the
+first call decides.
+`DEFINE_NO_BACKGROUND=1` turns it all off, and so does a directory nobody agreed to
+make a deck: `backgroundEnabled` reads `deckPermission.saving()` and never asks.
+The job then reads the permission off the loop, which is safe only because it
+runs once the question is decided and no method writes to a decided state.
+
+**Every dictionary call holds one lock** (`lockedDictionary`, `dictionaryMu`):
+DictionaryServices is cgo with no documented thread-safety, and the job looks
+words up while the loop does. `realDeps` wraps its one builder, which both the
+startup dictionary and every `/lang` switch go through.
+
+**Two processes on one deck take no lock.** `SetItems` replaces a word's file, so
+the worst case is one item and some wasted calls, bounded by each process's
+budget. A word forgotten mid-job may keep its facts and items on disk; nothing
+reads them while the word is outside the deck, and they are still true of it if
+it comes back. The sweep is forgetting it again: `Forget` removes every file a
+word owns whether or not the deck still holds it. The learner model has a second
+writer too: the operator, editing its `## Corrections`. `reflectDeck` reads the
+file just before it writes and splices the Corrections on disk back in, so an
+edit is lost only if it is saved between that read and the rename; an editor that
+saves an old copy over a refresh leaves the old count, and the next check
+refreshes again, at the cost of one call.
+
+| notice | when |
+|---|---|
+| `N new practice questions ready for /play` | a job wrote items |
+| `learner model updated` | a job wrote the learner model |
+| `practice questions are not being prepared: the model did not answer (see define --llm-check)` | the first job whose model did not answer (none running, a refused request, a rate limit or a 5xx); then the session is quiet |
+| `practice questions are not being prepared: the deck could not be read or written: …` | the first job whose store read or write failed; then the session is quiet |
+
+A job's notices come in the order it did things and a stop's comes last, so a
+learner model written before the model stopped answering is still announced.
 
 ## Entry modes
 

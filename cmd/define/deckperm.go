@@ -39,9 +39,14 @@ const (
 // "no" to disk would be new state to invalidate the moment the learner changes
 // their mind, in a directory they have by definition not agreed to write to.
 //
-// NOT SAFE FOR CONCURRENT USE, and it does not need to be: every caller is on
-// the command's own path, and the two loop shells resolve it before their reader
-// goroutines start (that pre-resolution is why it is not a mutex — see repl.go).
+// NOT SAFE FOR CONCURRENT USE WHILE UNDECIDED, and it does not need to be: every
+// caller that can settle it is on the command's own path, and the two loop shells
+// resolve it before their reader goroutines start (that pre-resolution is why it
+// is not a mutex — see repl.go). One reader runs off that path: a session's
+// background job reads it through gatedStore's reading() and creating() (#54).
+// That is safe only because the job exists solely once saving() reports the
+// question decided (backgroundEnabled), and no method writes to a decided state;
+// a path that could ask again mid-session would have to stop the job first.
 type deckPermission struct {
 	// ask puts the question. A nil ask allows, which is what makes a permission
 	// optional at every seam that has not been told about the policy yet.

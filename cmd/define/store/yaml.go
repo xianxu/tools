@@ -360,6 +360,15 @@ func (y *YAML) warnf(format string, args ...any) {
 	}
 }
 
+// Quiet is this store with its warnings dropped (#54): the same directory and
+// language, every read and write unchanged. The background job reads through it,
+// because it runs off the editor loop, where a warning would land in the frame.
+func (y *YAML) Quiet() Store {
+	q := *y
+	q.warn = nil
+	return &q
+}
+
 // wordFileName turns a slug into a filename, refusing anything that is not a
 // single safe path element.
 //

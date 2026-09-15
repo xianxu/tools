@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1127,3 +1130,147 @@ func keysOfBool(m map[string]bool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// harvestDeck reports what it did as data, so the background job can read it
+// rather than parse the lines --harvest prints (#54).
+func TestHarvestDeckReportsWhatItAuthored(t *testing.T) {
+	d, fake, st := harvestRig(t, 3)
+	scriptAll(fake, 4)
+	o := harvestDeckForTest(t, d, nil, harvestLimit)
+	if o.banded != 3 || o.stopped != nil || o.code != 0 {
+		t.Fatalf("outcome %+v; want 3 banded, no stop, code 0", o)
+	}
+	withItems := 0
+	for i := range 3 {
+		if items, _ := st.Items(deckWord(i)); len(items) > 0 {
+			withItems++
+		}
+	}
+	if withItems == 0 || o.authored != withItems {
+		t.Errorf("authored = %d, but %d word(s) hold items", o.authored, withItems)
+	}
+}
+
+// A stop is typed, so the job can tell a model that is not answering from any
+// other failure.
+func TestHarvestDeckTypesAMissingModel(t *testing.T) {
+	d, fake, _ := harvestRig(t, 3)
+	fake.Script(markBand, llmtest.Reply{Status: 500, Text: "upstream is having a day"})
+	o := harvestDeckForTest(t, d, nil, harvestLimit)
+	if !errors.Is(o.stopped, llm.ErrUnavailable) || o.code != 1 {
+		t.Errorf("stopped = %v, code = %d; want llm.ErrUnavailable and 1", o.stopped, o.code)
+	}
+}
+
+// A batch limits both halves to its words, and authoring still draws wrong
+// answers from every banded word.
+func TestHarvestDeckWorksOnlyOnItsBatch(t *testing.T) {
+	d, fake, st := harvestRig(t, 6)
+	preBandExcept(t, d, deckWord(0))
+	scriptAll(fake, 4)
+	o := harvestDeckForTest(t, d, []string{deckWord(0), deckWord(1)}, harvestLimit)
+	if got := countTask(fake, markBand); got != 1 || o.banded != 1 {
+		t.Errorf("banding calls = %d, banded = %d; want only the batch's one unbanded word", got, o.banded)
+	}
+	for i := range 6 {
+		items, _ := st.Items(deckWord(i))
+		if inBatch := i < 2; inBatch != (len(items) > 0) {
+			t.Errorf("%s holds %d item(s); only the batch should be authored", deckWord(i), len(items))
+		}
+	}
+	if o.authored != 2 {
+		t.Errorf("authored = %d, want 2", o.authored)
+	}
+}
+
+// A word authoring runs for and keeps nothing is reported, so the job can keep
+// it from being retried at every check.
+func TestHarvestDeckReportsWhatItCouldNotAuthor(t *testing.T) {
+	d, fake, st := harvestRig(t, 3)
+	preBand(t, d)
+	for _, w := range allDeckWords() {
+		fake.Script(authorKey(w), llmtest.Reply{Text: `{"stem":"Senator Murkowski raised the question of ` + w + ` at the Commerce Committee hearing in Anchorage."}`})
+	}
+	fake.Script(markEntail, llmtest.Reply{Text: `{"entails":true,"glosses":false,"named":true,"reason":"names the committee"}`})
+	fake.Script(markVeto, llmtest.Reply{Text: `{"fits":true,"reason":"a near-synonym"}`})
+	o := harvestDeckForTest(t, d, nil, harvestLimit)
+	if o.authored != 0 || len(o.failed) != 3 {
+		t.Fatalf("authored %d, failed %v; want every word reported failed", o.authored, o.failed)
+	}
+	for _, w := range o.failed {
+		if items, _ := st.Items(w); len(items) > 0 {
+			t.Errorf("%s is reported failed but holds items", w)
+		}
+	}
+}
+
+// harvestDeckForTest runs one pass the way runHarvest does, minus the flag's
+// guards.
+func harvestDeckForTest(t *testing.T, d deps, batch []string, limit int) harvestOutcome {
+	t.Helper()
+	cfg, err := llm.Resolve(d.getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deck, err := d.deck.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return harvestDeck(t.Context(), d, d.newLLM(cfg), deck, &budget{left: limit}, limit, batch, io.Discard, io.Discard)
+}
+
+// A stop on a word leaves that word unfinished, so the session skips it at the
+// next check (#54). A model that keeps answering one word with something
+// unreadable would otherwise stop every job at the same newest word, and the
+// backlog behind it would never drain.
+func TestHarvestDeckCountsAStoppedWordAsUnfinished(t *testing.T) {
+	d, fake, _ := harvestRig(t, 3)
+	fake.Script(markBand, llmtest.Reply{Text: "not json"})
+	o := harvestDeckForTest(t, d, nil, bgBudget)
+	if o.stopped == nil || !slices.Equal(o.failed, []string{deckWord(0)}) {
+		t.Errorf("a stop on the newest word: stopped %v, unfinished %v; want a stop and [%s]", o.stopped, o.failed, deckWord(0))
+	}
+}
+
+// One rule for what a harvest pass gives up on (#54): a stop or a rejection marks
+// the word unfinished, and a budget cut never does, because the word is still
+// pending for the next pass.
+func TestMarkUnfinishedLeavesABudgetCutPending(t *testing.T) {
+	if got := markUnfinished(nil, "keel", errBudget); got != nil {
+		t.Errorf("a budget cut marked %v unfinished", got)
+	}
+	for _, err := range []error{nil, llm.ErrMalformed, deckIO(errors.New("permission denied"))} {
+		if got := markUnfinished(nil, "keel", err); !slices.Equal(got, []string{"keel"}) {
+			t.Errorf("a stop (%v) marked %v, want [keel]", err, got)
+		}
+	}
+}
+
+// A store error is typed apart from the model's, so the job can tell a deck it
+// cannot read from a word it could not finish (#54).
+func TestHarvestDeckTypesAStoreError(t *testing.T) {
+	d, _, _ := harvestRig(t, 3)
+	d.deck = failingFacts{d.deck}
+	o := harvestDeckForTest(t, d, nil, bgBudget)
+	if !errors.Is(o.stopped, errDeckIO) || o.code != 1 || !slices.Equal(o.failed, []string{deckWord(0)}) {
+		t.Errorf("stopped %v, code %d, unfinished %v; want errDeckIO, 1 and [%s]", o.stopped, o.code, o.failed, deckWord(0))
+	}
+}
+
+// failingFacts is a deck whose facts cannot be read: the store error a changed
+// permission or a failing disk gives.
+type failingFacts struct{ store.Store }
+
+func (failingFacts) WordFacts(string) (store.WordFacts, error) {
+	return store.WordFacts{}, errors.New("permission denied")
+}
+
+// failingWrites is a deck that reads but cannot be written: the store error a full
+// disk or a read-only directory gives.
+type failingWrites struct{ store.Store }
+
+func (failingWrites) SetWordFacts(string, store.WordFacts) error {
+	return errors.New("read-only file system")
+}
+
+func (failingWrites) SetUserModel(string) error { return errors.New("read-only file system") }

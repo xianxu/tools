@@ -334,7 +334,9 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []dropCl
 // socket (ARCH-PURE).
 //
 // No model call ever moves onto the lookup or review path: this is a MODE, run
-// on demand, and that is the whole reason the analysis is batch (#17's Spec).
+// on demand, and that is the whole reason the analysis is batch (#17's Spec). A
+// session runs the same core, reflectDeck, in the background when the model is
+// due (#54), off the editor loop, so nothing waits on it there either.
 func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer) int {
 	if d.deck == nil {
 		fmt.Fprintln(errOut, noDeckMessage(opt.noCapture))
@@ -367,8 +369,25 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 	if err != nil {
 		return unavailableToReflect(errOut)
 	}
-	client := d.newLLM(cfg)
-	model, err := llm.Run(ctx, foregroundClient(client, out, opt), llm.Task[learnerModel]{
+	return reflectDeck(ctx, d, foregroundClient(d.newLLM(cfg), out, opt), cfg.Model, ev, out, errOut).code
+}
+
+// reflectOutcome is one reflect pass as data (#54): what runReflect used to only
+// print. The CLI still prints the same lines and exits with code; the background
+// job reads written and stopped, because it must tell a model that is not
+// answering from any other failure, and prose cannot tell it that.
+type reflectOutcome struct {
+	written bool  // the learner model file was written
+	stopped error // what stopped the pass, if anything: the model's error, or the store's (errDeckIO)
+	code    int   // runReflect's exit code, unchanged
+}
+
+// reflectDeck is one reflect pass over evidence already folded: ask, check,
+// render, splice, write. It is runReflect's body after its guards, moved so the
+// background job can run it too (#54). client is the model that answers, and
+// modelName is the one the file's frontmatter names.
+func reflectDeck(ctx context.Context, d deps, client llm.Client, modelName string, ev deckEvidence, out, errOut io.Writer) reflectOutcome {
+	model, err := llm.Run(ctx, client, llm.Task[learnerModel]{
 		Name:   reflectTaskName,
 		System: reflectSystem,
 		Prompt: renderReflectPrompt(ev).Prompt,
@@ -384,7 +403,7 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 	})
 	if err != nil {
 		fmt.Fprintf(errOut, "define: could not read the deck's shape: %v\n", err)
-		return 1
+		return reflectOutcome{stopped: err, code: 1}
 	}
 
 	inDeck := make(map[string]bool, len(ev.Words))
@@ -404,16 +423,19 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 	// degrades cleanly on absence but not on emptiness.
 	if model.Level.Band == "" && len(model.Domains) == 0 {
 		fmt.Fprintln(errOut, "define: nothing in the answer survived checking against the deck; the learner model was not written")
-		return 1
+		return reflectOutcome{code: 1}
 	}
 
+	// Read here, just before the write, and not taken from a caller that read it
+	// earlier: a Corrections edit saved while the model was answering is kept, which
+	// a copy read before the call would lose (#54).
 	existing, err := d.deck.UserModel()
 	if err != nil {
 		fmt.Fprintf(errOut, "define: could not read the existing learner model: %v\n", err)
-		return 1
+		return reflectOutcome{stopped: deckIO(err), code: 1}
 	}
-	modelID := cfg.Model
-	if selected := llm.SelectionOf(client); selected.ID != "" {
+	modelID := modelName
+	if selected := clientModelSelection(client); selected.ID != "" {
 		modelID = selected.ID
 	}
 	generated := renderUserModel(model, modelMeta{
@@ -426,14 +448,14 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 	})
 	if err := d.deck.SetUserModel(spliceCorrections(existing, generated)); err != nil {
 		fmt.Fprintf(errOut, "define: could not write the learner model: %v\n", err)
-		return 1
+		return reflectOutcome{stopped: deckIO(err), code: 1}
 	}
 
 	// The NAME, from the store, not a literal: the learner is told in the
 	// README to hand-edit this file's ## Corrections, so naming the wrong one
 	// sends their corrections to a file UserModel() does not read.
 	fmt.Fprintf(out, "define: wrote %s from %d words\n", store.UserModelName(d.lang), len(ev.Words))
-	return 0
+	return reflectOutcome{written: true}
 }
 
 // unavailableToReflect is the degradation path, and it says the same thing the
