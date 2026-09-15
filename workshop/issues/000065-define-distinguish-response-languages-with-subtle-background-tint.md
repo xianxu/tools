@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-15
 updated: 2026-09-15
-estimate_hours:
+estimate_hours: 5.526
 started: 2026-09-15T13:08:11-07:00
 ---
 
@@ -47,7 +47,7 @@ implementation design.
 
 Related work:
 
-- [#62 — prompt language flag](000062-language-flag-prompt.md): identifies the
+- [#62 — prompt language flag](../history/issues/000062-language-flag-prompt.md): identifies the
   current language; this task identifies its text within responses.
 - [#64 — adaptive bilingual interaction](000064-adaptive-bilingual-interaction.md):
   chooses how much of each language to produce; this task presents the language
@@ -78,6 +78,40 @@ Design questions to resolve before implementation:
 - Tests cover known and generated language boundaries, language changes, style
   precedence, malformed/incomplete annotations, and streaming splits. Model
   annotations have a stateful fake and a live conformance check.
+
+## Estimate
+
+Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only. Calibration remains provisional.
+
+The decomposition covers spec/design, shared ownership/style, source metadata,
+parser provenance, practice layout, annotation decoding, terminal-control
+filtering, answer-stream integration, live semantic discovery, docs and one
+boundary review. Existing encoding/xml plus record captures halves source-module
+design before the thorough-plan discount; existing terminal/LLM seams are reused.
+No library implements our annotation recovery/provenance policy, so those units
+retain their full primitive design allowance before the plan discount. Other
+implementation-unit design uses ×0.2; the incurred issue/spec allowance is kept.
+Implementation values are 40% of the v2 table; familiarity 1.0, design buffer 15%.
+Live discovery covers previously unmeasured model annotations and dictionary
+class semantics, not routine verification already included in implementation.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec design=0.8 impl=0.12
+item: smaller-go-module design=0.06 impl=0.2
+item: greenfield-go-module design=0.2 impl=0.32
+item: cross-cutting-refactor design=0.2 impl=0.2
+item: tui-screen design=0.4 impl=0.4
+item: greenfield-go-module design=0.3 impl=0.32
+item: greenfield-go-module design=0.2 impl=0.24
+item: api-integration design=0.2 impl=0.4
+item: real-api-discovery design=0 impl=0.24
+item: atlas-docs design=0.04 impl=0.08
+item: milestone-review design=0.04 impl=0.2
+design-buffer: 0.15
+total: 5.526
+```
 
 ## Plan
 
@@ -113,7 +147,7 @@ and adapts how the program interacts with them. This ordering does not make
 ### 2026-09-15 — Concrete design after #62
 
 #62 merged as PR #47. Claimed #65 and ran start-plan. The proposed
-[implementation plan](../plans/000065-language-response-tint-plan.md) uses
+[implementation plan](../plans/000065-define-distinguish-response-languages-with-subtle-background-tint-plan.md) uses
 explicit ownership and one background composer, with bounded inline model
 annotations decoded before display and transcript storage. Oxford's supplement
 contains mixed Spanish/English inside individual glosses; preserve validated
