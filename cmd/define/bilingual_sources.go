@@ -11,7 +11,7 @@ func spanishDictionaryFromInstalled(installed []dictMeta, makePrimary func([]str
 	if installed == nil {
 		primary = unavailableDictionary{fmt.Errorf("Spanish dictionary availability unknown: dictionary-selection API unavailable: %w", ErrLookupFailed)}
 	} else if len(ids) > 0 {
-		primary = makePrimary(ids)
+		primary = monolingualDictionary{Dictionary: makePrimary(ids), language: selectedSourceLanguage(installed, ids)}
 	}
 	return spanishDefinitions{Dictionary: primary, english: english}, name
 }

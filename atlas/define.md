@@ -2085,12 +2085,19 @@ not restyled after a language switch.
 `idm`, `ind` Spanish; `trans` English), checks text alignment, and projects ranges
 through parser source offsets. Failed correspondence and transformed IPA/origin
 fields stay neutral. A supplement can contain both languages inside one gloss;
-its section heading cannot determine all its text ownership. The dictionary lock
-preserves the supplement capability as well as primary lookup.
+its section heading cannot determine all its text ownership. `dictionaryFromInstalled` attaches source language only when every selected
+ID has matching monolingual metadata. `dictionarySourceLanguage` preserves this
+provenance through the lock and supplementary wrappers. Searching every active
+dictionary carries unknown ownership, regardless of `/lang`; `definitionsFor`
+snapshots that into each section and `renderDefinitions` owns the source input
+for lookup and both practice reveals. The dictionary lock preserves the
+supplement capability as well as primary lookup.
 
-`play.Presentation` exposes Target/English/Neutral roles from the same builder
+`play.Presentation` exposes Target/DictionarySource/English/Neutral roles from the same builder
 that emits prompts and reveals. The import-free play package knows no language
-codes. `practice_language.go` maps roles at rendering time; board footer, help,
+codes. Dictionary-derived option and panel glosses use verified dictionary source
+ownership, whereas deck words and authored cloze text use Target ownership.
+`practice_language.go` maps roles at rendering time; board footer, help,
 chrome and already-rendered dictionary reveals share the same policy. Answer
 marks explicitly suppress tint for their fragment.
 

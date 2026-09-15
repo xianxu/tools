@@ -16,7 +16,7 @@ type practicePresenter interface {
 
 // Vocabulary and language styling share the form's emitted boundaries. Neutral
 // fragments include pre-rendered dictionary entries, which must stay untouched.
-func renderPracticePresentation(p play.Presentation, lang store.Lang, policy tintPolicy, vocab Vocabulary, sf surface, subject string) string {
+func renderPracticePresentation(p play.Presentation, lang, source store.Lang, policy tintPolicy, vocab Vocabulary, sf surface, subject string) string {
 	var out strings.Builder
 	at := 0
 	for _, s := range p.Spans {
@@ -28,8 +28,10 @@ func renderPracticePresentation(p play.Presentation, lang store.Lang, policy tin
 			owned = lang
 		case play.English:
 			owned = "en"
+		case play.DictionarySource:
+			owned = source
 		}
-		if s.Role == play.Target && !s.AnswerStyled && vocab != nil && sf.admitsColour() {
+		if (s.Role == play.Target || s.Role == play.DictionarySource) && !s.AnswerStyled && vocab != nil && sf.admitsColour() {
 			text = highlightRegion(text, withoutWord(vocab, subject), knownOn, "")
 		}
 		if !s.AnswerStyled && owned != "" {
@@ -64,7 +66,7 @@ func writePracticePresentation(w io.Writer, p play.Presentation, rs []Region, d 
 	if !opt.color {
 		v = nil
 	}
-	styled := renderPracticePresentation(p, d.lang, opt.tintFor(d.lang), v, sf, subject)
+	styled := renderPracticePresentation(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), v, sf, subject)
 	writeRendered(w, "\n"+styled+"\n", mergeRegions(rs, own))
 }
 
@@ -130,7 +132,7 @@ func livePromptPresentation(s play.Session) play.Presentation {
 	return p.Presentation
 }
 func practiceChrome(p play.Presentation, d deps, opt options) string {
-	return renderPracticePresentation(p, d.lang, opt.tintFor(d.lang), nil, surfaceProse, "")
+	return renderPracticePresentation(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "")
 }
 
 func styledBoardPrompt(q play.Question, whole bool, pal palette, d deps, opt options) string {
@@ -142,7 +144,7 @@ func styledBoardPrompt(q play.Question, whole bool, pal palette, d deps, opt opt
 		b.english("to stop")
 		p = b.Presentation
 	}
-	text := renderPracticePresentation(p, d.lang, opt.tintFor(d.lang), nil, surfaceProse, "")
+	text := renderPracticePresentation(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "")
 	return highlightBoardPrompt(text, true, pal)
 }
 func finishStyled(w io.Writer, s play.Session, fig sittingFigures, d deps, opt options) int {
@@ -154,6 +156,6 @@ func finishStyled(w io.Writer, s play.Session, fig sittingFigures, d deps, opt o
 	p.neutral("\n")
 	p.append(costPresentation(fig))
 	p.neutral("\n")
-	io.WriteString(w, renderPracticePresentation(p.Presentation, d.lang, opt.tintFor(d.lang), nil, surfaceProse, ""))
+	io.WriteString(w, renderPracticePresentation(p.Presentation, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, ""))
 	return 0
 }

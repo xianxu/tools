@@ -25,6 +25,7 @@ func TestLanguageTintInvocation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("TERM", tc.term)
 			d := testDeps(t)
+			d.dict = tintSourceFixture{d.dict, "en"}
 			var capture, errout bytes.Buffer
 			args := append([]string{"-no-audio"}, tc.args...)
 			args = append(args, "sycophantic")

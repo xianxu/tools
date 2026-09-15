@@ -95,7 +95,7 @@ func (c *Cloze) render() promptBuilder {
 	}
 	p.text("\n\n")
 	for i, o := range c.options {
-		p.option(i, o.Word)
+		p.option(i, o.Word, Target)
 		if i < len(c.options)-1 {
 			p.text("\n")
 		}
@@ -120,7 +120,7 @@ func (c *Cloze) RevealPresentation() Presentation {
 		p.text("\n\n")
 		p.owned("you chose", English, false)
 		p.text("\n")
-		p.option(i, c.options[i].Word)
+		p.option(i, c.options[i].Word, Target)
 	}
 	if c.definition != "" {
 		p.text("\n\n" + c.definition)

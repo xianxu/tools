@@ -4640,3 +4640,12 @@ Language styling before wrapping cannot protect new physical newlines inserted
 later. The wrapper must suspend backgrounds before those newlines and restore
 styles for continuation text. Test literal escape transitions at inserted breaks,
 not just visible text or total width.
+
+
+## Requested language is not source provenance (define #65 BR-1)
+
+A lookup fallback may search sources outside the requested language. Carry source
+ownership from actual selected dictionary metadata, never the session language or
+display label. Test source/target mismatch and unknown-source composition through
+ordinary lookup, full reveals and dictionary-derived practice glosses. A fallback
+selection test and a tint test in isolation do not prove their composition.

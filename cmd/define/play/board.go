@@ -440,7 +440,7 @@ func (b *Board) PromptPresentation() Presentation {
 			end = len(panel)
 		}
 		p.text(panel[n:end])
-		p.owned(panel[end:], Target, false)
+		p.owned(panel[end:], DictionarySource, false)
 	}
 	if b.panelRows == 2 {
 		p.text("\n")

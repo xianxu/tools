@@ -6,6 +6,9 @@ type LanguageRole uint8
 const (
 	Neutral LanguageRole = iota
 	Target
+	// DictionarySource belongs to the selected dictionary, whose language may
+	// differ from the deck or be unknown for an all-active fallback search.
+	DictionarySource
 	English
 )
 
@@ -29,9 +32,9 @@ func (p *promptBuilder) owned(s string, role LanguageRole, answerStyled bool) {
 		p.spans = append(p.spans, LanguageSpan{start, len(p.s), role, answerStyled})
 	}
 }
-func (p *promptBuilder) option(i int, s string) {
+func (p *promptBuilder) option(i int, s string, role LanguageRole) {
 	p.text(optionLine(i, ""))
-	p.owned(s, Target, false)
+	p.owned(s, role, false)
 }
 func (p *promptBuilder) blanked(s string) {
 	start := 0

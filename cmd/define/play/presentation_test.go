@@ -23,7 +23,7 @@ func TestPresentationOwnsLiteralPromptAndReveal(t *testing.T) {
 	if want := []string{"rojo", "color vivo", "   bright color", "otro", "   other"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("owned text %q want %q", got, want)
 	}
-	if !reflect.DeepEqual(roles, []LanguageRole{Target, Target, English, Target, English}) {
+	if !reflect.DeepEqual(roles, []LanguageRole{Target, DictionarySource, English, DictionarySource, English}) {
 		t.Fatalf("roles %v", roles)
 	}
 	c.Grade('2')
@@ -83,5 +83,25 @@ func TestBoardPresentationTruncatedAndAnswerOwned(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("board help lacks English ownership")
+	}
+}
+
+func TestDictionaryGlossesDoNotClaimDeckOwnership(t *testing.T) {
+	c := NewChoice("rosso", "", []Option{{Gloss: "a bright color", Correct: true}})
+	b := NewBoard([]Cell{{Word: "rosso", Gloss: "a bright color"}}, 60, Palette{})
+	b.Grade('0')
+	for _, p := range []Presentation{c.PromptPresentation(), c.RevealPresentation(), b.PromptPresentation()} {
+		found := false
+		for _, s := range p.Spans {
+			if p.Text[s.Start:s.End] == "a bright color" {
+				found = true
+				if s.Role != DictionarySource {
+					t.Fatalf("dictionary gloss lacks source ownership: %q", p.Text)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("missing gloss ownership: %q", p.Text)
+		}
 	}
 }

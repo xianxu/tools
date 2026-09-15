@@ -75,3 +75,25 @@ func (d lockedSupplementalDictionary) supplement(word, primary string) definitio
 	defer dictionaryMu.Unlock()
 	return d.provider.supplement(word, primary)
 }
+
+// dictionarySourceLanguage reports producer-owned provenance. An absent
+// capability is unknown; neither the study language nor a display label proves
+// which language an all-active-dictionaries fallback returned.
+func dictionarySourceLanguage(dict Dictionary) store.Lang {
+	if source, ok := dict.(interface{ primarySourceLanguage() store.Lang }); ok {
+		return source.primarySourceLanguage()
+	}
+	return ""
+}
+
+// monolingualDictionary carries the language verified at selected-ID assembly.
+// It wraps only a primary source, before optional supplement adapters are added.
+type monolingualDictionary struct {
+	Dictionary
+	language store.Lang
+}
+
+func (d monolingualDictionary) primarySourceLanguage() store.Lang { return d.language }
+func (d lockedDictionary) primarySourceLanguage() store.Lang {
+	return dictionarySourceLanguage(d.inner)
+}

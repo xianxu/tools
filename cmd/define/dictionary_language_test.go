@@ -137,12 +137,12 @@ func TestDictionaryProjectionExactOccurrenceAndFallback(t *testing.T) {
 
 func TestDictionaryDefinitionsRetainSourceAndRegions(t *testing.T) {
 	records := &fakeRecordSource{installed: true, entries: map[string][]bilingualRecord{"red": bilingualFixture(t, "red")}}
-	dict := spanishDefinitions{Dictionary: &definitionFake{}, english: records}
+	dict := spanishDefinitions{Dictionary: monolingualDictionary{Dictionary: &definitionFake{}, language: "es"}, english: records}
 	set := definitionsFor(dict, "red", "red nombre femenino tejido", nil, true)
 	vocab := &memVocabulary{}
 	vocab.Add("red")
 	vocab.Add("net")
-	opt := RenderOpts{Color: true, Word: "red", Language: "es", Vocab: vocab, Tint: tintPolicy{lang: "es", background: languageDark}}
+	opt := RenderOpts{Color: true, Word: "red", Vocab: vocab, Tint: tintPolicy{lang: "es", background: languageDark}}
 	out, regions := renderDefinitions(set, opt)
 	assertDictionaryTint(t, out, "subir a la red", true)
 	assertDictionaryTint(t, out, "to go up to", false)

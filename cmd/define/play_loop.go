@@ -738,7 +738,7 @@ func boardPalette(opt options) play.Palette {
 func boardFooter(q play.Question, fig sittingFigures, pal palette, d deps, opt options) []string {
 	text := q.Prompt()
 	if p, ok := q.(practicePresenter); ok {
-		text = renderPracticePresentation(p.PromptPresentation(), d.lang, opt.tintFor(d.lang), nil, surfaceOf(q.Form()), q.Word())
+		text = renderPracticePresentation(p.PromptPresentation(), d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceOf(q.Form()), q.Word())
 	}
 	return append(strings.Split(text, "\n"), asChrome(practiceChrome(sittingBarPresentation(fig), d, opt), pal))
 }
@@ -1036,8 +1036,8 @@ func todaysQuestions(ctx context.Context, d deps, opt options, stdout, stderr io
 			// deriving it from the entry instead lets the two disagree —
 			// `jalapeno` in the deck against `jalapeño` on the head line, for
 			// which the CDN answers different URLs.
-			Word:     key,
-			Language: d.lang, Tint: opt.tintFor(d.lang),
+			Word:  key,
+			Tint:  opt.tintFor(d.lang),
 			Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
 		})
 		marks[key] = clickable{text: rendered, regions: rs}

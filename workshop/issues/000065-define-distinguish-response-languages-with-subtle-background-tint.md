@@ -172,6 +172,22 @@ total: 5.526
   browser color preview do not establish subjective contrast in every terminal
   font/theme; no claim of manual terminal screenshot inspection is made.
 
+- First mandatory close review returned REWORK with BR-1: active-dictionary
+  fallback can return prose in a different language from `/lang`. Reproduced
+  across ordinary lookup, Choice and Cloze reveals in an isolated committed
+  snapshot. Fix source provenance at dictionary assembly/definition sections;
+  class sweep also covers dictionary-derived practice option and panel glosses.
+  Source ownership is independently verified, with fallback unknown/neutral.
+
+- BR-1 correction verified: source-selection matrix covers missing/native-API
+  fallback, absent requested dictionary, mixed/bilingual metadata and known
+  monolingual IDs; wrappers preserve verified ownership. Lookup/Choice/Cloze
+  source-target matrix passed after failing on the reviewed implementation.
+  Practice gloss regressions cover unknown, foreign and matching sources.
+  Full Go suite, focused provenance/language/practice race (5.573s), vet, Linux
+  build and diff check passed again. Strict native Oxford ownership and all
+  dark/light/off PTY profiles passed again with the corrected source assembly.
+
 ## Revisions
 
 ### 2026-09-15 — Work order and scope confirmed

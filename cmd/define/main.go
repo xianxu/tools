@@ -1073,7 +1073,7 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	// recording by construction.
 	rendered, regions := renderDefinitions(set, RenderOpts{
 		Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d), Word: word,
-		Language: d.lang, Tint: opt.tintFor(d.lang),
+		Tint: opt.tintFor(d.lang),
 	})
 	// EVERY DECK WORD IN THE DEFINITION IS CLICKABLE TOO. Render already coloured
 	// them — with its own per-region base styles, which is why `already` is the

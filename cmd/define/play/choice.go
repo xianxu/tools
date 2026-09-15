@@ -131,7 +131,7 @@ func (c *Choice) render() promptBuilder {
 	p.owned(c.word, Target, false)
 	p.text("\n\n")
 	for i, o := range c.options {
-		p.option(i, o.Gloss)
+		p.option(i, o.Gloss, DictionarySource)
 		if o.Help != "" {
 			p.text("\n")
 			p.help(indentHelp(o.Help))
@@ -255,13 +255,13 @@ func (c *Choice) Reveal() string { return c.RevealPresentation().Text }
 func (c *Choice) RevealPresentation() Presentation {
 	var p promptBuilder
 	if i := c.correctIndex(); i >= 0 {
-		p.option(i, c.options[i].Gloss)
+		p.option(i, c.options[i].Gloss, DictionarySource)
 	}
 	if i := c.wrongPick(); i >= 0 {
 		p.text("\n\n")
 		p.owned("you chose", English, false)
 		p.text("\n")
-		p.option(i, c.options[i].Gloss)
+		p.option(i, c.options[i].Gloss, DictionarySource)
 	}
 	if c.definition != "" {
 		p.text("\n\n" + c.definition)

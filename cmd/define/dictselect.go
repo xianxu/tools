@@ -267,3 +267,39 @@ func baseLang(s string) string {
 	}
 	return s
 }
+
+// selectedSourceLanguage requires every actual selected ID to have the same
+// verified monolingual metadata. Missing, bilingual, or mixed metadata is unknown.
+func selectedSourceLanguage(installed []dictMeta, ids []string) store.Lang {
+	if len(ids) == 0 {
+		return ""
+	}
+	byID := make(map[string]dictMeta, len(installed))
+	for _, meta := range installed {
+		byID[meta.ID] = meta
+	}
+	var language store.Lang
+	for _, id := range ids {
+		meta, ok := byID[id]
+		if !ok || len(meta.Langs) == 0 {
+			return ""
+		}
+		candidate := meta.Langs[0].Index
+		if candidate == "" || !meta.monolingualIn(candidate) || language != "" && language != candidate {
+			return ""
+		}
+		language = candidate
+	}
+	return language
+}
+
+// dictionaryFromInstalled assembles the selected-ID source and its provenance
+// from the same selection. The unrestricted fallback cannot establish a source
+// language and therefore receives no monolingual annotation.
+func dictionaryFromInstalled(installed []dictMeta, lang store.Lang, makeSelected func([]string) Dictionary, fallback Dictionary) (Dictionary, string, string) {
+	ids, name, complaint := dictionaryFor(installed, lang)
+	if len(ids) == 0 {
+		return fallback, name, complaint
+	}
+	return monolingualDictionary{Dictionary: makeSelected(ids), language: selectedSourceLanguage(installed, ids)}, name, complaint
+}
