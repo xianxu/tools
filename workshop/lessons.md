@@ -4616,3 +4616,11 @@ selection and annotation still split it. Route all column readers through the
 same unit boundary, and test literal rows/copies independently of the terminal
 simulator. Region starts inside a wide unit must mark the whole unit and must
 not prevent later regions from being marked.
+
+
+## Trusted ANSI parsing is not untrusted control filtering (define #65 design)
+
+A renderer's escape scanner may support only the sequences the app emits.
+Before using it on external text, check string controls such as OSC/DCS, their
+terminators, incomplete sequences and bounded state. Verify both display and
+stored prose; dropping only the introducer can leave the payload behind.

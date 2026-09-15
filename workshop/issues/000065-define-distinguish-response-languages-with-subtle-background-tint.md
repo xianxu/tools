@@ -98,6 +98,8 @@ Design questions to resolve before implementation:
   styles dim English help. A shared explicit language representation should serve
   these consumers and generated replies rather than duplicate styling rules.
 
+- After #62 merged, claimed #65 and entered planning. The durable design and interactive dark/light preview are ready. Fresh review found that the existing escape grammar cannot sanitize full OSC/DCS model controls; the revised plan adds bounded constant-state filtering before annotation decoding, rendering and transcript storage. Re-review approved with no remaining Important gaps. Runtime implementation awaits operator approval; estimate deferred to the gate.
+
 ## Revisions
 
 ### 2026-09-15 — Work order and scope confirmed
@@ -106,3 +108,19 @@ User directed implementation of #62 first, then #65. Both concern bilingual
 presentation. #64 remains separate and larger: it learns the learner's habits
 and adapts how the program interacts with them. This ordering does not make
 #64 a prerequisite for language styling. Fresh spec review approved this capture.
+
+
+### 2026-09-15 — Concrete design after #62
+
+#62 merged as PR #47. Claimed #65 and ran start-plan. The proposed
+[implementation plan](../plans/000065-language-response-tint-plan.md) uses
+explicit ownership and one background composer, with bounded inline model
+annotations decoded before display and transcript storage. Oxford's supplement
+contains mixed Spanish/English inside individual glosses; preserve validated
+HTML provenance through selected records and parsed fields. Practice must retain
+its import-free producer-owned layout, including board footer and full reveals.
+
+Draft color choice is a neutral dark background, plus explicit light/off
+invocation options; theme preference was requested asynchronously. No runtime
+code changed and no estimate has been set. Plan and visual preview are for
+operator review before implementation.
