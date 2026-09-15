@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-14
 updated: 2026-09-14
-estimate_hours: 3.35
+estimate_hours: 6.02
 started: 2026-09-14T16:22:35-07:00
 ---
 
@@ -48,9 +48,19 @@ item: tui-screen design=0.2 impl=0.28
 item: cross-cutting-refactor design=0.2 impl=0.4
 item: atlas-docs design=0.02 impl=0.08
 item: milestone-review design=0 impl=0.16
+item: scope-pivot design=0.2 impl=0.2
+item: greenfield-go-module design=0.1 impl=0.2
+item: api-integration design=0.2 impl=0.4
+item: smaller-go-module design=0.04 impl=0.16
+item: tui-screen design=0.2 impl=0.28
+item: cross-cutting-refactor design=0.1 impl=0.2
+item: atlas-docs design=0.02 impl=0.08
+item: milestone-review design=0 impl=0.16
 design-buffer: 0.15
-total: 3.35
+total: 6.02
 ```
+
+Extension (assisted practice before answering, added after the scope pivot recorded in Revisions): the pivot itself, then in order the pure assistance validation module, the translation task integration over the existing llm client and llmtest fake, the per-deck cache store, the three practice-form presentations, the queue-preparation/Cloze/author-language cross-cutting wiring, docs, and one further close review round. Same v3.1 method and familiarity; design allowances keep the 0.2 discount because the durable plan already fixes the seams.
 
 
 ## Plan

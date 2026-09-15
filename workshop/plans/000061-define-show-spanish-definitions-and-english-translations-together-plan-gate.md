@@ -43,6 +43,41 @@ rounds:
           note: Plan line 166 identifies the 20-word workload, per-word and queue acceptance budgets, synchronous-call limitations, and profiling/re-plan behavior when exceeded.
           round: 2
       blocked: false
+    - "n": 3
+      timestamp: "2026-09-15T08:48:06-07:00"
+      agent: claude
+      findings:
+        - id: PQ-4
+          severity: Important
+          title: Name the tests that pin practice as offline and the narrowed invariant they must assert.
+          detail: TestAClozeSittingNeverReachesForTheModel (cmd/define/cloze_test.go:350) and TestSessionRunsWithTheModelUnavailable (cmd/define/play_loop_test.go:233) panic the model seam inside todaysQuestions; atlas/define.md:1486-1491 calls it a promise. The plan only says "update offline-practice comments". State the new invariant (off never reaches; warm cache constructs no client; cold cache reaches once before the first question, never inside playSession) and keep the panicking-seam shape (ARCH-MOCK, ARCH-PURPOSE).
+          family: invariant-reversal-names-enforcer
+          round: 3
+        - id: PQ-5
+          severity: Important
+          title: Extension task rows are prose case lists; no test is named per new production surface.
+          detail: '2nd finding in this family. Rule: every revision adding a production surface adds a PQ-1 table row (surface, named test plus adversarial class, mechanical guard) and a Done-when row. Apply once to the six new concepts (checked translation, preparation client, cache store, form presentations, question-preparation boundary, author language) and compress the case lists.'
+          family: function-level-test-strategy
+          round: 3
+        - id: PQ-6
+          severity: Minor
+          title: Assistance budgets state values without basis or derived first-run load.
+          detail: '2nd finding in this family. Rule: each budget line carries value, basis, and derived load at the declared workload. A 20-word queue is roughly 80-100 sources, so 5-7 sequential proxy calls inside the 30 s cap on a cold cache; say whether that is measured or assumed (ARCH-CONSTRAINTS).'
+          family: explicit-operating-envelope
+          round: 3
+        - id: PQ-7
+          severity: Minor
+          title: Opt-in live translation conformance has no cadence.
+          detail: '2nd finding in this family. Rule: the PQ-2 cadence policy applies to every live check in the plan; reword PQ-2 to cover native dictionary and live translation checks alike (ARCH-MOCK).'
+          family: live-conformance-cadence
+          round: 3
+        - id: PQ-8
+          severity: Minor
+          title: Undeclared overlap with in-flight issue 54 at the practice startup seam and per-deck writes.
+          detail: Issue 54 (working, branch 000054-background-harvest) adds a session state machine, a lock for every dictionary call, and background per-deck writes. This extension adds foreground model preparation in todaysQuestions and a new per-deck cache file. Declare the ordering and the lock/concurrent-writer interaction (ARCH-ORDER).
+          family: cross-issue-dep-declared
+          round: 3
+      blocked: true
 content_hash: c0efa636ad42ecd0e665b0d0496ae70b33a3e8f24feb99ef16552ac7d69b4636
 ---
 
@@ -70,6 +105,25 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - PQ-2 — addressed — Plan line 164 requires strict native conformance before dictionary-changing releases and after macOS upgrades, with recorded evidence.
 - PQ-3 — addressed — Plan line 166 identifies the 20-word workload, per-word and queue acceptance budgets, synchronous-call limitations, and profiling/re-plan behavior when exceeded.
 
+## Round 3 — 2026-09-15T08:48:06-07:00 (claude) — BLOCKED
+
+### Raised
+
+- **PQ-4** [Important] `invariant-reversal-names-enforcer` Name the tests that pin practice as offline and the narrowed invariant they must assert.
+  TestAClozeSittingNeverReachesForTheModel (cmd/define/cloze_test.go:350) and TestSessionRunsWithTheModelUnavailable (cmd/define/play_loop_test.go:233) panic the model seam inside todaysQuestions; atlas/define.md:1486-1491 calls it a promise. The plan only says "update offline-practice comments". State the new invariant (off never reaches; warm cache constructs no client; cold cache reaches once before the first question, never inside playSession) and keep the panicking-seam shape (ARCH-MOCK, ARCH-PURPOSE).
+- **PQ-5** [Important] `function-level-test-strategy` Extension task rows are prose case lists; no test is named per new production surface.
+  2nd finding in this family. Rule: every revision adding a production surface adds a PQ-1 table row (surface, named test plus adversarial class, mechanical guard) and a Done-when row. Apply once to the six new concepts (checked translation, preparation client, cache store, form presentations, question-preparation boundary, author language) and compress the case lists.
+- **PQ-6** [Minor] `explicit-operating-envelope` Assistance budgets state values without basis or derived first-run load.
+  2nd finding in this family. Rule: each budget line carries value, basis, and derived load at the declared workload. A 20-word queue is roughly 80-100 sources, so 5-7 sequential proxy calls inside the 30 s cap on a cold cache; say whether that is measured or assumed (ARCH-CONSTRAINTS).
+- **PQ-7** [Minor] `live-conformance-cadence` Opt-in live translation conformance has no cadence.
+  2nd finding in this family. Rule: the PQ-2 cadence policy applies to every live check in the plan; reword PQ-2 to cover native dictionary and live translation checks alike (ARCH-MOCK).
+- **PQ-8** [Minor] `cross-issue-dep-declared` Undeclared overlap with in-flight issue 54 at the practice startup seam and per-deck writes.
+  Issue 54 (working, branch 000054-background-harvest) adds a session state machine, a lock for every dictionary call, and background per-deck writes. This extension adds foreground model preparation in todaysQuestions and a new per-deck cache file. Declare the ordering and the lock/concurrent-writer interaction (ARCH-ORDER).
+
 ## Open findings
 
-(none — every finding has been disposed)
+- **PQ-4** [Important] `invariant-reversal-names-enforcer` Name the tests that pin practice as offline and the narrowed invariant they must assert.
+- **PQ-5** [Important] `function-level-test-strategy` Extension task rows are prose case lists; no test is named per new production surface.
+- **PQ-6** [Minor] `explicit-operating-envelope` Assistance budgets state values without basis or derived first-run load.
+- **PQ-7** [Minor] `live-conformance-cadence` Opt-in live translation conformance has no cadence.
+- **PQ-8** [Minor] `cross-issue-dep-declared` Undeclared overlap with in-flight issue 54 at the practice startup seam and per-deck writes.
