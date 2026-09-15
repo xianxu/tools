@@ -57,7 +57,8 @@ total: 3.35
 
 - [x] Complete and review [the durable plan](../plans/000061-bilingual-definitions-plan.md), including a native direction-selection probe.
 - [x] Implement dictionary sections, shared rendering, and consumer wiring with regression tests.
-- [ ] Verify, document, close review, and merge.
+- [x] Verify and document the original definition/reveal implementation.
+- [ ] Implement and verify pre-answer English practice assistance from the revised durable plan, then close review and merge.
 
 ## Log
 
@@ -111,3 +112,19 @@ compact glosses and grading keep their primary-language identity. The plan now
 names the actual Choice/Cloze, inflection-audio and Spanish-parser tests. Moved
 Estimate before Plan so this Revisions section remains last, preserving all prior
 revision entries. Progress checkboxes do not claim final verification or closure.
+
+### 2026-09-14 — Close boundary prepared
+
+Reworded the final checklist row to describe completed preparation. Close review and merge are the following SDLC gates, not work claimed complete before entering them. Full and committed-window guards passed.
+
+### 2026-09-14 — Beginner assistance before answering
+
+User clarified that English is necessary while answering, not merely afterward.
+Bilingual on controls Choice option definitions, a blank-preserving Cloze context
+translation, Board gloss help and full reveals. Off is Spanish-only throughout.
+The revised durable plan proposes cached exact-text translations prepared through
+CLIProxyAPI before practice, with the existing spinner and explicit outage behavior.
+This supersedes prior post-answer-only scope; do not close/merge until implemented.
+BR-1 metadata diagnosis has been fixed with an observed failing/passing factory
+regression; BR-2 concept classifications are corrected. Updated practice plan
+awaits approval before additional implementation.

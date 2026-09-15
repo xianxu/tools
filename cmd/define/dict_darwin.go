@@ -174,7 +174,6 @@ char *noad_lookup(const char *word, int *status) {
 import "C"
 
 import (
-	"fmt"
 	"io"
 	"unsafe"
 
@@ -291,12 +290,7 @@ func (noadDictionary) Lookup(word string) (string, error) {
 func systemDictionary(lang store.Lang, warn io.Writer) (Dictionary, string) {
 	installed := installedDictionaries()
 	if lang == "es" {
-		ids, name := spanishDictionarySources(installed)
-		var primary Dictionary = unavailableDictionary{fmt.Errorf("Spanish dictionary unavailable: enable Spanish (Larousse Diccionario General) in Dictionary → Settings and wait for the download")}
-		if len(ids) > 0 {
-			primary = selectedDictionary{ids: ids}
-		}
-		return spanishDefinitions{Dictionary: primary, english: newSpanishEnglishSource()}, name
+		return spanishDictionaryFromInstalled(installed, func(ids []string) Dictionary { return selectedDictionary{ids: ids} }, newSpanishEnglishSource())
 	}
 	ids, name, complaint := dictionaryFor(installed, lang)
 	if complaint != "" {

@@ -4478,3 +4478,7 @@ into the correct quiz answer.
 Bilingual renderers own language-specific action regions. Consumer passes must
 preserve that ownership through composition, including partial first/last lines;
 test both screen actions and copied text with a word shared across languages.
+
+Availability has three states: present, absent after successful enumeration, and
+unknown because enumeration failed. Test the effective factory/lookup diagnostic,
+not only its status label, so an unavailable API never becomes installation advice.

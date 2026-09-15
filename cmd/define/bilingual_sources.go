@@ -1,5 +1,21 @@
 package main
 
+import "fmt"
+
+// spanishDictionaryFromInstalled is the portable factory used by the native
+// shell. makePrimary constructs the selected-ID adapter without fetching a word;
+// english owns its separate record API and remains usable independently.
+func spanishDictionaryFromInstalled(installed []dictMeta, makePrimary func([]string) Dictionary, english recordSource) (Dictionary, string) {
+	ids, name := spanishDictionarySources(installed)
+	var primary Dictionary = unavailableDictionary{fmt.Errorf("Spanish dictionary unavailable: enable Spanish (Larousse Diccionario General) in Dictionary → Settings and wait for the download")}
+	if installed == nil {
+		primary = unavailableDictionary{fmt.Errorf("Spanish dictionary availability unknown: dictionary-selection API unavailable: %w", ErrLookupFailed)}
+	} else if len(ids) > 0 {
+		primary = makePrimary(ids)
+	}
+	return spanishDefinitions{Dictionary: primary, english: english}, name
+}
+
 // spanishDictionarySources derives both construction and its displayed status
 // from the same installed set. A missing metadata API means unknown availability,
 // not evidence that a dictionary is absent. Oxford's misleading language pairs

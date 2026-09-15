@@ -10,18 +10,21 @@
 
 ## Core concepts
 
-| Name | Lives in | Status |
-|------|----------|--------|
-| `bilingualRecord` / `selectSpanishRecords` | `cmd/define/bilingual.go` | new |
-| `definitionSection` / `definitionSet` / `definitionsFor` / `renderDefinitions` | `cmd/define/definitions.go` | new |
-| `parseBilingualArgs` / `runBilingual` / `sessionSetBilingual` | `cmd/define/bilingual_cmd.go` | new |
-| `ReadBilingual` / `WriteBilingual` | `cmd/define/store/bilingual.go` | new |
-| `systemDictionary` | `cmd/define/dict_darwin.go` | modified |
-| `spanishDictionarySources` | `cmd/define/bilingual_sources.go` | new |
-| `clozeAsk` | `cmd/define/cloze.go` | modified |
-| `todaysQuestions` | `cmd/define/play_loop.go` | modified |
-| `lookupAndRender` / `writeWords` | `cmd/define/main.go` | modified |
-| `posWords` | `cmd/define/parse.go` | modified |
+| Name | Lives in | Status | Kind |
+|------|----------|--------|------|
+| `bilingualRecord` / `selectSpanishRecords` | `cmd/define/bilingual.go` | new | PURE |
+| `definitionSection` / `definitionSet` / `renderDefinitions` | `cmd/define/definitions.go` | new | PURE |
+| `definitionsFor` | `cmd/define/definitions.go` | new | INTEGRATION |
+| `parseBilingualArgs` | `cmd/define/bilingual_cmd.go` | new | PURE |
+| `runBilingual` / `sessionSetBilingual` | `cmd/define/bilingual_cmd.go` | new | INTEGRATION |
+| `ReadBilingual` / `WriteBilingual` | `cmd/define/store/bilingual.go` | new | INTEGRATION |
+| `systemDictionary` | `cmd/define/dict_darwin.go` | modified | INTEGRATION |
+| `spanishDictionarySources` | `cmd/define/bilingual_sources.go` | new | PURE |
+| `spanishDictionaryFromInstalled` | `cmd/define/bilingual_sources.go` | new | INTEGRATION |
+| `clozeAsk` | `cmd/define/cloze.go` | modified | INTEGRATION |
+| `todaysQuestions` | `cmd/define/play_loop.go` | modified | INTEGRATION |
+| `lookupAndRender` / `writeWords` | `cmd/define/main.go` | modified | INTEGRATION |
+| `posWords` | `cmd/define/parse.go` | modified | PURE |
 
 
 `bilingualRecord` contains copied XHTML metadata and flat source text from one native record. Pure selection reads the root `d:entry` identifier and title using a bounded standard-library XML token walk. Oxford's measured Spanish→English IDs contain `s_b-es-en`; English→Spanish IDs contain `e_b-en-es`. Accept only the verified Spanish family and a usable title/text, reject unknown roots/directions, deduplicate by ID, and preserve distinct Spanish homographs. Prefer exact case-insensitive title matches, then diacritic-equivalent titles, then the primary Spanish entry's canonical headword for inflections. If no verified title matches, report a direction/entry selection miss rather than guess among unrelated search results. Tests pin this decision order using independently captured records.
@@ -89,7 +92,7 @@ Files: main.go, play_loop.go, cloze.go, relevant main/editor/play/selection test
 - [x] Add fake-driven end-to-end tests for one-shot, editor, language switch, practice reveal, partial availability, zero LLM calls, one capture, Spanish audio (including initial audio and headword replay for inflected madrugaste), raw byte equality, and copy/region coordinates across both sections.
 - [x] Document enabling Spanish Larousse and Spanish–English Oxford in Dictionary.app settings, waiting for downloads, and `define -lang es madrugar` / `/lang es`. Explain section ordering and partial setup diagnostics.
 - [x] Run `go test ./cmd/define/...`, focused new race tests, `go vet ./...`, `GOOS=linux CGO_ENABLED=0 go build ./...`, strict native conformance and existing release-stamp check. Confirm no-data-loss and language-isolation guards have meaningful updated expectations.
-- [ ] Commit, run one `sdlc close --issue 61 --verified '<actual evidence>'`, address findings, and merge via SDLC. Release is a separate requested action.
+- [x] Commit verified implementation and prepare evidence for one `sdlc close --issue 61 --verified '<actual evidence>'`. Address gate findings and merge via SDLC afterward. Release is a separate requested action.
 
 ## Architectural checks
 
@@ -233,8 +236,122 @@ covers source availability (see its exact test declaration for subcases).
 The screen test also rejects a Spanish action on English red. The native assembled
 factory check compares off and raw with the original primary entry.
 
+
+## Revision: assisted practice before answering (2026-09-14)
+
+**Status:** design ready for approval. User clarification supersedes the prior
+post-answer-only baseline: a beginner needs English assistance while answering;
+turning bilingual off later removes that assistance. Keep the implemented
+lookup/reveal work and the reviewed metadata fix; do not close or merge #61 until
+this extension is implemented and verified.
+
+### Behavior
+
+- Meaning choices: Spanish first, then an English translation of each displayed
+  definition. Translate every option equally; do not translate the target
+  headword or identify the correct option. Preserve choice order and grading.
+- Cloze: Spanish blanked sentence, then its English translation with the same
+  blank. Choices remain Spanish words. Never translate the restored sentence
+  before grading or send it to the assistance task.
+- Board: keep the Spanish grid; show Spanish then English in the selected word's
+  gloss panel. It is self-assessment, so explaining that word is intentional.
+  Bilingual non-English boards reserve two panel rows from construction: one
+  per language, clipped independently to width, even if help is unavailable.
+  The same row budget drives Rows/boardFits and fallback selection. Grid columns
+  and hit coordinates stay unchanged; no asynchronous help can resize a board.
+- Full answer explanations remain Spanish then English as already implemented.
+  Off means all of these surfaces are Spanish-only, with no assistance cache or
+  model work. English decks remain unchanged.
+- Prepare help before the first question using the configured CLIProxyAPI model
+  and common Braille spinner. Reuse cached successful translations in later
+  sessions. A missing model or failed translation gives one concise warning and
+  leaves original Spanish material playable; never single out the right answer
+  by translating only one option.
+
+### Additional concepts and integration
+
+| Concept | Planned location | Kind | Responsibility |
+|---------|------------------|------|----------------|
+| Assistance source and checked translation | cmd/define/practice_help.go | PURE | Versioned source-language/mode/exact-text identity, bounded response validation and blank preservation |
+| Assistance preparation | cmd/define/practice_help_client.go | INTEGRATION | Existing llm.Client/task, foreground spinner, cancellation, one queue's deduplicated batches and warning |
+| Assistance cache | cmd/define/store/practice_help.go | INTEGRATION | Atomic per-deck bounded cache; in-memory fallback without a writable deck |
+| Choice/Cloze/Board help presentation | cmd/define/play/choice.go, cloze.go, board.go | PURE | Spanish-first rendering with original grading/identity and independent English spans |
+| Question preparation boundary | cmd/define/play_loop.go, cloze.go | INTEGRATION | Both direct and nested practice prepare help before playback starts |
+| Explicit authoring language | cmd/define/harvest_item.go | PURE | Require authored sentences in the selected language, including Spanish |
+
+ARCH-DRY: one exact-text translation adapter serves all forms. Do not substitute
+Oxford's first headword gloss for translation of a selected Larousse sense.
+ARCH-PURE: model requests receive displayed prose only, not answer indexes,
+Correct flags, Axis, or hidden headwords. Keep model/cache IO outside package play.
+Choice receives English only after every option validates. Cloze requests receive
+already blanked prose and preserve the exact count of a reserved placeholder;
+reject missing/extra placeholders, empty/oversized/control-character output, or
+the target answer copied into assistance. English assistance must not inherit
+Spanish vocabulary/audio actions; both languages remain selectable.
+
+ARCH-CONSTRAINTS: cap one source at 4 KiB, one response at 8 KiB, a batch at 16
+sources/32 KiB, and one queue preparation at 30 seconds with cancellation. Dedup
+source texts before model work; cache hits cost no model calls. At a limit, warn
+once and retain Spanish-only material for incomplete questions. No retries in
+foreground beyond the existing bounded client policy; failures are not cached.
+
+
+Cache hits are untrusted data and pass the same structural validation as fresh
+responses plus current-question checks (including the current Cloze answer).
+The shared content key does not exempt cached prose from question-specific leak
+checks. An unusable hit becomes a miss; never apply a partial Choice set.
+
+ARCH-FUNERAL: practice preparation owns a single versioned practice-help.json
+cache per deck, partitioned by source language and exact source/mode/version key.
+Read at most 1 MiB; write at most 512 entries and 1 MiB, evicting oldest entries
+before atomic replacement. No append log. Content changes naturally miss; old
+policy versions are discarded on rewrite. Deleting the deck removes the cache.
+No-capture or declined deck permission uses only session memory; cache write
+failure retains the valid live translation. Reuse existing permission and atomic
+write helpers; register the runtime filename and gitignore entry.
+
+### Implementation and verification tasks
+
+- [ ] Add source/response validation tables and fuzzing before implementation:
+  exact option association; completeness; unchanged Spanish/order/grades;
+  placeholder mismatch, target leakage, control text and size limits. Use
+  independent expected strings, not the production transformation as oracle.
+- [ ] Add a real temp-directory cache suite and stateful memory equivalent:
+  first request fetches, restart hits, text/language/mode/version misses,
+  eviction bounds, corrupt files, failed atomic writes, no-capture and off.
+- [ ] Implement assistance preparation using existing structured llm tasks and
+  stateful llmtest service. Assert request bodies exclude hidden answer metadata;
+  simulate partial responses, malformed output, outage, delayed cancellation,
+  cache hits, bounded batches and one warning. No failures enter the cache.
+- [ ] Wire both standalone and nested /play queue startup. Refactor Cloze item
+  selection once so the blanked text being translated is exactly what renders.
+  Update prior prompt-identity tests: off equals original, on includes complete
+  equal help; selection, answers, grades, capture and audio remain unchanged.
+- [ ] Add pure form presentation and terminal integration tests for Choice,
+  Cloze and Board at narrow widths, English action isolation, selection/copy,
+  unchanged grid hit-testing and safe spinner cancellation. Add an explicit
+  Spanish author prompt requirement and fake-driven authoring regression.
+- [ ] Update README/atlas and existing offline-practice comments: preparation can
+  call the proxy once for uncached material; answering uses prepared local data.
+  Add opt-in live translation conformance for Spanish polysemy and blank safety.
+- [ ] Run focused red/green/fuzz/race tests, full Go suite, native conformance,
+  vet, Linux build and repository guards; then rerun close review and merge.
+
+The extension changes latency and introduces cached model translations, so it
+needs explicit plan approval under AGENTS.md §2 before new implementation.
+
 ## Revisions
 
 - 2026-09-14: Moved the record boundary to the end of the document so later approved scope updates and verification contracts remain visible to repository guards. The dated design/implementation updates above retain the decision trail. Updated the Core concepts table to exact implemented symbol paths and added test-backed Done when rows. No user behavior changed.
 
 - 2026-09-14: Reconciled implemented Choice/Cloze post-answer scope and actual test symbols, recorded focused verification, and checked only evidenced implementation rows. Preserved optional pre-answer help as unanswered and left final verification/close and incompletely covered composite rows open.
+
+- 2026-09-14: Final checklist now records completed gate preparation; the close review and merge themselves remain subsequent SDLC transitions. Committed-window repository guards passed.
+
+- 2026-09-14 (BR-2): Classified core concepts as PURE or INTEGRATION and split mixed parser/effect rows. This clarifies verification boundaries without changing behavior.
+
+- 2026-09-14 (BR-1): Extracted the Spanish factory through `spanishDictionaryFromInstalled` so its metadata-failure diagnostics are tested at actual lookup/composition. `TestBilingualFactoryMetadataDiagnostic` distinguishes failed enumeration (nil) from confirmed empty installation, with usable and absent English. Unknown primary availability reports the metadata failure rather than download advice.
+
+- 2026-09-14: User confirmed English assistance must be available before answering because pure Spanish exceeds their current level. Added the assisted-practice design above; this supersedes earlier post-answer-only statements. Existing implementation is retained but the issue remains open pending this extension.
+
+- 2026-09-14: Fresh assistance-plan review identified panel row budgeting and per-question cache validation. Added a shared two-row bilingual Board budget and mandatory structural/current-answer validation on cache hits; both findings are resolved in the design.
