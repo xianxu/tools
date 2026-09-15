@@ -368,6 +368,7 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 				// only in the raw editor's submit path (PQ-2).
 				cc := newCommandCtx(d, opt, stdout, stderr)
 				cc.setTimes = func(n int) { opt.times = n }
+				cc.setBilingual = sessionSetBilingual(&d, d.persistBilingual)
 				cc.entry = sess.entry
 				cc.setLang = sessionSetLang(&d, &opt, cc.setLang, nil, stderr)
 				// /pron records a request rather than playing, so the language

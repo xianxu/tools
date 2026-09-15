@@ -382,7 +382,7 @@ func renderAuthorPrompt(lang store.Lang, word, gloss string, facts store.WordFac
 	// REQUIREMENTS, not preferences, and the reason is measured: asked for a
 	// natural sentence the model drifts to the neutral and unnamed, and an
 	// unnamed subject gives the learner no referent to attach the word to.
-	b.WriteString("Three requirements:\n\n")
+	b.WriteString("Four requirements:\n\n")
 	b.WriteString("1. **The sentence must POINT AT the word without defining it.** A reader who knows " +
 		"the word must find it the obvious fit; a reader who does not must be left guessing. " +
 		"\"His ___ behaviour was noted by all\" is too loose — almost any adjective fits.\n")
@@ -406,6 +406,11 @@ func renderAuthorPrompt(lang store.Lang, word, gloss string, facts store.WordFac
 	b.WriteString("   - \"The road climbs 300 metres from the valley floor to the ___ above Monument Valley.\"\n\n")
 	b.WriteString("3. **Name real people, places or institutions.** Not \"a manager\" or \"the company\" — " +
 		"a named subject the reader can picture. This is what the word attaches to in memory.\n\n")
+	// THE LANGUAGE AS A REQUIREMENT, not only the header line above (#61). With a
+	// Spanish word and English examples, the header alone left the model free to
+	// write an English sentence around a Spanish word.
+	fmt.Fprintf(&b, "4. **Write the whole sentence in the language with IETF code `%s`**, the word's own "+
+		"language, the way a native reader of it would write.\n\n", lang)
 	b.WriteString("Write the sentence with the word itself present, spelled exactly as given. " +
 		"Do not blank it out; do not quote it; do not explain it afterwards.\n\n")
 

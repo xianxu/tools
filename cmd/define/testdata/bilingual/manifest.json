@@ -1,0 +1,65 @@
+{
+  "dictionary": "com.apple.dictionary.OxfordSpanish",
+  "version": "1.1",
+  "captured": "2026-09-14",
+  "method": "Independent Python ctypes: DCSCopyRecordsForSearchString(dictionary, query, 0, 100); DCSRecordCopyData(record, 0 and 3)",
+  "expected_direction": "es-en",
+  "queries": {
+    "red": [
+      "e_b-en-es0039610",
+      "e_b-en-es0039938",
+      "s_b-es-en0040093"
+    ],
+    "mesa": [
+      "s_b-es-en0031072"
+    ],
+    "madrugar": [
+      "s_b-es-en0029507"
+    ],
+    "arbol": [
+      "s_b-es-en0003555"
+    ],
+    "jalapeno": [
+      "s_b-es-en0027354"
+    ],
+    "como": [
+      "s_b-es-en0011094",
+      "s_b-es-en0011095",
+      "s_b-es-en0011149",
+      "s_b-es-en0011150",
+      "s_b-es-en0011151",
+      "s_b-es-en0011152",
+      "s_b-es-en0011153"
+    ],
+    "solo": [
+      "e_b-en-es0045649",
+      "s_b-es-en0043653",
+      "s_b-es-en0043654",
+      "s_b-es-en0043724",
+      "s_b-es-en0043725",
+      "s_b-es-en0043725",
+      "s_b-es-en0043726",
+      "s_b-es-en0043727"
+    ],
+    "pie": [
+      "e_b-en-es0036275",
+      "s_b-es-en0036460",
+      "s_b-es-en0036460",
+      "s_b-es-en0036548",
+      "s_b-es-en0036549"
+    ],
+    "son": [
+      "e_b-en-es0045701",
+      "s_b-es-en0042825",
+      "s_b-es-en0042826",
+      "s_b-es-en0043779",
+      "s_b-es-en0043780"
+    ],
+    "madrugaste": [
+      "s_b-es-en0029507"
+    ],
+    "mesas": [
+      "s_b-es-en0031072"
+    ]
+  }
+}

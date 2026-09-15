@@ -30,7 +30,7 @@ Law a writ by which a higher court reviews a lower court's decision
 
 ONE sentence using the word, which will be shown with the word blanked out.
 
-Three requirements:
+Four requirements:
 
 1. **The sentence must POINT AT the word without defining it.** A reader who knows the word must find it the obvious fit; a reader who does not must be left guessing. "His ___ behaviour was noted by all" is too loose — almost any adjective fits.
 2. **Never gloss the word.** The sentence must not contain a definition of it — not as an appositive, not as a relative clause, not as a contrast. These are all WRONG:
@@ -45,6 +45,8 @@ Three requirements:
    - "The road climbs 300 metres from the valley floor to the ___ above Monument Valley."
 
 3. **Name real people, places or institutions.** Not "a manager" or "the company" — a named subject the reader can picture. This is what the word attaches to in memory.
+
+4. **Write the whole sentence in the language with IETF code `en`**, the word's own language, the way a native reader of it would write.
 
 Write the sentence with the word itself present, spelled exactly as given. Do not blank it out; do not quote it; do not explain it afterwards.
 

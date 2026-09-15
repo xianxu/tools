@@ -223,20 +223,21 @@ func TestSuggestionMatchesWhatTabAccepts(t *testing.T) {
 	h.Add("/history")
 	rig.deps.history = h
 
+	want := commandCompletions("", commands)[0]
 	var out, errb bytes.Buffer
 	runEditor(t.Context(), scriptKeys("/\x03"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	if strings.Contains(out.String(), greyOn+"history") {
 		t.Errorf("typing / suggested from HISTORY; the menu below it lists commands: %q", out.String())
 	}
-	if !strings.Contains(out.String(), greyOn+"help") {
+	if !strings.Contains(out.String(), greyOn+strings.TrimPrefix(want, "/")) {
 		t.Errorf("no command suggestion after /: %q", out.String())
 	}
 
 	// And the acceptance agrees: Tab commits the tail that was shown.
 	out.Reset()
 	runEditor(t.Context(), scriptKeys("/\t\x03"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
-	if !strings.Contains(out.String(), "/help") {
+	if !strings.Contains(out.String(), want) {
 		t.Errorf("Tab did not accept the suggestion that was displayed: %q", out.String())
 	}
 }

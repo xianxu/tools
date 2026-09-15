@@ -36,6 +36,11 @@ type Cloze struct {
 	// would teach less than the easier form did. The restored sentence is the
 	// payload; this is what you read when the payload was not enough.
 	definition string
+	// help is the blanked stem in English, drawn under it BEFORE answering; ""
+	// is none. It keeps the blank — main's checker refuses a translation that
+	// drops a ___ or names the answer — so it restates the question rather than
+	// answering it.
+	help string
 }
 
 // NewCloze takes a finished item: the stem already blanked, the same stem
@@ -52,21 +57,52 @@ func NewCloze(word, blanked, restored, definition string, options []Option) *Clo
 
 func (c *Cloze) Word() string { return c.word }
 
-// Prompt is the blanked sentence, a blank line, then the numbered words.
+// Blanked is the stem exactly as Prompt shows it: the text a translation of the
+// question is made from, since the restored stem carries the answer.
+func (c *Cloze) Blanked() string { return c.blanked }
+
+// SetHelp sets the stem's English; "" clears it. One string where Choice takes
+// one per option: the stem is a cloze question's only prose, and its options
+// are the deck words under test.
+func (c *Cloze) SetHelp(english string) { c.help = english }
+
+// Prompt is the blanked sentence, its English under it when SetHelp gave one,
+// a blank line, then the numbered words.
 //
 // UNLIKE Choice, the first line is NOT the headword — showing it would answer
 // the question. #38's clickable-prompt premise (line 0, column 0, width
 // len(word)) is Choice's and does not hold here; a cloze prompt has no headword
 // to click, and #38 must not assume one.
 func (c *Cloze) Prompt() string {
-	s := c.blanked + "\n\n"
+	s, _ := c.render()
+	return s
+}
+
+// HelpLines is which lines of Prompt are English help, as Choice.HelpLines
+// defines it. nil when no help is set.
+func (c *Cloze) HelpLines() []int {
+	_, lines := c.render()
+	return lines
+}
+
+// render is Prompt and HelpLines from one walk, for the reason Choice.render
+// gives. The stem may itself span lines, which is exactly the count a separate
+// index would get wrong.
+func (c *Cloze) render() (string, []int) {
+	var p promptBuilder
+	p.text(c.blanked)
+	if c.help != "" {
+		p.text("\n")
+		p.help(c.help)
+	}
+	p.text("\n\n")
 	for i, o := range c.options {
-		s += optionLine(i, o.Word)
+		p.text(optionLine(i, o.Word))
 		if i < len(c.options)-1 {
-			s += "\n"
+			p.text("\n")
 		}
 	}
-	return s
+	return p.s, p.helps
 }
 
 // Reveal is the sentence RESTORED — which is the whole point of the form, and

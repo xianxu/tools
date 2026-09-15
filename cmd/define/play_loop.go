@@ -82,7 +82,7 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 		return 1
 	}
 
-	questions, held, code := todaysQuestions(d, opt, stdout, stderr)
+	questions, held, code := todaysQuestions(ctx, d, opt, stdout, stderr)
 	if code != 0 || len(questions) == 0 {
 		return code
 	}
@@ -887,10 +887,10 @@ const boardBox = 3
 // The caller owes those words a form: form 2.3 where one can be built, and a skip
 // only where neither is possible. Returning them rather than skipping them here is
 // what keeps that decision at the one place that has the entries (#42 PQ-1).
-func packBoards(words []string, opt options) (boards [][]string, undrawable []string) {
+func packBoards(words []string, opt options, panel int) (boards [][]string, undrawable []string) {
 	for len(words) > 0 {
 		n := min(len(words), play.MaxBoardWords)
-		for n > 0 && !boardFits(words[:n], opt) {
+		for n > 0 && !boardFits(words[:n], opt, panel) {
 			n--
 		}
 		if n == 0 {
@@ -909,13 +909,14 @@ func packBoards(words []string, opt options) (boards [][]string, undrawable []st
 // therefore how many rows — and `displayRows` owns how tall a line is once the
 // terminal has wrapped it. Neither is re-derived here.
 //
-// Glosses are left out of the probe: the panel is one row whatever it says, so
-// they cannot change the answer.
+// Glosses are left out of the probe: the panel's height is fixed at construction
+// (one row, or two with English help, #61) whatever it says, so they cannot
+// change the answer.
 //
 // The width check is separate and blunt: below minWrapWidth this program already
 // treats the terminal as too narrow to lay text out at all, and a board there
 // would be columns of truncated stubs.
-func boardFits(words []string, opt options) bool {
+func boardFits(words []string, opt options, panel int) bool {
 	cells := make([]play.Cell, len(words))
 	for i, w := range words {
 		cells[i] = play.Cell{Word: w}
@@ -925,7 +926,7 @@ func boardFits(words []string, opt options) bool {
 	// THE SAME QUESTION THE FRAME WILL ASK, through the same helper — so a board
 	// offered at selection is one the draw agrees is whole, and neither can
 	// acquire a rule the other lacks.
-	return boardFitsIn(play.NewBoard(cells, opt.width, play.Palette{}), opt.rows, opt.width)
+	return boardFitsIn(play.NewBoardPanel(cells, opt.width, play.Palette{}, panel), opt.rows, opt.width)
 }
 
 // todaysQuestions builds the queue: fold the log, ask the schedule, render each
@@ -937,7 +938,7 @@ func boardFits(words []string, opt options) bool {
 // would pay ~5,700 file reads per question on a 5,000-word deck with two years
 // of log — with a person waiting. These two reads are the sitting's only ones,
 // and everything after them happens in memory.
-func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Question, *sittingDeck, int) {
+func todaysQuestions(ctx context.Context, d deps, opt options, stdout, stderr io.Writer) ([]play.Question, *sittingDeck, int) {
 	deck, err := d.deck.Deck()
 	if err != nil {
 		fmt.Fprintf(stderr, "define: could not read the deck: %v\n", err)
@@ -1003,14 +1004,14 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// them — it is mechanically guarded pure and `Region` lives in main — so
 		// the loop keeps its own word→regions map, built here, where the entry is
 		// rendered and the coordinates are true.
-		rendered, rs := Render(entry, RenderOpts{
+		rendered, rs := renderDefinitions(definitionsFor(d.dict, key, entry.Raw, nil, d.bilingualEnabled()), RenderOpts{
 			// Word is IDENTITY, not presentation, and RenderOpts says so: a
 			// click on the headword replays the word the deck holds, and
 			// deriving it from the entry instead lets the two disagree —
 			// `jalapeno` in the deck against `jalapeño` on the head line, for
 			// which the CDN answers different URLs.
 			Word:  key,
-			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
+			Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
 		})
 		marks[key] = clickable{text: rendered, regions: rs}
 		return play.NewChoice(key, rendered, opts)
@@ -1055,7 +1056,14 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		triage = append(triage, key)
 	}
 
-	boards, undrawable := packBoards(triage, opt)
+	// A BILINGUAL BOARD RESERVES ITS ENGLISH PANEL ROW FROM CONSTRUCTION (#61),
+	// help or no help, so the fit decided here is the fit drawn later and a board
+	// never grows a row when its English arrives.
+	panel := 1
+	if helpWanted(d) {
+		panel = 2
+	}
+	boards, undrawable := packBoards(triage, opt, panel)
 
 	// A TERMINAL TOO SHORT FOR ANY BOARD, which is all-or-nothing (see
 	// packBoards). D15's fallback holds for the words it always covered: form 2.3
@@ -1107,7 +1115,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			cells = append(cells, play.Cell{Word: key, Gloss: gloss})
 		}
 		if len(cells) > 0 {
-			qs = append(qs, play.NewBoard(cells, opt.width, boardPalette(opt)))
+			qs = append(qs, play.NewBoardPanel(cells, opt.width, boardPalette(opt), panel))
 		}
 	}
 	if len(qs) == 0 {
@@ -1131,6 +1139,16 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		return nil, held, 1
 	}
 	held.marks = marks
+	// ENGLISH HELP IS PREPARED HERE AND ONLY HERE (#61). The standalone sitting
+	// and a nested /play both build their queue through this function, so both
+	// reach the model at one point: once, before the first question, never while
+	// a question is on screen.
+	prepareHelp(ctx, d, opt, qs, stdout, stderr)
+	if ctx.Err() != nil {
+		// Interrupted while preparing: the learner stopped before anything was
+		// asked, so nothing is played and nothing is recorded.
+		return nil, held, 0
+	}
 	return qs, held, 0
 }
 
@@ -1260,7 +1278,49 @@ func writePrompt(w io.Writer, q play.Question, d deps, opt options) {
 	// Plain \n: the screen places every row, so nothing here decides where a
 	// line goes (D1).
 	text := "\n" + q.Prompt() + "\n"
-	writeWords(w, text, promptRegions(q), d, opt, surfaceOf(q.Form()), q.Word(), "")
+	var help []int
+	if h, ok := q.(interface{ HelpLines() []int }); ok {
+		help = h.HelpLines()
+	}
+	if len(help) == 0 {
+		writeWords(w, text, promptRegions(q), d, opt, surfaceOf(q.Form()), q.Word(), "")
+		return
+	}
+	lines := make(map[int]bool, len(help))
+	for _, i := range help {
+		lines[i+1] = true // +1: the prompt is written after a leading newline
+	}
+	writeHelped(w, text, promptRegions(q), lines, d, opt, surfaceOf(q.Form()), q.Word())
+}
+
+// writeHelped is writeWords for a prompt carrying English help lines (#61).
+//
+// DECK VOCABULARY IS THE DECK'S LANGUAGE. An English line that happens to spell
+// a Spanish deck word ("red", "son", "once") must not colour it or turn it into
+// a Spanish word action, so help lines get neither. They are dimmed instead, so
+// the two languages read apart; the style starts AFTER the indent, because
+// wrapWritten measures a continuation's indent from the leading spaces.
+func writeHelped(w io.Writer, text string, rs []Region, help map[int]bool, d deps, opt options, sf surface, subject string) {
+	v := deckVocabulary(d)
+	var own []Region
+	for _, r := range wordRegions(text, v) {
+		if !help[r.Line] {
+			own = append(own, r)
+		}
+	}
+	rs = mergeRegions(rs, own)
+	lines := strings.Split(text, "\n")
+	p := newPalette(opt.color)
+	for i, l := range lines {
+		switch {
+		case help[i] && p.dim != "":
+			k := len(l) - len(strings.TrimLeft(l, " "))
+			lines[i] = l[:k] + p.dim + l[k:] + p.off
+		case !help[i] && v != nil && opt.color && sf.admitsColour():
+			lines[i] = highlightRegion(l, withoutWord(v, subject), knownOn, "")
+		}
+	}
+	writeRendered(w, strings.Join(lines, "\n"), rs)
 }
 
 // promptRegions is what a form's PROMPT offers to a click.

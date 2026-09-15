@@ -53,6 +53,8 @@ audio/
 user-model.md
 user-model.??.md
 lang.txt
+bilingual.txt
+practice-help.json
 .tmp-*
 
 # `go build ./` inside a cmd/<name>/ directory writes an extensionless binary

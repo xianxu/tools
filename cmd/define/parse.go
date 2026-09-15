@@ -209,6 +209,13 @@ var posWords = []string{
 	"plural noun", "noun", "verb", "adjective", "adverb", "pronoun",
 	"preposition", "conjunction", "interjection", "exclamation", "determiner",
 	"abbreviation", "prefix", "suffix", "symbol", "contraction",
+	// Larousse uses Spanish grammar labels. Keep their source wording while
+	// classifying them as structure: otherwise practice mistakes an opening
+	// label such as "adjetivo (femenino bonita)" for a definition.
+	"nombre masculino", "nombre femenino", "verbo intransitivo",
+	"numeral cardinal", "numeral ordinal", "adjetivo",
+	"verbo transitivo", "verbo pronominal", "adverbio", "pronombre",
+	"preposición", "conjunción", "interjección",
 }
 
 var sectionWords = []string{

@@ -129,7 +129,7 @@ func playbackConsole(out, errb io.Writer) console {
 func questionsFor(t *testing.T, d deps, opt options) ([]play.Question, *sittingDeck) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	qs, held, code := todaysQuestions(d, opt, &out, &errb)
+	qs, held, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 	if code != 0 {
 		t.Fatalf("todaysQuestions = %d, stderr %s", code, errb.String())
 	}
@@ -280,7 +280,7 @@ func TestEmptyQueueExitsZero(t *testing.T) {
 	// the queue is ever built. The CLAIM is unchanged and this is where it
 	// lives; that runPlay reaches this code at all is pinned separately, by the
 	// dispatch row in TestClaimsWithoutTestsUntilNow.
-	qs, _, code := todaysQuestions(d, opt, &out, &errb)
+	qs, _, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 
 	if code != 0 {
 		t.Errorf("exit = %d, want 0 — an empty sitting is not a failure", code)
@@ -922,7 +922,7 @@ func TestAFailedLogReadStillRunsTheSitting(t *testing.T) {
 	d.deck = &logRefusingStore{Store: st}
 
 	var out, errb bytes.Buffer
-	qs, held, code := todaysQuestions(d, opt, &out, &errb)
+	qs, held, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 	if code != 0 {
 		t.Fatalf("todaysQuestions = %d — an unreadable log must not end a sitting: %s", code, errb.String())
 	}
@@ -1496,7 +1496,7 @@ func TestAllLookupsFailingIsNotNothingDue(t *testing.T) {
 	d.dict = missingDict{}
 
 	var out, errb bytes.Buffer
-	qs, _, code := todaysQuestions(d, opt, &out, &errb)
+	qs, _, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 
 	if len(qs) != 0 {
 		t.Fatalf("got %d questions from a dictionary that refuses everything", len(qs))
@@ -2429,10 +2429,10 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 		t.Fatalf("the keys prompt is %d row(s) at 40 columns; this case is vacuous", pr)
 	}
 	tight := probe.Rows() + 1 + barRows // enough for a ONE-row prompt, and no more
-	if boardFits([]string{"keel", "mesa", "run", "bank"}, options{width: 40, rows: tight}) {
+	if boardFits([]string{"keel", "mesa", "run", "bank"}, options{width: 40, rows: tight}, 1) {
 		t.Errorf("a %d-row terminal was offered a board whose prompt needs %d rows", tight, pr)
 	}
-	if !boardFits([]string{"keel", "mesa", "run", "bank"}, options{width: 40, rows: tight + pr - 1}) {
+	if !boardFits([]string{"keel", "mesa", "run", "bank"}, options{width: 40, rows: tight + pr - 1}, 1) {
 		t.Errorf("a terminal with exactly enough room refused the board")
 	}
 }
@@ -2559,7 +2559,7 @@ func TestBoardsArePackedToTheLabelAlphabet(t *testing.T) {
 	// RE-POINTED at packBoards, which owns the chunking half of the deleted
 	// the deleted partition. The box half is TestTheBoxPicksTheForm's now; this is about
 	// how many words fit on one board.
-	boards, undrawable := packBoards(keys, opt)
+	boards, undrawable := packBoards(keys, opt, 1)
 	if len(undrawable) != 0 {
 		t.Errorf("%d words could not be drawn, want none — a 60-row terminal draws any board", len(undrawable))
 	}
@@ -2598,7 +2598,7 @@ func TestAShortTerminalGetsMeaningChoiceNotAClippedBoard(t *testing.T) {
 	}
 	// Tall enough: a 16-word board at 80 columns is four grid rows plus its own
 	// two, and the prompt and bar make eight.
-	if boards, _ := packBoards(keys, options{width: defaultCols, rows: 8}); len(boards) != 1 {
+	if boards, _ := packBoards(keys, options{width: defaultCols, rows: 8}, 1); len(boards) != 1 {
 		t.Errorf("an 8-row terminal offered %d boards, want 1", len(boards))
 	}
 	for _, tc := range []struct {
@@ -2617,12 +2617,12 @@ func TestAShortTerminalGetsMeaningChoiceNotAClippedBoard(t *testing.T) {
 		{"very narrow, where the prompt takes four rows", options{width: 24, rows: 13}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			boards, undrawable := packBoards(keys, tc.opt)
+			boards, undrawable := packBoards(keys, tc.opt, 1)
 			// SHRINK-TO-FIT: at seven rows a SMALLER board still draws, which is
 			// #42 widening D15 rather than replacing it — the words stay on the
 			// form the box chose for them wherever the terminal allows it.
 			for _, b := range boards {
-				if !boardFits(b, tc.opt) {
+				if !boardFits(b, tc.opt, 1) {
 					t.Errorf("a board of %d was offered on a terminal that cannot draw it whole", len(b))
 				}
 			}
@@ -2686,7 +2686,7 @@ func TestASittingOfDueWordsIsABoard(t *testing.T) {
 	}
 
 	var out, errb bytes.Buffer
-	qs, _, code := todaysQuestions(d, opt, &out, &errb)
+	qs, _, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 	if code != 0 {
 		t.Fatalf("todaysQuestions = %d: %s", code, errb.String())
 	}
@@ -2876,7 +2876,7 @@ func TestABoardCostsFarLessPerWordThanMeaningChoice(t *testing.T) {
 	// cheapest that form can possibly be, so the comparison is against its best
 	// case rather than a convenient one.
 	d2, opt2, _ := playRig(t, words...)
-	qs, held2, code := todaysQuestions(d2, opt2, &bytes.Buffer{}, &bytes.Buffer{})
+	qs, held2, code := todaysQuestions(t.Context(), d2, opt2, &bytes.Buffer{}, &bytes.Buffer{})
 	if code != 0 {
 		t.Fatalf("todaysQuestions = %d", code)
 	}
@@ -3579,7 +3579,7 @@ func TestSelectionAndDrawAskTheSameFitQuestion(t *testing.T) {
 		{24, 80}, {10, 80}, {8, 80}, {24, 40}, {10, 40}, {60, 19}, {60, 12}, {5, 80},
 	} {
 		opt := options{width: tc.cols, rows: tc.rows}
-		atSelection := boardFits(words, opt)
+		atSelection := boardFits(words, opt, 1)
 		probe := play.NewBoard(boardCells(words...), tc.cols, play.Palette{})
 		atDraw := boardFitsIn(probe, tc.rows, tc.cols)
 		if atSelection != atDraw {
@@ -3947,7 +3947,7 @@ func TestAWordNeitherTestableNorDrawableIsSkippedWithItsCause(t *testing.T) {
 	opt.width, opt.rows = 12, 60
 
 	var out, errb bytes.Buffer
-	qs, _, code := todaysQuestions(d, opt, &out, &errb)
+	qs, _, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 	if code != 0 {
 		t.Fatalf("todaysQuestions = %d; the sitting ended instead of skipping one word", code)
 	}
@@ -4255,7 +4255,7 @@ func TestAnEmptySittingNamesWhyItIsEmpty(t *testing.T) {
 			opt.width = tc.width
 
 			var out, errb bytes.Buffer
-			qs, _, code := todaysQuestions(d, opt, &out, &errb)
+			qs, _, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 			if len(qs) != 0 || code == 0 {
 				t.Fatalf("the sitting is not empty (%d questions, code %d); this test asserts "+
 					"nothing unless it is", len(qs), code)

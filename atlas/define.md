@@ -8,14 +8,13 @@ bundles it — which is why `define sycophantic` shows `/ˌsikəˈfan(t)ik/`,
 character-for-character what the browser shows. That notation is **not** standard
 IPA: NOAD writes `i` for /ɪ/, `a` for /æ/, and `(t)` for the optional flap.
 
-**The lookup is not NOAD-only.** `DCSCopyTextDefinition` takes a
-`DCSDictionaryRef`, and the SDK exports no way to construct one — so the tool
-passes NULL, which means *search every active dictionary*. NOAD answers for
-ordinary English words; `iPhone` and `MacBook` come from Apple Dictionary (which
-is why they have no pronunciation), and with the Chinese dictionaries enabled
-some words return Han-script entries this parser does not model. What `define`
-shows depends on the host's Dictionary.app configuration — and so does whether
-the conformance tests pass.
+**The lookup follows the selected language.** English searches NOAD and Apple
+Dictionary; Spanish uses Larousse and, with bilingual display on, verified
+Spanish-source Oxford records for English explanations. Dictionary.app's
+installed books determine which sections are available. The NULL search remains
+a fallback for the primary resolver outside the strict Spanish path; it searches
+active dictionaries and can return entries the parser does not model. See the
+language and bilingual maps below for selection and failure behavior.
 
 ## Shape
 
@@ -1148,6 +1147,7 @@ until both pages catch up.
 <!-- command-list -->
 | command | does |
 |---|---|
+| `/bilingual` | toggle English explanations after the selected language |
 | `/help` | list the commands, or explain one |
 | `/history` | words looked up recently |
 | `/stats` | deck, streak and accuracy figures |
@@ -1166,6 +1166,7 @@ print them, and this page quotes them, generated from the registry the way the
 list above is and pinned the same way:
 
 <!-- command-usage -->
+- `/bilingual [on|off]` — Toggle bilingual definitions. With on or off, set it explicitly. On shows the selected language followed by English; off shows only the selected language. Default on; saved per deck, for this session otherwise.
 - `/help [command]` — With nothing, list the commands. With a command's name, say how to use it, which --help or -h after any command also does.
 - `/history [N | --days N | --days=N]` — The words looked up in the last N days. With nothing, the last 2; N is at most 3650.
 - `/stats` — The deck, streak and accuracy figures for this directory. Takes no arguments.
@@ -1487,10 +1488,21 @@ holds the practice items authored from them (`#10 M2`).
 
 **Batch, and nothing waits on it.** `--harvest` runs it by hand, and since `#54`
 the session's background job runs the same core, `harvestDeck`, off the editor
-loop (see *Background preparation* below). A sitting still never reaches it,
-asserted with the model seam made to PANIC rather than left nil — nil passes on
-a loop that reaches for a model behind a `!= nil` guard, which is how a network
-dependency creeps into a path that promises to be offline.
+loop (see *Background preparation* below). A sitting never reaches it. The one
+model call a sitting may make is English practice help (`#61`, see *Bilingual
+definitions*), narrowed to three clauses, each pinned with the model seam made
+to PANIC rather than left nil — nil passes on a loop that reaches for a model
+behind a `!= nil` guard, which is how a network dependency creeps into a path
+that promises to be offline:
+
+- an English deck or `/bilingual off` never resolves a configuration
+  (`TestAClozeSittingNeverReachesForTheModel`,
+  `TestBilingualOffSittingNeverReachesForTheModel`);
+- a warm cache builds no client, across a restart
+  (`TestWarmCacheSittingConstructsNoClient`);
+- a cold cache asks once per batch inside `todaysQuestions`, before the first
+  question, and never inside `playSession`
+  (`TestColdCachePreparesOnceBeforeTheFirstQuestion`).
 
 **Assigned once, re-read forever.** The cache check precedes anything that
 touches the network, so a second run over an unchanged deck makes ZERO calls. The
@@ -2006,6 +2018,65 @@ so they are distinguishable; the gap is not paid after the last one.
 A missing recording is **not** a failed lookup: the definition has already been
 printed, so audio failures warn on stderr and leave the exit code at 0.
 
+### Bilingual definitions (`#61`)
+
+`/bilingual` toggles display; `/bilingual on|off` sets it explicitly. It defaults
+on, including existing decks without a setting. `store/bilingual.go` owns the
+bounded parser and atomic `bilingual.txt` setting; an explicit saved off survives
+restart. `sessionSetBilingual` persists before changing live state. Declined deck
+creation or interactive no-capture mode changes only the session. `/lang` reports
+both values, and language switches preserve the bilingual choice.
+
+`definitions.go` composes the selected-language entry with a supplemental source.
+Spanish displays Larousse first and Oxford Spanish–English second. Dictionary.app
+Settings must enable both Spanish (Larousse) and Spanish–English (Oxford), with
+downloads complete. Successful sections survive missing books, absent entries and
+lookup failures in the other section; diagnostics retain those distinctions.
+Both sections failing remains a lookup failure. Off and raw stay primary-only;
+English never repeats itself, and unsupported languages report an unavailable
+English supplement while retaining their primary entry.
+
+`bilingual.go` selects Spanish-source records by entry identity, preventing an
+ambiguous spelling such as Spanish `red` from selecting English `red` → `rojo`.
+`bilingual_darwin.go` bounds native record enumeration and copied data; its
+non-darwin sibling reports the unavailable capability. The stateful record fake
+and captured Oxford records exercise direction, malformed data and failures.
+
+`renderDefinitions` retains section language ownership through rendering and
+region offsets: English prose does not acquire Spanish deck-word actions.
+Ordinary lookup and the full post-answer `play.Choice` and `play.Cloze` reveals
+share this composition through `play_loop.go` and `cloze.go`.
+`TestBilingualPracticeReveal` and `TestBilingualClozeReveal` cover both reveal
+forms. Lookup capture and initial audio still occur once for the requested word.
+
+**English before answering.** With bilingual on in a non-English deck, practice
+shows English while the learner answers. `practice_help.go` is the pure core and
+`practice_help_client.go` the shell. `helpNeedsOf` reads the shown texts off the
+built questions: every Choice option gloss, a Cloze's `Blanked()` sentence, every
+Board cell gloss. What is translated is therefore byte for byte what is shown.
+`todaysQuestions` prepares them once, after the queue is built and before the
+first question, for the standalone sitting and nested `/play` alike; a nested
+sitting installs its Ctrl-C scope before that wait.
+
+One typed task, `practice-help`, translates numbered texts in batches of at most
+16 texts and 32 KiB, inside a 30-second deadline. The request carries shown prose
+only: never an answer, a Correct flag or a cloze's hidden word. `checkHelp`
+treats every reply as untrusted, fresh or cached. It folds whitespace to one
+line, refuses control and bidi characters, and requires a cloze translation to
+keep its blank count and not name its answer. A Choice gets English for every
+option or for none; Board cells are independent. A bilingual board reserves a
+second panel row from construction, and `packBoards`/`boardFits` select with the
+same budget. Help lines carry no deck-word actions or colour and are dimmed
+(`writeHelped`).
+
+Accepted translations are cached per deck in `practice-help.json`
+(`store/practice_help.go`: versioned, at most 512 entries and 1 MiB, replaced
+atomically; a missing, oversize, corrupt or wrong-version file reads as empty).
+The cache never asks the deck question: an undecided or declined directory keeps
+translations for the session, and a failure is never cached. Questions, options
+and grading stay in the deck's language, and `/bilingual off` shows none of this
+and makes no model call.
+
 ### The dictionary follows the language (`#23 M2`)
 
 `systemDictionary(lang, warn)` returns the dictionary for a language, and the
@@ -2258,6 +2329,8 @@ Every seam has one, and each pins the assumption that seam rests on:
 
 | check | asserts |
 |---|---|
+| `bilingual_conformance_test.go` | installed Oxford records select Spanish-source `red` and enforce native record limits |
+| `bilingual_system_conformance_test.go` | assembled Spanish dictionary preserves raw/off output and adds the correct English direction when on |
 | `dict_conformance_test.go` | live lookups still byte-match every fixture |
 | `fetch_conformance_test.go` | the CDN path survey still holds (2022 generation dominates) |
 | `player_conformance_test.go` | `afplay` **blocks** until playback finishes |
@@ -2270,6 +2343,7 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `activity_conformance_test.go` | real terminal Braille animation and cleanup at first answer text or cancellation, with held fake model responses |
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 | `harvest_conformance_test.go` | the live model's agreement across rounds stays above the floor the cache's premise needs |
+| `practice_help_conformance_test.go` | the live model's English practice help keeps a cloze's blank, never names its answer, and keeps the Spanish sense of `red` |
 | `version_conformance_test.go` | `-ldflags -X main.version` still reaches the binary — the one row the merge gate runs, since its failure is silent |
 
 `TestAtlasListsEveryConformanceCheck` derives this table's rows from the files on

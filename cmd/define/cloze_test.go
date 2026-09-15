@@ -315,7 +315,7 @@ func TestTheFormSelectionRule(t *testing.T) {
 			}
 
 			var out, errb bytes.Buffer
-			qs, _, code := todaysQuestions(d, opt, &out, &errb)
+			qs, _, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 			if code != 0 {
 				t.Fatalf("todaysQuestions = %d, stderr %q", code, errb.String())
 			}
@@ -356,7 +356,7 @@ func TestAClozeSittingNeverReachesForTheModel(t *testing.T) {
 	d.newLLM = func(llm.Config) llm.Client { panic("a cloze sitting constructed a model client") }
 
 	var out, errb bytes.Buffer
-	qs, held, code := todaysQuestions(d, opt, &out, &errb)
+	qs, held, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 	if code != 0 || len(qs) == 0 {
 		t.Fatalf("todaysQuestions = %d with %d questions", code, len(qs))
 	}
@@ -388,7 +388,7 @@ func TestFlaggingAQuestionRecordsItWithoutScoringIt(t *testing.T) {
 	d.capture = cap
 
 	var out, errb bytes.Buffer
-	qs, held, code := todaysQuestions(d, opt, &out, &errb)
+	qs, held, code := todaysQuestions(t.Context(), d, opt, &out, &errb)
 	if code != 0 {
 		t.Fatalf("todaysQuestions = %d", code)
 	}

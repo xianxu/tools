@@ -1,0 +1,50 @@
+task:   practice-help
+model:  
+effort: 
+--- system ---
+You translate short texts from a language exercise into plain English for a learner. You translate only what each text says, and you never reveal a hidden word.
+--- prompt ---
+## The texts
+
+Every text is in the language with IETF code `es`.
+
+1. (a dictionary definition) mueble con una tabla horizontal
+2. (a sentence with a word hidden as ___) Para llegar a la estación, Elena tiene que ___ cada lunes.
+
+## What to write
+
+For each numbered text, one English translation that a beginner can read beside the original.
+
+1. Translate what the text says. Do not explain it, add examples, or add anything it does not say.
+2. `___` marks a hidden word. Copy every `___` into the translation exactly, at the matching place. Never fill it in, hint at it, or name the hidden word.
+3. One translation per text, numbered as the text is, each on one line.
+
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "translations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "english": {
+            "type": "string"
+          },
+          "n": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n",
+          "english"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "translations"
+  ],
+  "type": "object"
+}

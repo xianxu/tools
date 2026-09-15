@@ -1026,3 +1026,204 @@ func toMode(t *testing.T, b *Board, m Mark) {
 	t.Fatalf("Tab never reaches mode %v — it is in Marks() but not in Toggle's cycle, "+
 		"so nothing on the board can ever land it", m)
 }
+
+// THE BOARD'S ENGLISH IS A SECOND PANEL ROW, RESERVED FROM THE FIRST FRAME (#61).
+//
+// One panel row is today's board byte for byte, help or no help. Two is one row
+// taller whether or not help ever arrives — the fit test charged Rows() when the
+// board was offered, so the row cannot appear later — and that row is the
+// English of whatever was marked last, under the deck-language line, truncated
+// on its own. The grid is untouched: every click lands where it did.
+func TestBoardHelpPanel(t *testing.T) {
+	cells := func() []Cell {
+		return []Cell{
+			{Word: "mañana", Gloss: "la parte del día entre el alba y el mediodía"},
+			{Word: "árbol", Gloss: "planta perenne de tronco leñoso"},
+			{Word: "sushi", Gloss: "plato japonés (寿司) de arroz"},
+		}
+	}
+	helps := []string{
+		"the part of the day between dawn and noon",
+		"a perennial plant with a woody trunk",
+		"a Japanese dish (寿司) of vinegared rice",
+	}
+	withHelp := func() []Cell {
+		cs := cells()
+		for i := range cs {
+			cs[i].Help = helps[i]
+		}
+		return cs
+	}
+	lastLine := func(b *Board) string {
+		lines := strings.Split(b.Prompt(), "\n")
+		return lines[len(lines)-1]
+	}
+	pal := Palette{Yes: "\x1b[32m", No: "\x1b[31m", Drop: "\x1b[9m", Off: "\x1b[0m"}
+
+	for _, tc := range []struct {
+		width int
+		// The English row after marking cell 0, then 1, then 2. Columns are
+		// runes by this package's measure (columnsIn), so 寿 counts one here.
+		want [3]string
+	}{
+		{20, [3]string{"the part of the day~", "a perennial plant w~", "a Japanese dish (寿司~"}},
+		{40, [3]string{"the part of the day between dawn and no~", "a perennial plant with a woody trunk", "a Japanese dish (寿司) of vinegared rice"}},
+		{80, [3]string{"the part of the day between dawn and noon", "a perennial plant with a woody trunk", "a Japanese dish (寿司) of vinegared rice"}},
+	} {
+		w := tc.width
+		control := NewBoard(cells(), w, pal)
+		one := NewBoardPanel(withHelp(), w, pal, 1)
+		two := NewBoardPanel(cells(), w, pal, 2)
+		if control.PanelRows() != 1 || one.PanelRows() != 1 || two.PanelRows() != 2 {
+			t.Fatalf("width %d: PanelRows = %d, %d, %d; want 1 for NewBoard and each board's own budget",
+				w, control.PanelRows(), one.PanelRows(), two.PanelRows())
+		}
+
+		// ONE PANEL ROW IS TODAY, even with English on every cell: it has no
+		// row to draw it on.
+		if one.Rows() != control.Rows() || one.Prompt() != control.Prompt() {
+			t.Errorf("width %d: a one-row panel with help drew\n%q\nwant NewBoard's\n%q", w, one.Prompt(), control.Prompt())
+		}
+
+		// TWO RESERVE THE ROW before any help, and help arriving does not move it.
+		rows := control.Rows() + 1
+		if two.Rows() != rows || two.Prompt() != control.Prompt()+"\n" {
+			t.Errorf("width %d: an unmarked two-row board is %d rows:\n%q\nwant today's board and one empty row",
+				w, two.Rows(), two.Prompt())
+		}
+		for i, h := range helps {
+			two.SetHelp(i, h)
+		}
+		if two.Rows() != rows || two.Prompt() != control.Prompt()+"\n" {
+			t.Errorf("width %d: help arriving changed an unmarked board to %d rows:\n%q", w, two.Rows(), two.Prompt())
+		}
+		if built := NewBoardPanel(withHelp(), w, pal, 2); built.Prompt() != control.Prompt()+"\n" {
+			t.Errorf("width %d: an unmarked board built with help shows %q on its English row, want nothing yet", w, lastLine(built))
+		}
+
+		// Each mark lands in a different mode, so the row follows the LAST
+		// mark whatever it was.
+		for i, key := range []rune{'0', '1', '2'} {
+			cv, cok := control.Grade(key)
+			ov, ook := one.Grade(key)
+			tv, tok := two.Grade(key)
+			if ov != cv || tv != cv || ook != cok || tok != cok {
+				t.Errorf("width %d: Grade(%q) = (%v,%v) today, (%v,%v) one-row, (%v,%v) two-row", w, key, cv, cok, ov, ook, tv, tok)
+			}
+			// The deck line first and whole — today's prompt — then the English.
+			if got, want := two.Prompt(), control.Prompt()+"\n"+tc.want[i]; got != want {
+				t.Errorf("width %d: after marking cell %d the board drew\n%q\nwant\n%q", w, i, got, want)
+			}
+			if one.Prompt() != control.Prompt() {
+				t.Errorf("width %d: after marking cell %d a one-row panel drew help:\n%q", w, i, one.Prompt())
+			}
+			lines := strings.Split(two.Prompt(), "\n")
+			if two.Rows() != rows || len(lines) != rows {
+				t.Errorf("width %d: after marking cell %d Rows() = %d and Prompt drew %d, want %d", w, i, two.Rows(), len(lines), rows)
+			}
+			for n, line := range lines {
+				if c := visibleColumns(line); c > w {
+					t.Errorf("width %d: line %d is %d columns: %q", w, n, c, line)
+				}
+			}
+			control.Toggle()
+			one.Toggle()
+			two.Toggle()
+		}
+		if two.Keys() != control.Keys() {
+			t.Errorf("width %d: Keys() = %q on a two-row board, %q today", w, two.Keys(), control.Keys())
+		}
+
+		// THE GRID IS UNTOUCHED: every position answers as on a one-row panel,
+		// and the extra row is chrome, not a cell.
+		g1, g2 := NewBoardPanel(cells(), w, pal, 1), NewBoardPanel(withHelp(), w, pal, 2)
+		for row := -1; row <= g2.Rows(); row++ {
+			for col := -1; col <= w+labelWidth; col++ {
+				i1, ok1 := g1.CellAt(row, col)
+				i2, ok2 := g2.CellAt(row, col)
+				if i1 != i2 || ok1 != ok2 {
+					t.Errorf("width %d: CellAt(%d,%d) = (%d,%v) with one panel row, (%d,%v) with two", w, row, col, i1, ok1, i2, ok2)
+				}
+				if ok2 && row >= g2.gridRows() {
+					t.Errorf("width %d: a click on chrome row %d, col %d marked cell %d", w, row, col, i2)
+				}
+			}
+		}
+	}
+
+	// CLAMPED into the two budgets there are.
+	for _, tc := range []struct{ asked, got int }{{-3, 1}, {0, 1}, {1, 1}, {2, 2}, {3, 2}, {9, 2}} {
+		b := NewBoardPanel(cells(), 80, Palette{}, tc.asked)
+		if b.PanelRows() != tc.got || b.Rows() != NewBoard(cells(), 80, Palette{}).Rows()+tc.got-1 {
+			t.Errorf("NewBoardPanel(.., %d): PanelRows %d and Rows %d, want a %d-row panel", tc.asked, b.PanelRows(), b.Rows(), tc.got)
+		}
+	}
+
+	// AN INDEX OFF THE BOARD IS IGNORED, and a marked cell with no English
+	// leaves the row empty rather than showing a neighbour's.
+	b := NewBoardPanel(cells(), 80, Palette{}, 2)
+	drawn := b.Prompt()
+	for _, i := range []int{-1, 3, MaxBoardWords, 1 << 20} {
+		b.SetHelp(i, "stray")
+	}
+	if b.Prompt() != drawn {
+		t.Errorf("an out-of-range SetHelp changed the board:\n%q", b.Prompt())
+	}
+	for i, c := range b.Cells() {
+		if c.Help != "" {
+			t.Errorf("an out-of-range SetHelp reached cell %d: %q", i, c.Help)
+		}
+	}
+	b.SetHelp(0, helps[0])
+	b.Mark(1)
+	if got := lastLine(b); got != "" {
+		t.Errorf("a marked cell with no English shows %q on the English row", got)
+	}
+
+	// CELLS IS A COPY: it reports what SetHelp set, and writing to it moves
+	// nothing on the board.
+	got := b.Cells()
+	if len(got) != 3 || got[0].Help != helps[0] || got[1].Help != "" || got[0] != withHelp()[0] {
+		t.Fatalf("Cells() = %+v, want the cells with cell 0's English", got)
+	}
+	drawn = b.Prompt()
+	got[1].Word, got[1].Help = "zzz", "written through"
+	if b.Prompt() != drawn || b.Cells()[1] != cells()[1] {
+		t.Errorf("writing to Cells()'s result changed the board:\n%q", b.Prompt())
+	}
+	// ...nor does SetHelp write through the slice the board was handed.
+	shared := cells()
+	NewBoardPanel(shared, 80, Palette{}, 2).SetHelp(0, helps[0])
+	if shared[0].Help != "" {
+		t.Errorf("SetHelp wrote %q into the caller's cell", shared[0].Help)
+	}
+
+	// ONE LINE WHATEVER IT IS HANDED: a newline in the English would make
+	// Prompt a line longer than Rows(), and a click below it would land a row off.
+	nl := NewBoardPanel(cells(), 80, Palette{}, 2)
+	nl.SetHelp(0, "the part of the day\nbefore noon")
+	nl.Mark(0)
+	if lines := strings.Split(nl.Prompt(), "\n"); len(lines) != nl.Rows() || lines[len(lines)-1] != "the part of the day before noon" {
+		t.Errorf("a two-line English drew %d lines for %d rows:\n%q", len(lines), nl.Rows(), nl.Prompt())
+	}
+
+	// Rows() IS WHAT PROMPT DRAWS on a two-row panel too, at every size, marked
+	// or not — TestRowsIsWhatPromptDraws's invariant, for the new budget.
+	for n := 0; n <= MaxBoardWords; n++ {
+		for _, w := range []int{20, 40, 80} {
+			cs := cellsOf(sixteen[:n]...)
+			for i := range cs {
+				cs[i].Help = "the English for " + cs[i].Word
+			}
+			b := NewBoardPanel(cs, w, Palette{}, 2)
+			for _, when := range []string{"unmarked", "swept"} {
+				if when == "swept" {
+					b.Rest(Wrong)
+				}
+				if got, want := len(strings.Split(b.Prompt(), "\n")), b.Rows(); got != want {
+					t.Errorf("%d words at %d columns, %s: Prompt drew %d lines, Rows() says %d", n, w, when, got, want)
+				}
+			}
+		}
+	}
+}

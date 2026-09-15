@@ -72,6 +72,10 @@ type Option struct {
 	Word    string
 	Axis    Axis
 	Correct bool
+	// Help is Gloss in English, for a learner whose deck is not English; "" is
+	// none. DISPLAY ONLY: Grade, Keys and Reveal never read it, so a question
+	// with help is graded exactly as the same question without.
+	Help string
 }
 
 // Choice is one question. Pointer receivers because it REMEMBERS what was
@@ -99,7 +103,9 @@ func NewChoice(word, definition string, options []Option) *Choice {
 func (c *Choice) Word() string { return c.word }
 
 // Prompt is the word ALONE on the first line, a blank, then the numbered
-// options.
+// options — each followed, once SetHelp has run, by its English under the
+// gloss. The deck's line comes first because it is the question; the English
+// is help beneath it.
 //
 // The first line is load-bearing beyond looking tidy: #38 makes a prompt word
 // clickable and computes its region as line 0, column 0, width len(word)
@@ -107,14 +113,62 @@ func (c *Choice) Word() string { return c.word }
 // silently in an issue nobody is reading. D1a records the constraint on both
 // sides.
 func (c *Choice) Prompt() string {
-	s := c.word + "\n\n"
+	s, _ := c.render()
+	return s
+}
+
+// HelpLines is which lines of Prompt are English help, as 0-based indices into
+// its "\n"-split lines, continuations included — so the caller can keep deck
+// colouring and word clicks off them. nil when no help is set.
+func (c *Choice) HelpLines() []int {
+	_, lines := c.render()
+	return lines
+}
+
+// render is Prompt and HelpLines from ONE walk. An index computed beside the
+// prompt would be a second owner of its layout, and the day the two drifted a
+// click on an English line would act on a deck word.
+func (c *Choice) render() (string, []int) {
+	var p promptBuilder
+	p.text(c.word + "\n\n")
 	for i, o := range c.options {
-		s += optionLine(i, o.Gloss)
+		p.text(optionLine(i, o.Gloss))
+		if o.Help != "" {
+			p.text("\n")
+			p.help(indentHelp(o.Help))
+		}
 		if i < len(c.options)-1 {
-			s += "\n"
+			p.text("\n")
 		}
 	}
-	return s
+	return p.s, p.helps
+}
+
+// SetHelp gives every option its English, or none of them.
+//
+// ALL OR NOTHING because a partial set singles options out: one option without
+// English among others with it is a difference a learner reads as a hint. A
+// slice of the wrong length, or with an empty entry, returns false and changes
+// nothing — including help an earlier call set.
+//
+// COPIED rather than written through the slice NewChoice was handed: the caller
+// may still hold it, and a second question built from it would grow help it was
+// never given.
+func (c *Choice) SetHelp(help []string) bool {
+	if len(help) != len(c.options) {
+		return false
+	}
+	for _, h := range help {
+		if h == "" {
+			return false
+		}
+	}
+	opts := append([]Option(nil), c.options...)
+	for i := range opts {
+		opts[i].Help = help[i]
+	}
+	c.options = opts
+	return true
 }
 
 // OptionIndent is how many columns optionLine puts in front of a gloss.
@@ -140,6 +194,55 @@ const OptionIndent = 3
 // carry their own padding and this only has to place the number.
 func optionLine(i int, gloss string) string {
 	return string(rune('0'+i+1)) + "  " + gloss
+}
+
+// indentHelp puts OptionIndent in front of EVERY line of an English help, so it
+// hangs under the gloss it translates rather than under the option number.
+//
+// Every line, where a gloss arrives with only its continuations padded: a
+// gloss's first line is placed by optionLine, and a help has no number to sit
+// beside. A help line at column 0 that began with a digit would also read as a
+// new option — to the learner, and to main's isOptionLine.
+//
+// Byte-wise, which is safe: '\n' never occurs inside a UTF-8 sequence.
+func indentHelp(help string) string {
+	pad := spaces(OptionIndent)
+	out, start := pad, 0
+	for i := 0; i < len(help); i++ {
+		if help[i] == '\n' {
+			out += help[start:i+1] + pad
+			start = i + 1
+		}
+	}
+	return out + help[start:]
+}
+
+// promptBuilder is a prompt being written that knows which line it is on, so a
+// form records its help lines as it writes them rather than recounting later.
+type promptBuilder struct {
+	s     string
+	line  int // the 0-based line the next byte lands on
+	helps []int
+}
+
+// text appends question text: anything that is not help.
+func (p *promptBuilder) text(s string) {
+	p.s += s
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			p.line++
+		}
+	}
+}
+
+// help appends help, and every line it touches is a help line: the one it
+// starts on and one more per newline inside it.
+func (p *promptBuilder) help(s string) {
+	first := p.line
+	p.text(s)
+	for l := first; l <= p.line; l++ {
+		p.helps = append(p.helps, l)
+	}
 }
 
 // Reveal names the answer AND what they picked, because the miss is the moment

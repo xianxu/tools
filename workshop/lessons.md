@@ -4567,6 +4567,21 @@ user's typed/deck word. An inflected lookup can resolve to a lemma for definitio
 but must retain the existing pronunciation policy on initial playback and replay.
 Test both paths with an inflection, not only accent-equivalent spellings.
 
+## Dictionary grammar is not a practice answer (define #61)
+
+When adding a dictionary language, test actual entries through candidate extraction,
+distractors, compact glosses and question-authoring facts. Rendering alone can
+preserve every character while a missing part-of-speech token turns grammar metadata
+into the correct quiz answer.
+
+Bilingual renderers own language-specific action regions. Consumer passes must
+preserve that ownership through composition, including partial first/last lines;
+test both screen actions and copied text with a word shared across languages.
+
+Availability has three states: present, absent after successful enumeration, and
+unknown because enumeration failed. Test the effective factory/lookup diagnostic,
+not only its status label, so an unavailable API never becomes installation advice.
+
 
 ## Client decoration must preserve provenance at shared cores (#54 integration)
 
@@ -4582,3 +4597,13 @@ Scanning declared method names misses implementations created by embedding and
 can mistake signature lookalikes for real interfaces. Use Go's type checker and
 check both value and pointer method sets. Include counterexamples with missing,
 shadowed and promoted methods; preserve a runtime test through another wrapper.
+
+
+## Scope cancellation before preparation starts (define #61)
+
+When a nested interaction gains network preparation, install its interrupt
+scope before that preparation. Verify cancellation while a stateful HTTP fake
+holds the actual request, then verify the parent still runs and regains its
+interrupt. A test that starts only after the first question cannot catch a
+scope installed too late; an overlay moving scope installation after preparation
+must fail.

@@ -49,6 +49,7 @@ func runLang(c commandCtx, args []string) int {
 	}
 	if !set {
 		fmt.Fprintf(c.stdout, "  defining in %s\n", c.lang)
+		fmt.Fprintf(c.stdout, "  bilingual %s\n", bilingualState(c.bilingual))
 		// Which dictionary is answering. The curated list is a short honest list,
 		// so on a machine with a different set installed a wrong pick should be
 		// findable rather than puzzling — and this is where a learner looks,
