@@ -72,3 +72,13 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   hierarchy and formatting never reach the renderer.
 - Read-only investigations delegated for Oxford source structure and screen /
   selection / wrap region-painting seams. Durable plan and visual layout pending.
+
+- Native `rendir` verification found explicit A/B/C gramb groups, nested numbered
+  and lettered semb senses, and paired exg examples/translations. Read-only
+  captures: `/tmp/define66-rendir-native.json` and `-tree.txt`.
+- Screen investigation: padding must remain paint-only; stored strings currently
+  feed selection cells and exit transcript. Extend structured output alongside
+  click regions rather than infer language from ANSI or pad source strings.
+- Draft [implementation plan](../plans/000066-define-language-regions-and-bilingual-layout-plan.md)
+  and `/tmp/define66-region-preview.html` show full-width panels and restored Oxford
+  rows. Fresh spec/plan review pending; implementation and estimate have not begun.
