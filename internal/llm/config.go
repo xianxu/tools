@@ -53,9 +53,12 @@ const (
 
 // Config is where the model lives and who we are.
 type Config struct {
-	BaseURL   string
-	APIKey    string
-	Model     string
+	BaseURL string
+	APIKey  string
+	Model   string
+	// AutoModel discovers a model on first use; manually built configs stay pinned.
+	AutoModel bool
+	provider  string
 	Effort    string
 	MaxTokens int64
 	// Timeout is the TOTAL budget for a call: attempts, backoff and body read.
@@ -125,6 +128,7 @@ func Resolve(getenv func(string) string) (Config, error) {
 		Timeout:    timeout,
 		StallAfter: defaultStallAfter,
 	}
+	c.AutoModel = c.BaseURL == defaultBaseURL && first("DEFINE_LLM_MODEL") == ""
 	if c.APIKey == "" && c.BaseURL == defaultBaseURL {
 		// Talking to the managed local proxy, where the key is a handshake this
 		// program can supply for itself. Only for THAT endpoint: a key invented

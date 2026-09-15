@@ -80,7 +80,11 @@ func startDefineWithEnv(t *testing.T, env []string, args ...string) (*exec.Cmd, 
 // this test to a storage format rather than to the behaviour.
 func startDefineInDir(t *testing.T, dir string, env []string, args ...string) (*exec.Cmd, *os.File) {
 	t.Helper()
-	bin := builtBinary(t)
+	return startDefineBinary(t, builtBinary(t), dir, env, args...)
+}
+
+func startDefineBinary(t *testing.T, bin, dir string, env []string, args ...string) (*exec.Cmd, *os.File) {
+	t.Helper()
 	cmd := exec.Command(bin, args...)
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)

@@ -384,3 +384,31 @@ before merge.
 
 - **What a job could not finish is remembered per language**: a word or a learner
   model that failed in English is still tried after `/lang es`.
+
+### 2026-09-13 — coordination with #58
+
+- Coordination with #58 (local model discovery): #58 implements
+  first and narrowly updates reflection's client binding and selected-model
+  provenance. When extracting the typed reflection core here, integrate #58 and
+  preserve SelectionOf(client) rather than reverting to cfg.Model. No dependency
+  from #58 on this work; recheck landed changes before merging either branch.
+
+### 2026-09-13 — activity ownership with #36
+
+- #36 designs a shared Braille spinner and foreground-only LLM client adapters
+  before this issue's background integration. When extracting harvest/reflect
+  cores, retain undecorated clients in the cores; reuse the activity display only
+  from the owning UI. Background jobs must not take over the foreground spinner,
+  and both adapters must preserve #58's selected-model provenance.
+
+
+### 2026-09-14 — Resume and integrate
+
+User requested closing #54. Resumed from its reviewed implementation commit
+b34c9c3, excluding later unrelated planning commits on the old branch. Integrated
+current main in /tmp/tools-54-close. Preserve discovered model provenance and
+foreground-only spinner ownership across the typed reflection core. The existing
+TestReflectRecordsDiscoveredModel caught the wrapper boundary regression; fixed
+by unwrapping foreground activity for provenance. Focused background/harvest/
+reflect and race tests, vet and Linux build passed. Live isolated-deck TUI smoke
+and final verification/close remain in progress.

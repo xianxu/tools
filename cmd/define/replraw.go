@@ -30,8 +30,9 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	}
 	defer sess.restore()
 
-	keys := readKeys(ctx, f, interrupts)
-	return runEditor(ctx, keys, interrupts, d, opt, newConsole(ctx, d, sess, stdout, newLiveScreen))
+	con := newConsole(ctx, d, sess, stdout, newLiveScreen)
+	keys := readInput(ctx, f, interrupts, con.pointer)
+	return runEditor(ctx, keys, interrupts, d, opt, con)
 }
 
 // applyShape is everything the loop derives from a terminal shape, in ONE place.
@@ -83,12 +84,19 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 	// history. The bytes are identical, so nothing could tell them apart; the
 	// report is the only way to be handed the gesture the user actually made.
 	//
-	// It has a COST both loops now pay, and `#41` inherited it without saying so:
-	// with the mouse reported, dragging no longer selects text and the terminal's
-	// own Option/Shift override is what a reader has to reach for (rawterm.go's
-	// mouse block, and `/help`).
+	// The shared router handles held drags and completed clicks.
 	sess.enterMouse()
 	live := newScreen(stdout, terminalRows(stdout), terminalCols(stdout))
+	var clipboard clipboardWriter
+	var clipboardErr error
+	if d.newClipboard != nil {
+		clipboard, clipboardErr = d.newClipboard()
+	}
+	pointer := newPointerRouter(live, clipboard)
+	if clipboardErr != nil {
+		pointer.notice("copy unavailable: " + clipboardErr.Error())
+	}
+
 	// The shape is MEASURED here, where the terminal is, and delivered to the
 	// loop as a value — so a loop's resize case knows nothing about os/signal
 	// and everything about what it has to redraw.
@@ -96,16 +104,19 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 		// The TRUE shape. The wrap policy is derived from it in the loop, where
 		// opt.width is set — the two questions have different answers for a very
 		// narrow terminal, and only one of them may be zero.
-		return winSize{rows: terminalRows(stdout), cols: terminalCols(stdout)}
+		sz := winSize{rows: terminalRows(stdout), cols: terminalCols(stdout)}
+		pointer.observeSize(sz)
+		return sz
 	})
+	handBackOnce := onceHandBack(live, sess, stdout)
 	con := console{
-		view: live, resizes: resizes,
+		view: live, resizes: resizes, pointer: pointer,
 		// ONCE, and the transcript is why it has to be: restore() and Stop() are
 		// both idempotent because they run from more than one exit path, and
 		// printing a session twice is not the kind of thing an idempotent call
 		// fixes. sync's primitive rather than a hand-rolled flag, so the
 		// guarantee needs no test of its own to be trustworthy.
-		finish: onceHandBack(live, sess, stdout),
+		finish: func() { pointer.Stop(); handBackOnce() },
 		// BOTH streams are the screen, stderr included (D5b). A diagnostic
 		// written straight to the terminal while the alternate screen is up lands
 		// wherever the cursor happens to be and corrupts the frame; through the
@@ -123,7 +134,7 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 	// the loop never has to (#48 PQ-2).
 	con.newSitting = func(ctx context.Context, d deps, opt options, keys <-chan Key,
 		interrupts *interrupter, stderr io.Writer) (int, winSize) {
-		return sittingInPlace(ctx, d, opt, keys, interrupts, live, resizes, stdout, stderr)
+		return sittingInPlace(ctx, d, opt, keys, interrupts, live, resizes, stdout, stderr, pointer)
 	}
 	return con
 }
@@ -178,6 +189,7 @@ const wheelLines = 3
 // cannot tell the difference. M2's click arrives as a method on `display`, not
 // as an eleventh parameter.
 type console struct {
+	pointer *pointerRouter
 	// view is what the loop draws on and scrolls.
 	view display
 	// resizes carries the terminal's new shape. nil is legitimate: a test has no
@@ -506,8 +518,8 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// screen exists. What it can do is act on the region under the
 				// pointer, and a click on nothing is nothing: no beep, no
 				// message. Pointing at ordinary text is not an error.
-				if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
-					clicked(r)
+				if hit, ok := con.pointer.resolve(k); ok && hit.hasRegion {
+					clicked(hit.region)
 				}
 				continue
 			}

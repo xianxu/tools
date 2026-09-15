@@ -94,3 +94,23 @@ func assertSignalEndsTheLoop(t *testing.T, d deps, sigs chan os.Signal) {
 		t.Fatal("the loop did not return: this transport reaches no sink")
 	}
 }
+
+func TestInterruptObservationPrecedesScopeAndHasAnOwner(t *testing.T) {
+	var calls []string
+	i := &interrupter{fn: func() { calls = append(calls, "cancel") }, scoped: true}
+	old := i.Observe(func() { calls = append(calls, "old") })
+	current := i.Observe(func() { calls = append(calls, "observe") })
+	old() // stale console cleanup cannot detach the current console
+	if !i.Fire() {
+		t.Fatal("scope changed")
+	}
+	if len(calls) != 2 || calls[0] != "observe" || calls[1] != "cancel" {
+		t.Fatalf("order %v", calls)
+	}
+	current()
+	calls = nil
+	i.Fire()
+	if len(calls) != 1 || calls[0] != "cancel" {
+		t.Fatalf("observer survived cleanup: %v", calls)
+	}
+}

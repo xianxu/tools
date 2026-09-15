@@ -82,6 +82,8 @@ type deps struct {
 	// other builds a real client pointed at a real proxy.
 	getenv func(string) string
 	newLLM func(llm.Config) llm.Client
+	// newClipboard constructs the console-owned clipboard transport lazily.
+	newClipboard func() (clipboardWriter, error)
 	// notifySignals is the SIGNAL half of the interrupt story — the other half is
 	// the raw key reader's byte. Injected so a test can drive it without raising
 	// a real signal in the test binary, which `go test` would treat as a failure.
@@ -109,6 +111,7 @@ func realDeps() deps {
 		notifySignals:   notifySignals,
 		getenv:          os.Getenv,
 		newLLM:          llm.New,
+		newClipboard:    newProcessClipboardWriter,
 	}
 }
 
@@ -396,6 +399,13 @@ func openStore(opt options, warn io.Writer, perm *deckPermission) storeDeps {
 }
 
 func main() {
+	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], clipboardHelperFlag) {
+		if err := runClipboardHelper(os.Args[1:], os.Stdin, writeNativeClipboard); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	// NotifyContext rather than the default SIGINT handling: Ctrl-C now cancels
 	// the context, which stops afplay through exec.CommandContext and lets
 	// deferred cleanup run, instead of killing the process mid-playback and
@@ -523,7 +533,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"same deck, and the next lookup is English again. You name the\n"+
 			"language; the entry's ORIGIN says which. A source with no recording\n"+
 			"falls back to the session's and says so.\n\n"+
-			"A line that is not a word and reads as a question is answered by\n"+
+			"A dictionary miss with 4+ words, or one that reads as a question, is answered by\n"+
 			"the model rather than looked up — there is no mode to switch. The\n"+
 			"dictionary is asked first, so multi-word headwords (hot dog) are\n"+
 			"still definitions. Force either way: ? asks, \\ defines.\n\n"+
@@ -775,7 +785,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		return runVersion(stdout)
 	}
 	if *llmCheck {
-		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
+		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr, opt)
 	}
 
 	// The flag rides on the LINE, beside `literal`, because that is what it is:

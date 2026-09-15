@@ -112,8 +112,9 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 	// belongs under the line being typed (D3a). Everything else about taking a
 	// terminal is the same question, and the first version of this file answered
 	// it a second time (BR-7).
+	con := newConsole(ctx, d, sess, stdout, newPinnedScreen)
 	return playSession(ctx, d, opt, play.NewSession(questions), held,
-		readKeys(ctx, f, interrupts), newConsole(ctx, d, sess, stdout, newPinnedScreen))
+		readInput(ctx, f, interrupts, con.pointer), con)
 }
 
 // playSession drives the state machine and performs its outcomes.
@@ -224,7 +225,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// for every form by `chromeGap` — so this was one form's exception to
 			// a rule the frame did not yet have, and it also spent a buffer line
 			// on it, which the exit transcript then carried.
-			view.Draw(asChrome(boardPrompt(q, boardWhole), pal), boardFooter(q, fig, pal))
+			view.Draw(asChrome(boardPrompt(q, boardWhole, pal), pal), boardFooter(q, fig, pal))
 			return
 		}
 		if q != nil && written != s.Index {
@@ -344,9 +345,14 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// ordinary text is not an error.
 		var in play.Input
 		if k.Kind == KeyClick {
-			cell, marks := formCell(view, s.Current(), k)
+			hit, valid := con.pointer.resolve(k)
+			if !valid {
+				continue
+			}
+			cell, marks := formCell(s.Current(), hit)
 			if !marks {
-				if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
+				if hit.hasRegion {
+					r := hit.region
 					// The indicator is playRegion's own now (#44). It used to be
 					// passed, and this site passed `defaultIndicator` under a
 					// comment saying that was "what every other playback on this
@@ -595,11 +601,22 @@ func toInput(k Key) (play.Input, bool) {
 // It replaces the form's keys rather than joining them, because the two would
 // not both fit at the width where this happens, and a prompt that wraps is a
 // frame one row taller than the board was budgeted for.
-func boardPrompt(q play.Question, whole bool) string {
-	if whole {
-		return gradePrompt(q)
+func boardPrompt(q play.Question, whole bool, pal palette) string {
+	if !whole {
+		return boardRefusal
 	}
-	return boardRefusal
+	prompt := gradePrompt(q)
+	// Board.Keys owns the active option's brackets. Clear the surrounding
+	// chrome's dim attribute before highlighting, then restore it afterward.
+	before, selected, found := strings.Cut(prompt, "[")
+	if !found || pal.head == "" {
+		return prompt
+	}
+	active, after, found := strings.Cut(selected, "]")
+	if !found {
+		return prompt
+	}
+	return before + pal.off + pal.head + "[" + active + "]" + pal.off + pal.dim + after
 }
 
 // boardRefusal is the prompt row when the window cannot show the whole board.
@@ -760,14 +777,14 @@ func fitsABoard(termRows, boardRows, promptRows int) bool {
 //
 // False for every form that is not a grid, which is every form but the board,
 // and false is what leaves #38's behaviour exactly as it was.
-func formCell(view display, q play.Question, k Key) (int, bool) {
+func formCell(q play.Question, hit pointerClick) (int, bool) {
 	g, ok := q.(play.Grid)
 	if !ok {
 		// Also the nil case, at the end of a queue: a nil Question is not a Grid.
 		return 0, false
 	}
-	row, offset, ok := view.FooterRowAt(k.Row)
-	if !ok {
+	row, offset := hit.footerEntry, hit.footerOffset
+	if !hit.footer {
 		return 0, false
 	}
 	// A CONTINUATION ROW IS NOT A TARGET (R9).
@@ -790,7 +807,7 @@ func formCell(view display, q play.Question, k Key) (int, bool) {
 	// grid, because the grid is the thing that knows how tall it is. Two owners
 	// of one bound is how a chrome row comes to be a cell on the day one of them
 	// is edited.
-	return g.CellAt(row, k.Col)
+	return g.CellAt(row, hit.point.col)
 }
 
 // sittingWords is how many WORDS the sitting will ask about, which is not the

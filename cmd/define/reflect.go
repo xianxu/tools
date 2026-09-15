@@ -369,7 +369,7 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 	if err != nil {
 		return unavailableToReflect(errOut)
 	}
-	return reflectDeck(ctx, d, d.newLLM(cfg), cfg.Model, ev, out, errOut).code
+	return reflectDeck(ctx, d, foregroundClient(d.newLLM(cfg), out, opt), cfg.Model, ev, out, errOut).code
 }
 
 // reflectOutcome is one reflect pass as data (#54): what runReflect used to only
@@ -434,13 +434,17 @@ func reflectDeck(ctx context.Context, d deps, client llm.Client, modelName strin
 		fmt.Fprintf(errOut, "define: could not read the existing learner model: %v\n", err)
 		return reflectOutcome{stopped: deckIO(err), code: 1}
 	}
+	modelID := modelName
+	if selected := clientModelSelection(client); selected.ID != "" {
+		modelID = selected.ID
+	}
 	generated := renderUserModel(model, modelMeta{
 		Updated:   d.clock.Now(),
 		From:      ev.From,
 		To:        ev.To,
 		Lookups:   ev.DeckLookups(), // BR-25: the count beside window: must be the count within it
 		Questions: ev.Questions,
-		Model:     modelName,
+		Model:     modelID,
 	})
 	if err := d.deck.SetUserModel(spliceCorrections(existing, generated)); err != nil {
 		fmt.Fprintf(errOut, "define: could not write the learner model: %v\n", err)

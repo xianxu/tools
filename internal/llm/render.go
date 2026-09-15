@@ -26,6 +26,9 @@ func renderRequest(r Request) string {
 	fmt.Fprintf(&b, "task:   %s\n", r.Task)
 	fmt.Fprintf(&b, "model:  %s\n", r.Model)
 	fmt.Fprintf(&b, "effort: %s\n", r.Effort)
+	if r.adaptiveThinking {
+		b.WriteString("thinking: adaptive\n")
+	}
 	b.WriteString("--- system ---\n")
 	b.WriteString(r.System)
 	b.WriteString("\n--- prompt ---\n")

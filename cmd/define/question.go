@@ -37,12 +37,9 @@ var requestVerbs = []string{
 // is the safety argument: "hot dog", "a priori" and "use" are lookups because
 // the dictionary said so, not because this function was careful.
 //
-// There is deliberately NO length arm. Word count is the signal the spec
-// rejects — "hot dog" is two words and "defenestrate" is one — and a line being
-// long is not the same fact as it reading as a question. The cost is named
-// rather than hidden: "difference between sycophantic and obsequious" reads as
-// neither interrogative nor imperative and answers "not found", with "?" as its
-// recovery.
+// Four or more whitespace-separated words also admit conversational statements
+// after a dictionary miss. Dictionary hits and explicit overrides are decided
+// by the caller first; shorter misses still need the question/request rules.
 func readsAsQuestion(line string) bool {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -53,6 +50,9 @@ func readsAsQuestion(line string) bool {
 		return true
 	}
 	fields := strings.Fields(line)
+	if len(fields) >= 4 {
+		return true
+	}
 	if len(fields) < 2 {
 		// One word is a headword shape. NOAD missing it means a typo, which is
 		// what "not found" is for.

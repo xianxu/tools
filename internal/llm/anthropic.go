@@ -51,6 +51,9 @@ func New(c Config) Client {
 	c.Model = cmp.Or(c.Model, defaultModel)
 	c.Effort = cmp.Or(c.Effort, defaultEffort)
 	c.BaseURL = cmp.Or(c.BaseURL, defaultBaseURL)
+	if c.AutoModel {
+		return newAutoClient(c)
+	}
 	opts := []option.RequestOption{
 		option.WithBaseURL(c.BaseURL),
 		option.WithAPIKey(c.APIKey),
@@ -79,6 +82,16 @@ func (a *anthropicClient) effective(r Request) Request {
 	// so a negative override reached the wire as -5 with a nil error. Any field
 	// with a per-request override needs the same treatment at both doors.
 	r.MaxTokens = positiveOr(r.MaxTokens, a.cfg.MaxTokens)
+	if !r.adaptiveThinking && (a.cfg.provider == "openai" || a.cfg.provider == "antigravity") {
+		r.adaptiveThinking = true
+		if r.Schema != nil {
+			instructions := "Return only valid JSON matching the following JSON Schema. Do not include Markdown fences or explanatory text.\n" + renderSchema(r.Schema)
+			if r.System != "" {
+				r.System += "\n\n"
+			}
+			r.System += instructions
+		}
+	}
 	return r
 }
 
@@ -95,8 +108,13 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 	if r.System != "" {
 		p.System = []anthropic.TextBlockParam{{Text: r.System}}
 	}
-	// Thinking is left UNSET: on claude-opus-5 that runs adaptive by default,
-	// which is what we want, and budget_tokens would be rejected with a 400.
+	// The proxy translates explicit adaptive thinking for non-Claude providers.
+	// Direct Claude retains its existing unset/default thinking contract.
+	if r.adaptiveThinking {
+		p.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
+		}
+	}
 	oc := anthropic.OutputConfigParam{
 		Effort: anthropic.OutputConfigEffort(cmp.Or(r.Effort, a.cfg.Effort)),
 	}
@@ -108,7 +126,8 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 }
 
 func (a *anthropicClient) Complete(ctx context.Context, r Request) (Response, error) {
-	ctx = withRequest(ctx, a.effective(r))
+	r = a.effective(r)
+	ctx = withRequest(ctx, r)
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
 	defer cancel()
 
@@ -123,7 +142,8 @@ func (a *anthropicClient) Complete(ctx context.Context, r Request) (Response, er
 }
 
 func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(string)) (Response, error) {
-	ctx = withRequest(ctx, a.effective(r))
+	r = a.effective(r)
+	ctx = withRequest(ctx, r)
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
 	defer cancel()
 

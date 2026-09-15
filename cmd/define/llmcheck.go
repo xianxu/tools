@@ -23,7 +23,7 @@ import (
 // context.Background() instead discards that, and a hung endpoint then holds the
 // terminal for the full Timeout with Ctrl-C doing nothing — measured at 5s+
 // against a socket that accepts and never answers.
-func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func(llm.Config) llm.Client, stdout, stderr io.Writer) int {
+func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func(llm.Config) llm.Client, stdout, stderr io.Writer, opt options) int {
 	cfg, err := llm.Resolve(getenv)
 	if err != nil {
 		// Non-zero, and the message says what to do. A cheerful empty result is
@@ -32,7 +32,11 @@ func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func
 		return 1
 	}
 	fmt.Fprintf(stdout, "  base url  %s\n", cfg.BaseURL)
-	fmt.Fprintf(stdout, "  model     %s (effort %s)\n", cfg.Model, cfg.Effort)
+	configuredModel := cfg.Model
+	if cfg.AutoModel {
+		configuredModel = "auto"
+	}
+	fmt.Fprintf(stdout, "  model     %s (effort %s)\n", configuredModel, cfg.Effort)
 	// Redacted, always. A diagnostic that prints a credential is a diagnostic you
 	// cannot paste into an issue.
 	fmt.Fprintf(stdout, "  key       %s\n", llm.Redact(cfg.APIKey))
@@ -50,10 +54,14 @@ func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func
 	// MaxTokens comes from the resolved Config. Hardcoding it here meant
 	// --llm-check reported on a request the operator had not configured, which is
 	// the opposite of a diagnostic's job.
-	resp, err := newClient(cfg).Complete(ctx, llm.Request{
+	client := newClient(cfg)
+	resp, err := foregroundClient(client, stdout, opt).Complete(ctx, llm.Request{
 		Task:   "llm-check",
 		Prompt: "Reply with exactly the word PONG and nothing else.",
 	})
+	if selected := llm.SelectionOf(client); cfg.AutoModel && selected.ID != "" {
+		fmt.Fprintf(stdout, "  provider  %s\n  model     %s (effort %s)\n", selected.Provider, selected.ID, cfg.Effort)
+	}
 	if err != nil {
 		// An interrupt is the user's own keypress, not a failure to report — the
 		// same distinction playAnnounced draws for interrupted playback. A

@@ -406,6 +406,8 @@ quotes them verbatim and `doc_sync_test.go` pins that — and the style is appli
 where the strings are handed to `Draw`. Escapes cost no columns and every
 measuring helper skips them, so no row budget moves; the summary `finish` writes
 is the RECORD rather than the live edge and is correctly left undimmed.
+The board’s bracketed active marking option is highlighted in cyan by
+`boardPrompt`; it clears dim for that span and restores dim for the instructions.
 
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —
@@ -531,8 +533,7 @@ offers nothing is not an error.
 **The mark is an attribute, spliced by the SCREEN.** `markClickable` underlines a
 clickable span at paint time, turned off with `24` rather than `0` so the
 palette's colour survives. Static rather than on hover, because hover needs mode
-`1003` — an event per cell the pointer crosses — while `1000` reports presses
-only and never says where the pointer is. Emitted by `Render` it would leak into
+`1003` — an event per cell the pointer crosses — while `1002` reports motion only while a button is held. Emitted by `Render` it would leak into
 `define <word>`, a pipe, `-raw` and `> out.txt`: decoration claiming an
 affordance a file does not have. `writeRendered` is the seam — a writer that can
 hold a click map gets one, everything else gets bytes.
@@ -546,14 +547,14 @@ user asked to keep plain.
 
 **Scrolling, and why the mouse had to be reported.** PageUp/PageDown move the
 viewport by a screenful less one line of overlap; the wheel moves three lines. The
-wheel took mouse reporting (`1000` + `1006`) to arrange at all: in the alternate
+wheel took mouse reporting (`1002` + `1006`) to arrange at all: in the alternate
 screen a terminal translates the wheel into ARROW KEYS — the convention that lets
 `less` scroll with no mouse support — and this editor binds Up/Down to the history
 walk, so scrolling recalled words. The bytes are identical, so nothing can
 separate them; asking the terminal to report the mouse is the only way to be
 handed the gesture the user made.
 
-**Enabling a mode means accepting its whole grammar.** `1000` is answered in
+**Enabling a mode means accepting its whole grammar.** `1002` is answered in
 X10 — `ESC[M` plus three RAW bytes — by any terminal that ignores `1006`, and
 those bytes belong to no CSI grammar: the scan stops at `M` as a final byte and
 the payload reaches the line as text, so a click typed `" !!"` into the word
@@ -563,11 +564,27 @@ handles the SGR form, and both read one `wheelFromButton`. The rule to carry int
 `M2`: **for every mode we enable, the decoder answers every encoding that mode
 can reply in.**
 
-**The cost, decided rather than discovered:** with tracking on, drag-select
-belongs to this program, so copying text needs Option (iTerm2, Terminal.app,
-Ghostty) or Shift. `/help` says so, which is where a user meets it. Text
-selection of our own is a NON-GOAL — a whole model of anchors, extents and
-clipboard integration.
+**Selection shares the painter (#59).** `screen.layoutSelectionFrame` places
+buffer, prompt and footer once; the same physical rows feed painting and
+`selectionFrame`. `selectionStep` arbitrates press/motion/release. Dragging copies
+literal visible text through `selectedText`, with whole wide/combining characters,
+without layout padding, activity glyphs or ANSI. A drag never becomes a click.
+`pointerRouter` handles gestures before `readInput` admits ordinary type-ahead;
+completed clicks carry screen/frame identity and resolve an immutable hit under
+router→screen locks. Resize observation invalidates before a busy loop receives
+its notification. Keyboard/page/wheel cancellation also precedes admission,
+including rejected input. A console-owned interrupter observer invalidates before
+the scoped foreground callback for both byte Ctrl-C and SIGINT; shutdown detaches it. Editor, standalone practice and nested `/play` share ownership.
+
+`clipboardQueue` serializes a bounded FIFO behind `clipboardWriter`. The native
+writer runs inside a private child of the same executable, with a parent deadline
+and child-owned watchdog, so native IO cannot block input or terminal restoration.
+Failures retain one bounded payload in a transient click-to-retry notice. None of
+this feedback enters the transcript. Frame/payload sizes, pending writes and
+process lifetime have explicit bounds; newest ordinary input is refused visibly
+when its 256-entry queue fills. Tests use stateful clipboard doubles and isolated
+named pasteboards. The conformance build replaces only the target factory and
+refuses missing/general targets; production always uses the canonical clipboard.
 
 **Terminal state is one guarantee, not three.** Raw mode, the alternate screen
 and mouse reporting all hang off `rawSession`, which restores from a defer AND on
@@ -983,6 +1000,22 @@ Its contract, in the order the rules matter:
    contract.
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
+**Streamed answers wrap before reaching the screen** (#55). `runAsk` chains
+`highlightWriter` → `answerWrapWriter` → stdout, so highlighting sees logical
+text and wrapping measures the resulting visible cells with `visibleCells`.
+The wrapper emits completed words as they arrive and flushes its unfinished
+word after the highlighter on every exit. It reopens the active `sgrState` after
+both inserted and explicit newlines, so a viewport starting inside a highlighted
+phrase or styled paragraph does not depend on an offscreen opening escape.
+The raw session answer is unchanged.
+`opt.width` supplies the terminal width; zero (pipes and terminals below
+`minWrapWidth`) passes bytes through. Words wider than the terminal stay intact;
+old output is not reflowed when the terminal shrinks during an answer. Spaces
+and paragraph breaks are preserved when they fit; tabs become single spaces in
+wrapped prose. Pending text is capped at 64 KiB and incomplete escapes at 256
+bytes; exceeding a cap stops the writer and reports incomplete answer output
+through the existing diagnostic. The wrapper owns no goroutine or durable state.
+
 `sgrState` is the pure half: it watches escapes go past and answers "what style
 would a terminal be in right now", so a highlight can hand that style back. It
 accumulates SGRs until a reset, because `Render` opens bold and colour
@@ -1205,7 +1238,7 @@ timestamps — not in this command.
 
 ## Free-form input
 
-A line that is not a word and reads as a question is answered by the model rather
+A dictionary miss with four or more words, or one that reads as a question, is answered by the model rather
 than looked up. There is no mode and no prefix to remember — which is the whole
 claim, so the interesting part is how "is this a word" gets decided.
 
@@ -1232,17 +1265,18 @@ the *table* unasserted.
 | `?hot dog` | question, forced — the dictionary is not consulted at all |
 | `\how so` | not found, forced — the question fallback is suppressed |
 
-`readsAsQuestion` has three arms: a trailing `?`, a leading interrogative or
+`readsAsQuestion` has four arms: four or more whitespace-separated words, a
+trailing `?`, a leading interrogative or
 auxiliary (`what's` → what, `isn't` → is, and `when` is not a negation), or a
 leading request verb with an object (`use it in a sentence`). A single-word line
 with no question mark is never a question — that is a headword shape, and a miss
 is a typo. `why?` is, because the mark is explicit and its arm is tested first.
 
-**There is deliberately no length arm.** A draft had "≥5 words → question" to
-catch `difference between sycophantic and obsequious`, which reads as neither
-interrogative nor imperative. That is a word count wearing a different hat, and
-word count is the signal that cannot work. The cost is real and named: that line
-answers "not found", and `?` is its recovery.
+**Long dictionary misses fall back to conversation** (#57). The four-word arm
+admits statements such as `so lickspittle is similar to sycophantic` and
+`difference between sycophantic and obsequious`. Dictionary hits still win,
+including long phrases; `\` and `-raw` still suppress fallback. One-to-three-word
+misses need an existing question/request signal or an explicit `?` prefix.
 
 **Both hatches, and why neither is exclusive.** `?` forces a question and `\`
 forces a lookup; a bare question still asks and a bare word still looks up, so
@@ -2230,6 +2264,10 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `news_conformance_test.go` | the live RSS feed still parses, and its terms still say personal use |
 | `reflect_conformance_test.go` | the live model still answers in the shape the parser expects |
 | `live_property_test.go` | the no-data-loss predicate holds over the WHOLE dictionary, not a sample |
+| `clipboard_target_conformance_test.go` | conformance-only target factory rejects missing and general clipboard targets |
+| `clipboard_conformance_test.go` | native literal text and flavor inventory on an isolated pasteboard |
+| `selection_conformance_test.go` | real mouse drag/highlight/copy during model waits and terminal restoration; isolated target fails closed |
+| `activity_conformance_test.go` | real terminal Braille animation and cleanup at first answer text or cancellation, with held fake model responses |
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 | `harvest_conformance_test.go` | the live model's agreement across rounds stays above the floor the cache's premise needs |
 | `version_conformance_test.go` | `-ldflags -X main.version` still reaches the binary — the one row the merge gate runs, since its failure is silent |
@@ -3286,3 +3324,23 @@ moving on. **Revealing is idempotent**, so a second reveal does not play the
 pronunciation twice. **An empty queue is immediately done** — the message names
 its cause, and "nothing due today" is reserved for the schedule genuinely having
 nothing.
+
+
+## Foreground activity (#36)
+
+`activity.go` owns the glyph-only Braille cycle, ticker and cancellable display
+lease. `activity_terminal.go` owns a transient empty line; `activity_screen.go`
+owns a separate live-screen row. The shared painter budgets the original prompt,
+then activity, footer, gap and scrollable buffer. Activity never enters the
+transcript. Replacement, suspension, cancellation and stop invalidate the lease.
+`activityClient` in `llm_activity.go` decorates foreground calls from ask, reflect,
+harvest (including agreement) and diagnostics. It starts before lazy discovery,
+clears before the first nonempty stream delta, and clears on Complete return.
+Original clients remain the source of selected-model provenance. Terminal
+eligibility is `opt.tty && !opt.raw`; disabled paths start no ticker or worker.
+Dictionary and cached work make no client calls and show no spinner. Background
+work (#54) retains undecorated clients and owns its UI lifecycle separately.
+
+Lifecycle tests inject ticks and terminal failures; screen tests replay frames
+through the terminal oracle; consumer tests hold the fake wire response. The PTY
+conformance check verifies actual animation and a usable prompt after cleanup.

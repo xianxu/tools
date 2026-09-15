@@ -4505,3 +4505,72 @@ a learner model that failed in English would have been skipped in Spanish (close
 review, the third finding in `shared-state-across-the-job-boundary`). **State a
 session carries across a switch of the thing it describes is keyed by that thing,
 or reset when it changes.**
+## Styling survives the viewport boundary (define #55)
+
+Text preservation across a wrap does not prove styling preservation. A screen
+can begin on the continuation row, with the opening SGR offscreen. Make each
+continuation independently styled using the shared SGR state, and verify the
+painted viewport rather than only the full transcript. Cover inserted and
+explicit newlines, learned phrases and enclosing styles, and the closing reset.
+
+
+## New live checks must obey the shared skip policy (define #58)
+
+- A package's own tests can pass while a new conformance test breaks the
+  repository-wide skip guard. Route every absent external dependency through
+  `conformance.SkipOrFail`, including missing configuration, and run
+  `go test ./internal/conformance` whenever adding a live test. Check both default
+  skip and strict failure with an unavailable dependency; a live success does
+  not exercise the skip branches.
+
+- When adding a conformance entrypoint, update the atlas's named inventory and
+  count along with behavior documentation; describing the feature elsewhere
+  does not keep its verification map current.
+
+
+## Render controls are not display cells (define #36)
+
+When budgeting a rendered editor prompt, use its real control-bearing output in
+geometry tests. RenderLine's leading carriage return was counted as a cell,
+turning an exact-width prompt into two rows and shifting the spinner/footer.
+Normalize redundant controls at the painter's owned origin, and assert cursor
+and hit-test geometry with an independent terminal oracle. Test short writes
+with nil errors too: a transient display must normalize them to io.ErrShortWrite
+and end its animation worker.
+
+
+## Snapshot validation includes the action target (define #59)
+
+A frame token is not sufficient if code validates it, unlocks, and then resolves
+coordinates against a repainted display. Capture immutable region/footer metadata
+with validation under the same ownership locks. Exercise a repaint and screen
+handoff between input and action, and check the actual playback/grade effects.
+
+Clipboard conformance must wire the foreground process to an isolated target,
+not merely test the native helper on one. The test configuration must fail closed;
+otherwise a missing variable can mutate the user's clipboard during a green run.
+
+
+## Cancellation is independent of delivery (define #59 BR-1)
+
+Enumerate every ingress path when adding transient state: admitted and rejected
+keyboard/page/wheel events, byte interrupts and signal interrupts. Queue saturation
+and scoped callbacks must not bypass cancellation. Assert external effects with an
+ordered barrier: stopping a worker immediately can drop the bad write and make a
+zero-write assertion pass even though the cancelled gesture submitted it.
+
+
+## Dictionary canonicalization is not audio identity (define #61 plan review)
+
+Use canonical dictionary headwords to match related records without replacing the
+user's typed/deck word. An inflected lookup can resolve to a lemma for definition
+but must retain the existing pronunciation policy on initial playback and replay.
+Test both paths with an inflection, not only accent-equivalent spellings.
+
+
+## Client decoration must preserve provenance at shared cores (#54 integration)
+
+Moving a foreground request into a reusable core can move provenance lookup
+across a decorator boundary. Test the discovered model recorded in durable
+output with activity enabled; keep background clients undecorated and inspect
+the original transport when reporting which model actually answered.

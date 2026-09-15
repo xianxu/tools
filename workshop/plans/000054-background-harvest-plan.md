@@ -65,6 +65,7 @@
 | `runHarvest` | `cmd/define/harvest.go` | modified | the `--harvest` flag |
 | `runAuthoring` | `cmd/define/harvest.go` | modified | the model, the store |
 | `reflectDeck` | `cmd/define/reflect.go` | new | the model, the store |
+| `clientModelSelection` | `cmd/define/llm_activity.go` | new | underlying client provenance through foreground decoration |
 | `runReflect` | `cmd/define/reflect.go` | modified | the `--reflect` flag |
 | `pendingWords` | `cmd/define/background.go` | new | the store |
 | `quietStore` | `cmd/define/background.go` | new | the store's warning writer |
@@ -482,3 +483,16 @@ The runner exists only when all hold: this is the raw editor (`replRaw`), the de
 - **Quiet reads are the store seam's**: `Quieter` in the store package, which the YAML store, the in-memory store and the deck gate each implement, and `quietStore` asks for it rather than switching on the two shapes it knew. `TestEveryStoreHasAQuietView` parses both packages and fails on any `store.Store` implementation without `Quiet`.
 - **The runner's memory is kept per language**, keyed by the language the job ran in, so what failed in one language is still tried in another after `/lang`. Pinned by `TestBgMemoryIsKeptPerLanguage`.
 - **Checkboxes follow the evidence**: the issue's Done-when boxes are ticked, each against the pin its Log entry names, and Task 1.7 Step 4 and Task 2.4 Step 4 are ticked. Task 1.7 Step 3, the operator's TUI smoke test, stays open on purpose: it spends real model calls, it is the operator's to run, and it comes before merge.
+
+
+### 2026-09-14 — Resume integration on current main
+
+The user requested closing #54. Resume from reviewed commit b34c9c3 in an isolated
+worktree and integrate current main, preserving #58 discovery/provenance and #36
+foreground activity ownership. Background clients remain undecorated. The
+foreground reflection path decorates only its request client; clientModelSelection
+unwraps the activity adapter before reporting the underlying selected model.
+TestReflectRecordsDiscoveredModel failed after the first integration and passed
+with this correction. Focused harvest/reflect/background tests, race checks, vet
+and Linux cross-build passed. Live TUI smoke is running against the local proxy
+in an isolated deck; full suite and final close/merge follow.

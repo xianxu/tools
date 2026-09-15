@@ -484,93 +484,238 @@ func grantedGap(want, termRows, promptRows, footerRows int) int {
 // termRows and termCols are passed in rather than stored, so a resize is one
 // call site's business (the loop's SIGWINCH case) and not fields that go stale.
 func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, footer []string) {
-	var footerRows int
-	s.cols = termCols
-	// ONE row accounting, used twice: it budgets the buffer's share of the frame
-	// AND says where the cursor has to walk back to. Two summations of the same
-	// quantity is how the second one came to omit the prompt's own height, which
-	// is the off-by-a-row limit this whole-frame redraw exists to have deleted.
-	//
-	// The buffer gets whatever the live edge does not need. A terminal too short
-	// for even the prompt still gets the prompt: losing the line you are typing
-	// is worse than losing history you can scroll to.
-	// EVERY component is budgeted, not just the buffer's share. Charging the live
-	// edge its height and then writing it unclipped is not a budget: a prompt or
-	// a footer taller than the terminal overflows exactly as a wide buffer line
-	// did, and the terminal scrolls, and every placed row moves.
-	//
-	// The order of sacrifice is the order of value. The prompt is the line you
-	// are typing and survives first — clipped only if it alone is taller than the
-	// terminal, where the alternative is a frame nobody owns. The footer gives up
-	// whole rows next — a dropdown in the editor, a status bar in --play, and in
-	// both cases the thing a reader can lose for a moment without being stuck. The buffer is scrollable, so it
-	// takes what is left.
-	prompt = clipVisible(prompt, termRows*max(s.cols, 1))
-	promptRows := displayRows(prompt, s.cols)
-	footer, footerRows = fitFooter(footer, termRows-promptRows, s.cols)
-	// The footer keeps its full budget: it is worth more than the gap, so it is
-	// sized first and the gap takes only from what is left over.
-	gap := grantedGap(s.gap, termRows, promptRows, footerRows)
-	s.rows = termRows - promptRows - footerRows - gap
-	if s.rows < 0 {
-		s.rows = 0
-	}
+	s.paintActivity(w, termRows, termCols, prompt, footer, "")
+}
+
+// selectionLayout retains the painter's original chunks and their physical rows.
+// Placement is computed once; selection never reconstructs a second viewport.
+type selectionLayout struct {
+	frame  selectionFrame
+	chunks []selectionPaintChunk
+}
+
+type selectionPaintChunk struct {
+	text         string
+	first, count int
+}
+
+func (layout selectionLayout) paint(w io.Writer, gesture selectionGesture) {
 	var b strings.Builder
-	b.WriteString(cursorHome + eraseDown)
-	// Each painted row carries the marks for the BUFFER line it is showing, found
-	// through the same mapping a click uses to go the other way — the same call,
-	// so the paint and the hit test cannot be answering from different states.
-	frame, top := s.visible()
-	for i, line := range frame {
-		b.WriteString(clipVisible(markClickable(line, s.regions[top+i]), s.cols) + "\r\n")
-	}
-	if s.pinned {
-		// The buffer region takes its whole share whether or not there is text
-		// to fill it, which is what puts the footer on the bottom row (D3a).
-		// visible() never returns more rows than s.rows, so this cannot go
-		// negative — and it emits ROWS, not lines: Lines() is unchanged.
-		for range s.rows - len(frame) {
-			b.WriteString("\r\n")
+	for _, chunk := range layout.chunks {
+		if (gesture.selected || gesture.active && gesture.dragging) && gesture.frame != 0 && layout.frame.err == nil && chunk.count > 0 {
+			for row := chunk.first; row < chunk.first+chunk.count; row++ {
+				b.WriteString(layout.frame.highlightRow(row, gesture.anchor, gesture.end))
+			}
+		} else {
+			b.WriteString(chunk.text)
 		}
 	}
-	// Recorded HERE, from the values this paint is about to use, rather than
-	// recomputed by whoever asks later. The buffer's height is len(frame) unless
-	// the padding above just filled it out, which is the one place the two
-	// surfaces differ — and it is exactly the arithmetic that decides where a
-	// footer click lands.
+	fmt.Fprint(w, b.String())
+}
+
+func (s *screen) paintActivity(w io.Writer, termRows, termCols int, prompt string, footer []string, glyph string) {
+	s.layoutSelectionFrame(termRows, termCols, prompt, footer, glyph, "", false).paint(w, selectionGesture{})
+}
+
+func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, footer []string, glyph, notice string, retry bool) selectionLayout {
+	s.cols = termCols
+	// Retain RenderLine's erase/cursor controls, except its redundant leading CR.
+	prompt = strings.TrimPrefix(prompt, "\r")
+	prompt = clipVisible(prompt, selectionPromptBudget(termRows, termCols))
+	prompt = clipSelectionRows(prompt, max(1, termRows), termCols)
+	promptRows := displayRows(prompt, s.cols)
+	glyph = activityRow(prompt, glyph, termRows, termCols)
+	activityRows := 0
+	if glyph != "" {
+		activityRows = 1
+		if prompt == "" {
+			promptRows = 0
+		}
+	}
+	// Feedback is chrome, never a record. On the smallest terminal it borrows
+	// the prompt display, leaving the liveScreen's stored editor prompt intact.
+	noticePrompt := notice != "" && termRows-promptRows-activityRows < 1
+	if noticePrompt {
+		prompt = clipVisible(notice, max(termCols, 1))
+		promptRows, glyph, activityRows = 1, "", 0
+		footer = nil
+	} else if notice != "" {
+		footer = append([]string{clipVisible(notice, max(termCols, 1))}, footer...)
+	}
+	footer, footerRows := fitFooter(footer, termRows-promptRows-activityRows, s.cols)
+	gap := grantedGap(s.gap, termRows, promptRows+activityRows, footerRows)
+	s.rows = max(0, termRows-promptRows-activityRows-footerRows-gap)
+	layout := selectionLayout{}
+	var rows []selectionRow
+	snapshotBytes, snapshotRefused := 0, false
+	// Refuse oversized selection snapshots before allocating rows/cells. The
+	// ordinary painter keeps working and the attempted gesture explains refusal.
+	bounded := termRows > 0 && termCols > 0 && termRows <= maxSelectionCells/termCols
+	control := func(text string) { layout.chunks = append(layout.chunks, selectionPaintChunk{text: text}) }
+	place := func(text string, role selectionRow) {
+		chunk := selectionPaintChunk{text: text, first: len(rows)}
+		if bounded && len(text) > maxSelectionSource-snapshotBytes {
+			bounded, snapshotRefused, rows = false, true, nil
+		}
+		if bounded {
+			physical := selectionPhysicalRows(text, termCols)
+			if physical == nil {
+				bounded, snapshotRefused, rows = false, true, nil
+			}
+			for offset, line := range physical {
+				if len(line) > maxSelectionSource-snapshotBytes {
+					bounded, snapshotRefused, rows = false, true, nil
+					break
+				}
+				snapshotBytes += len(line)
+				r := role
+				r.styled = line
+				if r.footer {
+					r.footerOffset = offset
+				}
+				rows = append(rows, r)
+			}
+			chunk.count = len(physical)
+		}
+		layout.chunks = append(layout.chunks, chunk)
+	}
+	control(cursorHome + eraseDown)
+	frame, top := s.visible()
+	for i, line := range frame {
+		place(clipVisible(markClickable(line, s.regions[top+i]), s.cols), selectionRow{selectable: true, regions: s.regions[top+i]})
+		control("\r\n")
+	}
 	bufRows := len(frame)
-	if s.pinned && s.rows > bufRows {
+	if s.pinned {
+		for range s.rows - len(frame) {
+			place("", selectionRow{})
+			control("\r\n")
+		}
 		bufRows = s.rows
 	}
-	// THE GAP IS EMITTED LAST, after the pinned padding, so it is the row
-	// directly above the prompt whatever the buffer did with its share.
 	for range gap {
-		b.WriteString("\r\n")
+		place("", selectionRow{})
+		control("\r\n")
 	}
-	// COUNTED in the footer's origin, or every footer click lands one row out —
-	// and on a board the footer entries ARE the grid, so a click mapped one row
-	// high marks the wrong word, permanently.
-	s.footer, s.footerTop = footer, bufRows+gap+promptRows
-	b.WriteString(prompt)
-	for _, m := range footer {
-		b.WriteString("\r\n" + m)
+	s.footer, s.footerTop = footer, bufRows+gap+activityRows+promptRows
+	if glyph != "" {
+		place(glyph, selectionRow{})
+		if promptRows > 0 {
+			control("\r\n")
+		}
 	}
-	if len(footer) > 0 {
-		// Back to the prompt's FIRST row, in the rows the terminal actually
-		// moved: the menu's own height, plus the prompt's beyond its first row.
-		// Counting footer ENTRIES leaves the cursor low when a row wraps; omitting
-		// the prompt's height reprints it over the menu.
-		fmt.Fprintf(&b, "\x1b[%dA\r", footerRows+promptRows-1)
-		// And forward to the prompt's own cursor column, which the caller
-		// encoded into `prompt` — reprinting it is cheaper than tracking a
-		// column here and cannot disagree with what was drawn.
-		b.WriteString(prompt)
+	promptStart := len(rows)
+	if promptRows > 0 {
+		place(prompt, selectionRow{selectable: !noticePrompt, retry: noticePrompt && retry})
 	}
-	// The error is DISCARDED, and deliberately: a terminal that cannot be written
-	// to is a session that is already over, and the key reader's EOF is what ends
-	// it. There is no recovery to attempt here and nowhere to report to — the
-	// report would go to the same terminal.
-	fmt.Fprint(w, b.String())
+	for i, line := range footer {
+		control("\r\n")
+		role := selectionRow{selectable: true, footer: true, footerEntry: i}
+		if notice != "" && !noticePrompt {
+			role.footerEntry--
+			if i == 0 {
+				role.selectable, role.footer, role.retry = false, false, retry
+			}
+		}
+		place(line, role)
+	}
+	if len(footer) > 0 && promptRows > 0 {
+		control(fmt.Sprintf("\x1b[%dA\r", footerRows+promptRows-1))
+		// Reprinting parks the original editor cursor, including suggestion-back
+		// controls. Reuse the same row spans so selection remains highlighted.
+		count := 0
+		if bounded {
+			count = len(selectionPhysicalRows(prompt, termCols))
+		}
+		layout.chunks = append(layout.chunks, selectionPaintChunk{text: prompt, first: promptStart, count: count})
+	}
+	layout.frame = newSelectionFrame(termCols, termRows, rows)
+	if snapshotRefused {
+		layout.frame = selectionFrame{width: termCols, height: termRows, err: errSelectionBounds}
+	}
+	return layout
+}
+
+// selectionPromptBudget avoids overflowing dimension multiplication on a hostile
+// resize. This limits clipping arithmetic; the frame constructor bounds snapshots.
+func selectionPromptBudget(rows, cols int) int {
+	cols = max(cols, 1)
+	if rows > 0 && rows > int(^uint(0)>>1)/cols {
+		return int(^uint(0) >> 1)
+	}
+	return rows * cols
+}
+
+// selectionPhysicalRows splits only at terminal soft wraps, retaining controls
+// in their original positions and resuming SGR on a continuation. Joining these
+// rows emits the same glyphs and cursor controls as the original stream.
+func selectionPhysicalRows(text string, width int) []string {
+	var rows []string
+	var style sgrState
+	sourceBytes := 0
+	ok := walkSelectionRows(text, width, func(start, end int) bool {
+		prefix := style.resume()
+		if len(prefix) > maxSelectionSource-sourceBytes || end-start > maxSelectionSource-sourceBytes-len(prefix) {
+			return false
+		}
+		line := text[start:end]
+		rows = append(rows, prefix+line)
+		sourceBytes += len(prefix) + len(line)
+		for i := 0; i < len(line); {
+			if n := escapeLen(line[i:]); n > 0 {
+				style.observe(line[i : i+n])
+				i += n
+			} else {
+				_, n := utf8.DecodeRuneInString(line[i:])
+				i += n
+			}
+		}
+		return true
+	})
+	if !ok {
+		return nil
+	}
+	return rows
+}
+
+// walkSelectionRows owns the terminal soft-wrap boundary for budgeting, clipping,
+// painting spans and hit snapshots. Wide glyphs can leave an unused last column;
+// dividing the total cell count by width loses those rows.
+func walkSelectionRows(text string, width int, visit func(start, end int) bool) bool {
+	start, col := 0, 0
+	for i := 0; i < len(text); {
+		if n := escapeLen(text[i:]); n > 0 {
+			i += n
+			continue
+		}
+		r, n := utf8.DecodeRuneInString(text[i:])
+		w := cellWidth(r)
+		if width > 0 && w > 0 && col > 0 && col+w > width {
+			if !visit(start, i) {
+				return false
+			}
+			start, col = i, 0
+		}
+		col += w
+		i += n
+	}
+	return visit(start, len(text))
+}
+
+func clipSelectionRows(text string, rows, cols int) string {
+	n, end := 0, len(text)
+	walkSelectionRows(text, cols, func(_, stop int) bool {
+		n++
+		if n == rows {
+			end = stop
+			return false
+		}
+		return true
+	})
+	if end < len(text) {
+		return text[:end] + sgrOff
+	}
+	return text
 }
 
 // liveScreen is the screen wired to a terminal: an io.Writer that SHOWS what is
@@ -593,10 +738,22 @@ type liveScreen struct {
 	// rows and cols are the terminal's SHAPE. Owned here rather than in `screen`
 	// because they are facts about the terminal, not about the text — and
 	// M1.4's SIGWINCH has exactly one place to update.
-	rows   int
-	cols   int
-	prompt string
-	footer []string
+	rows                       int
+	cols                       int
+	prompt                     string
+	footer                     []string
+	activity                   *activityLease
+	activityGlyph              string
+	paintErr                   error
+	frame                      selectionFrame
+	frameID                    uint64
+	framePublished             bool
+	gesture                    selectionGesture
+	selectionNotice            string
+	failedCopy                 string
+	copySeq                    uint64
+	observedRows, observedCols int
+	sizeObserved               bool
 	// stopped is set when the terminal has been handed back. Writes still reach
 	// the buffer — the exit transcript needs them — but painting must stop dead,
 	// or a farewell newline written after restore would draw a frame onto the
@@ -682,9 +839,9 @@ func (l *liveScreen) window() time.Duration {
 // buffer at 156 cells in a 40-column terminal while every site the loop owns was
 // wrapped. Here nothing can write around it.
 //
-// The editor's screen does NOT wrap: its text is pre-wrapped by `Render` at the
-// policy width, and its ask path streams token by token, where a chunk that ends
-// mid-line has no line to wrap yet. A sitting writes whole messages.
+// The editor's screen does NOT wrap: definitions arrive pre-wrapped by Render,
+// and runAsk's answerWrapWriter carries word boundaries across streamed chunks.
+// Both use the policy width. A sitting writes whole messages.
 func (l *liveScreen) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -706,6 +863,9 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 // the axis the fifth did not enumerate: that one closed which LINES are wrapped
 // and left which PATHS. Callers hold mu.
 func (l *liveScreen) writeBuffer(text string) error {
+	if text != "" {
+		l.invalidateSelectionLocked()
+	}
 	if l.s.pinned {
 		text = wrapWritten(text, l.cols)
 	}
@@ -803,6 +963,7 @@ func (l *liveScreen) FooterRowAt(row int) (int, int, bool) {
 func (l *liveScreen) Page(n int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.invalidateSelectionLocked()
 	l.s.Page(n)
 	l.repaint()
 }
@@ -810,6 +971,7 @@ func (l *liveScreen) Page(n int) {
 func (l *liveScreen) Scroll(lines int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.invalidateSelectionLocked()
 	l.s.Scroll(lines)
 	l.repaint()
 }
@@ -820,6 +982,9 @@ func (l *liveScreen) Scroll(lines int) {
 func (l *liveScreen) Resize(rows, cols int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.rows != rows || l.cols != cols {
+		l.invalidateSelectionLocked()
+	}
 	l.rows, l.cols = rows, cols
 }
 
@@ -844,7 +1009,9 @@ func (l *liveScreen) Size() (rows, cols int) {
 func (l *liveScreen) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.pending {
+	hadActivity := l.activity != nil
+	l.revokeActivity()
+	if l.pending || hadActivity {
 		l.repaint() // the last thing shown must not be what the throttle held
 	}
 	if l.timer != nil {
@@ -852,6 +1019,9 @@ func (l *liveScreen) Stop() {
 		l.timer = nil
 	}
 	l.stopped = true
+	l.cancelSelectionLocked(true)
+	l.invalidateSelectionLocked()
+	l.frame = selectionFrame{}
 }
 
 // suspend stops this screen PAINTING without ending its life, so another screen
@@ -882,7 +1052,14 @@ func (l *liveScreen) suspend() {
 	if l.suspended {
 		return
 	}
+	if l.activity != nil {
+		l.revokeActivity()
+		l.repaint()
+	}
 	l.suspended = true
+	l.cancelSelectionLocked(true)
+	l.invalidateSelectionLocked()
+	l.frame = selectionFrame{}
 	if l.timer != nil {
 		l.timer.Stop()
 		l.timer = nil
@@ -922,7 +1099,22 @@ func (l *liveScreen) repaint() {
 	if l.stopped || l.suspended || l.tty == nil {
 		return
 	}
-	l.s.Paint(l.tty, l.rows, l.cols, l.prompt, l.footer)
+	w := &activityPaintWriter{writer: l.tty}
+	layout := l.s.layoutSelectionFrame(l.rows, l.cols, l.prompt, l.footer, l.activityGlyph, l.selectionNotice, l.failedCopy != "")
+	if !l.frame.same(layout.frame) {
+		l.invalidateSelectionLocked()
+	}
+	layout.paint(w, l.gesture)
+	if l.paintErr == nil {
+		l.paintErr = w.err
+	}
+	if w.err != nil {
+		l.revokeActivity()
+		l.invalidateSelectionLocked()
+	} else if !l.sizeObserved || l.rows == l.observedRows && l.cols == l.observedCols {
+		l.frame, l.framePublished = layout.frame, true
+		l.sizeObserved = false
+	}
 	l.painted, l.pending = time.Now(), false
 }
 
@@ -948,14 +1140,9 @@ func fitFooter(footer []string, avail, cols int) ([]string, int) {
 // displayRows is how many terminal rows a line occupies once the terminal has
 // wrapped it. Always at least one: an empty line is still a row.
 func displayRows(line string, cols int) int {
-	if cols <= 0 {
-		return 1 // an unmeasurable terminal: charge one row and let it wrap
-	}
-	w := visibleCells(line)
-	if w <= cols {
-		return 1
-	}
-	return (w + cols - 1) / cols
+	n := 0
+	walkSelectionRows(line, cols, func(_, _ int) bool { n++; return true })
+	return n
 }
 
 // clipVisible cuts a line to width VISIBLE columns, keeping the escape sequences
