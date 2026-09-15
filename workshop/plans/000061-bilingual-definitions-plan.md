@@ -170,7 +170,7 @@ The following named surfaces are the execution contract for the case lists above
 | startup/applyLang and both command loops | TestBilingualSessionSwitch and TestBilingualStartup, driven through real dispatch/newStore seams with fake dictionaries | Saved off wins over default on; both command ingress paths see same value; es/en/es rebuild preserves setting and does not retain stale source |
 | lookupAndRender/todaysQuestions/region writers | TestBilingualLookupPaths, TestBilingualPracticeReveal, TestBilingualClozeReveal, TestBilingualInflectedAudioAndCapture and TestBilingualScreenSelection using deterministic screen and audio/capture recorders | Off and raw are primary-only; one user lookup has one capture/initial audio; inflected initial/replay identity remains typed/deck word; terminal-grid oracle validates click/copy across sections and protected English prose |
 
-PQ-2: Run strict native conformance before every release containing dictionary changes and after a macOS upgrade; this is an explicit maintainer check policy, not a claim that CI has Dictionary.app assets. Record its result in issue/release evidence.
+PQ-2 (cadence policy, reworded for PQ-7 to cover every live check in this plan): each live conformance check — strict native dictionary conformance and the opt-in live translation-help check — runs before every release that changes the surface it covers (dictionary selection or model prompts respectively) and after the environment it depends on changes (a macOS upgrade; a proxy model change). This is an explicit maintainer check policy, not a claim that CI has Dictionary.app assets or a proxy. Record each result in issue/release evidence.
 
 PQ-3: Expected practice queue is the existing default 20 words; at most one supplemental search per full definition produced, none for board glosses/option-pool entries. Target warm local lookup overhead is below 250 ms per word and below 2 s for a default 20-word queue, to be measured against the native adapter during verification. These are acceptance budgets, not promised cancellation deadlines: DictionaryServices calls are synchronous and non-cancellable. A budget miss triggers profiling/re-plan before completion rather than silently adding unbounded background workers or claiming a timeout that cannot interrupt C. Byte/record bounds remain hard constraints.
 
@@ -192,6 +192,12 @@ Pending user preference: whether English help is visible before answering or onl
 | Default on and saved off survive startup; declined deck remains unwritten | `TestBilingualStartup`, `TestBilingualDeclinedDeckWritesNothing` |
 | English-section text remains selectable | `TestBilingualScreenSelection` |
 | Spanish question targets, distractors and harvest senses contain definitions rather than grammar | `TestSpanishPracticeUsesDefinitionsInsteadOfGrammar`, `TestSpanishGrammarLabelsDoNotBecomePracticeAnswers` |
+| Checked translations reject placeholder drift, hidden-answer leaks, control text and oversize output | `TestPracticeHelpCheck`, `FuzzPracticeHelpCheck` |
+| Model requests carry displayed prose only, deduplicated and batched within the caps | `TestPracticeHelpSources`, `TestPracticeHelpBatches`, `TestPracticeHelpPreparation`, golden `help-prompt` |
+| Cache survives restart, misses on text/language/mode/version change, stays bounded, tolerates corruption | `TestPracticeHelpCacheRoundTrip`, `TestPracticeHelpCacheBounds`, `FuzzPracticeHelpCacheRead` |
+| Choice, Cloze and Board show Spanish first then English with unchanged grading and hit-testing | `TestChoiceHelpLines`, `TestClozeHelpLine`, `TestBoardHelpPanel`, `TestBilingualBoardRowsFit`, `TestBilingualPromptHelpIsSelectable` |
+| Off and English sittings never reach the model; a warm cache constructs no client; a cold cache reaches once before the first question | `TestBilingualOffSittingNeverReachesForTheModel`, `TestWarmCacheSittingConstructsNoClient`, `TestColdCachePreparesOnceBeforeTheFirstQuestion`, `TestBilingualNestedPracticePreparesHelp` |
+| Authored sentences are requested in the deck's language | `TestAuthorPromptRequiresTheLanguage`, `TestHarvestSendsTheDecksLanguage` |
 
 ## Implementation reconciliation (2026-09-14)
 
@@ -310,35 +316,67 @@ No-capture or declined deck permission uses only session memory; cache write
 failure retains the valid live translation. Reuse existing permission and atomic
 write helpers; register the runtime filename and gitignore entry.
 
+### Offline-practice invariant (PQ-4)
+
+`TestAClozeSittingNeverReachesForTheModel` and `TestSessionRunsWithTheModelUnavailable` pin an English sitting with the model seam made to panic; they keep that shape and stay green, because an English deck never prepares help. The invariant narrows rather than reverses, and each clause gets its own panicking-seam or counting-seam test:
+
+| Clause | Test | Seam shape |
+|---|---|---|
+| `/bilingual off` never resolves configuration or constructs a client, whatever the language | `TestBilingualOffSittingNeverReachesForTheModel` (Spanish deck, off) | `getenv`/`newLLM` panic |
+| a warm cache constructs no client | `TestWarmCacheSittingConstructsNoClient` (Spanish, on, every source cached) | `newLLM` panics |
+| a cold cache reaches the model once per uncached batch, inside `todaysQuestions`, before the first question; `playSession` never reaches it | `TestColdCachePreparesOnceBeforeTheFirstQuestion` (counting `newLLM`, llmtest request journal, then `playSession` with a panicking seam) | count then panic |
+| nested `/play` prepares through the same boundary with the current setting | `TestBilingualNestedPracticePreparesHelp` | `con.newSitting` substitution as in `TestBilingualNestedPracticeUsesCurrentSetting` |
+
+`atlas/define.md`'s "a sitting never reaches it" sentence is rewritten to this three-clause form; the README's offline claim says that preparation may call the proxy once for uncached material and that answering uses prepared local data.
+
+### Verification contract for the new surfaces (PQ-5)
+
+Same columns as the PQ-1 table; each row is written red before its production code.
+
+| Production surface | Test surface and adversarial strategy | Mechanical guard |
+|---|---|---|
+| `checkHelp` / `helpSource` (practice_help.go) | `TestPracticeHelpCheck` table with independent expected strings; `FuzzPracticeHelpCheck` seeded with placeholder drift, the hidden answer in every case and position, control bytes, 8 KiB+1 output, empty and whitespace-only output | Cloze output keeps exactly the source's `___` count; the current answer never appears as a word in accepted Cloze help; accepted text has no control character other than newline and is within bounds; a rejected input yields the zero value, never partial text |
+| `helpSourcesOf` / `applyHelp` (practice_help.go) | `TestPracticeHelpSources` over Choice/Cloze/Board questions built by the real constructors; `TestPracticeHelpApply` with one missing or rejected option translation | Sources are exactly the displayed strings (`Options()[i].Gloss`, `Blanked()`, `Cell.Gloss`); no `Correct`, `Axis`, restored stem or Cloze headword reaches a source; a Choice with any unusable option gets no help at all; grading and `Prompt()` identity without help are byte-equal to today |
+| `planHelpBatches` (practice_help.go) | `TestPracticeHelpBatches` with duplicates across forms, one 4 KiB+1 source, 17 sources, and a batch crossing 32 KiB | Deduplicated by exact (language, mode, text); every batch ≤ 16 sources and ≤ 32 KiB; an oversize source is excluded with a reason, never truncated |
+| `renderHelpPrompt` / `helpTask` | golden `testdata/golden/help-prompt.txt` via `llmtest.AssertGolden`; `TestHelpPromptCarriesTheLanguage` | Prompt names the source language and the placeholder rule; schema requires one English string per numbered source |
+| `store.ReadPracticeHelp` / `WritePracticeHelp` (store/practice_help.go) | `TestPracticeHelpCacheRoundTrip` in a real temp directory across two reads; `TestPracticeHelpCacheBounds` writing 513 entries and a >1 MiB set; `FuzzPracticeHelpCacheRead` over arbitrary bytes; a write into an unwritable directory | Missing/corrupt/oversize file reads as empty without error; a restart hit returns the same English for the same key and misses on any key part change; writes keep the newest 512 entries under 1 MiB atomically; a failed write leaves the previous file intact |
+| `prepareHelp` (practice_help_client.go) | `TestPracticeHelpPreparation` over the llmtest fake: cache hit (zero requests), cold batches (request count equals batch count), malformed and partial replies, HTTP 503, `StallEarly`, a cancelled context, and a deck that declined persistence | Request bodies contain the displayed prose only; one warning per preparation; failures cache nothing; a success after a failure is still applied and cached; the 30 s budget is a context deadline the client observes |
+| `play.Choice`/`Cloze`/`Board` help presentation | `TestChoiceHelpLines`, `TestClozeHelpLine`, `TestBoardHelpPanel` in package play at widths 20/40/80 with wide Unicode; `TestBilingualBoardRowsFit` through `packBoards`/`boardFitsIn`; `TestBilingualPromptHelpIsSelectable` through a real pinned screen and pointer router | Spanish line precedes its English line; `Keys()`, `Grade`, `CellAt` and grid geometry are unchanged by help; a bilingual board reserves its second panel row from construction whether or not help arrived; English prompt text is selectable and carries no Spanish deck action |
+| `todaysQuestions` boundary and one-pass Cloze selection | the four PQ-4 tests plus `TestClozeSelectsItsItemOnce` (a counting `Items` store and the blanked text equal between the translation source and `Prompt()`) | Preparation runs after the queue is built and before any question is returned; the translated Cloze text is byte-equal to the rendered blank; capture and audio counts are unchanged by the toggle |
+| `renderAuthorPrompt` language requirement | `TestAuthorPromptRequiresTheLanguage` (es and en renders differ and the es render states the requirement); regenerated `author-prompt*` goldens; `TestHarvestSendsTheDecksLanguage` unchanged | The sentence is required in the deck's language in the requirements block, not only in the header line |
+
+### Operating envelope for preparation (PQ-6)
+
+| Budget | Value | Basis | Derived load at the declared workload | When exceeded |
+|---|---|---|---|---|
+| queue | 20 words (`opt.count` default) | existing requirement (PQ-3) | worst case 20 Choice questions × 4 option glosses = 80 sources; a Board adds one per cell (≤ 16); a Cloze one — so 20–96 sources cold, typically about 80 | larger `-count` scales linearly; the 30 s cap below still binds |
+| source size | 4 KiB | domain assumption: a rendered gloss is 60–200 bytes, a stem under 300 | 80 sources ≈ 8–16 KiB total | source excluded with a reason; its question stays Spanish-only |
+| batch | 16 sources / 32 KiB | operator choice matching a single structured reply well under the 8 KiB response cap per source × 16 | 80 sources → 5 sequential proxy calls; 96 → 6 | a batch never splits a Choice's options across a failure boundary, because application is per question after all batches |
+| preparation time | 30 s, one context deadline | assumed 2–5 s per structured call on the proxy, from `--harvest` authoring latency; to be measured with one live run and recorded in the issue log | 5–6 calls ≈ 10–30 s cold; 0 calls and under 50 ms warm (cache read of ≤ 1 MiB JSON) | remaining batches are skipped, one warning, incomplete questions stay Spanish-only, nothing partial is cached |
+| cache | 512 entries / 1 MiB read and write | operator choice: ~6 sittings of cold material at ~150 bytes per entry | a default deck stays far below the cap; eviction is by oldest `at` | oldest entries dropped before the atomic replace |
+
+The interaction path is startup of a sitting (foreground, spinner shown), not a keystroke; nothing is asynchronous and no goroutine survives `todaysQuestions`.
+
+### Interaction with `#54` background preparation (PQ-8)
+
+`#54` has landed on main (merged into this branch at `c346955`), so this is an ordering statement, not a cross-branch dependency:
+
+- **Dictionary lock.** Help preparation performs no dictionary lookups; the queue build's lookups already go through `lockedDictionary`, and the background job's lookups take the same `dictionaryMu`. No new lock.
+- **Files and writers.** `practice-help.json` is written only by foreground preparation in a standalone `--play` or a nested `/play`; the background job never writes it, and `--forget` does not touch it (entries are keyed by text, not by word). Other writers: a second `define` process over the same deck (atomic replace, last writer wins; entries are content-keyed, so a lost write costs one re-translation and never corrupts), and the operator (the read path treats the file as untrusted and an unparseable file reads as empty). Deleting the deck removes it.
+- **Ordering.** A nested sitting runs synchronously inside the editor loop's select, so `bgResults` are not consumed while a sitting runs; a job already in flight keeps running and its result is applied when the loop resumes. Preparation reads `Items` once at queue build (today's behaviour) and may see either the pre-job or post-job items, exactly as today.
+- **Model concurrency.** The job's client and the preparation's client may both be in flight against the proxy; each has its own bounded budget and the preparation's 30 s deadline caps the foreground. The preparation client is decorated with `foregroundClient` for the spinner and never reported for provenance, per the `#54` provenance lesson.
+- **Permission.** The cache write uses `perm.allowed()` like `persistBilingual`; the decision is settled before either loop's reader goroutine starts, so the background job's reads of the same decision are unaffected.
+
 ### Implementation and verification tasks
 
-- [ ] Add source/response validation tables and fuzzing before implementation:
-  exact option association; completeness; unchanged Spanish/order/grades;
-  placeholder mismatch, target leakage, control text and size limits. Use
-  independent expected strings, not the production transformation as oracle.
-- [ ] Add a real temp-directory cache suite and stateful memory equivalent:
-  first request fetches, restart hits, text/language/mode/version misses,
-  eviction bounds, corrupt files, failed atomic writes, no-capture and off.
-- [ ] Implement assistance preparation using existing structured llm tasks and
-  stateful llmtest service. Assert request bodies exclude hidden answer metadata;
-  simulate partial responses, malformed output, outage, delayed cancellation,
-  cache hits, bounded batches and one warning. No failures enter the cache.
-- [ ] Wire both standalone and nested /play queue startup. Refactor Cloze item
-  selection once so the blanked text being translated is exactly what renders.
-  Update prior prompt-identity tests: off equals original, on includes complete
-  equal help; selection, answers, grades, capture and audio remain unchanged.
-- [ ] Add pure form presentation and terminal integration tests for Choice,
-  Cloze and Board at narrow widths, English action isolation, selection/copy,
-  unchanged grid hit-testing and safe spinner cancellation. Add an explicit
-  Spanish author prompt requirement and fake-driven authoring regression.
-- [ ] Update README/atlas and existing offline-practice comments: preparation can
-  call the proxy once for uncached material; answering uses prepared local data.
-  Add opt-in live translation conformance for Spanish polysemy and blank safety.
-- [ ] Run focused red/green/fuzz/race tests, full Go suite, native conformance,
-  vet, Linux build and repository guards; then rerun close review and merge.
-
-The extension changes latency and introduces cached model translations, so it
-needs explicit plan approval under AGENTS.md §2 before new implementation.
+- [ ] practice_help.go red then green: `TestPracticeHelpCheck`, `FuzzPracticeHelpCheck`, `TestPracticeHelpSources`, `TestPracticeHelpApply`, `TestPracticeHelpBatches`, golden `help-prompt`.
+- [ ] store/practice_help.go red then green: `TestPracticeHelpCacheRoundTrip`, `TestPracticeHelpCacheBounds`, `FuzzPracticeHelpCacheRead`; register the runtime filename, the gitignore entry and the runtime-artifact guards.
+- [ ] practice_help_client.go red then green over llmtest: `TestPracticeHelpPreparation`.
+- [ ] play forms: `TestChoiceHelpLines`, `TestClozeHelpLine`, `TestBoardHelpPanel`; `chromeRows` becomes a per-board panel budget set at construction.
+- [ ] Boundary: `todaysQuestions` takes a context, prepares after the queue build; one-pass Cloze selection (`TestClozeSelectsItsItemOnce`); the four PQ-4 tests; `TestBilingualBoardRowsFit`; `TestBilingualPromptHelpIsSelectable`; existing prompt-identity assertions updated so off equals today and on adds complete help.
+- [ ] harvest_item.go: `TestAuthorPromptRequiresTheLanguage`, regenerated goldens.
+- [ ] Docs: README command table and offline claim, atlas bilingual and offline-practice sections, conformance table row for `practice_help_conformance_test.go` (opt-in live translation check: Spanish polysemy and blank safety).
+- [ ] Verification: focused red/green/fuzz/race, `go test ./...`, `go vet ./...`, Linux build, strict native conformance, one live translation run recorded in the issue log; then close review and merge.
 
 ## Revisions
 
@@ -357,3 +395,5 @@ needs explicit plan approval under AGENTS.md §2 before new implementation.
 - 2026-09-14: Fresh assistance-plan review identified panel row budgeting and per-question cache validation. Added a shared two-row bilingual Board budget and mandatory structural/current-answer validation on cache hits; both findings are resolved in the design.
 
 - 2026-09-14: During #54 integration, moved the record boundary to the end so later approved scope revisions remain visible to repository guards. No #61 implementation or behavior is included in this maintenance correction.
+
+- 2026-09-15: Plan gate round 3 (PQ-4..PQ-8): named the narrowed offline-practice invariant and its tests, added the per-surface verification table and Done-when rows, gave each preparation budget a basis and derived load, extended the PQ-2 cadence to every live check, and described the interaction with the landed #54 background preparation. Merged main (c346955) so the description matches the code.
