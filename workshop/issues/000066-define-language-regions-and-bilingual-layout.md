@@ -82,3 +82,9 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
 - Draft [implementation plan](../plans/000066-define-language-regions-and-bilingual-layout-plan.md)
   and `/tmp/define66-region-preview.html` show full-width panels and restored Oxford
   rows. Fresh spec/plan review pending; implementation and estimate have not begun.
+
+- Fresh plan review requested explicit physical-row streaming finalization for
+  live and append-only sinks. Revised to bounded unfinished-row buffering with
+  chunk/sink/cancel/resize agreement tests. Re-review approved with no remaining
+  important findings. Concrete layout/plan ready for operator review; no runtime
+  code changed and estimate still deferred.
