@@ -59,3 +59,10 @@ unit helper will keep adjacent pairs whole across all column-based consumers.
 Independent boundary tests must detect this defect without sharing the helper
 as their oracle. The detailed plan awaits operator approval; no implementation
 has started.
+
+### 2026-09-15 — Review corrections
+
+At a true terminal width below two columns, render the code fallback. Preserve
+whole historical flags through viewport clipping and widening. Added explicit
+entry-point tests for saved deck language and `-lang` overriding it, alongside
+the loop tests. These address the fresh plan review findings.
