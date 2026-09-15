@@ -148,6 +148,10 @@ const (
 type Cell struct {
 	Word  string
 	Gloss string
+	// Help is Gloss in English, for a learner whose deck is not English; "" is
+	// none. Drawn on the panel's SECOND row, so only on a board built with one
+	// (NewBoardPanel): a one-row panel has nowhere to put it.
+	Help string
 }
 
 // Palette is how a mark is PAINTED, supplied by the caller.
@@ -191,6 +195,9 @@ type Board struct {
 	// advance builds Outcome{Word: q.Word()} at a call site that knows nothing
 	// about grids, so the form has to answer "which word did that just mean".
 	last int
+	// panelRows is how many rows the panel under the grid takes: 1, or 2 when
+	// the second carries English help. Fixed at construction (NewBoardPanel).
+	panelRows int
 
 	// The layout, derived from the width the board is DRAWN at — which changes,
 	// and the first draft said it could not (R9).
@@ -223,13 +230,56 @@ type Board struct {
 // move and it is due again tomorrow. The caller (`packBoards`) packs in
 // MaxBoardWords chunks and is pinned there; this is the belt.
 func NewBoard(cells []Cell, width int, pal Palette) *Board {
+	return NewBoardPanel(cells, width, pal, 1)
+}
+
+// NewBoardPanel is NewBoard with a panel of panelRows rows: 1 is the panel
+// NewBoard draws, 2 adds a row for the English help of the last-marked cell.
+// Anything else is clamped into that range.
+//
+// A CONSTRUCTION PARAMETER, not a consequence of help arriving, and that is the
+// point. Rows() is what the fit test (`boardFitsIn`) charged when this board was
+// offered, and a board that grew a row when SetHelp landed would be a row taller
+// than the terminal it was offered for — and would lift the grid under a
+// pointer already resting on it, which is chromeRows()'s whole argument. A
+// bilingual board reserves the row from its first frame, help or not.
+func NewBoardPanel(cells []Cell, width int, pal Palette, panelRows int) *Board {
 	if len(cells) > MaxBoardWords {
 		cells = cells[:MaxBoardWords]
 	}
-	b := &Board{cells: cells, marks: make([]Mark, len(cells)), mode: Yes, width: width, pal: pal}
+	if panelRows < 1 {
+		panelRows = 1
+	}
+	if panelRows > 2 {
+		panelRows = 2
+	}
+	b := &Board{cells: cells, marks: make([]Mark, len(cells)), mode: Yes, width: width, pal: pal, panelRows: panelRows}
 	b.layout()
 	return b
 }
+
+// PanelRows is the panel budget the board was built with, after clamping.
+func (b *Board) PanelRows() int { return b.panelRows }
+
+// SetHelp gives cell i its English; an index off the board is ignored. It never
+// changes Rows(): the row it draws on was reserved at construction, or does not
+// exist.
+//
+// COPIED rather than written through the slice the board was handed, which the
+// caller may still hold.
+func (b *Board) SetHelp(i int, english string) {
+	if i < 0 || i >= len(b.cells) {
+		return
+	}
+	cells := append([]Cell(nil), b.cells...)
+	cells[i].Help = english
+	b.cells = cells
+}
+
+// Cells is a COPY of the board's cells, help included. A copy because the
+// layout was derived from them: a caller writing through a shared slice would
+// change a word under geometry nobody recomputed for it.
+func (b *Board) Cells() []Cell { return append([]Cell(nil), b.cells...) }
 
 // layout fixes the column count and the room a word gets.
 //
@@ -298,10 +348,10 @@ func (b *Board) Resize(cols int) {
 // only when the terminal can hold it whole, and the board is the only thing that
 // knows how tall it is. That it counts the CHROME too is the point — a fit
 // computed from the grid alone would put the last row off the bottom — and
-// `chromeRows` below is the one place that says what the chrome IS. Naming the
+// `chromeRows()` below is the one place that says what the chrome IS. Naming the
 // rows here was a second owner, and it went stale the day R11 deleted one.
 func (b *Board) Rows() int {
-	return b.gridRows() + chromeRows
+	return b.gridRows() + b.chromeRows()
 }
 
 // gridRows is the grid's own share: the rows CellAt can find a word on.
@@ -309,18 +359,21 @@ func (b *Board) gridRows() int {
 	return (len(b.cells) + b.cols - 1) / b.cols
 }
 
-// chromeRows is what Prompt draws under the grid: a blank and the panel.
+// chromeRows is what Prompt draws under the grid: a blank and the panel, whose
+// height is this board's own budget (NewBoardPanel) — one row, or two when the
+// second carries English help. A method rather than the constant it was,
+// because a bilingual board's chrome is a row taller and still needs one owner.
 //
-// The panel row is drawn EVEN WHEN EMPTY, which is not tidiness. A row that
-// appeared with the first mark would shift the grid up by one, and every word
-// would move under a pointer already resting on it.
+// Every panel row is drawn EVEN WHEN EMPTY, which is not tidiness. A row that
+// appeared with the first mark — or with the first help — would shift the grid
+// up by one, and every word would move under a pointer already resting on it.
 //
-// The TOGGLE used to be a third, and it moved to the prompt row (R11): the
+// The TOGGLE used to be another, and it moved to the prompt row (R11): the
 // footer drops rows from the end, so the one statement of what a click will mean
 // was the first thing a short terminal lost. What is left below the grid is the
 // panel, whose loss is cosmetic — and then grid rows, which are visible when
 // missing and are not clickable when undrawn.
-const chromeRows = 2
+func (b *Board) chromeRows() int { return 1 + b.panelRows }
 
 // Word is the word the LAST mark landed on.
 //
@@ -387,13 +440,16 @@ func (b *Board) Prompt() string {
 	// surface where disagreeing marks the wrong word. All the loop adds is the
 	// bar, which belongs to the sitting rather than to this question.
 	lines = append(lines, "", b.panelLine())
+	if b.panelRows == 2 {
+		lines = append(lines, b.helpLine())
+	}
 	return joinLines(lines)
 }
 
 // panelLine is the last-marked word and its gloss: the feedback moment, in the
 // place a definition would be on any other form.
 //
-// EMPTY UNTIL SOMETHING IS MARKED, and empty is still a row — see chromeRows.
+// EMPTY UNTIL SOMETHING IS MARKED, and empty is still a row — see chromeRows().
 // Truncated to the width like everything else here, because the whole live edge
 // has to fit the terminal the board was offered for.
 func (b *Board) panelLine() string {
@@ -405,6 +461,28 @@ func (b *Board) panelLine() string {
 		return c.Word
 	}
 	return truncate(c.Word+"  "+c.Gloss, b.width)
+}
+
+// helpLine is the panel's second row: the English of the last-marked cell's
+// gloss, under the deck-language line it translates.
+//
+// ITS OWN ROW, truncated on its own, rather than appended to panelLine: the deck
+// line comes first and whole, and one shared row would spend the width on
+// whichever came first and cut the other to nothing on a narrow terminal.
+//
+// ONE LINE whatever it is handed. A translation can carry a newline, and one
+// drawn here would make Prompt a line longer than Rows() — the count every
+// click's coordinates rest on — so a newline becomes a space. Empty until
+// something is marked, or when that cell has no help: still a row.
+func (b *Board) helpLine() string {
+	if len(b.cells) == 0 || b.marks[b.last] == Unmarked {
+		return ""
+	}
+	help := b.cells[b.last].Help
+	if help == "" {
+		return ""
+	}
+	return truncate(oneLine(help), b.width)
 }
 
 // cellText is one cell: its key, then its word — PAINTED once it is marked.
@@ -644,7 +722,7 @@ func (b *Board) CellAt(row, col int) (int, bool) {
 	}
 	i := row*b.cols + c
 	// NO SEPARATE `row >= gridRows` BOUND, and its absence is the honest kind.
-	// A row below the grid — the chrome, whatever `chromeRows` currently draws —
+	// A row below the grid — the chrome, whatever `chromeRows()` currently draws —
 	// indexes past the last cell by construction, because the grid has exactly as
 	// many rows as it takes to hold them all. The guard was written, and a mutation showed it
 	// could not be made to fail: it was dead code, and dead code here would hide
@@ -783,6 +861,18 @@ func trimRight(s string) string {
 		end--
 	}
 	return s[:end]
+}
+
+// oneLine replaces every newline with a space. Byte-wise, which is safe: '\n'
+// never occurs inside a UTF-8 sequence.
+func oneLine(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c == '\n' {
+			b[i] = ' '
+		}
+	}
+	return string(b)
 }
 
 // Marks is every mark a cell can carry, in cycle order, and it is the EXTENT of

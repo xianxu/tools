@@ -1488,10 +1488,21 @@ holds the practice items authored from them (`#10 M2`).
 
 **Batch, and nothing waits on it.** `--harvest` runs it by hand, and since `#54`
 the session's background job runs the same core, `harvestDeck`, off the editor
-loop (see *Background preparation* below). A sitting still never reaches it,
-asserted with the model seam made to PANIC rather than left nil — nil passes on
-a loop that reaches for a model behind a `!= nil` guard, which is how a network
-dependency creeps into a path that promises to be offline.
+loop (see *Background preparation* below). A sitting never reaches it. The one
+model call a sitting may make is English practice help (`#61`, see *Bilingual
+definitions*), narrowed to three clauses, each pinned with the model seam made
+to PANIC rather than left nil — nil passes on a loop that reaches for a model
+behind a `!= nil` guard, which is how a network dependency creeps into a path
+that promises to be offline:
+
+- an English deck or `/bilingual off` never resolves a configuration
+  (`TestAClozeSittingNeverReachesForTheModel`,
+  `TestBilingualOffSittingNeverReachesForTheModel`);
+- a warm cache builds no client, across a restart
+  (`TestWarmCacheSittingConstructsNoClient`);
+- a cold cache asks once per batch inside `todaysQuestions`, before the first
+  question, and never inside `playSession`
+  (`TestColdCachePreparesOnceBeforeTheFirstQuestion`).
 
 **Assigned once, re-read forever.** The cache check precedes anything that
 touches the network, so a second run over an unchanged deck makes ZERO calls. The
@@ -2034,11 +2045,37 @@ and captured Oxford records exercise direction, malformed data and failures.
 `renderDefinitions` retains section language ownership through rendering and
 region offsets: English prose does not acquire Spanish deck-word actions.
 Ordinary lookup and the full post-answer `play.Choice` and `play.Cloze` reveals
-share this composition through `play_loop.go` and `cloze.go`. Questions, options,
-compact glosses and grading remain based on the primary Spanish entry; there is
-no pre-answer English help. `TestBilingualPracticeReveal` and
-`TestBilingualClozeReveal` cover both reveal forms. Lookup
-capture and initial audio still occur once for the requested word.
+share this composition through `play_loop.go` and `cloze.go`.
+`TestBilingualPracticeReveal` and `TestBilingualClozeReveal` cover both reveal
+forms. Lookup capture and initial audio still occur once for the requested word.
+
+**English before answering.** With bilingual on in a non-English deck, practice
+shows English while the learner answers. `practice_help.go` is the pure core and
+`practice_help_client.go` the shell. `helpNeedsOf` reads the shown texts off the
+built questions: every Choice option gloss, a Cloze's `Blanked()` sentence, every
+Board cell gloss. What is translated is therefore byte for byte what is shown.
+`todaysQuestions` prepares them once, after the queue is built and before the
+first question, for the standalone sitting and nested `/play` alike; a nested
+sitting installs its Ctrl-C scope before that wait.
+
+One typed task, `practice-help`, translates numbered texts in batches of at most
+16 texts and 32 KiB, inside a 30-second deadline. The request carries shown prose
+only: never an answer, a Correct flag or a cloze's hidden word. `checkHelp`
+treats every reply as untrusted, fresh or cached. It folds whitespace to one
+line, refuses control and bidi characters, and requires a cloze translation to
+keep its blank count and not name its answer. A Choice gets English for every
+option or for none; Board cells are independent. A bilingual board reserves a
+second panel row from construction, and `packBoards`/`boardFits` select with the
+same budget. Help lines carry no deck-word actions or colour and are dimmed
+(`writeHelped`).
+
+Accepted translations are cached per deck in `practice-help.json`
+(`store/practice_help.go`: versioned, at most 512 entries and 1 MiB, replaced
+atomically; a missing, oversize, corrupt or wrong-version file reads as empty).
+The cache never asks the deck question: an undecided or declined directory keeps
+translations for the session, and a failure is never cached. Questions, options
+and grading stay in the deck's language, and `/bilingual off` shows none of this
+and makes no model call.
 
 ### The dictionary follows the language (`#23 M2`)
 
@@ -2306,6 +2343,7 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `activity_conformance_test.go` | real terminal Braille animation and cleanup at first answer text or cancellation, with held fake model responses |
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 | `harvest_conformance_test.go` | the live model's agreement across rounds stays above the floor the cache's premise needs |
+| `practice_help_conformance_test.go` | the live model's English practice help keeps a cloze's blank, never names its answer, and keeps the Spanish sense of `red` |
 | `version_conformance_test.go` | `-ldflags -X main.version` still reaches the binary — the one row the merge gate runs, since its failure is silent |
 
 `TestAtlasListsEveryConformanceCheck` derives this table's rows from the files on

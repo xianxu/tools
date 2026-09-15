@@ -156,7 +156,7 @@ func TestBothEntryPointsReachOnePlaySession(t *testing.T) {
 // gap #12's sweep found.
 func TestTheSittingDoorRecordsWhatItAnswers(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic")
-	qs, _, code := todaysQuestions(d, opt, io.Discard, io.Discard)
+	qs, _, code := todaysQuestions(t.Context(), d, opt, io.Discard, io.Discard)
 	if code != 0 || len(qs) == 0 {
 		t.Fatalf("no questions: code %d, %d questions", code, len(qs))
 	}
@@ -195,7 +195,7 @@ func TestTheSittingDoorRecordsWhatItAnswers(t *testing.T) {
 // editor repaints at the pre-sitting size for the rest of the session.
 func TestTheEditorScreenTakesTheShapeTheSittingEndedWith(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	qs, _, _ := todaysQuestions(d, opt, io.Discard, io.Discard)
+	qs, _, _ := todaysQuestions(t.Context(), d, opt, io.Discard, io.Discard)
 	if len(qs) == 0 {
 		t.Fatal("no questions, so this proves nothing")
 	}

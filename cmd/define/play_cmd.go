@@ -85,7 +85,18 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 	// both a bare return and an explicit one. Named vs unnamed is the axis.)
 	shape = winSize{rows: rows, cols: cols}
 
-	questions, held, c := todaysQuestions(d, opt, repl, stderr)
+	// CTRL-C ENDS THE SITTING, NOT THE PROGRAM. interrupter.Set exists for
+	// exactly this — #16 built it so a streaming answer could own the interrupt
+	// and hand it back — and the deferred restore is what makes "hand it back"
+	// true on every exit path. Installed BEFORE the queue is built, because
+	// building it may now wait on the model for English help (#61), and a Ctrl-C
+	// during that wait must cancel the wait rather than reach the editor.
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	restore := interrupts.Set(cancel)
+	defer restore()
+
+	questions, held, c := todaysQuestions(sctx, d, opt, repl, stderr)
 	if c != 0 || len(questions) == 0 {
 		code = c
 		// todaysQuestions has already said why — emptyQueueReason writes the
@@ -129,15 +140,6 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 		}
 		repl.resume()
 	}()
-
-	// CTRL-C ENDS THE SITTING, NOT THE PROGRAM. interrupter.Set exists for
-	// exactly this — #16 built it so a streaming answer could own the interrupt
-	// and hand it back — and the deferred restore is what makes "hand it back"
-	// true on every exit path.
-	sctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	restore := interrupts.Set(cancel)
-	defer restore()
 
 	con := console{
 		view: sitting, pointer: pointer,

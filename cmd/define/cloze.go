@@ -131,6 +131,24 @@ func usableItem(it store.Item) bool {
 // definition is the rendered entry for the reveal; empty is acceptable and the
 // reveal simply carries less.
 func clozeFor(key string, items []store.Item, definition string, seed uint64) play.Question {
+	p, ok := pickCloze(items, seed)
+	if !ok {
+		return nil
+	}
+	return play.NewCloze(key, p.blanked, p.restored, definition, p.options)
+}
+
+// clozeParts is one cloze question's material, selected ONCE (#61). The blanked
+// sentence the prompt prints is the string English help translates, so it must
+// not be computed a second time from the same items: one selection, one blank.
+type clozeParts struct {
+	blanked, restored string
+	options           []play.Option
+}
+
+// pickCloze makes clozeFor's three decisions (which item, the seed, the order)
+// and returns their result without building a question.
+func pickCloze(items []store.Item, seed uint64) (clozeParts, bool) {
 	for _, it := range items {
 		if it.Form != store.FormCloze || !usableItem(it) {
 			continue
@@ -149,9 +167,9 @@ func clozeFor(key string, items []store.Item, definition string, seed uint64) pl
 		for i, j := range order {
 			shuffled[i] = opts[j]
 		}
-		return play.NewCloze(key, blankStem(it.Stem, it.Answer), it.Stem, definition, shuffled)
+		return clozeParts{blanked: blankStem(it.Stem, it.Answer), restored: it.Stem, options: shuffled}, true
 	}
-	return nil
+	return clozeParts{}, false
 }
 
 // hasLetterOrDigit reports whether a string is a word at all.
@@ -205,18 +223,17 @@ func clozeAsk(d deps, opt options, key string, entry Entry, marks map[string]cli
 		// event, so nothing is printed.
 		return nil
 	}
-	// Validate the question before doing optional supplemental dictionary IO.
-	if clozeFor(key, items, "", seedFor(key, day)) == nil {
+	// Select the question before doing optional supplemental dictionary IO, and
+	// select it ONCE (#61): the blanked sentence this prompt prints is the one
+	// English help translates.
+	parts, ok := pickCloze(items, seedFor(key, day))
+	if !ok {
 		return nil
 	}
 	rendered, rs := renderDefinitions(definitionsFor(d.dict, key, entry.Raw, nil, d.bilingualEnabled()), RenderOpts{
 		Word:  key,
 		Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
 	})
-	q := clozeFor(key, items, rendered, seedFor(key, day))
-	if q == nil {
-		return nil
-	}
 	marks[key] = clickable{text: rendered, regions: rs}
-	return q
+	return play.NewCloze(key, parts.blanked, parts.restored, rendered, parts.options)
 }

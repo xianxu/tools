@@ -43,7 +43,7 @@ func TestSittingCostIsBoundedByTheCap(t *testing.T) {
 	d.dict = counting
 	opt.count = 5
 
-	qs, _, code := todaysQuestions(d, opt, &strings.Builder{}, &strings.Builder{})
+	qs, _, code := todaysQuestions(t.Context(), d, opt, &strings.Builder{}, &strings.Builder{})
 	if code != 0 {
 		t.Fatalf("todaysQuestions exit %d", code)
 	}

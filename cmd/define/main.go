@@ -22,7 +22,10 @@ import (
 type deps struct {
 	bilingual        *bool // nil means the default, on; an explicit false stays off
 	persistBilingual func(bool) error
-	dict             Dictionary
+	// practiceHelp is the deck's cache of English help for practice (#61). A
+	// pointer, so a nested sitting and the next one share what was translated.
+	practiceHelp *practiceHelpCache
+	dict         Dictionary
 	// audio is the seam AND its memo. A *audioSeam rather than an AudioSource so
 	// there is no unwrapped source to hold: the type is what guarantees a caller
 	// cannot reach the network twice for one key, however it obtained its deps.
@@ -147,6 +150,7 @@ type langDeps struct {
 type storeDeps struct {
 	bilingual        *bool
 	persistBilingual func(bool) error
+	practiceHelp     *practiceHelpCache
 	history          History
 	langDeps
 	// lang is the language openStore RESOLVED — the flag if one was given, else
@@ -217,6 +221,9 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	}
 	if d.persistBilingual == nil {
 		d.persistBilingual = sd.persistBilingual
+	}
+	if d.practiceHelp == nil {
+		d.practiceHelp = orElse(sd.practiceHelp, newPracticeHelpCache(nil, nil))
 	}
 	if d.persistLang == nil {
 		d.persistLang = sd.persistLang
@@ -393,6 +400,18 @@ func openStore(opt options, warn io.Writer, perm *deckPermission) storeDeps {
 			}
 			return store.WriteBilingual(dir, on)
 		},
+		practiceHelp: newPracticeHelpCache(
+			func() []store.HelpEntry { return store.ReadPracticeHelp(dir) },
+			func(entries []store.HelpEntry) error {
+				// NEVER ASKS: saving() takes only the free answers. A regenerable
+				// cache must not be what puts the create-a-deck question on screen,
+				// so an undecided or declined directory keeps the translations for
+				// this session only.
+				if allowed, decided := perm.saving(); !allowed || !decided {
+					return errDeckDeclined
+				}
+				return store.WritePracticeHelp(dir, entries)
+			}),
 		history:     newStoreHistory(flat, warn),
 		clock:       clk,
 		lang:        lang,

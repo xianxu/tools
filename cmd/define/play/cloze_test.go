@@ -1,6 +1,7 @@
 package play
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -239,5 +240,116 @@ func TestAStrayDigitAfterAnsweringDoesNotRePick(t *testing.T) {
 	if c.chosen != before {
 		t.Errorf("a stray digit moved the pick from %d to %d after the question was graded",
 			before, c.chosen)
+	}
+}
+
+// THE STEM'S ENGLISH SITS UNDER THE STEM (#61), and the question is otherwise
+// the one it was: the same options, verdicts, flag and reveal.
+//
+// The stems are pre-wrapped to each width, because a stem spanning lines is
+// exactly what would throw off a help index counted apart from the prompt.
+func TestClozeHelpLine(t *testing.T) {
+	const (
+		restored   = "La niña comió sushi en el restaurante japonés (寿司屋)."
+		definition = "sushi: plato japonés de arroz"
+	)
+	options := func() []Option {
+		return []Option{{Word: "sushi", Correct: true}, {Word: "mañana"}, {Word: "árbol"}}
+	}
+	for _, tc := range []struct {
+		width     int
+		blanked   string
+		help      string
+		plain     string
+		helped    string
+		helpLines []int
+	}{
+		{
+			width:     80,
+			blanked:   "La niña comió ___ en el restaurante japonés (寿司屋).",
+			help:      "The girl ate ___ at the Japanese restaurant (寿司屋).",
+			plain:     "La niña comió ___ en el restaurante japonés (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			helped:    "La niña comió ___ en el restaurante japonés (寿司屋).\nThe girl ate ___ at the Japanese restaurant (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			helpLines: []int{1},
+		},
+		{
+			width:     40,
+			blanked:   "La niña comió ___ en el restaurante\njaponés (寿司屋).",
+			help:      "The girl ate ___ at the Japanese\nrestaurant (寿司屋).",
+			plain:     "La niña comió ___ en el restaurante\njaponés (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			helped:    "La niña comió ___ en el restaurante\njaponés (寿司屋).\nThe girl ate ___ at the Japanese\nrestaurant (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			helpLines: []int{2, 3},
+		},
+		{
+			width:     20,
+			blanked:   "La niña comió ___ en\nel restaurante\njaponés (寿司屋).",
+			help:      "The girl ate ___ at\nthe Japanese\nrestaurant (寿司屋).",
+			plain:     "La niña comió ___ en\nel restaurante\njaponés (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			helped:    "La niña comió ___ en\nel restaurante\njaponés (寿司屋).\nThe girl ate ___ at\nthe Japanese\nrestaurant (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			helpLines: []int{3, 4, 5},
+		},
+	} {
+		control := NewCloze("sushi", tc.blanked, restored, definition, options())
+		c := NewCloze("sushi", tc.blanked, restored, definition, options())
+
+		if got := c.Blanked(); got != tc.blanked {
+			t.Errorf("width %d: Blanked() = %q, want the stem NewCloze was given", tc.width, got)
+		}
+		// NO HELP IS TODAY, byte for byte.
+		if got := c.Prompt(); got != tc.plain || got != control.Prompt() {
+			t.Errorf("width %d: without help Prompt =\n%s\nwant\n%s", tc.width, got, tc.plain)
+		}
+		if got := c.HelpLines(); len(got) != 0 {
+			t.Errorf("width %d: HelpLines = %v without help, want none", tc.width, got)
+		}
+
+		c.SetHelp(tc.help)
+		if got := c.Prompt(); got != tc.helped {
+			t.Errorf("width %d: with help Prompt =\n%s\nwant\n%s", tc.width, got, tc.helped)
+		}
+		if got := c.HelpLines(); !slices.Equal(got, tc.helpLines) {
+			t.Errorf("width %d: HelpLines = %v, want %v", tc.width, got, tc.helpLines)
+		}
+		for i, line := range strings.Split(c.Prompt(), "\n") {
+			if n := columnsIn(line); n > tc.width {
+				t.Errorf("width %d: line %d is %d columns: %q", tc.width, i, n, line)
+			}
+		}
+		// Help is not the stem: the translation source stays the deck's text.
+		if got := c.Blanked(); got != tc.blanked {
+			t.Errorf("width %d: Blanked() became %q once help was set", tc.width, got)
+		}
+
+		// NOTHING ANSWERED MOVED: keys, flag, verdicts and the reveal.
+		if got := c.Keys(); got != "1-3 = pick the word, ? = bad question" {
+			t.Errorf("width %d: Keys() = %q with help", tc.width, got)
+		}
+		hw, hok := c.Flag(FlagKey)
+		pw, pok := control.Flag(FlagKey)
+		if !slices.Equal(hw, pw) || hok != pok {
+			t.Errorf("width %d: Flag = (%v, %v) with help, (%v, %v) without", tc.width, hw, hok, pw, pok)
+		}
+		for _, k := range []rune{'1', '2', '3', '4', FlagKey, ' '} {
+			helped := NewCloze("sushi", tc.blanked, restored, definition, options())
+			plain := NewCloze("sushi", tc.blanked, restored, definition, options())
+			helped.SetHelp(tc.help)
+			hv, hok := helped.Grade(k)
+			pv, pok := plain.Grade(k)
+			if hv != pv || hok != pok || helped.Reveal() != plain.Reveal() {
+				t.Errorf("width %d: Grade(%q) = (%v, %v) with help and (%v, %v) without; reveals\n%s\n---\n%s",
+					tc.width, k, hv, hok, pv, pok, helped.Reveal(), plain.Reveal())
+			}
+		}
+		c.Grade('2')
+		wantReveal := "La niña comió sushi en el restaurante japonés (寿司屋).\n\nyou chose\n2  mañana\n\nsushi: plato japonés de arroz"
+		if got := c.Reveal(); got != wantReveal {
+			t.Errorf("width %d: Reveal with help =\n%s\nwant\n%s", tc.width, got, wantReveal)
+		}
+
+		// "" CLEARS, back to today's prompt byte for byte.
+		c.SetHelp("")
+		if got := c.Prompt(); got != tc.plain || len(c.HelpLines()) != 0 {
+			t.Errorf("width %d: SetHelp(\"\") left\n%s", tc.width, got)
+		}
 	}
 }

@@ -266,10 +266,19 @@ primary dictionary entry, regardless of the toggle.
 
 **`/play` reviews what is due today**. There are four kinds of question.
 
-In both multiple-choice and sentence-cloze questions, the full dictionary reveal
-after an answer follows `/bilingual`: Spanish first, then English when on.
-Questions, answer options, compact glosses and grading remain Spanish. English
-help is not shown before answering.
+With `/bilingual` on in a non-English deck, English help is shown **while you
+answer**. Each multiple-choice definition has its English line under it. A cloze
+sentence has its English translation under it, with the same blank. A board adds
+an English row under the word you mark. The options, the words to pick and the
+grading stay in the deck's language, and either every option gets English or
+none does. The full dictionary reveal after an answer shows Spanish first, then
+English. With `/bilingual off`, practice is in the deck's language only.
+
+The model translates that English once, before the first question, behind the
+usual spinner. Later sittings reuse it from `practice-help.json`, so a sitting
+whose texts were all translated before makes no model call. If the model cannot
+be reached, the affected questions are shown without English and one line says
+so; the sitting itself is unchanged.
 
 ### The sentence, once a word has one
 
@@ -576,6 +585,8 @@ items/en/sycophantic.yaml  practice items authored ahead of time by
                            a cloze question is built from
 lang.txt                   which language this directory is in
 bilingual.txt              bilingual display on/off for this deck (default on)
+practice-help.json         English help for practice, translated once and
+                           reused; safe to delete
 user-model.en.md           written by --reflect, read to pitch answers; one per
                            language, because it is read off that language's
                            deck. Its ## Corrections section is yours and is
@@ -638,7 +649,8 @@ the session.
 `define` can use a language model for the parts a dictionary cannot do. Every one
 of those features **degrades silently by design** — no key or no network means
 they are skipped, not failed, so a review session is never blocked on a third
-party. That makes a misconfiguration invisible, which is what this flag is for:
+party. English practice help is the one that speaks up: a sitting that wanted
+English and could not get it says so in one line, then runs. That makes a misconfiguration invisible, which is what this flag is for:
 
 ```sh
 define --llm-check

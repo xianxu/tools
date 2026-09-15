@@ -68,7 +68,7 @@ Extension (assisted practice before answering, added after the scope pivot recor
 - [x] Complete and review [the durable plan](../plans/000061-bilingual-definitions-plan.md), including a native direction-selection probe.
 - [x] Implement dictionary sections, shared rendering, and consumer wiring with regression tests.
 - [x] Verify and document the original definition/reveal implementation.
-- [ ] Implement and verify pre-answer English practice assistance from the revised durable plan, then close review and merge.
+- [x] Implement and verify pre-answer English practice assistance from the revised durable plan; prepare for the close review and merge gates.
 
 ## Log
 
@@ -103,6 +103,14 @@ Extension (assisted practice before answering, added after the scope pivot recor
 - Plan gate: round 3 raised PQ-4..PQ-8 (offline invariant, per-surface tests, envelope basis, live-check cadence, #54 interaction); round 4 disposed all as addressed. Estimate extended to 6.02 h.
 - Estimate-quality returned INFO, not a block. It judged the derivation genuine and additive, and flagged: one first-half `cross-cutting-refactor` impl above its scaled band; the extension's cross-cutting and TUI units likely light; no items for the toggle/parser scope events, the BR-1 rework cycle, or live-proxy discovery. Recorded rather than re-priced mid-flight so the close-time calibration sees the original derivation.
 - Filed #64 for the generalisation the user asked for: per-deck interaction stages (English with sprinkled Spanish → Spanish only), inferred from how the learner asks or set by natural-language instruction.
+
+### 2026-09-15 — Assisted practice verified
+
+- Implemented exact displayed-text English help for Choice, Cloze and Board before answering, shared bounded model preparation with the foreground spinner, current-answer validation, and the atomic per-deck translation cache. Off and English decks never resolve the model; warm caches construct no client. Authored sentences explicitly use the deck language. README and atlas describe the new preparation boundary.
+- Fresh verification: `go test ./...` passed (define 124.356s); focused bilingual/help/cache/author race tests passed; `go vet ./...`, Linux non-cgo build and `git diff --check` passed. New `TestBilingualPreparationScopesTheInterrupt` passes and fails with an overlay moving interrupt scoping after queue preparation (ARCH-ORDER), proving cancellation reaches the waiting sitting and restores the editor afterward.
+- Strict native direction/limits/factory/private-symbol/source-selection/release-stamp checks passed; 20 warm native lookups took 20.67275ms against the 2s budget. The prior inaccessible-dictionary failure did not reproduce under unrestricted execution; historical Seatbelt restrictions and the existing conformance documentation support sandbox asset visibility as its cause.
+- Live `TestPracticeHelpAgainstTheLiveService` passed in 4.38s, preserving the cloze blank and Spanish red→net/mesh meaning. Cache fuzz passed 714,373 executions in 10s. Recovered prior-session help-validator fuzz evidence (89,825 executions) and all 14 caught overlay mutations; these are historical evidence, distinct from this session's fresh checks.
+- Close review and publication remain the next gates; no final review or merge is claimed by the checked implementation row.
 
 ## Revisions
 
@@ -145,3 +153,7 @@ This supersedes prior post-answer-only scope; do not close/merge until implement
 BR-1 metadata diagnosis has been fixed with an observed failing/passing factory
 regression; BR-2 concept classifications are corrected. Updated practice plan
 awaits approval before additional implementation.
+
+### 2026-09-15 — Verification handoff reconciled
+
+The assisted-practice implementation and verification are complete. The final plan row now records readiness for the separate SDLC close/merge gates rather than claiming those gates already ran. Existing dated design decisions remain as history.

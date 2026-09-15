@@ -369,14 +369,14 @@ The interaction path is startup of a sitting (foreground, spinner shown), not a 
 
 ### Implementation and verification tasks
 
-- [ ] practice_help.go red then green: `TestPracticeHelpCheck`, `FuzzPracticeHelpCheck`, `TestPracticeHelpSources`, `TestPracticeHelpApply`, `TestPracticeHelpBatches`, golden `help-prompt`.
-- [ ] store/practice_help.go red then green: `TestPracticeHelpCacheRoundTrip`, `TestPracticeHelpCacheBounds`, `FuzzPracticeHelpCacheRead`; register the runtime filename, the gitignore entry and the runtime-artifact guards.
-- [ ] practice_help_client.go red then green over llmtest: `TestPracticeHelpPreparation`.
-- [ ] play forms: `TestChoiceHelpLines`, `TestClozeHelpLine`, `TestBoardHelpPanel`; `chromeRows` becomes a per-board panel budget set at construction.
-- [ ] Boundary: `todaysQuestions` takes a context, prepares after the queue build; one-pass Cloze selection (`TestClozeSelectsItsItemOnce`); the four PQ-4 tests; `TestBilingualBoardRowsFit`; `TestBilingualPromptHelpIsSelectable`; existing prompt-identity assertions updated so off equals today and on adds complete help.
-- [ ] harvest_item.go: `TestAuthorPromptRequiresTheLanguage`, regenerated goldens.
-- [ ] Docs: README command table and offline claim, atlas bilingual and offline-practice sections, conformance table row for `practice_help_conformance_test.go` (opt-in live translation check: Spanish polysemy and blank safety).
-- [ ] Verification: focused red/green/fuzz/race, `go test ./...`, `go vet ./...`, Linux build, strict native conformance, one live translation run recorded in the issue log; then close review and merge.
+- [x] practice_help.go red then green: `TestPracticeHelpCheck`, `FuzzPracticeHelpCheck`, `TestPracticeHelpSources`, `TestPracticeHelpApply`, `TestPracticeHelpBatches`, golden `help-prompt`.
+- [x] store/practice_help.go red then green: `TestPracticeHelpCacheRoundTrip`, `TestPracticeHelpCacheBounds`, `FuzzPracticeHelpCacheRead`; register the runtime filename, the gitignore entry and the runtime-artifact guards.
+- [x] practice_help_client.go red then green over llmtest: `TestPracticeHelpPreparation`.
+- [x] play forms: `TestChoiceHelpLines`, `TestClozeHelpLine`, `TestBoardHelpPanel`; `chromeRows` becomes a per-board panel budget set at construction.
+- [x] Boundary: `todaysQuestions` takes a context, prepares after the queue build; one-pass Cloze selection (`TestClozeSelectsItsItemOnce`); the four PQ-4 tests; `TestBilingualBoardRowsFit`; `TestBilingualPromptHelpIsSelectable`; existing prompt-identity assertions updated so off equals today and on adds complete help.
+- [x] harvest_item.go: `TestAuthorPromptRequiresTheLanguage`, regenerated goldens.
+- [x] Docs: README command table and offline claim, atlas bilingual and offline-practice sections, conformance table row for `practice_help_conformance_test.go` (opt-in live translation check: Spanish polysemy and blank safety).
+- [x] Verification: focused red/green/fuzz/race, `go test ./...`, `go vet ./...`, Linux build, strict native conformance, one live translation run recorded in the issue log; prepare for the separate close review and merge gates.
 
 ## Revisions
 
@@ -397,3 +397,5 @@ The interaction path is startup of a sitting (foreground, spinner shown), not a 
 - 2026-09-14: During #54 integration, moved the record boundary to the end so later approved scope revisions remain visible to repository guards. No #61 implementation or behavior is included in this maintenance correction.
 
 - 2026-09-15: Plan gate round 3 (PQ-4..PQ-8): named the narrowed offline-practice invariant and its tests, added the per-surface verification table and Done-when rows, gave each preparation budget a basis and derived load, extended the PQ-2 cadence to every live check, and described the interaction with the landed #54 background preparation. Merged main (c346955) so the description matches the code.
+
+- 2026-09-15: Completed assisted-practice implementation and verification rows using the issue log evidence. Added an ordered HTTP-wait interrupt regression and proved it fails when scope installation moves after preparation. Full suite, focused race, vet, Linux build, strict native and live translation checks passed; close review and merge remain subsequent gates.

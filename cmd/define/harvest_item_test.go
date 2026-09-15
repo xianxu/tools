@@ -581,3 +581,22 @@ func TestSortedBandedMakesSelectionOrderIndependent(t *testing.T) {
 		t.Errorf("sortedBanded produced %v, which is not sorted", got)
 	}
 }
+
+// The deck's language is a REQUIREMENT of the sentence, not only a header line
+// (#61): with a Spanish word and English examples, a header alone left the
+// model free to write English around the word.
+func TestAuthorPromptRequiresTheLanguage(t *testing.T) {
+	facts := store.WordFacts{Band: store.A2, Domain: store.DomainGeneral, At: harvestClock}
+	es := renderAuthorPrompt("es", "madrugar", "levantarse temprano", facts, learnerFacts{})
+	en := renderAuthorPrompt(store.DefaultLang, "madrugar", "levantarse temprano", facts, learnerFacts{})
+	if es.Prompt == en.Prompt {
+		t.Fatal("the language does not reach the requirements")
+	}
+	want := "4. **Write the whole sentence in the language with IETF code `es`**"
+	if !strings.Contains(es.Prompt, want) {
+		t.Fatalf("the Spanish prompt lacks %q:\n%s", want, es.Prompt)
+	}
+	if !strings.Contains(es.Prompt, "Four requirements:") {
+		t.Fatal("the requirement count does not match the list")
+	}
+}

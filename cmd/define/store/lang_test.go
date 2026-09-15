@@ -138,7 +138,7 @@ func TestReadLangToleratesHowAPersonWouldWriteIt(t *testing.T) {
 func TestRuntimeFilePatternsCoverWhatWeWrite(t *testing.T) {
 	dir := t.TempDir()
 
-	names := []string{filepath.Base(langFile(dir)), BilingualFileName()}
+	names := []string{filepath.Base(langFile(dir)), BilingualFileName(), PracticeHelpFileName()}
 	for _, l := range []Lang{DefaultLang, "es", "zz"} {
 		names = append(names, filepath.Base(NewYAML(dir, l, nil).userModelFile()))
 	}
