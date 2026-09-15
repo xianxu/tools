@@ -4607,3 +4607,12 @@ holds the actual request, then verify the parent still runs and regains its
 interrupt. A test that starts only after the first question cannot catch a
 scope installed too late; an overlay moving scope installation after preparation
 must fail.
+
+
+## Treat terminal glyphs as units across every column consumer (define #62)
+
+A regional-indicator pair can have the correct total width while clipping,
+selection and annotation still split it. Route all column readers through the
+same unit boundary, and test literal rows/copies independently of the terminal
+simulator. Region starts inside a wide unit must mark the whole unit and must
+not prevent later regions from being marked.

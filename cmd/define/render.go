@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -511,12 +510,12 @@ func visibleIndex(line string) (string, []int) {
 			i += skip
 			continue
 		}
-		r, size := utf8.DecodeRuneInString(line[i:])
+		size, w := nextDisplayUnit(line[i:])
 		for j := 0; j < size; j++ {
 			cols = append(cols, col)
 		}
 		plain.WriteString(line[i : i+size])
-		col += cellWidth(r)
+		col += w
 		i += size
 	}
 	return plain.String(), cols
@@ -548,8 +547,8 @@ func visibleCells(s string) int {
 			i += skip
 			continue
 		}
-		r, size := utf8.DecodeRuneInString(s[i:])
-		n += cellWidth(r)
+		size, w := nextDisplayUnit(s[i:])
+		n += w
 		i += size
 	}
 	return n
@@ -665,15 +664,16 @@ func wrapText(s string, width, indent int) string {
 func cellSlice(s string, col, width int) string {
 	var b strings.Builder
 	at := 0
-	for _, r := range s {
-		w := visibleCells(string(r))
+	for i := 0; i < len(s); {
+		n, w := nextDisplayUnit(s[i:])
 		if at >= col+width {
 			break
 		}
 		if at >= col {
-			b.WriteRune(r)
+			b.WriteString(s[i : i+n])
 		}
 		at += w
+		i += n
 	}
 	return b.String()
 }

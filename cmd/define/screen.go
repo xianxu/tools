@@ -379,13 +379,18 @@ func markClickable(line string, rs []Region) string {
 			i += skip
 			continue
 		}
-		if !open && next < len(spans) && col == spans[next].Col {
+		size, w := nextDisplayUnit(line[i:])
+		// A region can start in either cell of a wide unit. Mark that whole
+		// unit, and discard exhausted spans so they cannot hide later regions.
+		for !open && next < len(spans) && spans[next].Col+spans[next].Width <= col {
+			next++
+		}
+		if !open && next < len(spans) && spans[next].Col < col+w {
 			b.WriteString(underlineOn)
 			open = true
 		}
-		r, size := utf8.DecodeRuneInString(line[i:])
 		b.WriteString(line[i : i+size])
-		col += cellWidth(r)
+		col += w
 		i += size
 		// Closed the moment the span's last cell is written, so the attribute
 		// covers the span and nothing after it.
@@ -688,8 +693,7 @@ func walkSelectionRows(text string, width int, visit func(start, end int) bool) 
 			i += n
 			continue
 		}
-		r, n := utf8.DecodeRuneInString(text[i:])
-		w := cellWidth(r)
+		n, w := nextDisplayUnit(text[i:])
 		if width > 0 && w > 0 && col > 0 && col+w > width {
 			if !visit(start, i) {
 				return false
@@ -1168,10 +1172,9 @@ func clipVisible(s string, width int) string {
 			i += skip
 			continue
 		}
-		r, size := utf8.DecodeRuneInString(s[i:])
-		w := cellWidth(r)
+		size, w := nextDisplayUnit(s[i:])
 		if n+w > width {
-			// Cut here — BEFORE the rune, so a two-cell rune is never half
+			// Cut here — BEFORE the unit, so a wide rune or flag is never half
 			// drawn — and hand the style back, or the terminal keeps whatever
 			// colour was open when the cut landed.
 			if styled {

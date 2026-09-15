@@ -214,18 +214,10 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 	defer cancel()
 
 	interactive := d.stdinIsTerminal != nil && d.stdinIsTerminal()
-	// ONE predicate for "there is a human looking at a terminal", used for every
-	// byte of interactive UI: the prompt, the indicator, and the cursor control.
-	//
-	// This family of bug has now appeared three times — cursor control gated on
-	// stdin, then the atlas describing that weaker gate, then the prompt itself.
-	// Each was a separate fix. The rule underneath all three: UI goes to STDOUT,
-	// so stdout must be a terminal; it responds to a human, so stdin must be one
-	// too. `define > out.txt` satisfies neither and must stay clean.
-	//
-	// `interactive` alone survives only where the question really is about stdin:
-	// whether a failed lookup should set the exit code.
-	terminalUI := interactive && opt.tty
+	// Prompts require a human at stdin and a terminal at stdout. opt.tty is
+	// permission for ANSI/raw editing (also the injected terminal seam in tests);
+	// -no-color still has a plain prompt when stdout is an actual terminal.
+	terminalUI := interactive && (opt.tty || isTerminal(stdout))
 
 	// THE DECK QUESTION IS SETTLED HERE, ABOVE THE CHOICE, and the placement is
 	// the whole point (#50).
@@ -244,7 +236,7 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 	// the question arrives before the screen is taken, not in the middle of it.
 	d.deckPermission.resolve()
 
-	if terminalUI {
+	if terminalUI && opt.tty {
 		// Raw mode: keystrokes, a rendered frame, no terminal echo. Everything
 		// #2 did with cursor arithmetic against an echoed Enter is gone.
 		return replRaw(ctx, interrupts, d, opt, stdin, stdout, stderr)
@@ -253,7 +245,7 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 }
 
 // replLines is the line-oriented loop: piped input, a redirected stdout, or a
-// terminal we could not put into raw mode. Reads whole lines, draws no UI.
+// terminal using plain input. Reads whole lines and optionally writes a prompt.
 // pipedInput and showPrompt are SEPARATE parameters on purpose. They answer
 // different questions and this repo has now conflated them four times:
 //
@@ -333,7 +325,7 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 
 	for {
 		if showPrompt {
-			fmt.Fprint(stdout, prompt)
+			fmt.Fprint(stdout, languagePrompt(d.lang, opt.color && !opt.noFlags, terminalCols(stdout)))
 		}
 		select {
 		case <-ctx.Done():

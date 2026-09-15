@@ -178,7 +178,8 @@ func acceptSuggestion(e Editor, matches []string) (Editor, Action) {
 
 // RenderLine draws the whole input line as ONE frame: return to column 0, clear,
 // then prompt + typed text + grey suggestion, then park the cursor after the
-// typed text.
+// typed text. The caller supplies the current language prefix separately from
+// editable input, so decoration never enters history or completion matching.
 //
 // It computes its own spans from e.Line rather than taking a precomputed list,
 // for the same reason draw() computes its own match list (#15, #20): a list
@@ -190,14 +191,14 @@ func acceptSuggestion(e Editor, matches []string) (Editor, Action) {
 // Enter, and documented that it breaks if the user types during playback. In raw
 // mode nothing is echoed and the frame is simply redrawn, so that arithmetic —
 // eraseLineAndStepBack, skipPrompt — is deleted rather than ported.
-func RenderLine(e Editor, sug string, v Vocabulary, color bool) string {
+func RenderLine(e Editor, sug string, v Vocabulary, color bool, prefix string) string {
 	var b strings.Builder
 	b.WriteString(eraseLine)
 	if color {
 		// The input line has to be findable in a screen full of definition text.
 		// The prompt gets an accent colour and the typed word is bold, so the one
 		// line you can act on reads differently from everything you cannot.
-		b.WriteString(promptOn + prompt + sgrOff)
+		b.WriteString(promptOn + prefix + sgrOff)
 		// Words the learner has looked up get their own colour, so they are
 		// findable in a sentence. ANSI does not nest: each highlight closes and
 		// then RE-OPENS inputOn, or everything after the first known word would
@@ -212,7 +213,7 @@ func RenderLine(e Editor, sug string, v Vocabulary, color bool) string {
 		}
 		b.WriteString(sgrOff)
 	} else {
-		b.WriteString(prompt)
+		b.WriteString(prefix)
 		b.WriteString(string(e.Line))
 	}
 	if sug != "" {
