@@ -8,22 +8,27 @@
 
 **Tech stack:** Existing Go renderers, XML parser, import-free play presentations, screen/selection core, native dictionary captures and stateful SSE fake.
 
-**Status:** Draft for operator layout/plan review; no runtime implementation.
+**Status:** Operator accepts the general layout with a correction: dictionary sections use one uniform background, without alternating colors inside definitions. No runtime implementation yet.
 
 ## Visual contract
 
-The screenshot changes #65's contract: background belongs to a whole language region, including indentation, numbers, headings, short lines, continuation rows and interior blank rows. Structural decorations inherit the containing region; actual foreign prose and unknown-source prose do not acquire that ownership.
+The screenshot changes #65's contract: background belongs to a whole language region, including indentation, numbers, headings, short lines, continuation rows and interior blank rows. For dictionary output, the entire returned dictionary section is the presentation region, including foreign-language quotations and translations. This is a visual grouping rule, not a claim that every token has the same source language. Unknown-source fallback dictionaries stay neutral.
 
 Keep existing foreground colors and emphasis. Answer marks and selection retain precedence. Do not pad stored text, guess languages from spellings, infer ownership from ANSI colors, or repaint old output with the new `/lang` setting.
 
-Oxford keeps its source order and hierarchy: headword, grammatical A/B/C groups, numbered senses, lettered sub-senses, idioms, examples and translations. The draft places Spanish examples and English translations on separate consecutive rows. Mixed contextual labels and translations may likewise have separate rows with clear indentation/association. A physical row containing substantive prose from more than one language stays neutral as a whole; never return to text-run background strips. This applies to free-form model sentences too: preserve sentence layout instead of inserting arbitrary breaks at every short annotation. Ownership is decided per completed physical row after wrapping, not for an entire source paragraph; a later foreign fragment does not change earlier completed rows.
+Oxford keeps its source order and hierarchy: headword, grammatical A/B/C groups, numbered senses, lettered sub-senses, idioms, examples and translations. **Do not change background within a dictionary definition.** With `/lang es`, the whole verified Spanish primary section is tinted and the whole English-explanation Oxford supplement is normal, including its Spanish examples. With `/lang en`, a shown English-explanation section is tinted as one block. Headings and interior blank rows share the section background. Example/translation pairing, indentation and line breaks follow readable source structure, never a need to alternate language colors.
 
-Preview: `/tmp/define66-region-preview.html` (dark/light and es/en toggles). The Oxford examples come from installed native `rendir`. This is a design illustration, not a production screenshot. Operator confirmation of the mixed-language layout remains pending.
+Actual source-language spans remain available for provenance and actions. Keep a separate explicit section presentation role: primary uses verified source language, Oxford supplement uses its provider-declared English-explanation role. Do not derive that role from a display label or guess it for every-active-dictionary fallback. In full practice reveals, preserve these same dictionary section boundaries.
+
+Outside returned dictionary definitions, keep the planned row-level policy for practice/model output: a physical row with mixed or unknown substantive prose stays neutral, and known target rows receive full fill. The dictionary section rule takes precedence within embedded definitions; do not run their contents through the per-row language classifier again.
+
+Preview: `/tmp/define66-region-preview.html` (dark/light and es/en toggles). The Oxford examples come from installed native `rendir`. This is a design illustration, not a production screenshot. Updated after operator rejected alternating language backgrounds within dictionary definitions.
 
 ## Alternatives
 
 - Pad current ANSI strings: small patch, but contaminates copy/history and freezes old terminal widths; reject.
-- Color whole dictionary sections indiscriminately: simple panels, but wrongly colors foreign examples in Oxford; reject.
+- Alternate background at language changes inside dictionary output: rejected by operator as distracting zebra striping.
+- Uniform dictionary-section backgrounds with explicit presentation roles: selected by operator; actual source provenance stays independent.
 - Preserve structural regions and paint rows at the terminal boundary: selected. More metadata plumbing, but formatting, source ownership, copy and resize stay independently correct.
 
 ## Core concepts
@@ -64,7 +69,7 @@ Every source leaf must be emitted exactly once and in order. Do not invent sense
 
 Keep text, click regions and fill metadata together through wrapping; carry immutable resolved background per output so later `/lang` switches affect only subsequent output. Region ownership is explicit, never deduced from existing background escape bytes. Ordinary plain writes have no fill.
 
-A row is target-owned when its substantive prose belongs to that target region; neutral structural decorations do not disqualify it. Unknown substantive prose or a second language makes a mixed row neutral. Producer-owned empty rows inside a language region retain that region; screen gaps, prompt spacing and unrelated empty rows stay neutral.
+Dictionary rows inherit their explicit section presentation role uniformly, regardless of embedded languages. Elsewhere, a row is target-owned when its substantive prose belongs to that target region; structural decorations do not disqualify it, while unknown substantive prose or a second language makes it neutral. Producer-owned empty rows inside a region retain its fill; screen gaps, prompt spacing and unrelated empty rows stay neutral.
 
 At paint time, clip/split using existing display-unit geometry, compose original foreground styles with fill, render remaining cells to the current terminal width, then reset background before cursor movement/newline/erase. Protect marked-answer cells through explicit exclusions. Use the same composer for ordinary paint and selection repaint. Selection cells and clipboard use original unpadded text. Exact-width rows must not cause extra wraps/scrolls.
 
@@ -89,7 +94,7 @@ Finish, cancellation, truncation and failure run the same finalization path befo
 
 ### Task 2 — Shared physical-row paint
 
-- [ ] Add literal background-cell regressions for short lines, indentation, interior blank rows, SGR resets, answer exclusions and width changes; demonstrate current text-strip failure.
+- [ ] Add literal background-cell regressions for uniform dictionary sections containing foreign examples, short lines, indentation, interior blank rows, SGR resets, answer exclusions and width changes; demonstrate current text-strip failure.
 - [ ] Implement validated structured output and shared geometry projection; wire screen buffer/paint, `selectionRow`, selection repaint, terminal/plain serializers and exit transcript. Keep synthetic fill out of source strings/cells.
 - [ ] Test narrow→wide→narrow resize, clipping before wide Unicode, exact-right-edge wrapping, frozen historical language, copy through padding, and no paint leaks into chrome or subsequent rows.
 
@@ -104,7 +109,7 @@ Finish, cancellation, truncation and failure run the same finalization path befo
 - [ ] Update README/atlas to supersede text-only tint. Add integration-registry rows if new conformance files are introduced.
 - [ ] Run full Go suite, focused race checks, bounded source/stream fuzz, vet, Linux build and diff check. Run strict native `rendir` conformance and real PTY dark/light/off tests at multiple widths.
 - [ ] Capture actual rendered `rendir`, inspect dark/light output visually, and show the operator concrete output. Assert background of blank cells in a terminal-state oracle that models SGR background and erasure, not only byte substrings. No visual-completion claim based solely on the design mockup.
-- [ ] Mutation-check dropped Oxford grouping, lost footer metadata, stale width fill, padding entering copied text, and mixed row wrongly receiving target ownership. Commit, pass the single SDLC close review, then publish.
+- [ ] Mutation-check alternating backgrounds within dictionary sections, dropped Oxford grouping, lost footer metadata, stale width fill, padding entering copied text, and mixed non-dictionary rows wrongly receiving target ownership. Commit, pass the single SDLC close review, then publish.
 
 Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bounded new fuzz targets; `go vet ./...`; `GOOS=linux CGO_ENABLED=0 go build ./...`; strict relevant `-tags conformance` tests; `git diff --check`. Exact focused test names land with each regression; passing requires the independent behavioral assertions above, not only unchanged text snapshots.
 
@@ -126,3 +131,5 @@ Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bo
 - 2026-09-15: Fresh review identified ambiguous logical-paragraph versus physical-row streaming ownership. Resolved to completed physical rows, bounded pending-row buffering for both live and append-only color sinks, immutable finalized rows, explicit wrap/source boundary distinction, and multi-wrap mixed-language/cancellation/resize regressions. This avoids repainting already emitted history and preserves sentence layout.
 
 - 2026-09-15: Fresh reviewer approved the revised spec/plan with no remaining important findings. Mixed Oxford pair layout and the complete plan await operator review before change-code.
+
+- 2026-09-15: Operator approved the general visual direction but rejected different backgrounds within one dictionary definition as distracting zebra striping. Supersedes the earlier example/translation color alternation: each dictionary result uses one section presentation role and continuous background; formatting remains structural and foreground emphasis remains intact. Source provenance is distinct from this visual role, unknown fallback stays neutral, and embedded full reveals preserve section identity. Preview updated at the same path.
