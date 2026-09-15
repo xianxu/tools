@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-14
 updated: 2026-09-15
-estimate_hours:
+estimate_hours: 2.338
 started: 2026-09-15T12:23:43-07:00
 ---
 
@@ -25,6 +25,35 @@ Display a Unicode flag before the interactive prompt to denote the effective lan
 - Raw/editor and line-mode prompt paths stay consistent.
 - Flag display does not misalign editing, completion or mouse selection.
 - Unknown language tags have an explicit fallback.
+
+## Estimate
+
+Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only. Calibration is marked stale, so this estimate is provisional.
+
+Units cover issue/spec work, the prompt policy, the bounded display-unit reader,
+the column-consumer integration, interactive rendering and tests, docs, one close
+review, and PTY verification. Existing utf8/ANSI and terminal seams cover the
+work; no new library would replace the narrow RI-pair policy without expanding
+Unicode behavior. Implementation hours are 40% of v2/v2.1 table values;
+familiarity is 1.0. Thorough-plan design uses the 0.2 multiplier for implementation
+units, preserving the already incurred issue/spec allowance, plus 15% design
+buffer. The cross-cutting unit covers all column consumers and the TUI unit
+includes both loops and regressions; PTY discovery is a separate allowance.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec design=0.5 impl=0.08
+item: smaller-go-module design=0.04 impl=0.12
+item: smaller-go-module design=0.06 impl=0.2
+item: cross-cutting-refactor design=0.1 impl=0.2
+item: tui-screen design=0.16 impl=0.32
+item: atlas-docs design=0.02 impl=0.08
+item: milestone-review design=0.04 impl=0.16
+item: real-api-discovery design=0 impl=0.12
+design-buffer: 0.15
+total: 2.338
+```
 
 ## Plan
 
@@ -66,3 +95,10 @@ At a true terminal width below two columns, render the code fallback. Preserve
 whole historical flags through viewport clipping and widening. Added explicit
 entry-point tests for saved deck language and `-lang` overriding it, alongside
 the loop tests. These address the fresh plan review findings.
+
+### 2026-09-15 — Implementation approved and plan gate format corrected
+
+Operator approved the plan. Addressed PQ-1 by replacing procedural task inventories
+with function-level verification strategies. Plain-mode prompt visibility needs
+terminal ownership separated from ANSI/raw-mode permission; tests will exercise
+resolved startup through real PTY stdout. Behavior remains the approved design.
