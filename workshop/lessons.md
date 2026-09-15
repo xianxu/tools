@@ -4597,3 +4597,13 @@ Scanning declared method names misses implementations created by embedding and
 can mistake signature lookalikes for real interfaces. Use Go's type checker and
 check both value and pointer method sets. Include counterexamples with missing,
 shadowed and promoted methods; preserve a runtime test through another wrapper.
+
+
+## Scope cancellation before preparation starts (define #61)
+
+When a nested interaction gains network preparation, install its interrupt
+scope before that preparation. Verify cancellation while a stateful HTTP fake
+holds the actual request, then verify the parent still runs and regains its
+interrupt. A test that starts only after the first question cannot catch a
+scope installed too late; an overlay moving scope installation after preparation
+must fail.

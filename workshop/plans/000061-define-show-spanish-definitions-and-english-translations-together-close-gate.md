@@ -20,6 +20,19 @@ rounds:
           family: explicit-core-concept-classification
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-15T10:00:10-07:00"
+      agent: codex
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: bilingual_sources.go preserves unknown availability separately from confirmed absence. TestBilingualFactoryMetadataDiagnostic passes on HEAD and fails in both unknown-metadata cases when the fix is removed through a temporary overlay.
+          round: 2
+        - id: BR-2
+          disposition: addressed
+          note: The plan's Core concepts table now classifies PURE and INTEGRATION entities and separates parsers/renderers from factory, command, and persistence effects. The cited implementation paths support those classifications.
+          round: 2
+      blocked: false
 ---
 
 # Gate ledger — tools#61 (boundary-review)
@@ -36,7 +49,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-2** [Minor] `explicit-core-concept-classification` Core concepts omit PURE and INTEGRATION classifications
   workshop/plans/000061-bilingual-definitions-plan.md:13 lacks the requested kind column and groups pure parsers with effectful command handlers. Add classifications and split mixed rows.
 
+## Round 2 — 2026-09-15T10:00:10-07:00 (codex) — passed
+
+### Disposed
+
+- BR-1 — addressed — bilingual_sources.go preserves unknown availability separately from confirmed absence. TestBilingualFactoryMetadataDiagnostic passes on HEAD and fails in both unknown-metadata cases when the fix is removed through a temporary overlay.
+- BR-2 — addressed — The plan's Core concepts table now classifies PURE and INTEGRATION entities and separates parsers/renderers from factory, command, and persistence effects. The cited implementation paths support those classifications.
+
 ## Open findings
 
-- **BR-1** [Critical] `unknown-availability-is-not-absence` Spanish factory reports missing Larousse when metadata availability is unknown
-- **BR-2** [Minor] `explicit-core-concept-classification` Core concepts omit PURE and INTEGRATION classifications
+(none — every finding has been disposed)

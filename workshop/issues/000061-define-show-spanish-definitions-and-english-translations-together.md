@@ -1,12 +1,13 @@
 ---
 id: 000061
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-14
-updated: 2026-09-14
+updated: 2026-09-15
 estimate_hours: 6.02
 started: 2026-09-14T16:22:35-07:00
+actual_hours: 4.20
 ---
 
 # define: show Spanish definitions and English translations together
@@ -98,6 +99,7 @@ Extension (assisted practice before answering, added after the scope pivot recor
 - Estimate cross-cutting unit includes consumer regression tests and three presentation paths; native probe discovery was performed before the estimate and informs the reduced design allowance.
 
 ### 2026-09-15 — Plan gate passed for assisted practice
+- 2026-09-15: closed — Bilingual Spanish-first lookup/reveal and pre-answer Choice/Cloze/Board help verified; off/English and warm-cache no-model tests, cancellation mutation, full go test ./..., focused race, vet, Linux build, strict native and live translation conformance pass; 20 native lookups 20.67ms; cache fuzz 714373 cases.; review verdict: SHIP
 
 - Merged main (`c346955`), bringing #54's background preparation; resolved plan/lessons conflicts by keeping both revision trails.
 - Plan gate: round 3 raised PQ-4..PQ-8 (offline invariant, per-surface tests, envelope basis, live-check cadence, #54 interaction); round 4 disposed all as addressed. Estimate extended to 6.02 h.
@@ -111,6 +113,8 @@ Extension (assisted practice before answering, added after the scope pivot recor
 - Strict native direction/limits/factory/private-symbol/source-selection/release-stamp checks passed; 20 warm native lookups took 20.67275ms against the 2s budget. The prior inaccessible-dictionary failure did not reproduce under unrestricted execution; historical Seatbelt restrictions and the existing conformance documentation support sandbox asset visibility as its cause.
 - Live `TestPracticeHelpAgainstTheLiveService` passed in 4.38s, preserving the cloze blank and Spanish red→net/mesh meaning. Cache fuzz passed 714,373 executions in 10s. Recovered prior-session help-validator fuzz evidence (89,825 executions) and all 14 caught overlay mutations; these are historical evidence, distinct from this session's fresh checks.
 - Close review and publication remain the next gates; no final review or merge is claimed by the checked implementation row.
+
+- 2026-09-15: SDLC close review returned SHIP (high confidence), disposed BR-1/BR-2, and raised no new findings. Reviewer independently reran the define suite, native checks, and metadata regression mutation. Recorded the interrupt-preparation testing lesson.
 
 ## Revisions
 

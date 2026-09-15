@@ -87,3 +87,90 @@ findings:
     detail: |
       workshop/plans/000061-bilingual-definitions-plan.md:13 lacks the requested kind column and groups pure parsers with effectful command handlers. Add classifications and split mixed rows.
 ```
+
+---
+
+## Re-review — 2026-09-15T10:00:10-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 61 — define: show Spanish definitions and English translations together |
+| repo | tools |
+| issue file | workshop/issues/000061-define-show-spanish-definitions-and-english-translations-together.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | b47aba3f734c71408e56890111839e516fe3c6c2..7752bddce9f1f99eb6d22e393ce1c682c580f294 |
+| command | sdlc close --issue 61 |
+| reviewer | codex |
+| timestamp | 2026-09-15T10:00:10-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+The pinned implementation matches the issue and its approved scope revisions. Both prior findings are addressed. Review found no blocking correctness, integration, or documentation gaps.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      bilingual_sources.go preserves unknown availability separately from confirmed absence. TestBilingualFactoryMetadataDiagnostic passes on HEAD and fails in both unknown-metadata cases when the fix is removed through a temporary overlay.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      The plan's Core concepts table now classifies PURE and INTEGRATION entities and separates parsers/renderers from factory, command, and persistence effects. The cited implementation paths support those classifications.
+```
+
+### 1. Strengths
+
+- Spanish-source selection rejects wrong-direction records; native conformance verifies ambiguous `red`, accents, and inflections.
+- Shared definition rendering preserves successful sections, primary-only raw output, and language-specific click regions.
+- Practice assistance translates displayed material, validates cached answers, and supplies Choice help for every option or none.
+- README and atlas document setup, toggle persistence, assistance preparation, and offline behavior.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+None.
+
+### 4. Minor findings
+
+None.
+
+### 5. Test coverage
+
+Passed:
+
+- `go test ./cmd/define/... ./internal/conformance -count=1`
+- Focused bilingual and assistance regressions.
+- Native direction, limits, and assembled-factory conformance.
+- `go vet ./cmd/define/...`
+
+BR-1’s regression demonstrably fails without its fix. Twenty warm native lookups completed in approximately 22 ms.
+
+Range whitespace inspection reported trailing spaces in the new prompt golden’s empty metadata fields; no behavioral defect identified. Live model conformance was inspected but not rerun.
+
+### 6. Architecture
+
+| Principle | Result |
+|---|---|
+| ARCH-DRY | Pass — shared rendering and translation preparation. |
+| ARCH-PURE | Pass — selection and validation separated from IO. |
+| ARCH-PURPOSE | Pass — lookup, reveals, and revised pre-answer assistance delivered. |
+| ARCH-MOCK | Pass — injected dictionary/model fakes and conformance checks. |
+| ARCH-CONSTRAINTS | Pass — bounded native results, batches, deadline, and disk cache. |
+| ARCH-SECURE | Pass — metadata uncertainty preserved; external and cached translations validated. |
+| ARCH-ORDER | Pass — preparation precedes playback; interrupt scope covers preparation. |
+| ARCH-FUNERAL | Pass — settings replaced atomically; durable cache evicted within limits; session memory ends with process. |
+
+### 7. Plan revisions
+
+None required.
