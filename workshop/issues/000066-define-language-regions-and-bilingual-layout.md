@@ -34,9 +34,10 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
 - Preserve Oxford's structural HTML through parsing/rendering: part-of-speech
   groups, senses, sub-senses, example/translation pairs and idioms must remain
   readable. Coloring must not collapse or reorder content.
-- Preserve readable example/translation pairing and source structure without
-  splitting rows merely to assign different backgrounds. No zebra striping
-  inside dictionary definitions. Full practice reveals follow the same rule.
+- Keep each Spanish example and its English translation together on one logical
+  row, wrapping naturally at terminal width. Preserve headings, sense structure
+  and separate example pairs; never split a pair merely at its language boundary.
+  Use the section background throughout. Full practice reveals follow this rule.
 - Keep dark/light/off, no-color/pipes, clean clipboard/history, mouse regions,
   wrapping and terminal resize behavior. Cover ordinary lookup and full practice
   reveals; apply the same region treatment to practice and model output.
@@ -102,3 +103,10 @@ single dictionary definition. One dictionary result is one visual region, even
 when it contains both languages. Supersedes the draft separate-language-row tint
 policy for dictionary output; structural formatting and foreground emphasis stay.
 The preview and durable plan now reflect this correction. Runtime remains unchanged.
+
+### 2026-09-15 — Bilingual pairs stay together
+
+Operator answered the pending layout question: “Keep bilingual pairs on one row;
+use the section background.” The preview and plan now keep each example and
+translation inline, with natural wrapping. Earlier separate-language-row drafts
+are superseded; this layout question is resolved.
