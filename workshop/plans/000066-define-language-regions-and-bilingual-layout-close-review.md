@@ -98,3 +98,96 @@ findings:
     detail: |
       The plan's lines 41 and 44 claim an unchanged languageText was modified and locate paintLanguageRow in the wrong file; line 54 attributes new streaming behavior to the legacy answerWrapWriter rather than ownedAnswerWrapWriter. The broader test run also fails the declaration-level status guard for liveScreen and answerWrapWriter. Reconcile the table with actual entities and append a Revisions entry; no wording-presence test is needed.
 ```
+
+---
+
+## Re-review — 2026-09-15T16:08:13-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 66 — define: preserve bilingual layout and tint complete language regions |
+| repo | tools |
+| issue file | workshop/issues/000066-define-language-regions-and-bilingual-layout.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 05a8e8de6e0e22312e95c6649a74936ecb139591..a365ee51fc839599f95be971beab43d0776e0d3e |
+| command | sdlc close --issue 66 |
+| reviewer | codex |
+| timestamp | 2026-09-15T16:08:13-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Both prior findings are addressed. Structural parsing, section ownership, and termination handling are well covered. One new correctness bug blocks shipping: tinted one-shot output silently truncates words wider than the terminal.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      output_screen.go:178 centralizes partial-row invalidation for plain and structured writes. Success/cancellation regressions pass; a scratch overlay restoring unconditional invalidation makes both live runAsk regressions fail.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      The plan's Core concepts table now identifies unchanged declarations, locates paintLanguageRow in language_row.go, and assigns streaming behavior to ownedAnswerWrapWriter. The pinned correction includes a Revisions entry; declaration/status guards pass.
+findings:
+  - id: new
+    severity: Critical
+    family: terminal-serialization-preserves-source
+    title: |
+      Tinted one-shot output truncates overlong words
+    detail: |
+      cmd/define/output_layout.go:221 passes wrapped logical lines directly to paintLanguageRow, whose language_row.go:55 stops at the terminal width. wrapText deliberately preserves overlong words, so the painter discards their remaining characters. A scratch regression through renderDefinitionOutput and serializeOutput at width 20 renders anticonstitucionalmente as anticonstitucionalme under both dark and light profiles; off preserves it. Split overflowing output into physical rows before painting, preserving text and projected metadata. Cover overlong headwords, body tokens, and wide display units while retaining the specified historical clipping policy. ARCH-PURPOSE.
+```
+
+### 1. Strengths
+
+- Oxford structure and provenance share one bounded parser, with source-order conservation tests.
+- Paint metadata stays separate from selectable text; resize, selection, and nested-screen transfer have direct coverage.
+- BR-1 now has complete caller-path regressions, independently confirmed by mutation.
+- README and atlas describe the changed presentation and new conformance coverage.
+
+### 2. Critical findings
+
+- **Overlong-word truncation:** `cmd/define/output_layout.go:221`, `cmd/define/language_row.go:55`. Fix terminal serialization as described above; the missing suffix is lost before reaching the terminal.
+
+### 3. Important findings
+
+None.
+
+### 4. Minor findings
+
+None.
+
+### 5. Test coverage notes
+
+Passed:
+
+- `go test ./cmd/define/... -count=1`
+- Focused race tests for termination, streaming, and screen output.
+- Plan guards and `internal/conformance` tests.
+- Pinned-range `git diff --check`.
+
+Scratch regressions reproduced truncation through both direct serialization and definition rendering. Native/PTY conformance and visual inspection were not rerun. Repository files remain unchanged.
+
+### 6. Architectural notes
+
+| Principle | Result |
+|---|---|
+| ARCH-DRY | Pass: shared parser, painter, and partial-row invalidation rule. |
+| ARCH-PURE | Pass: parsing, layout, and painting remain pure. |
+| ARCH-PURPOSE | **Flag:** terminal serialization violates source preservation. |
+| ARCH-MOCK | Pass: captured dictionary records and stateful SSE replay exercise existing seams. |
+| ARCH-CONSTRAINTS | Pass: source and pending-stream bounds retained. |
+| ARCH-SECURE | Pass: source validation and neutral fallback precede trusted ownership. |
+| ARCH-ORDER | Pass: finalized ownership and terminating writes now agree; mutation verified. |
+| ARCH-FUNERAL | Pass: metadata follows existing screen/response lifetimes; no new runtime artifact family. |
+
+### 7. Plan revision recommendations
+
+Append a `## Revisions` entry adding overlong-token conservation to serializer verification, explicitly distinguishing complete one-shot output from historical viewport clipping.

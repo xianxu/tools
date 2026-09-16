@@ -153,6 +153,19 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   plan table/test matrix; appended the revision. Focused declaration-status tests
   pass; post-commit full verification follows before close round 2.
 
+- 2026-09-15 checkpoint: close round 2 disposed BR1/BR2 but raised BR3
+  (`terminal-serialization-preserves-source`): word wrapping leaves overlong words
+  intact and the tinted painter clipped their suffixes. Shared physical layout now
+  splits residual long rows before paint, retains click/exclusion coordinates,
+  and preserves historical clipping. Dictionary ingress and practice ownership
+  projection use this geometry; strict native provenance projection is unchanged.
+  New headword/body dark/light/off, wide/combining glyph, click/exclusion, and
+  practice/screen ingress tests pass. Focused integrated batch passed (1.700s);
+  agent's core/screen race passed. Changes remain uncommitted; full postcommit
+  suite, strict PTY recheck, next close review, PR and merge are still required.
+  User asked about the UI framework: answered existing custom Go/ANSI liveScreen,
+  not React-style library; this does not change the approved implementation scope.
+
 ## Revisions
 
 ### 2026-09-15 — Uniform dictionary sections

@@ -22,6 +22,16 @@ func bilingualLanguageText(record bilingualRecord) languageText {
 // It consumes both streams from their current positions, never searching ahead
 // for words. Any other transformation makes the whole fragment neutral.
 func projectDictionaryText(source languageText, rendered string) languageText {
+	return projectLanguageText(source, rendered, false)
+}
+
+// Display layout may insert a physical newline inside an overlong source word.
+// Native dictionary correspondence remains stricter: only the owned layout
+// transform opts into generated whitespace; glyph matching stays sequential.
+func projectDisplayText(source languageText, rendered string) languageText {
+	return projectLanguageText(source, rendered, true)
+}
+func projectLanguageText(source languageText, rendered string, displayWhitespace bool) languageText {
 	result := languageText{text: rendered}
 	i, j, spanIndex := 0, 0, 0
 	inSpace := false
@@ -75,10 +85,12 @@ func projectDictionaryText(source languageText, rendered string) languageText {
 					}
 					i += m
 				}
-				if begin == i {
+				if begin == i && !displayWhitespace {
 					return languageText{text: rendered}
 				}
-				appendOwned(j, j+n, owner(begin))
+				if begin < i {
+					appendOwned(j, j+n, owner(begin))
+				}
 			}
 			// Continuation indentation is generated, so only the first byte run
 			// consumes source whitespace and receives its ownership.

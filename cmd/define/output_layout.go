@@ -41,9 +41,9 @@ func validRowPaint(p rowPaint) bool {
 // display-unit correspondence projects both click ranges and answer exclusions;
 // generated hanging indentation has no source cell.
 func layoutOutput(o renderedOutput, width int) renderedOutput {
-	out := renderedOutput{text: wrapWritten(o.text, width)}
+	out := renderedOutput{text: strings.Join(outputWrappedRows(o.text, width), "\n")}
 	if len(o.text) > maxSelectionSource || visibleCells(o.text) > maxSelectionCells {
-		out.regions = wrapMovedRegions(o.text, o.regions, width)
+		// Bounded fallback preserves all text, but cannot safely project clicks.
 		return out
 	}
 	source := strings.Split(o.text, "\n")
@@ -58,8 +58,21 @@ func layoutOutput(o renderedOutput, width int) renderedOutput {
 	}
 	lineBase := 0
 	for line, s := range source {
-		physical := strings.Split(wrapWritten(s, width), "\n")
-		origins, ok := outputCellOrigins(s, physical)
+		wrapped := strings.Split(wrapWritten(s, width), "\n")
+		wrappedOrigins, ok := outputCellOrigins(s, wrapped)
+		var physical []string
+		var origins [][]int
+		for row, body := range wrapped {
+			col := 0
+			for _, part := range outputPhysicalRows(body, width) {
+				physical = append(physical, part)
+				cells := visibleCells(part)
+				if ok {
+					origins = append(origins, wrappedOrigins[row][col:col+cells])
+				}
+				col += cells
+			}
+		}
 		excluded := 0
 		for row := range physical {
 			p := rowPaint{}
@@ -77,6 +90,11 @@ func layoutOutput(o renderedOutput, width int) renderedOutput {
 						p.exclusions = appendCellRange(p.exclusions, col)
 					}
 				}
+			}
+			// A glyph wider than the entire terminal cannot be clipped without
+			// source loss. Keep that exceptional row unfilled and intact.
+			if width > 0 && visibleCells(physical[row]) > width {
+				p = rowPaint{}
 			}
 			out.rows = append(out.rows, p)
 		}
@@ -103,6 +121,35 @@ func layoutOutput(o renderedOutput, width int) renderedOutput {
 		lineBase += len(physical)
 	}
 	return out
+}
+
+// outputWrappedRows is the common terminal geometry for producers and sinks.
+// Word wrapping preserves overlong words; split those residual rows at complete
+// display units before painting so clipping can never discard their suffixes.
+// Width zero is the plain-output contract and preserves source newlines only.
+func outputWrappedRows(text string, width int) []string {
+	if width <= 0 {
+		return strings.Split(text, "\n")
+	}
+	var rows []string
+	for _, line := range strings.Split(wrapWritten(text, width), "\n") {
+		rows = append(rows, outputPhysicalRows(line, width)...)
+	}
+	return rows
+}
+
+// This consumes one logical row and uses the same physical boundaries as the
+// screen selection/cursor geometry. It adds neither indentation nor SGR bytes.
+func outputPhysicalRows(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+	var rows []string
+	walkSelectionRows(text, width, func(start, end int) bool {
+		rows = append(rows, text[start:end])
+		return true
+	})
+	return rows
 }
 
 func appendCellRange(rs []cellRange, col int) []cellRange {

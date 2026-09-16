@@ -46,9 +46,9 @@ func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy t
 	}
 	text.WriteString(p.Text[at:])
 	styled := text.String()
-	wrapped := wrapWritten(styled, width)
-	owned := projectDictionaryText(languageText{text: styled, spans: spans}, wrapped)
-	protected := projectDictionaryText(languageText{text: styled, spans: exclusions}, wrapped)
+	wrapped := strings.Join(outputWrappedRows(styled, width), "\n")
+	owned := projectDisplayText(languageText{text: styled, spans: spans}, wrapped)
+	protected := projectDisplayText(languageText{text: styled, spans: exclusions}, wrapped)
 	o := renderedOutput{text: wrapped}
 	pos := 0
 	ownerIndex, exclusionIndex := 0, 0
@@ -121,7 +121,7 @@ func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy t
 		// A neutral section needs an explicit bypass as well as tinted sections.
 		row := 0
 		for i, line := range strings.Split(styled, "\n") {
-			count := strings.Count(wrapWritten(line, width), "\n") + 1
+			count := len(outputWrappedRows(line, width))
 			for j := 0; j < count; j++ {
 				if sectionLines[i] && row+j < len(o.rows) {
 					o.rows[row+j] = paintAt(mapped.rows, row+j)

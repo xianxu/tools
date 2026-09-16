@@ -4666,3 +4666,11 @@ newline. Cover the complete caller success/cancellation path and every writer
 capability: terminator-only writes preserve finalized row metadata, while added
 unclassified source invalidates it. Also run plan declaration/status guards after
 committing: an uncommitted green run cannot prove claims about the committed window.
+
+### #66 — preserve source before terminal clipping
+
+Word wrapping may deliberately retain overlong words. Split residual rows at
+complete display units before terminal painting, and project actions and semantic
+exclusions through that same geometry. Test source-glyph conservation alongside
+cell backgrounds, including long headwords, wide/combining glyphs and practice
+rows. Keep historical resize clipping separate from initial output layout.

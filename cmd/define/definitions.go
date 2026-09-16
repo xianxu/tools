@@ -126,7 +126,7 @@ func renderDefinitionOutput(set definitionSet, opt RenderOpts) renderedOutput {
 			}
 		}
 	}
-	return renderedOutput{text: out.String(), regions: regions, rows: paints}
+	return layoutOutput(renderedOutput{text: out.String(), regions: regions, rows: paints}, opt.Width)
 }
 
 type spanishDefinitions struct {

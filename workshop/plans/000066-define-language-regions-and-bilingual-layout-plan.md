@@ -168,3 +168,11 @@ Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bo
   renderDefinitionOutput and renderPracticeOutput are new. The painter lives in
   language_row.go. BR-1 extends streaming verification through runAsk's terminating
   plain newline, for success and cancellation, plus the shared screen append policy.
+
+- 2026-09-15 — Close review BR-3: word wrapping intentionally leaves overlong
+  tokens intact, so the terminal serializer must additionally split them into
+  display-unit physical rows before invoking the clipping painter. Shared
+  outputWrappedRows also supplies definition ingress and practice ownership
+  projection; historical screen rows retain clip-only resizing. Regression scope
+  includes headword/body tokens, wide glyphs, action/exclusion mapping, all profiles
+  and clean width-zero serialization.
