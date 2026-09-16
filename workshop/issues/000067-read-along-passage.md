@@ -414,6 +414,52 @@ simply with no brackets in it, and it is the literal reading of "what does this
 mean: <sentence>". Declined because Enter is cheap to press and a passage is an
 expensive call, but it is a real option if the nudge proves annoying in practice.
 
+### The mark becomes deck membership (operator, 2026-09-16)
+
+**After an ask, marks CLEAR and the passage re-renders under the normal rules — so
+the words just asked about now show as DECK words.** The transient state converts
+into the durable one, visibly, at the moment it happens.
+
+Three problems dissolve at once:
+
+- **No accidental re-ask.** A bare Enter after an answer finds no marks and hits the
+  local nudge, which is free. The "Enter fires an expensive call with no visible
+  state change" hazard never arises.
+- **No re-marking friction.** You do not need to remember what you covered: it is
+  green. Follow-up means marking only what is new, which is exactly the iterative
+  reading loop the feature is for.
+- **The mark's whole job is now legible.** It is a short-lived request, not a
+  persistent annotation — it exists only between marking and asking, which is also
+  why it must read as clearly DISTINCT from deck green.
+
+**Passage size: a sentence to a paragraph** (operator, same exchange) — roughly
+1000 characters. Everything stays visible, so every word is reachable without
+scrolling the passage.
+
+**This settles the layout question by implication, not by preference.**
+`screen.lines` is append-only and **immutable once written** (`screen.go:71`), and
+deck colour is baked in at WRITE time by `highlightRegion`, while only `regions` and
+`paints` are paint-time and mutable. So a passage printed inline as ordinary
+scrollback can never re-render: the marks could be dropped (paint-time) but the
+words could not turn green (baked). "Re-render under the normal rules" therefore
+REQUIRES a live region the frame rebuilds — pinned, like the practice playbar's
+`newPinnedScreen` (`screen.go:832`). Inline is off the table for a structural
+reason rather than a taste one.
+
+**One consequence to carry into the plan (ARCH-DRY).** Admission must go through
+`Capturer`, not a second `Upsert`. There is exactly one production `Upsert`
+(`capture.go:123`) and the interface doc states why: *"capture is the only thing
+that records, and a second appender beside it is how that stops being true without
+anyone noticing."* It also orders the writes deliberately — `vocab.Add` runs only
+after the deck accepted the word, *"so it must not claim a word the deck rejected"*
+— which is precisely the ordering that makes "the word turns green" honest.
+
+**And one loose end, noted rather than solved.** The admission rule is dictionary-hit
+only, so a marked phrase with no entry reverts to PLAIN rather than turning green.
+That difference is meaningful — one is a word you are now learning, the other was a
+phrase you needed explained once — but nothing on screen says so. Worth a look once
+there is usage; not worth machinery now.
+
 ### Survey findings, 2026-09-16 — three that change the design
 
 Three parallel code surveys ran at `start-plan`. Most of the earlier capability
@@ -680,3 +726,18 @@ a passage, and every click outside one keeps its current meaning. The word-snap
 helper now has ONE consumer (the passage surface) rather than two, so it is no
 longer a candidate to build first for its own sake; it is built where it is used.
 Supersedes the revision directly above it.
+
+### 2026-09-16 — marks clear into deck membership; layout follows
+
+Reason: operator settled the post-ask behaviour and the passage size.
+
+Delta:
+- Marks CLEAR after an ask and the passage re-renders normally, so asked-about words
+  appear as deck words. Better than either option offered: it removes the accidental
+  re-ask, removes the re-marking friction, and makes the mark's transience legible.
+- Passage bounded to a sentence/paragraph (~1000 chars), fully visible.
+- Layout is DERIVED, not chosen: an append-only buffer with write-time baked colour
+  cannot re-render, so the passage must be a pinned live region. Inline is
+  structurally impossible for this behaviour.
+- Admission routes through `Capturer` (one `Upsert`, `vocab.Add` only after the deck
+  accepts) — which is also what makes the green honest.
