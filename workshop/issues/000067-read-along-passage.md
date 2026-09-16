@@ -441,6 +441,83 @@ word"* — everywhere, not just inside a passage. One uniform rule is easier to 
 and easier to test than a surface-conditional one, so this REPLACES the scoped
 exception the earlier revision proposed.
 
+### Survey findings, 2026-09-16 — three that change the design
+
+Three parallel code surveys ran at `start-plan`. Most of the earlier capability
+table held up. These did not:
+
+**1. `RegionWord` ALREADY EXISTS, and clicking one plays audio.** The registry is
+`RegionHeadword`, `RegionOriginLang`, `RegionWord` (`render.go:254`). `RegionWord`
+is a DECK word in prose, produced by `deckSpans` → `wordRegions`
+(`deckwords.go:59,90`), and `playRegion` (`replraw.go:707`) plays it in the
+session's voice. So in today's answer area, clicking `equinox` already plays it.
+The operator's click-to-copy therefore does not land on empty ground — it lands on
+a shipped behaviour, and "regions win" would mean deck words play while every
+other word copies. That is a fork, not a detail; see Open decisions below.
+
+**2. `TestEveryRegionKindIsActionable` asserts *actionable == plays audio***
+(`editorloop_test.go:953`, plus `...ThroughTheSharedRegistry` at `:985`). It derives
+its loop from `numRegionKinds`, so a new kind is exercised the moment it is added —
+and a passage-word kind whose action is "mark, do not play" FAILS it as written.
+The guard has to be generalised from "plays" to "does something observable", which
+is a deliberate change to a test that is doing real work, not a fix-up.
+
+**3. A per-span BACKGROUND is not expressible today.** `rowPaint` carries ONE
+`background` for a whole row plus *exclusions* — holes, not colours — and
+`validRowPaint` (`output_layout.go:23`) rejects anything but `languageDark` /
+`languageLight` / `""`. Worse, the selection highlight is `\x1b[7m` INVERSE VIDEO
+(`selection_frame.go:241`), not a background: a deck-green word inside a selection
+renders as green *background*, because inverse swaps foreground and background. So
+"blue background on the marked words" cannot be built from either existing channel
+without new machinery. See Open decisions.
+
+**Two more structural gaps, both real but decidable in the plan:**
+
+- **`highlightRow` takes two points, not a set.** Its signature is
+  `(row int, a, b selectionPoint) string` (`selection_frame.go:208`) — one range per
+  row. Accumulating marks IS a set of ranges, so this is the one place the selection
+  side genuinely has to widen.
+- **Word snapping does not exist in the selection path.** `selectionCell` is
+  per-display-column and knows nothing about words; word boundaries live in
+  `wordRuns` (byte offsets, plain text, `highlight.go:33`) and reach the screen only
+  as `Region{Col,Width}` through `deckSpans`. "Click snaps to a word" needs that
+  bridge built — it is the shared primitive this issue and the answer-area request
+  both want.
+
+**What the surveys CONFIRMED, and can be relied on:**
+
+- The single composition point exists: `selectionLayout.paint` (`screen.go:512`) is
+  the only place holding the styled bytes, the row's `rowPaint`, the frame's cell
+  table AND the live gesture at once. Collision 2's "one composition point, not two
+  writers" has a home.
+- Both surviving decoration layers work by RE-ASSERTING their attribute after every
+  foreign SGR (`language_row.go:45`, `selection_frame.go:243`) rather than trusting
+  nesting. Any fourth decoration must do the same or compose at that one point.
+- `markClickable` (`screen.go:362`) is the precedent for decorating a span safely:
+  attributes only (`\x1b[4m`/`\x1b[24m`), never colour, closing with `24` rather
+  than `0` so the palette survives.
+- Mode 2004 is absent, and `TestEveryEnabledMouseModeIsDecoded` (`key_test.go:400`)
+  already encodes "for every mode we ENABLE, the decoder answers every encoding it
+  can reply in" — so a half-done paste fails a test by design. `ESC[200~` is
+  currently PINNED as `KeyUnknown` at `key_test.go:71`; that assertion must be
+  rewritten deliberately.
+- **A paste must not arrive as N keystrokes.** `readInput` delivers into a 256-key
+  channel with a hard drop-newest policy (`selection_input.go:157,204`), and `Apply`
+  inserts one rune per key with no bulk path (`editor.go:55`). A pasted paragraph
+  would lose its tail behind one "input full" notice (ARCH-CONSTRAINTS).
+- `question` is `{text, forced}` with six composite-literal construction sites, so a
+  new field defaults to zero at all six. `askTask` keys both the golden filename and
+  the cassette, so the passage question takes its own task name and leaves
+  `ask-prompt.txt` untouched.
+- `store.Item{Form: FormCloze}` holds the example sentence AS `Stem`
+  (`harvest.go:445`) — no new datatype needed. But `oneLine` (`store/item.go:200`)
+  flattens whitespace on read AND write, and distractors still have to come from
+  somewhere.
+- `storeHistory.Load` filters `EventLookedUp` only (`history_store.go:64`) — a new
+  event kind is invisible to Up-arrow recall unless added there.
+- The piped loop never decodes escapes at all, so paste is raw-mode-only by
+  construction, and `mayAsk`/`-raw` already scope the ask.
+
 ### An authentic sentence is better material than an authored one
 
 Today `items/<lang>/` holds practice sentences the MODEL writes, gated by an
