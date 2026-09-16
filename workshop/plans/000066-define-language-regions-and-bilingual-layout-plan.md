@@ -8,7 +8,7 @@
 
 **Tech stack:** Existing Go renderers, XML parser, import-free play presentations, screen/selection core, native dictionary captures and stateful SSE fake.
 
-**Status:** Operator accepts the general layout with a correction: dictionary sections use one uniform background, without alternating colors inside definitions. No runtime implementation yet.
+**Status:** Operator approved the corrected preview and layout on 2026-09-15. Entering implementation gate.
 
 ## Visual contract
 
@@ -37,11 +37,11 @@ Preview: `/tmp/define66-region-preview.html` (dark/light and es/en toggles). The
 
 | Name | Lives in | Status | Responsibility |
 |---|---|---|---|
-| `bilingualDocument` | `cmd/define/bilingual_layout.go` | new | Ordered structural nodes and inline runs from one bounded Oxford XML walk |
-| `languageText` | `cmd/define/language_text.go` | modified | Preserve verified byte ownership; add explicit region boundaries/decorations independently of source prose |
+| `parseBilingualDocument` → `bilingualDocument` | `cmd/define/bilingual_layout.go` | new | Ordered structural nodes and inline runs from one bounded Oxford XML walk |
+| `languageText` | `cmd/define/language_text.go` | unchanged | Verified byte ownership; presentation regions live separately in renderedOutput and Presentation |
 | `renderedOutput` | `cmd/define/output_layout.go` | new | Unpadded styled text, click regions and semantic region metadata in one validated value |
 | `layoutOutput` | `cmd/define/output_layout.go` | new | Shared wrap/clip projection of text, click coordinates and row ownership |
-| `paintLanguageRow` | `cmd/define/language_style.go` | new | Paint physical row fill and exclusions at current width without altering source text |
+| `paintLanguageRow` | `cmd/define/language_row.go` | new | Paint physical row fill and exclusions at current width without altering source text |
 | `selectionRow` | `cmd/define/selection_frame.go` | modified | Paint metadata separate from selectable cells |
 | `Presentation` | `cmd/define/play/presentation.go` | modified | Producer-owned row/region ownership and answer-state exclusions; no imports |
 
@@ -49,11 +49,15 @@ Preview: `/tmp/define66-region-preview.html` (dark/light and es/en toggles). The
 
 | Name | Lives in | Status | Wraps |
 |---|---|---|---|
-| `renderDefinitions` | `cmd/define/definitions.go` | modified | Primary renderer and structured Oxford output, shared by lookup/Choice/Cloze reveals |
-| `liveScreen` | `cmd/define/screen.go` | modified | Atomic structured output, current-width paint, selection, resize and exit transcript |
-| `answerWrapWriter` | `cmd/define/answerwrap.go` | modified | Bounded structured physical-row emission before any sink receives paint |
+| `renderDefinitions` | `cmd/define/definitions.go` | modified | String adapter around the structured definition core |
+| `renderDefinitionOutput` | `cmd/define/definitions.go` | new | Primary and structural Oxford output shared by lookup/Choice/Cloze reveals |
+| `liveScreen` | `cmd/define/screen.go` | unchanged | Existing synchronized IO shell; new methods carry structured output |
+| `screen` | `cmd/define/screen.go` | modified | Stores immutable row paint beside unpadded text and actions |
+| `WriteOutput` | `cmd/define/output_screen.go` | new | Atomic structured text/action/paint ingress |
+| `answerWrapWriter` | `cmd/define/answerwrap.go` | unchanged | Legacy unannotated wrapping API retained for existing callers |
+| `ownedAnswerWrapWriter` | `cmd/define/answerwrap.go` | new | Bounded structured physical-row emission before any sink receives paint |
 | `languageAnswer` | `cmd/define/answer_language.go` | modified | Existing decoded stream and plain history, explicit row-ownership accumulation |
-| Practice output adapters | `cmd/define/practice_language.go` | modified | Prompt/reveal/chrome/footer regions and dictionary-source roles |
+| `renderPracticeOutput` | `cmd/define/practice_output.go` | new | Prompt/reveal/chrome/footer regions and dictionary-section paint |
 
 ## Detailed contracts
 
@@ -79,7 +83,7 @@ Structured output extends the existing `WriteRegions` seam with an atomic text/r
 
 Reuse the #65 annotation/control decoder unchanged. `languageAnswer` stores only original decoded prose. The shared wrap/layout core owns **physical row** boundaries: source newline and inserted wrap both finalize that physical row. It carries language metadata through word wrapping before aggregating ownership; never aggregate a whole source paragraph and later retroactively recolor its completed rows.
 
-Use a pure row-ownership accumulator with states empty, known(language), and mixed/unknown. Events: append substantive run, append structural decoration/whitespace, finalize(source-newline or wrap), resize(width), finish. Empty + known prose becomes known; known + same stays known; unknown or another substantive language becomes mixed; mixed cannot become known until finalize resets to empty. Decorations do not independently establish language; producer-declared blank region rows can carry explicit ownership. Source newline and wrap finalize identically for ownership but retain distinct text-boundary provenance so stored logical answers never gain display-only newlines.
+Use the pure `advanceRowOwnership` transition function with states empty, known(language), and mixed/unknown. Events: append substantive run, append structural decoration/whitespace, finalize(source-newline or wrap), resize(width), finish. Empty + known prose becomes known; known + same stays known; unknown or another substantive language becomes mixed; mixed cannot become known until finalize resets to empty. Decorations do not independently establish language; producer-declared blank region rows can carry explicit ownership. Source newline and wrap finalize identically for ownership but retain distinct text-boundary provenance so stored logical answers never gain display-only newlines.
 
 **Both live and append-only color output buffer the unfinished physical row until finalize/finish**, then emit its final text/ownership atomically. Do not paint provisional tint and later retract it. Completed physical rows stay immutable. Latency trade-off: at most one unfinished physical row is held in addition to the existing bounded annotation segment. Preserve the existing 64 KiB unfinished-text cap; exceeding it stops display with the existing write-failure diagnostic while clean decoded history still finishes. Width-zero plain output streams clean text without fill buffering. A live resize supplies a new width to the pure layout core before its next emission: only uncommitted pending text is laid out at that width, while old rows retain the existing clip-only history policy. The screen painter independently fills each row to its current width.
 
@@ -87,29 +91,42 @@ Finish, cancellation, truncation and failure run the same finalization path befo
 
 ## Implementation and verification
 
+### Function-level test strategy
+
+Direct pure-core tests use independent source-order and terminal-cell oracles; integration tests then prove each consumer reaches those cores.
+
+| Production function | Adversarial input class | Independent mechanical guard |
+|---|---|---|
+| `parseBilingualDocument` | Exact native Oxford records with nested senses, paired examples, idioms/emphasis, repeated words, unknown wrappers, malformed/truncated XML and size/depth limits | Literal A/B/C and A2/A4 tree assertions plus ordered source-leaf conservation against the captured native record; fuzz rejects panic, duplication, loss and ownership on invalid sources; removing a group boundary must fail |
+| `layoutOutput` | Narrow/wide Unicode, exact-edge wrapping, embedded multi-language dictionary sections, interior blanks, invalid metadata and narrow→wide→narrow clipping | Literal physical rows and click-cell coordinates at fixed widths, source-text conservation and bounds assertions; mutating section ownership or retaining stale width must fail |
+| `paintLanguageRow` | Short/indented/blank rows, embedded SGR resets, semantic answer exclusions, selection inverse, tint off and width changes | Independent terminal-state emulator asserts every cell's background including blank cells, unchanged foreground/excluded cells, reset before movement and no extra wrap/scroll; mutations removing padding/reset must fail |
+| `advanceRowOwnership` | Exhaustive empty/known/mixed states crossed with same/foreign/unknown prose, decorations, finalize/wrap/finish events | Literal transition table, mixed-state absorption until finalize, no language from decoration, explicit blank-region inheritance and dictionary-role bypass; mutation assigning mixed rows to target must fail |
+| `ownedAnswerWrapWriter` / `languageAnswer` | Every-byte splits of real SSE capture, multiple pure wrapped rows followed by mixed prose, pending-row resize, cancellation/truncation/error and 64 KiB overflow | Identical finalized physical rows across chunk splits/live/append sinks, unchanged decoded logical history, immutable completed-row ownership and bounded pending text; no display-only newlines/padding in history |
+| `selectionCells` / `selectedText` | Selection across synthetic padding, clipped wide glyphs and source spaces at multiple widths | Literal clipboard text derived from unpadded source; paint-padding mutation must fail |
+| `renderDefinitionOutput` / `renderPracticeOutput` / `boardFooterOutput` | Lookup, both full reveals, prompt/help/answer rows, footer and unknown dictionary fallback | Literal text/action coordinates plus terminal-cell section-role assertions; mutation losing footer metadata or alternating backgrounds within a dictionary must fail |
+
 ### Task 1 — Source structure and regression oracle
 
-- [ ] Add exact native `rendir` capture and independent assertions for A/B/C groups, A2/A4 lettered senses, example/translation associations, idioms and emphasis from the existing corpus. Run them against the flat path and record failures.
-- [ ] Implement the bounded structural core and integrate it with `definitionSection`/`renderDefinitions`; preserve ordinary primary parsing. Run ordered-leaf/no-data-loss, malformed/truncated/unknown-class and repeated-word ownership tests.
+- [x] Promote exact native `rendir` capture with provenance; add the direct parser and render regressions above, run against the flat path and record failures.
+- [x] Implement the bounded structural core and integrate with `definitionSection`/`renderDefinitions`, preserving ordinary primary parsing and the source-conservation guards.
 
 ### Task 2 — Shared physical-row paint
 
-- [ ] Add literal background-cell regressions for uniform dictionary sections containing foreign examples, short lines, indentation, interior blank rows, SGR resets, answer exclusions and width changes; demonstrate current text-strip failure.
-- [ ] Implement validated structured output and shared geometry projection; wire screen buffer/paint, `selectionRow`, selection repaint, terminal/plain serializers and exit transcript. Keep synthetic fill out of source strings/cells.
-- [ ] Test narrow→wide→narrow resize, clipping before wide Unicode, exact-right-edge wrapping, frozen historical language, copy through padding, and no paint leaks into chrome or subsequent rows.
+- [x] Add the direct layout/painter/selection regressions above and demonstrate the current text-strip failure.
+- [x] Implement validated structured output and shared geometry projection; wire screen buffer/paint, `selectionRow`, selection repaint, terminal/plain serializers and exit transcript. Keep synthetic fill out of source strings/cells.
 
 ### Task 3 — Consumer sweep
 
-- [ ] Wire ordinary dictionary lookup and both full practice reveals; preserve headword/vocabulary/origin action regions through new Oxford rows.
-- [ ] Wire Choice/Cloze/Board prompt/reveal/help/footer and semantic answer exclusions via producer metadata. Dictionary glosses continue using verified dictionary-source ownership.
-- [ ] Replace model text-run tint with row metadata using the pure streaming accumulator; test every-byte splits, mixed inline prose, cancellation, truncation, output error and clean history using existing real-capture SSE fake.
+- [x] Wire ordinary dictionary lookup and both full practice reveals; preserve headword/vocabulary/origin action regions through new Oxford rows.
+- [x] Wire Choice/Cloze/Board prompt/reveal/help/footer and semantic answer exclusions via producer metadata. Dictionary glosses continue using verified dictionary-source ownership.
+- [x] Replace model text-run tint with row metadata using `advanceRowOwnership`; demonstrate the streaming guards above through the existing real-capture SSE fake.
 
 ### Task 4 — Demonstrate and close
 
-- [ ] Update README/atlas to supersede text-only tint. Add integration-registry rows if new conformance files are introduced.
-- [ ] Run full Go suite, focused race checks, bounded source/stream fuzz, vet, Linux build and diff check. Run strict native `rendir` conformance and real PTY dark/light/off tests at multiple widths.
-- [ ] Capture actual rendered `rendir`, inspect dark/light output visually, and show the operator concrete output. Assert background of blank cells in a terminal-state oracle that models SGR background and erasure, not only byte substrings. No visual-completion claim based solely on the design mockup.
-- [ ] Mutation-check alternating backgrounds within dictionary sections, dropped Oxford grouping, lost footer metadata, stale width fill, padding entering copied text, and mixed non-dictionary rows wrongly receiving target ownership. Commit, pass the single SDLC close review, then publish.
+- [x] Update README/atlas to supersede text-only tint. Add integration-registry rows if new conformance files are introduced.
+- [x] Run full Go suite, focused race checks, bounded source/stream fuzz, vet, Linux build and diff check. Run strict native `rendir` conformance and real PTY dark/light/off tests at multiple widths.
+- [x] Capture actual rendered `rendir`, inspect dark/light output visually, and show the operator concrete output. Use the terminal-state oracle above; no visual-completion claim based solely on the design mockup.
+- [x] Run the function-level mutations above, commit, pass the single SDLC close review, then publish.
 
 Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bounded new fuzz targets; `go vet ./...`; `GOOS=linux CGO_ENABLED=0 go build ./...`; strict relevant `-tags conformance` tests; `git diff --check`. Exact focused test names land with each regression; passing requires the independent behavioral assertions above, not only unchanged text snapshots.
 
@@ -135,3 +152,48 @@ Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bo
 - 2026-09-15: Operator approved the general visual direction but rejected different backgrounds within one dictionary definition as distracting zebra striping. Supersedes the earlier example/translation color alternation: each dictionary result uses one section presentation role and continuous background; formatting remains structural and foreground emphasis remains intact. Source provenance is distinct from this visual role, unknown fallback stays neutral, and embedded full reveals preserve section identity. Preview updated at the same path.
 
 - 2026-09-15: Operator explicitly selected “Keep bilingual pairs on one row; use the section background.” Each example/translation pair is one logical row with natural wrapping. Supersedes all earlier proposals to place the two languages on separate rows, including the old pending clarification. Preview updated to inline pairs; uniform section background remains unchanged.
+
+- 2026-09-15: Operator explicitly approved the final preview (“yes, looks great”): uniform dictionary-section backgrounds and inline bilingual pairs. Proceed to change-code, estimate and implementation without further layout approval.
+
+- 2026-09-15: Plan-quality finding PQ-1 requested named pure-function test strategies. Named `parseBilingualDocument` and `advanceRowOwnership`; replaced duplicated case inventories with one function/input-class/independent-guard matrix. Integration commands and actual visual acceptance remain. Approved product behavior and scope are unchanged.
+
+- 2026-09-15: Implementation preserves the established unpadded `Transcript()` API.
+  `PaintedTranscript()` owns terminal handback and `OutputTranscript()` transfers
+  text/actions/paint between nested screens. This avoids clipping or padding logical
+  history when current-width painting occurs. Added a nested-transfer regression.
+
+- 2026-09-15 — Close review BR-2: reconcile Core concepts with declaration-level
+  implementation. languageText/liveScreen/legacy answerWrapWriter declarations are
+  unchanged; screen storage changed, and ownedAnswerWrapWriter, WriteOutput,
+  renderDefinitionOutput and renderPracticeOutput are new. The painter lives in
+  language_row.go. BR-1 extends streaming verification through runAsk's terminating
+  plain newline, for success and cancellation, plus the shared screen append policy.
+
+- 2026-09-15 — Close review BR-3: word wrapping intentionally leaves overlong
+  tokens intact, so the terminal serializer must additionally split them into
+  display-unit physical rows before invoking the clipping painter. Shared
+  outputWrappedRows also supplies definition ingress and practice ownership
+  projection; historical screen rows retain clip-only resizing. Regression scope
+  includes headword/body tokens, wide glyphs, action/exclusion mapping, all profiles
+  and clean width-zero serialization.
+
+### 2026-09-15 — BR4: one geometry for text and metadata
+
+Invariant: text, actions and exclusions share physical-row geometry (ARCH-DRY,
+ARCH-PURPOSE). Consumer enumeration found practice actions still using legacy
+word-only mapping and the regionWriter fallback serializing text without moving
+actions. Practice now supplies source actions to renderPracticeOutput's shared
+layoutOutput, and the fallback layouts the entire renderedOutput before emitting.
+Definitions already use layoutOutput; pinned liveScreen layouts whole outputs;
+streaming owns physical rows and has no actions; nested-session transfer carries
+already-physical text/actions/paint. Footer chrome has no click regions and uses
+shared physical display-unit boundaries for exclusion slicing. Legacy WriteRegions
+retains paired legacy wrapping/mapping outside the structured-output path.
+Production-path regressions through writePracticePresentation into liveScreen and
+through the regionWriter fallback fail before and pass after these corrections.
+
+### 2026-09-15 — acceptance and publication
+
+Close round 4 returned SHIP: all four findings addressed, none new. Final full
+suite (127.818s), race and strict native/PTY checks passed in the implementation
+session. Published PR #49; deterministic merge/archive is the remaining SDLC step.

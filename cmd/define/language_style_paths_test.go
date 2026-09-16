@@ -39,6 +39,9 @@ func TestLanguageTintInvocation(t *testing.T) {
 				}
 				defer master.Close()
 				defer slave.Close()
+				if err := pty.Setsize(slave, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+					t.Fatal(err)
+				}
 				done := make(chan struct{})
 				go func() { defer close(done); io.Copy(&capture, master) }()
 				code = run(t.Context(), args, d, strings.NewReader(""), slave, &errout)
@@ -54,6 +57,23 @@ func TestLanguageTintInvocation(t *testing.T) {
 			}
 			if tc.want != "" && !strings.Contains(text, tc.want) {
 				t.Fatalf("missing tint %q: %q", tc.want, text)
+			}
+			if tc.want != "" {
+				wantBackground := 236
+				if tc.want == languageLight {
+					wantBackground = 254
+				}
+				for row, line := range strings.Split(strings.TrimSuffix(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), "\n") {
+					cells, end := rowTestCells(t, line, 80)
+					for col, c := range cells {
+						if c.bg != wantBackground {
+							t.Fatalf("row %d col %d background=%d, want %d", row, col, c.bg, wantBackground)
+						}
+					}
+					if end.bg != -1 {
+						t.Fatalf("row %d leaks background", row)
+					}
+				}
 			}
 			if tc.want == "" && (strings.Contains(text, languageDark) || strings.Contains(text, languageLight)) {
 				t.Fatalf("unexpected tint: %q", text)

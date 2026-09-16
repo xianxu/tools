@@ -24,11 +24,8 @@ func TestLanguageAnswerFlushesOwnedAndPartialText(t *testing.T) {
 		if a.plain.String() != tt.plain || stripEscapes(out.String()) != tt.plain {
 			t.Fatalf("text divergence: stored %q visible %q", a.plain.String(), out.String())
 		}
-		if tt.owned != "" && !strings.Contains(out.String(), languageDark+tt.owned+languageOff) {
-			t.Fatalf("owned passage missing: %q", out.String())
-		}
-		if tt.owned == "" && strings.Contains(out.String(), languageDark) {
-			t.Fatalf("partial tinted: %q", out.String())
+		if strings.Contains(out.String(), languageDark) {
+			t.Fatalf("width-zero plain output tinted: %q", out.String())
 		}
 	}
 }
@@ -65,7 +62,7 @@ func TestLanguageAnswerWrapClosesBackgroundBeforePhysicalNewline(t *testing.T) {
 		t.Fatal("fixture did not wrap")
 	}
 	for _, line := range strings.Split(out.String(), "\n")[:strings.Count(out.String(), "\n")] {
-		if !strings.HasSuffix(line, languageOff) {
+		if !strings.HasSuffix(line, languageOff) && !strings.HasSuffix(line, sgrOff) {
 			t.Fatalf("physical newline inherits background: %q", out.String())
 		}
 	}

@@ -1,12 +1,13 @@
 ---
 id: 000066
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-15
 updated: 2026-09-15
 estimate_hours: 7.117
 started: 2026-09-15T14:48:20-07:00
+actual_hours: 4.00
 ---
 
 # define: preserve bilingual layout and tint complete language regions
@@ -61,13 +62,14 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
 
 - [x] Trace source formatting and terminal painting; settle a concrete layout and
   durable implementation plan with regressions and operator review.
-- [ ] Implement structural bilingual rendering and shared full-region painting;
+- [x] Implement structural bilingual rendering and shared full-region painting;
   verify actual `rendir` output, all consumers and required checks, then close.
 
 
 ## Log
 
 ### 2026-09-15
+- 2026-09-15: closed — Postcommit full Go suite passed (define 127.818s); focused race and strict installed Oxford/PTY dark/light/off checks passed. BR4 regressions fail before and pass after for practice-to-liveScreen and regionWriter actions following hard-wrapped source. Structured consumers enumerated in plan. Earlier vet/Linux build/fuzz/mutations and actual dark/light visual inspection passed.; review verdict: SHIP
 
 - Created and claimed #66 immediately after operator screenshot feedback; ran
   start-plan. No runtime edits. This is a correction to #65's visual contract.
@@ -98,6 +100,80 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   naming parser/ownership functions and mapping each risky function to adversarial
   classes and independent guards in the plan. Product design unchanged; gate
   recheck pending, no runtime edits or estimate yet.
+
+- Change-code passed: plan-quality round 2 accepted PQ-1; estimate-quality INFO
+  (no blocking findings); implementation branch created. Review notes optimistic
+  streaming/verification allowances. Estimate is full-issue ship wall-clock,
+  including completed planning, not remaining time. Plan review/revision is in
+  issue-spec design; unit/race/fuzz/mutation execution is in each owning technical
+  item; full-suite/build and final review verification are in close-review;
+  actual native/PTY dark/light inspection is in real-api-discovery. These are
+  small provisional allowances; do not reduce required verification to fit them.
+- Context checkpoint before implementation under AGENTS §14. Final design and
+  approval are durable; no runtime code changed yet. Next: failing source and
+  cell-background tests, shared output contract, then bounded parallel work.
+
+- Resumed from checksum-verified continuation; `sdlc state` confirmed the approved
+  branch/gate. Preserved Pair thread/history and unrelated untracked #48.
+- Regressions reproduced native Oxford flattened structure and unfilled terminal
+  cells. Implemented shared unpadded output/row-paint contract; bounded parser,
+  painter and streaming work delegated after interfaces settled (ARCH-DRY/PURE).
+- Native parser, screen selection/resize, section ownership, practice metadata and
+  streaming focused tests pass. Integration caught and fixed producer SGR loss,
+  mutable exclusion aliases, width-zero stream override and key-decoration ownership.
+- Strict actual native rendir conformance passes for es/en, dark/light, widths32/80.
+  Actual ANSI/text captures and rendered HTML are under `/tmp/define66-actual*`.
+  Source-boundary and mixed-row ownership mutations were killed; bounded parser
+  and decoder fuzz passed. Full verification and SDLC close review remain.
+
+- Real PTY checks passed: native rendir at 32/80 columns in dark/light/off, plus
+  interactive language switches in all three profiles. Inspected actual ANSI-derived
+  dark/light screenshot `/tmp/define66-visual.png`; shared it with the operator.
+- Mutation verification killed parser boundary removal, mixed-row ownership,
+  missing padding/reset, source-padding contamination and layout-background loss.
+  Live footer metadata removal initially survived producer-only tests; added a
+  DrawOutput/frame/cell regression and confirmed that mutation now fails.
+- Full-suite recovery separated unpadded Transcript from PaintedTranscript; nested
+  sitting handoff now transfers structured metadata. Cancellation tests wait for a
+  completed row, matching the approved pending-row buffering policy. Focused tests,
+  race checks, strict native/PTY checks, vet and Linux build pass after fixes.
+
+- Final verification: `go test ./... -count=1` passed (define 131.235s);
+  focused `go test -race ./cmd/define/...` passed; `go vet ./...`, Linux
+  CGO-disabled build, strict native/PTY 32/80 dark/light/off and diff check passed.
+  The amended cancellation readiness test passed three consecutive runs. Full
+  history stays unpadded; PaintedTranscript is only terminal handback, and nested
+  screens transfer OutputTranscript metadata. Preparing the single close review.
+
+- Close round 1: REWORK, BR-1 finalized-row metadata and BR-2 Core concepts
+  traceability. Reproduced BR-1 through real captured SSE on runAsk success and
+  cancellation: append sinks passed, live final rows lost paint. Swept both plain
+  and structured append paths; shared invalidatePartialPaint preserves newline /
+  CRLF termination and clears ownership on additional source (including structured
+  writes without metadata). New regressions fail before and pass after the fix.
+- BR-2: reconciled entity declarations, paths and consumer names throughout the
+  plan table/test matrix; appended the revision. Focused declaration-status tests
+  pass; post-commit full verification follows before close round 2.
+
+- 2026-09-15 checkpoint: close round 2 disposed BR1/BR2 but raised BR3
+  (`terminal-serialization-preserves-source`): word wrapping leaves overlong words
+  intact and the tinted painter clipped their suffixes. Shared physical layout now
+  splits residual long rows before paint, retains click/exclusion coordinates,
+  and preserves historical clipping. Dictionary ingress and practice ownership
+  projection use this geometry; strict native provenance projection is unchanged.
+  New headword/body dark/light/off, wide/combining glyph, click/exclusion, and
+  practice/screen ingress tests pass. Focused integrated batch passed (1.700s);
+  agent's core/screen race passed. Changes remain uncommitted; full postcommit
+  suite, strict PTY recheck, next close review, PR and merge are still required.
+  User asked about the UI framework: answered existing custom Go/ANSI liveScreen,
+  not React-style library; this does not change the approved implementation scope.
+
+- 2026-09-15: post-BR3 full suite passed (define 129.099s), race and strict
+  native/PTY passed. Close round 3 accepted BR3 but found BR4 practice click
+  targets retaining obsolete word-only geometry. Enumerated structured consumers;
+  corrected practice source-action projection and regionWriter fallback together.
+  Both production-path regressions failed before and pass after; focused batch
+  passed (1.933s). Source actions are cloned before surrounding-line adjustment.
 
 ## Revisions
 

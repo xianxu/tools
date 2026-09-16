@@ -10,6 +10,8 @@ const (
 	// differ from the deck or be unknown for an all-active fallback search.
 	DictionarySource
 	English
+	// Decoration is producer-owned numbering, key glyphs, and separators.
+	Decoration
 )
 
 // LanguageSpan addresses exact UTF-8 bytes in Presentation.Text. Uncovered text
@@ -19,9 +21,15 @@ type LanguageSpan struct {
 	Role         LanguageRole
 	AnswerStyled bool
 }
+type PresentationRegion struct {
+	Start, End int
+	Background string
+}
+
 type Presentation struct {
-	Text  string
-	Spans []LanguageSpan
+	Regions []PresentationRegion
+	Text    string
+	Spans   []LanguageSpan
 }
 
 func (p promptBuilder) presentation() Presentation { return Presentation{Text: p.s, Spans: p.spans} }
@@ -47,4 +55,15 @@ func (p *promptBuilder) blanked(s string) {
 		}
 	}
 	p.owned(s[start:], Target, false)
+}
+
+func withDefinitionRegions(p Presentation, definition string, regions []PresentationRegion) Presentation {
+	// Definition is appended verbatim as the final part of the reveal.
+	offset := len(p.Text) - len(definition)
+	for _, r := range regions {
+		r.Start += offset
+		r.End += offset
+		p.Regions = append(p.Regions, r)
+	}
+	return p
 }

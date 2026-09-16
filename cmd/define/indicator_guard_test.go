@@ -159,7 +159,8 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 //     continuation of what is above it rather than a legend, so it is deliberately
 //     undimmed and reserves no gap either.
 var nonSittingDrawFiles = map[string]string{
-	"replraw.go": "the editor's prompt is content being typed, not chrome",
+	"replraw.go":         "the editor's prompt is content being typed, not chrome",
+	"practice_output.go": "structured Draw adapter; chrome factories checked at callers and by TestPracticeChromeOutput",
 }
 
 // EVERY STRING THE SITTING DRAWS AS CHROME GOES THROUGH asChrome (#44 M1).
@@ -194,6 +195,20 @@ func TestEverySittingDrawPassesChromeThroughAsChrome(t *testing.T) {
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
+				return true
+			}
+			if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "drawPracticeOutput" {
+				draws++
+				factory, ok := call.Args[1].(*ast.CallExpr)
+				valid := false
+				if ok {
+					if name, ok := factory.Fun.(*ast.Ident); ok {
+						valid = name.Name == "practiceChromeOutput" || name.Name == "boardPromptOutput"
+					}
+				}
+				if !valid {
+					t.Errorf("structured sitting prompt bypasses chrome factory")
+				}
 				return true
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)

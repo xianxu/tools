@@ -31,7 +31,10 @@ type screen struct {
 	// lines is everything the session has shown, oldest first. The LAST line may
 	// be partial: deltas arrive chunked and a reply split as "one" then " two\n"
 	// is one line, not two.
-	lines []string
+	lines       []string
+	paints      map[int]rowPaint
+	promptPaint []rowPaint
+	footerPaint []rowPaint
 	// partial reports whether the final element is still being written to, so a
 	// later Write continues it rather than starting a line.
 	partial bool
@@ -122,6 +125,7 @@ func (s *screen) eraseOpenLine() {
 	if !s.partial || len(s.lines) == 0 {
 		return
 	}
+	delete(s.paints, len(s.lines)-1)
 	s.lines = s.lines[:len(s.lines)-1]
 	s.partial = false
 }
@@ -501,6 +505,7 @@ type selectionLayout struct {
 
 type selectionPaintChunk struct {
 	text         string
+	paint        rowPaint
 	first, count int
 }
 
@@ -509,10 +514,10 @@ func (layout selectionLayout) paint(w io.Writer, gesture selectionGesture) {
 	for _, chunk := range layout.chunks {
 		if (gesture.selected || gesture.active && gesture.dragging) && gesture.frame != 0 && layout.frame.err == nil && chunk.count > 0 {
 			for row := chunk.first; row < chunk.first+chunk.count; row++ {
-				b.WriteString(layout.frame.highlightRow(row, gesture.anchor, gesture.end))
+				b.WriteString(paintLanguageRow(layout.frame.highlightRow(row, gesture.anchor, gesture.end), layout.frame.rows[row].paint, layout.frame.width))
 			}
 		} else {
-			b.WriteString(chunk.text)
+			b.WriteString(paintOutputChunk(chunk.text, chunk.paint, layout.frame.width))
 		}
 	}
 	fmt.Fprint(w, b.String())
@@ -558,7 +563,7 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 	bounded := termRows > 0 && termCols > 0 && termRows <= maxSelectionCells/termCols
 	control := func(text string) { layout.chunks = append(layout.chunks, selectionPaintChunk{text: text}) }
 	place := func(text string, role selectionRow) {
-		chunk := selectionPaintChunk{text: text, first: len(rows)}
+		chunk := selectionPaintChunk{text: text, paint: role.paint, first: len(rows)}
 		if bounded && len(text) > maxSelectionSource-snapshotBytes {
 			bounded, snapshotRefused, rows = false, true, nil
 		}
@@ -567,6 +572,7 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 			if physical == nil {
 				bounded, snapshotRefused, rows = false, true, nil
 			}
+			paintColumn := 0
 			for offset, line := range physical {
 				if len(line) > maxSelectionSource-snapshotBytes {
 					bounded, snapshotRefused, rows = false, true, nil
@@ -575,6 +581,8 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 				snapshotBytes += len(line)
 				r := role
 				r.styled = line
+				r.paint = sliceRowPaint(role.paint, paintColumn, visibleCells(line))
+				paintColumn += visibleCells(line)
 				if r.footer {
 					r.footerOffset = offset
 				}
@@ -587,7 +595,7 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 	control(cursorHome + eraseDown)
 	frame, top := s.visible()
 	for i, line := range frame {
-		place(clipVisible(markClickable(line, s.regions[top+i]), s.cols), selectionRow{selectable: true, regions: s.regions[top+i]})
+		place(clipVisible(markClickable(line, s.regions[top+i]), s.cols), selectionRow{selectable: true, regions: s.regions[top+i], paint: s.paints[top+i]})
 		control("\r\n")
 	}
 	bufRows := len(frame)
@@ -611,16 +619,20 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 	}
 	promptStart := len(rows)
 	if promptRows > 0 {
-		place(prompt, selectionRow{selectable: !noticePrompt, retry: noticePrompt && retry})
+		place(prompt, selectionRow{selectable: !noticePrompt, retry: noticePrompt && retry, paint: paintAt(s.promptPaint, 0)})
 	}
 	for i, line := range footer {
 		control("\r\n")
-		role := selectionRow{selectable: true, footer: true, footerEntry: i}
+		role := selectionRow{selectable: true, footer: true, footerEntry: i, paint: paintAt(s.footerPaint, i)}
 		if notice != "" && !noticePrompt {
 			role.footerEntry--
 			if i == 0 {
 				role.selectable, role.footer, role.retry = false, false, retry
 			}
+		}
+		role.paint = paintAt(s.footerPaint, role.footerEntry)
+		if role.retry {
+			role.paint = rowPaint{}
 		}
 		place(line, role)
 	}
@@ -632,7 +644,7 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 		if bounded {
 			count = len(selectionPhysicalRows(prompt, termCols))
 		}
-		layout.chunks = append(layout.chunks, selectionPaintChunk{text: prompt, first: promptStart, count: count})
+		layout.chunks = append(layout.chunks, selectionPaintChunk{text: prompt, paint: paintAt(s.promptPaint, 0), first: promptStart, count: count})
 	}
 	layout.frame = newSelectionFrame(termCols, termRows, rows)
 	if snapshotRefused {
@@ -867,6 +879,7 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 // the axis the fifth did not enumerate: that one closed which LINES are wrapped
 // and left which PATHS. Callers hold mu.
 func (l *liveScreen) writeBuffer(text string) error {
+	l.s.invalidatePartialPaint(text)
 	if text != "" {
 		l.invalidateSelectionLocked()
 	}
@@ -907,6 +920,7 @@ func (l *liveScreen) flush() {
 func (l *liveScreen) Draw(prompt string, footer []string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.s.promptPaint, l.s.footerPaint = nil, nil
 	l.prompt, l.footer = prompt, footer
 	l.repaint()
 }

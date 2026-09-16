@@ -35,7 +35,8 @@ type Cloze struct {
 	// origin, and a recognition form revealing less than the retired form 2.1
 	// would teach less than the easier form did. The restored sentence is the
 	// payload; this is what you read when the payload was not enough.
-	definition string
+	definition        string
+	definitionRegions []PresentationRegion
 	// help is the blanked stem in English, drawn under it BEFORE answering; ""
 	// is none. It keeps the blank — main's checker refuses a translation that
 	// drops a ___ or names the answer — so it restates the question rather than
@@ -125,7 +126,7 @@ func (c *Cloze) RevealPresentation() Presentation {
 	if c.definition != "" {
 		p.text("\n\n" + c.definition)
 	}
-	return p.presentation()
+	return withDefinitionRegions(p.presentation(), c.definition, c.definitionRegions)
 }
 
 // FlagKey is what the learner presses to say the question itself is broken.
@@ -167,4 +168,9 @@ func (c *Cloze) KeysPresentation() Presentation {
 	p.text(", " + string(FlagKey) + " = ")
 	p.owned("bad question", English, false)
 	return p.presentation()
+}
+
+func (c *Cloze) WithDefinitionRegions(rs []PresentationRegion) *Cloze {
+	c.definitionRegions = rs
+	return c
 }

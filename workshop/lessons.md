@@ -4649,3 +4649,33 @@ ownership from actual selected dictionary metadata, never the session language o
 display label. Test source/target mismatch and unknown-source composition through
 ordinary lookup, full reveals and dictionary-derived practice glosses. A fallback
 selection test and a tint test in isolation do not prove their composition.
+
+## Region paint needs consumer and blank-cell guards (define #66)
+
+ANSI token checks can pass while a background covers only ink. Assert every
+terminal cell, including indentation, trailing cells and blank rows, then verify
+the live consumer. A footer producer test passed after its screen metadata was
+removed; a DrawOutput-to-frame cell test killed that mutation. Keep unpadded
+source and immutable copied metadata separate, and preserve producer SGR across
+physical row boundaries when a painter resets after padding.
+
+## Finalization includes the caller's next write (define #66 close)
+
+Testing a stream adapter's Finish is insufficient when its caller then writes a
+newline. Cover the complete caller success/cancellation path and every writer
+capability: terminator-only writes preserve finalized row metadata, while added
+unclassified source invalidates it. Also run plan declaration/status guards after
+committing: an uncommitted green run cannot prove claims about the committed window.
+
+### #66 — preserve source before terminal clipping
+
+Word wrapping may deliberately retain overlong words. Split residual rows at
+complete display units before terminal painting, and project actions and semantic
+exclusions through that same geometry. Test source-glyph conservation alongside
+cell backgrounds, including long headwords, wide/combining glyphs and practice
+rows. Keep historical resize clipping separate from initial output layout.
+
+When a layout transform changes physical row geometry, enumerate every structured
+consumer: text conservation alone is insufficient. Feed click regions into the
+same transform as text; test both the production presenter-to-screen path and
+compatibility sinks. Clone caller metadata before adjusting source offsets.

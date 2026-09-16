@@ -31,8 +31,8 @@ func TestAskAnnotatedCaptureReachesCleanHistoryAndTint(t *testing.T) {
 		if strings.TrimRight(stripEscapes(out.String()), "\n") != strings.TrimRight(stored, "\n") {
 			t.Fatal("display and stored answer diverged")
 		}
-		if color && !strings.Contains(out.String(), languageDark+"buenos días"+languageOff) {
-			t.Fatalf("Spanish phrase not tinted: %q", out.String())
+		if strings.Contains(out.String(), languageDark) {
+			t.Fatalf("width-zero plain stream tinted: %q", out.String())
 		}
 		if !color && strings.Contains(out.String(), "\x1b") {
 			t.Fatal("no-color leaked styling")
@@ -73,7 +73,7 @@ func TestAskAnnotatedCancellationFlushesBeforeHistory(t *testing.T) {
 	d.newLLM = func(cfg llm.Config) llm.Client { return cancelLanguageStream{Client: llm.New(cfg), cancel: cancel} }
 	var out, errOut bytes.Buffer
 	sess := &session{}
-	runAsk(ctx, d, options{color: true, tintBackground: languageDark}, sess, question{text: "Explain buenos días"}, &out, &errOut)
+	runAsk(ctx, d, options{color: true, width: 20, tintBackground: languageDark}, sess, question{text: "Explain buenos días"}, &out, &errOut)
 	if len(sess.turns) != 1 || !strings.HasPrefix(sess.turns[0].Answer, "The") {
 		t.Fatalf("missing partial history: %+v / %s", sess.turns, errOut.String())
 	}

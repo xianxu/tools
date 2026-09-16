@@ -1050,7 +1050,10 @@ func TestAskWrapsStreamWithoutLosingText(t *testing.T) {
 						question{text: "what is obsequious?"}, view, &errOut)
 				}()
 				if tc.interrupt {
-					waitFor(t, func() bool { return strings.Contains(view.Transcript(), "clue") })
+					// The first native delta ends with an unfinished physical row.
+					// Wait for its completed first paragraph; pending prose is deliberately
+					// withheld until cancellation finalizes ownership.
+					waitFor(t, func() bool { return strings.Contains(view.Transcript(), "Obsequious") })
 					cancel()
 				}
 				select {

@@ -1071,7 +1071,7 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	// rather than a second opinion: it is exactly what `sess.current` becomes,
 	// so a click on the headword and the bare Enter beside it ask for the same
 	// recording by construction.
-	rendered, regions := renderDefinitions(set, RenderOpts{
+	output := renderDefinitionOutput(set, RenderOpts{
 		Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d), Word: word,
 		Tint: opt.tintFor(d.lang),
 	})
@@ -1081,7 +1081,7 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	// click only reached the headword and the ORIGIN languages.
 	// No subject: a lookup ANSWERS about its word rather than asking, and
 	// Render has already coloured the entry anyway.
-	writeWords(stdout, rendered, regions, d, opt, surfaceProse, "", rendered)
+	writeWords(stdout, output.text, output.regions, d, opt, surfaceProse, "", output.text, output)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: opt.playsAudio(), entry: text}
 }
@@ -1135,13 +1135,20 @@ func writeRendered(w io.Writer, text string, rs []Region) {
 // part-of-speech labels, the example style) that a flat pass here could not
 // reproduce, because ANSI does not nest. Regions are still produced across the
 // whole text; only the colour pass stops at that boundary.
-func writeWords(w io.Writer, text string, rs []Region, d deps, opt options, sf surface, subject, already string) {
+func writeWords(w io.Writer, text string, rs []Region, d deps, opt options, sf surface, subject, already string, structured ...renderedOutput) {
 	// The SUBJECT is held out of the colour pass but not out of the click map: a
 	// learner may still want to hear the word they are being asked about.
 	v := deckVocabulary(d)
 	rs = mergeRegions(rs, wordRegionsOutside(text, already, v))
 	if v != nil && opt.color && sf.admitsColour() {
 		text = colourOutside(text, already, withoutWord(v, subject))
+	}
+	if len(structured) > 0 {
+		o := structured[0]
+		o.text = text
+		o.regions = rs
+		writeOutput(w, o, opt.width)
+		return
 	}
 	writeRendered(w, text, rs)
 }

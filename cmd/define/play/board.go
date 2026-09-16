@@ -504,7 +504,7 @@ func (b *Board) cellText(i int) string {
 func (b *Board) emitCell(p *promptBuilder, i int, padded bool) {
 	word := truncate(b.cells[i].Word, b.wordCells)
 	on := b.paint(i)
-	p.text(on + "[" + string(boardLabels[i]) + "] ")
+	p.owned(on+"["+string(boardLabels[i])+"] ", Decoration, b.marks[i] != Unmarked)
 	p.owned(word, Target, b.marks[i] != Unmarked)
 	if on != "" {
 		p.text(b.pal.Off)
@@ -604,11 +604,11 @@ func (b *Board) KeysPresentation() Presentation {
 			start = i + 1
 		}
 	}
-	p.text(", Tab ")
+	p.owned(", Tab ", Decoration, false)
 	p.owned("cycles", English, false)
 	p.text(", ")
 	p.owned("click or key", English, false)
-	p.text(", Enter ")
+	p.owned(", Enter ", Decoration, false)
 	p.owned("ends", English, false)
 	return p.presentation()
 }

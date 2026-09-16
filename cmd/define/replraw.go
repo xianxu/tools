@@ -298,7 +298,11 @@ func handBack(live interface {
 }, sess interface{ restore() }, stdout io.Writer) {
 	live.Stop()
 	sess.restore()
-	fmt.Fprint(stdout, live.Transcript())
+	text := live.Transcript()
+	if painted, ok := live.(interface{ PaintedTranscript() string }); ok {
+		text = painted.PaintedTranscript()
+	}
+	fmt.Fprint(stdout, text)
 }
 
 // runEditor is the editor loop with the terminal factored out — into `console`,

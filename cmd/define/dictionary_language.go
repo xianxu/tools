@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/xml"
-	"io"
 	"sort"
 	"strings"
 	"unicode"
@@ -11,79 +9,29 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
-// bilingualLanguageText trusts only the selected Spanish-to-English record's
-// language-bearing classes. Unknown wrappers inherit an established ancestor;
-// pronunciation, generated punctuation, and editorial metadata remain neutral.
+// bilingualLanguageText reuses the structural parser's verified ownership walk.
 func bilingualLanguageText(record bilingualRecord) languageText {
-	neutral := languageText{text: record.Text}
-	if len(record.HTML) > bilingualMaxBytes || len(record.Text) > bilingualMaxBytes {
-		return neutral
+	doc, err := parseBilingualDocument(record)
+	if err != nil {
+		return languageText{text: record.Text}
 	}
-	id, err := bilingualRecordIdentity(record.HTML)
-	if err != nil || !id.spanish {
-		return neutral
-	}
-	decoder := xml.NewDecoder(strings.NewReader(record.HTML))
-	var stack []store.Lang
-	var out strings.Builder
-	var spans []languageSpan
-	entryDepth := 0
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return neutral
-		}
-		switch token := token.(type) {
-		case xml.StartElement:
-			lang := store.Lang("")
-			if len(stack) > 0 {
-				lang = stack[len(stack)-1]
-			}
-			if token.Name.Local == "entry" && token.Name.Space == bilingualEntryNamespace {
-				entryDepth = len(stack) + 1
-			}
-			for _, attr := range token.Attr {
-				if attr.Name.Local != "class" {
-					continue
-				}
-				for _, class := range strings.Fields(attr.Value) {
-					switch class {
-					case "hw", "ex", "idm", "ind":
-						lang = "es"
-					case "trans":
-						lang = "en"
-					case "gp", "ph", "prx", "lg", "reg", "lev", "fld", "tgr", "ps", "sn", "underline":
-						lang = ""
-					}
-				}
-			}
-			stack = append(stack, lang)
-		case xml.EndElement:
-			if len(stack) == entryDepth {
-				entryDepth = 0
-			}
-			stack = stack[:len(stack)-1]
-		case xml.CharData:
-			if entryDepth == 0 {
-				continue
-			}
-			start := out.Len()
-			out.Write(token)
-			if lang := stack[len(stack)-1]; lang != "" {
-				spans = append(spans, languageSpan{start: start, end: out.Len(), lang: lang})
-			}
-		}
-	}
-	return projectDictionaryText(languageText{text: out.String(), spans: spans}, record.Text)
+	return doc.native
 }
 
 // projectDictionaryText permits only whitespace normalization and ANSI styling.
 // It consumes both streams from their current positions, never searching ahead
 // for words. Any other transformation makes the whole fragment neutral.
 func projectDictionaryText(source languageText, rendered string) languageText {
+	return projectLanguageText(source, rendered, false)
+}
+
+// Display layout may insert a physical newline inside an overlong source word.
+// Native dictionary correspondence remains stricter: only the owned layout
+// transform opts into generated whitespace; glyph matching stays sequential.
+func projectDisplayText(source languageText, rendered string) languageText {
+	return projectLanguageText(source, rendered, true)
+}
+func projectLanguageText(source languageText, rendered string, displayWhitespace bool) languageText {
 	result := languageText{text: rendered}
 	i, j, spanIndex := 0, 0, 0
 	inSpace := false
@@ -107,7 +55,17 @@ func projectDictionaryText(source languageText, rendered string) languageText {
 			result.spans = append(result.spans, languageSpan{start: start, end: end, lang: lang})
 		}
 	}
+	skipSourceStyle := func() {
+		for i < len(source.text) {
+			n := escapeLen(source.text[i:])
+			if n == 0 {
+				break
+			}
+			i += n
+		}
+	}
 	for j < len(rendered) {
+		skipSourceStyle()
 		if n := escapeLen(rendered[j:]); n > 0 {
 			j += n
 			continue
@@ -117,16 +75,22 @@ func projectDictionaryText(source languageText, rendered string) languageText {
 			if !inSpace {
 				begin := i
 				for i < len(source.text) {
+					skipSourceStyle()
+					if i == len(source.text) {
+						break
+					}
 					q, m := utf8.DecodeRuneInString(source.text[i:])
 					if !unicode.IsSpace(q) {
 						break
 					}
 					i += m
 				}
-				if begin == i {
+				if begin == i && !displayWhitespace {
 					return languageText{text: rendered}
 				}
-				appendOwned(j, j+n, owner(begin))
+				if begin < i {
+					appendOwned(j, j+n, owner(begin))
+				}
 			}
 			// Continuation indentation is generated, so only the first byte run
 			// consumes source whitespace and receives its ownership.
@@ -142,7 +106,8 @@ func projectDictionaryText(source languageText, rendered string) languageText {
 		i += n
 		j += n
 	}
-	if strings.TrimSpace(source.text[i:]) != "" {
+	skipSourceStyle()
+	if strings.TrimSpace(stripEscapes(source.text[i:])) != "" {
 		return languageText{text: rendered}
 	}
 	return result

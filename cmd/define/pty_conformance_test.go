@@ -1280,7 +1280,9 @@ func TestPTYLanguageTint(t *testing.T) {
 			}
 			write("red\r")
 			spanish := take(func(s string) bool { return strings.Contains(unstyled(s), "clutches") })
-			assertDictionaryTint(t, spanish, "subir a la red", profile.background != "")
+			assertDictionaryTint(t, spanish, "Spanish — Larousse Diccionario General", profile.background != "")
+			assertDictionaryTint(t, spanish, "English — Oxford Spanish–English", false)
+			assertDictionaryTint(t, spanish, "subir a la red", false)
 			assertDictionaryTint(t, spanish, "to go up to", false)
 			write("/lang en\r")
 			take(func(s string) bool { return strings.Contains(unstyled(s), "[en] › ") })
