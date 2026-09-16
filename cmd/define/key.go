@@ -48,6 +48,18 @@ const (
 	KeyPointerPress
 	KeyPointerMotion
 	KeyPointerRelease
+	// KeyPaste carries a whole bracketed paste in Raw — TEXT, already stripped
+	// of escapes and control runes, not the unmodelled escape tail Raw holds for
+	// KeyUnknown.
+	//
+	// ONE key rather than a rune per character, and that is load-bearing:
+	// readInput delivers into a 256-key channel that DROPS THE NEWEST when full
+	// (selection_input.go:157,204), so a 1000-rune paste arriving per-rune would
+	// lose its tail behind a single "input full" notice.
+	KeyPaste
+	// KeyPasteRefused is a paste over maxPasteRunes. It carries no text: the
+	// refusal is the message, and the caller reports it.
+	KeyPasteRefused
 )
 
 // Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
