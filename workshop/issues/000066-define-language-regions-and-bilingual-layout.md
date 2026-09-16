@@ -1,12 +1,13 @@
 ---
 id: 000066
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-15
 updated: 2026-09-15
 estimate_hours: 7.117
 started: 2026-09-15T14:48:20-07:00
+actual_hours: 4.00
 ---
 
 # define: preserve bilingual layout and tint complete language regions
@@ -68,6 +69,7 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
 ## Log
 
 ### 2026-09-15
+- 2026-09-15: closed — Postcommit full Go suite passed (define 127.818s); focused race and strict installed Oxford/PTY dark/light/off checks passed. BR4 regressions fail before and pass after for practice-to-liveScreen and regionWriter actions following hard-wrapped source. Structured consumers enumerated in plan. Earlier vet/Linux build/fuzz/mutations and actual dark/light visual inspection passed.; review verdict: SHIP
 
 - Created and claimed #66 immediately after operator screenshot feedback; ran
   start-plan. No runtime edits. This is a correction to #65's visual contract.

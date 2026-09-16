@@ -283,3 +283,80 @@ findings:
 7. **Plan revision recommendations**
 
    Append a `## Revisions` entry naming the invariant: **text, actions and exclusions must share physical-row geometry**. Record the structured-consumer enumeration, the practice mapper correction and its regression evidence.
+
+---
+
+## Re-review — 2026-09-15T17:50:34-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 66 — define: preserve bilingual layout and tint complete language regions |
+| repo | tools |
+| issue file | workshop/issues/000066-define-language-regions-and-bilingual-layout.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 05a8e8de6e0e22312e95c6649a74936ecb139591..05f336cb2c5b97f72bd713c0fbb41d383cd15925 |
+| command | sdlc close --issue 66 |
+| reviewer | codex |
+| timestamp | 2026-09-15T17:50:34-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: medium
+```
+
+The pinned implementation satisfies the documented layout and language-region contracts. BR-4 is addressed: both production-path regressions pass at HEAD and fail when the preceding implementation is substituted through a temporary Go overlay. No new blocking findings. Confidence is limited by unavailable native dictionary access.
+
+```findings
+dispose:
+  - id: BR-4
+    disposition: addressed
+    note: |
+      practice_language.go and practice_output.go project actions through layoutOutput; output_screen.go also projects the regionWriter fallback. Both physical_output_test.go regressions pass at HEAD and fail against the preceding implementation with misplaced action rows.
+  - id: BR-1
+    disposition: addressed
+    note: |
+      invalidatePartialPaint preserves newline-only termination. Final-row success/cancellation and plain/structured termination regressions pass.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      The revised Core concepts tables match the declarations and changes in output_layout.go, language_row.go, output_screen.go, practice_output.go and screen.go.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Physical splitting precedes terminal painting; overlong-token, wide-glyph, source-conservation and coordinate-projection regressions pass.
+```
+
+1. **Strengths**
+   - Practice actions and rendered text now share physical geometry, with regression coverage for both affected sink paths.
+   - Oxford parsing preserves structural hierarchy and checks source correspondence before trusting ownership.
+   - Cell-level tests verify full backgrounds, answer exclusions, selection, resize and clean source text.
+   - The define README and atlas document the revised behavior and conformance checks.
+
+2. **Critical findings:** None.
+
+3. **Important findings:** None.
+
+4. **Minor findings:** None.
+
+5. **Test coverage**
+   - `go test ./cmd/define/... -count=1`: passed.
+   - Focused layout, parser, streaming and action tests under `-race`: passed.
+   - BR-4 mutation check: both regressions failed without the fix.
+   - Pinned-range `git diff --check`: passed.
+   - Strict native/PTY conformance: blocked by inaccessible Oxford Spanish dictionary; actual native output was not independently verified this round.
+
+6. **Architecture**
+   - **ARCH-DRY — pass:** shared parser, geometry projection and painter.
+   - **ARCH-PURE — pass:** parsing, layout and painting remain separate from terminal IO.
+   - **ARCH-PURPOSE — pass:** lookup, full reveals, practice chrome and streamed answers are covered.
+   - **ARCH-MOCK — pass:** captured native records and stateful SSE replay exercise existing seams; live checks exist.
+   - **ARCH-CONSTRAINTS — pass:** source/depth limits and pending-stream bounds have coverage.
+   - **ARCH-SECURE — pass:** invalid source correspondence falls back visibly and neutrally.
+   - **ARCH-ORDER — pass:** ownership finalization, cancellation and pending resize have sequence coverage; screen ingress is synchronized.
+   - **ARCH-FUNERAL — pass:** runtime metadata follows response/screen lifetime; no new persistent runtime artifacts.
+
+7. **Plan revisions:** None required. The BR-4 revision states the invariant and enumerates consumers; close/publication remains correctly unchecked.

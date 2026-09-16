@@ -64,6 +64,27 @@ rounds:
           family: terminal-serialization-preserves-source
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-15T17:50:34-07:00"
+      agent: codex
+      dispose:
+        - id: BR-4
+          disposition: addressed
+          note: practice_language.go and practice_output.go project actions through layoutOutput; output_screen.go also projects the regionWriter fallback. Both physical_output_test.go regressions pass at HEAD and fail against the preceding implementation with misplaced action rows.
+          round: 4
+        - id: BR-1
+          disposition: addressed
+          note: invalidatePartialPaint preserves newline-only termination. Final-row success/cancellation and plain/structured termination regressions pass.
+          round: 4
+        - id: BR-2
+          disposition: addressed
+          note: The revised Core concepts tables match the declarations and changes in output_layout.go, language_row.go, output_screen.go, practice_output.go and screen.go.
+          round: 4
+        - id: BR-3
+          disposition: addressed
+          note: Physical splitting precedes terminal painting; overlong-token, wide-glyph, source-conservation and coordinate-projection regressions pass.
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#66 (boundary-review)
@@ -105,6 +126,15 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-4** [Critical] `terminal-serialization-preserves-source` Practice click targets use obsolete geometry after physical wrapping
   cmd/define/practice_language.go:48 maps actions with wrapMovedRegions, while line 45 renders text through outputWrappedRows. At width 20, a presentation containing 23 a characters followed by newline and hola places the hola action on the preceding aaa row. This is the 2nd finding in family terminal-serialization-preserves-source. Enforce one geometry projection for text and all associated metadata; enumerate structured-output consumers and remove parallel coordinate mappings. ARCH-DRY, ARCH-PURPOSE.
 
+## Round 4 — 2026-09-15T17:50:34-07:00 (codex) — passed
+
+### Disposed
+
+- BR-4 — addressed — practice_language.go and practice_output.go project actions through layoutOutput; output_screen.go also projects the regionWriter fallback. Both physical_output_test.go regressions pass at HEAD and fail against the preceding implementation with misplaced action rows.
+- BR-1 — addressed — invalidatePartialPaint preserves newline-only termination. Final-row success/cancellation and plain/structured termination regressions pass.
+- BR-2 — addressed — The revised Core concepts tables match the declarations and changes in output_layout.go, language_row.go, output_screen.go, practice_output.go and screen.go.
+- BR-3 — addressed — Physical splitting precedes terminal painting; overlong-token, wide-glyph, source-conservation and coordinate-projection regressions pass.
+
 ## Open findings
 
-- **BR-4** [Critical] `terminal-serialization-preserves-source` Practice click targets use obsolete geometry after physical wrapping
+(none — every finding has been disposed)
