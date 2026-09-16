@@ -132,3 +132,22 @@ func sanitisePasteBody(s string) string {
 	}
 	return b.String()
 }
+
+// pasteLineRunes is a paste on its way into the LINE editor, which holds one
+// line.
+//
+// An interior newline becomes a space rather than submitting — which is the
+// whole point of bracketing pastes — and rather than being dropped, because
+// "hot\ndog" is two words and joining them into "hotdog" would invent a word.
+// parseREPLLine collapses the run afterwards, so this only has to be lossless
+// about the boundary, not about the whitespace.
+func pasteLineRunes(s string) []rune {
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		if r == '\n' || r == '\t' {
+			r = ' '
+		}
+		out = append(out, r)
+	}
+	return out
+}

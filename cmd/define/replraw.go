@@ -86,6 +86,7 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 	//
 	// The shared router handles held drags and completed clicks.
 	sess.enterMouse()
+	sess.enterPaste()
 	live := newScreen(stdout, terminalRows(stdout), terminalCols(stdout))
 	var clipboard clipboardWriter
 	var clipboardErr error
@@ -529,6 +530,13 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				if hit, ok := con.pointer.resolve(k); ok && hit.hasRegion {
 					clicked(hit.region)
 				}
+				continue
+			case KeyPasteRefused:
+				// The refusal is REPORTED rather than silent: a paste that
+				// simply vanished would read as a broken terminal, and the
+				// reader has no other way to learn the limit. Apply already
+				// leaves the line untouched, so nothing half-arrives.
+				fmt.Fprintf(stderr, "define: that paste is longer than %d characters; paste less\r\n", maxPasteRunes)
 				continue
 			}
 			cands := candidatesFor(e.WalkBase(), hist, commands)

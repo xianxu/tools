@@ -271,6 +271,55 @@ existed to step back over the terminal's echo of Enter, and raw mode does not
 echo. That also removes `#2`'s documented limitation that typing during playback
 stranded the indicator — the arithmetic has nothing left to correct for.
 
+### Bracketed paste (`#67 M1`)
+
+Mode 2004 is on, so the terminal wraps pasted text in `ESC[200~` / `ESC[201~`.
+Without it a pasted newline is just a carriage return, and it **submitted the
+line mid-paste** — the standing bug this milestone fixes at its cause
+(`key.go`'s `'\r', '\n'` arm), not where it was observed.
+
+**A paste is ONE key.** `KeyPaste` carries the whole body in `Raw`, and that is
+load-bearing rather than tidy: `readInput` delivers into a 256-key channel that
+DROPS THE NEWEST when full, so a 1000-rune paste arriving one rune at a time
+would lose its tail behind a single "input full" notice.
+
+**The scanner accumulates nothing**, and that is the contract. `readInput`
+re-presents its whole buffer after a short read and advances only on consumption,
+so a scanner that also buffered internally sees every byte twice — an earlier
+design did, and a 900-byte paste in the real 256-byte chunks came back duplicated
+and then refused. With a 256-byte read and a 1000-rune cap, **multi-read is the
+normal path**, not an edge. The only state is `draining`, which is the one fact
+the buffer cannot carry.
+
+**The hook is not "on ESC".** While draining, the head of the buffer is ordinary
+body text, so an ESC-only hook would never consult the scanner again and the rest
+of an oversize paste would arrive as runes — the exact failure the drain exists to
+prevent. The rule: every byte while draining, `0x1b` otherwise. The drain also
+holds back `len(pasteEnd)-1` bytes so a straddling closer cannot be cut; a drain
+that cuts its own exit never ends.
+
+**The cap is 1000 RUNES, and it refuses rather than truncates.** Runes because a
+byte cap would refuse a CJK paragraph at a third of its length, on exactly the
+decks `/lang` exists for. Refuses because a silently half-taken passage would
+produce an answer about text the reader cannot see. The refusal still consumes its
+bytes — otherwise they arrive as keystrokes and the buffer grows with the input —
+and it is reported, because a paste that simply vanished reads as a broken
+terminal.
+
+**`sanitisePasteBody` is where untrusted bytes become a typed value.** The body is
+bound for the screen, which passes producer SGR through by construction, so a
+pasted escape would recolour the text and defeat any decoration layered over it.
+Stripping at the boundary makes that unrepresentable rather than checked
+downstream — the move `oneLine` already makes at the store boundary. Newlines and
+tabs survive; a passage has lines.
+
+**`TestEveryEnabledInputModeIsDecoded` was widened, and finding the hole is the
+story.** It encoded the right rule — *for every mode we enable, the decoder
+answers every encoding that mode can reply in* — but read its modes off `mouseOn`
+alone, so 2004 would have been the first mode enabled outside the one guard
+written to prevent exactly that. It now reads every enable constant; 1049 stays
+out because the alternate screen replies with nothing.
+
 ## The screen
 
 `#30` made the interactive loop a full-screen program, and the reason is

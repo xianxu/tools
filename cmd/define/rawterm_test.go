@@ -119,8 +119,9 @@ func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
 
 	r.enterAlt()
 	r.enterMouse()
-	if got := b.String(); got != altScreenOn+mouseOn {
-		t.Fatalf("entering wrote %q, want %q", got, altScreenOn+mouseOn)
+	r.enterPaste()
+	if got, want := b.String(), altScreenOn+mouseOn+pasteOn; got != want {
+		t.Fatalf("entering wrote %q, want %q", got, want)
 	}
 	b.Reset()
 
@@ -132,6 +133,9 @@ func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
 	if !strings.Contains(got, mouseOff) {
 		t.Error("restore left mouse reporting on: the next program run in this terminal gets escape sequences typed into it")
 	}
+	if !strings.Contains(got, pasteOff) {
+		t.Error("restore left bracketed paste on: the next program gets ESC[200~ typed into it, which is the same class of mess as mouse reporting")
+	}
 	// ORDER, and it is not cosmetic. Mouse reporting goes first because it is
 	// the state with no `reset` reflex behind it — the shell looks fine while
 	// every click types garbage. The alternate screen goes before raw mode ends,
@@ -140,7 +144,12 @@ func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
 	if strings.Index(got, mouseOff) > strings.Index(got, altScreenOff) {
 		t.Errorf("restore gave the terminal back in the wrong order: %q", got)
 	}
-	if r.alt || r.mouse {
+	// Paste reporting is in the same class as the mouse — no `reset` reflex
+	// behind it — so it goes back before the screen does, for the same reason.
+	if strings.Index(got, pasteOff) > strings.Index(got, altScreenOff) {
+		t.Errorf("restore gave paste mode back after the screen: %q", got)
+	}
+	if r.alt || r.mouse || r.paste {
 		t.Error("restore returned with state still claimed")
 	}
 }
@@ -162,7 +171,8 @@ func TestEnterDoesNotClaimAStateItCouldNotWrite(t *testing.T) {
 	r := &rawSession{control: failingWriter{}}
 	r.enterAlt()
 	r.enterMouse()
-	if r.alt || r.mouse {
+	r.enterPaste()
+	if r.alt || r.mouse || r.paste {
 		t.Error("a failed write still claimed the terminal state")
 	}
 }

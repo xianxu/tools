@@ -399,7 +399,7 @@ func TestMouseDecoderRejectsWhatNoTerminalSends(t *testing.T) {
 // So the modes are read OFF THE CONSTANT the program actually sends. Adding a
 // mode to mouseOn without adding a row here reddens the suite, which is the only
 // version of this rule that survives the next person to enable something.
-func TestEveryEnabledMouseModeIsDecoded(t *testing.T) {
+func TestEveryEnabledInputModeIsDecoded(t *testing.T) {
 	// What each mode can answer in, and one well-formed sample of it.
 	//
 	// 1005 (UTF-8) and 1015 (urxvt) are deliberately absent: a terminal uses
@@ -413,11 +413,27 @@ func TestEveryEnabledMouseModeIsDecoded(t *testing.T) {
 		"1006": {
 			{"SGR extended coordinates", "\x1b[<0;300;120M"},
 		},
+		"2004": {
+			{"a bracketed paste", "\x1b[200~hot dog\x1b[201~"},
+			{"a paste carrying a newline", "\x1b[200~a\nb\x1b[201~"},
+		},
 	}
 
-	modes := regexp.MustCompile(`\x1b\[\?(\d+)h`).FindAllStringSubmatch(mouseOn, -1)
+	// EVERY mode that makes the terminal SEND us something, read off the
+	// constants the program actually writes.
+	//
+	// It used to read mouseOn alone, and #67 found the hole by walking into it:
+	// mode 2004 was about to be enabled from a separate constant this test could
+	// not see — the first mode outside the one guard written to prevent exactly
+	// that. The rule was never about mice.
+	//
+	// 1049 (the alternate screen) is deliberately absent: it changes what the
+	// terminal SHOWS and replies with nothing, so there is no encoding to decode.
+	// Adding a mode that does reply, without a row here, reddens the suite.
+	const inputModes = mouseOn + pasteOn
+	modes := regexp.MustCompile(`\x1b\[\?(\d+)h`).FindAllStringSubmatch(inputModes, -1)
 	if len(modes) == 0 {
-		t.Fatal("no modes found in mouseOn; this test would be vacuous")
+		t.Fatal("no modes found in the enable constants; this test would be vacuous")
 	}
 	for _, m := range modes {
 		mode := m[1]

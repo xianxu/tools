@@ -373,8 +373,8 @@ func TestAnOversizePasteKeepsDrainingAcrossReads(t *testing.T) {
 - [ ] **Step 4: Run — naming the tests explicitly, because a pattern that looks right can select nothing**
 
 Run: `go test ./cmd/define/ -run 'Key|Paste|Decode' -v` then
-`go test ./cmd/define/ -run 'TestEveryEnabledMouseModeIsDecoded|FuzzDecodeKey' -v`
-Expected: PASS. (Verify the selection with `go test ./cmd/define/ -list 'Key|Paste|Decode'` — `-run 'Key|Fuzz'` does **not** match `TestEveryEnabledMouseModeIsDecoded`.)
+`go test ./cmd/define/ -run 'TestEveryEnabledInputModeIsDecoded|FuzzDecodeKey' -v`
+Expected: PASS. (Verify the selection with `go test ./cmd/define/ -list 'Key|Paste|Decode'` — `-run 'Key|Fuzz'` does **not** match `TestEveryEnabledInputModeIsDecoded`.)
 
 - [ ] **Step 5: Commit**
 
@@ -433,14 +433,14 @@ Expected: PASS, no crashers
 
 **Files:**
 - Modify: `cmd/define/rawterm.go:130-160`, `cmd/define/replraw.go:88`
-- Modify: `cmd/define/key_test.go:400-420` (`TestEveryEnabledMouseModeIsDecoded`)
+- Modify: `cmd/define/key_test.go:400-420` (`TestEveryEnabledInputModeIsDecoded`)
 
-> **A plan review corrected this plan's claim here.** The first draft said enabling 2004 without decoding it would fail `TestEveryEnabledMouseModeIsDecoded` "by design". It would not: that test derives its modes by regex over **`mouseOn` only** (`key_test.go:417`), so a separate `pasteOn` constant is invisible to it. The plan would have enabled a mode outside the one guard written to prevent exactly that. **Widening the guard is a step of this task, not a nicety.**
+> **A plan review corrected this plan's claim here.** The first draft said enabling 2004 without decoding it would fail `TestEveryEnabledInputModeIsDecoded` "by design". It would not: that test derives its modes by regex over **`mouseOn` only** (`key_test.go:417`), so a separate `pasteOn` constant is invisible to it. The plan would have enabled a mode outside the one guard written to prevent exactly that. **Widening the guard is a step of this task, not a nicety.**
 
 - [ ] **Step 1: Write the failing tests** — (a) widen the guard's source to `mouseOn + pasteOn` and add a `"2004"` row to its `replies` table; (b) assert `restore()` emits paste-off **before** raw mode ends, in the same ordered teardown as `leaveMouse`; (c) model the "flag set only on a successful write" rule on `TestEnterDoesNotClaimAStateItCouldNotWrite` (`rawterm_test.go:161`).
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `go test ./cmd/define/ -run 'TestEveryEnabledMouseModeIsDecoded|TestEnterDoesNotClaim|TestLeaveAltIsIdempotent|Paste' -v`
+Run: `go test ./cmd/define/ -run 'TestEveryEnabledInputModeIsDecoded|TestEnterDoesNotClaim|TestLeaveAltIsIdempotent|Paste' -v`
 Expected: FAIL
 
 - [ ] **Step 3: Implement** — `pasteOn = "\x1b[?2004h"` / `pasteOff = "\x1b[?2004l"` beside `mouseOn`/`mouseOff`; `enterPaste`/`leavePaste` setting a `paste bool` only on a successful write; call `enterPaste` beside `enterMouse` in `newConsole`.

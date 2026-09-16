@@ -18,8 +18,8 @@ import (
 type rawSession struct {
 	fd    int
 	state *term.State
-	// control is where the terminal's MODE sequences go — the alternate screen
-	// and mouse reporting. An io.Writer rather than the *os.File, for two
+	// control is where the terminal's MODE sequences go — the alternate screen,
+	// mouse reporting and bracketed paste. An io.Writer rather than the *os.File, for two
 	// reasons. It is the seam that makes the restore protocol assertable in
 	// process: the test that named itself the pin for this could not fail,
 	// because with a nil file every enter and every leave returned at the same
@@ -32,6 +32,7 @@ type rawSession struct {
 	control io.Writer
 	alt     bool
 	mouse   bool
+	paste   bool
 }
 
 // enterRaw puts f into raw mode and sends mode sequences to control.
@@ -55,6 +56,10 @@ func (r *rawSession) restore() {
 	// sends escape sequences into whatever the user runs next, and unlike raw
 	// mode there is no `reset` reflex for it because the shell still looks fine.
 	r.leaveMouse()
+	// Bracketed paste goes back for the same reason and in the same breath: a
+	// terminal left bracketing pastes types ESC[200~ into the next program, and
+	// there is no reflex for that either.
+	r.leavePaste()
 	// The alternate screen goes next, so the terminal is back on the normal
 	// buffer before raw mode ends — the reverse order leaves a cooked terminal
 	// briefly drawing into a buffer that is about to be discarded.
@@ -153,6 +158,38 @@ func (r *rawSession) leaveMouse() {
 	}
 	fmt.Fprint(r.control, mouseOff)
 	r.mouse = false
+}
+
+// Bracketed paste (2004). The terminal wraps pasted text in ESC[200~ / ESC[201~
+// so a program can tell it from typing — which is the whole point: without it a
+// pasted newline is a carriage return and submits the line mid-paste.
+const (
+	pasteOn  = "\x1b[?2004h"
+	pasteOff = "\x1b[?2004l"
+)
+
+// enterPaste asks the terminal to bracket pastes.
+//
+// A sibling of enterMouse in every respect, including the one that matters: the
+// flag is set only on a successful WRITE, so restore never sends a leave for a
+// mode the terminal never entered.
+func (r *rawSession) enterPaste() {
+	if r == nil || r.control == nil || r.paste {
+		return
+	}
+	if _, err := fmt.Fprint(r.control, pasteOn); err != nil {
+		return
+	}
+	r.paste = true
+}
+
+// leavePaste stops it. Idempotent, like the rest of restore.
+func (r *rawSession) leavePaste() {
+	if r == nil || r.control == nil || !r.paste {
+		return
+	}
+	fmt.Fprint(r.control, pasteOff)
+	r.paste = false
 }
 
 // winSize is the terminal's shape, measured where the signal arrives so the

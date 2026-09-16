@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -278,5 +279,84 @@ func TestAFreshDecodeKeyIsNotMidPaste(t *testing.T) {
 	}
 	if k, _ := decodeKey([]byte("a")); k.Kind != KeyRune || k.Rune != 'a' {
 		t.Errorf("paste state leaked into a fresh decodeKey: %v %q", k.Kind, k.Rune)
+	}
+}
+
+// --- the editor ------------------------------------------------------------
+
+// A paste is text typed at once. It goes in at the cursor, ATOMICALLY: one key,
+// one insertion, one history-walk reset — not N of each.
+func TestApplyInsertsAPasteAtTheCursor(t *testing.T) {
+	e := NewEditor()
+	for _, k := range runes("ab") {
+		e, _ = Apply(e, k, candidates{})
+	}
+	e.Cursor = 1
+	e, act := Apply(e, Key{Kind: KeyPaste, Raw: []byte("XY")}, candidates{})
+	if act != ActNone {
+		t.Errorf("act = %v, want ActNone — a paste is not a submission", act)
+	}
+	if got := e.String(); got != "aXYb" {
+		t.Errorf("line = %q, want %q", got, "aXYb")
+	}
+	if e.Cursor != 3 {
+		t.Errorf("cursor = %d, want 3 — it follows the inserted text", e.Cursor)
+	}
+}
+
+// THE BUG THIS MILESTONE FIXES, at the editor rather than the decoder: a pasted
+// newline must not submit. The line editor holds ONE line, so an interior
+// newline becomes a space — which is what parseREPLLine would do to it anyway.
+func TestAPastedNewlineDoesNotSubmitAndBecomesASpace(t *testing.T) {
+	e, act := Apply(NewEditor(), Key{Kind: KeyPaste, Raw: []byte("hot\ndog")}, candidates{})
+	if act != ActNone {
+		t.Fatalf("act = %v, want ActNone — the paste submitted mid-text", act)
+	}
+	if got := e.String(); got != "hot dog" {
+		t.Errorf("line = %q, want %q", got, "hot dog")
+	}
+}
+
+// A refusal leaves the line exactly as it was: it carries no text, and a paste
+// the user was told was too long must not half-arrive.
+func TestARefusedPasteLeavesTheLineAlone(t *testing.T) {
+	e := NewEditor()
+	for _, k := range runes("keep") {
+		e, _ = Apply(e, k, candidates{})
+	}
+	e, act := Apply(e, Key{Kind: KeyPasteRefused}, candidates{})
+	if act != ActNone || e.String() != "keep" {
+		t.Errorf("line = %q act = %v, want %q ActNone", e.String(), act, "keep")
+	}
+}
+
+// End to end through the loop: a paste reaches the line, and the session does
+// not submit or look anything up on the way.
+func TestEditorLoopTakesAPasteWithoutSubmitting(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	ks := keySeq(Key{Kind: KeyPaste, Raw: []byte("hot\ndog")})
+	runEditor(t.Context(), ks, nil, rig.deps, opt,
+		console{view: view, finish: finish, stdout: &out, stderr: &errb})
+	if !strings.Contains(out.String(), "hot dog") {
+		t.Errorf("the paste never reached the line:\n%s", out.String())
+	}
+	if errb.Len() != 0 {
+		t.Errorf("a well-formed paste wrote to stderr: %q", errb.String())
+	}
+}
+
+// A refusal is REPORTED. A paste that simply vanished would read as a broken
+// terminal, and there is no other way to learn the limit.
+func TestEditorLoopReportsARefusedPaste(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	ks := keySeq(Key{Kind: KeyPasteRefused})
+	runEditor(t.Context(), ks, nil, rig.deps, opt,
+		console{view: view, finish: finish, stdout: &out, stderr: &errb})
+	if !strings.Contains(errb.String(), "longer than") {
+		t.Errorf("the refusal was silent; stderr = %q", errb.String())
 	}
 }

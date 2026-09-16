@@ -726,7 +726,7 @@ boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
 
 - [x] brainstorm the open questions (2026-09-16, in-session; decisions recorded above)
 - [x] `sdlc start-plan`, write the plan
-- [ ] M1 — bracketed paste: mode 2004, the paste scanner, `KeyPaste` as ONE key,
+- [x] M1 — bracketed paste: mode 2004, the paste scanner, `KeyPaste` as ONE key,
       the 1000-byte cap. Ships a standing bugfix on its own — today a pasted
       newline submits mid-paste.
 - [ ] M2 — the passage on screen: `passage` + `wordAtCell`, rendered into the
@@ -931,3 +931,30 @@ Delta:
   Filed separately so one consumer serves all three sources.
 - Done-when for recall is corrected accordingly: admission alone makes a word
   schedulable, because `harvest` authors items for deck words by the ordinary route.
+
+### 2026-09-16 — M1 implemented
+
+Bracketed paste lands. Four tasks, TDD throughout, full suite green (unsandboxed;
+`TestLanguageTintInvocation` and the `language_prompt_paths` rows fail under the
+Bash sandbox and pass on the host — see `MEMORY.md`).
+
+**One deviation from the plan, deliberate.** The plan had `runEditor` intercept
+`KeyPaste` and leave it without a destination until M2's passage surface. That
+would have REGRESSED the working case: before this milestone a pasted word typed
+itself into the line correctly, and only a pasted newline misbehaved. So M1 makes
+a paste insert into the line atomically, with interior newlines becoming spaces
+(`pasteLineRunes`). M2 will redirect a passage-shaped paste to the passage; the
+line insertion stays as the fallback. Shipping a milestone that makes an existing
+gesture do nothing is not a smaller step, it is a worse one.
+
+**`sanitisePasteBody` landed inside Task 1.1 rather than as its own task.** The
+plan put the parse boundary in `newPassage`, which does not exist until M2 — so
+Task 1.2b's tests referenced a symbol a later milestone creates. Putting the
+boundary in the scanner is better anyway: the bytes become a typed value at the
+moment they stop being a wire format, and nothing downstream can forget to ask.
+
+**Two repo guards fired and both were right.** `TestPlanTablesNameEntitiesThatExist`
+rejected two plan rows marked `modified` for entities that are NEW in existing
+files — the status column describes the entity, not the file. Then
+`TestPlanCitesTestsThatExist` rejected the name I guessed for the first guard. The
+plan now names both correctly.
