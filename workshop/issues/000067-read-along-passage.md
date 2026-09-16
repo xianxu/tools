@@ -604,8 +604,10 @@ boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
       screen's `footer` channel (chrome, not buffer text, because `screen.lines`
       is immutable), under the normal deck-highlighting rules.
 - [ ] M3 — marks: `markSet`, `highlightRow` widened from one range to a set, the
-      three precedence rules, click/drag producing marks, and the generalised
-      actionability guard.
+      three precedence rules, and click/drag producing marks. NO new `RegionKind`
+      and no change to the actionability guard — the plan resolved the passage as a
+      SURFACE rather than a set of regions, so `TestEveryRegionKindIsActionable`
+      is untouched.
 - [ ] M4 — the ask: `renderPassagePrompt` with `[sel]` + bracket escaping under
       its own task name, `parseREPLLine` marks-aware, the local nudge, and the
       global level-default reversal.

@@ -331,13 +331,96 @@ func TestAFreshDecoderIsNotMidPaste(t *testing.T) { /* … */ }
 Run: `go test ./cmd/define/ -run 'TestDecodeKeyTakesAPaste|TestAPastedNewline|TestAFreshDecoder' -v`
 Expected: FAIL — `undefined: KeyPaste`
 
-- [ ] **Step 3: Implement** — give the scanner first refusal on a `0x1b` byte, before `decodeEscape`.
+- [ ] **Step 3: Implement — and state the hook rule, because it is not "on ESC"**
+
+**The scanner takes EVERY byte while draining, and only `0x1b` otherwise.** Hooking it on `0x1b` alone makes the drain unreachable: `draining` is entered while the buffer head is ordinary text mid-paste, so `decodeKey` would never consult it again and the rest of an oversize paste would arrive as `KeyRune` — the exact failure the drain exists to prevent. Every test above starts at an ESC, which is why none of them catches it.
+
+```go
+	if d.paste.draining || buf[0] == 0x1b {
+		if k, used := d.paste.scan(buf); used > 0 {
+			return k, used
+		} else if d.paste.draining || bytes.HasPrefix(buf, []byte(pasteStart)) {
+			return Key{}, 0 // a prefix of a paste: read more, consume nothing
+		}
+	}
+```
+
+Add the test that would have caught it:
+
+```go
+// The drain must survive a read boundary that lands on ORDINARY TEXT. This is
+// the case the ESC-only hook misses: after the first over-cap scan, the head of
+// the buffer is body bytes, and a decoder that only consults the scanner on 0x1b
+// delivers the rest of a novel as keystrokes.
+func TestAnOversizePasteKeepsDrainingAcrossReads(t *testing.T) {
+	d := newKeyDecoder()
+	first := []byte("\x1b[200~" + strings.Repeat("x", maxPasteRunes+10))
+	if _, used := d.decode(first); used == 0 {
+		t.Fatal("the over-cap scan consumed nothing")
+	}
+	k, used := d.decode([]byte("still body text, no closer yet"))
+	if used == 0 || k.Kind == KeyRune {
+		t.Fatalf("draining did not continue on ordinary text: kind=%v used=%d", k.Kind, used)
+	}
+}
+```
 
 - [ ] **Step 4: Run — naming the tests explicitly, because a pattern that looks right can select nothing**
 
 Run: `go test ./cmd/define/ -run 'Key|Paste|Decode' -v` then
 `go test ./cmd/define/ -run 'TestEveryEnabledMouseModeIsDecoded|FuzzDecodeKey' -v`
 Expected: PASS. (Verify the selection with `go test ./cmd/define/ -list 'Key|Paste|Decode'` — `-run 'Key|Fuzz'` does **not** match `TestEveryEnabledMouseModeIsDecoded`.)
+
+- [ ] **Step 5: Commit**
+
+### Task 1.2b: The paste body is UNTRUSTED — name the boundary (ARCH-SECURE)
+
+**Files:** Modify `cmd/define/paste.go`; create the fuzz target in `cmd/define/paste_test.go`
+
+The first draft's ARCH-SECURE note named the prompt and store boundaries and stopped at the terminal frame. Three degenerate inputs were unhandled, and the third is the dangerous one:
+
+1. **A paste that never closes.** Under the cap, `scan` returns 0 forever, `readInput` never advances `buf` (`selection_input.go:174`), and **the editor goes deaf** — including to keys typed afterwards, which join the same buffer and are re-scanned. Bound it: the wait is bounded by the cap, so a never-closed paste blocks input until `maxPasteRunes` accumulates and the drain takes over. That is a real, bounded degradation; **state it as a known limit with a test**, rather than leaving it to be discovered.
+2. **An embedded `ESC[201~` in the payload** ends the paste early and delivers the remainder as live keys — including `\r`, which submits. Terminals are expected to strip it; the clipboard is the user's own, so the threat model is low. **Decide it explicitly** (the closer wins; the remainder is ordinary input) rather than inheriting it.
+3. **Escape sequences in the body reach the footer, which passes producer SGR through by construction** (`selection_frame.go:236-245`). A pasted `\x1b[31m` would recolour the passage and can defeat the mark painting, because the mark re-asserts over *known* producer SGR, not over arbitrary injected state.
+
+**So `newPassage` is the parse boundary: untrusted bytes in, a typed `passage` out.** It strips escape sequences (`escapeLen`, `render.go:582` — do not write a second escape grammar) and non-newline control runes, exactly as `oneLine` (`store/item.go:200`) does at the store boundary. Invalid state becomes unrepresentable rather than checked downstream.
+
+- [ ] **Step 1: Write the failing tests**
+
+```go
+func TestAPastedEscapeSequenceNeverReachesThePassage(t *testing.T) {
+	p := newPassage("the \x1b[31mslow\x1b[0m precession")
+	if strings.ContainsRune(p.raw(), 0x1b) {
+		t.Errorf("an escape survived the boundary: %q", p.raw())
+	}
+	if !strings.Contains(p.raw(), "the slow precession") {
+		t.Errorf("stripping removed visible text: %q", p.raw())
+	}
+}
+
+func TestAnUnterminatedPasteRecoversAtTheCap(t *testing.T) { /* known limit, pinned */ }
+func TestAnEmbeddedCloserEndsThePaste(t *testing.T)        { /* decided, not inherited */ }
+
+// ONE scanner across MANY calls — the stateful half the plan's
+// fresh-decoder-per-iteration rule leaves unfuzzed. The invariant: the scanner
+// always makes progress or is waiting on a genuine prefix, and never emits an
+// escape byte as passage text.
+func FuzzPasteScannerAcrossCalls(f *testing.F) {
+	f.Add([]byte("\x1b[200~hi\x1b[201~"), 3)
+	f.Fuzz(func(t *testing.T, in []byte, split int) { /* drive one scanner in chunks */ })
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test ./cmd/define/ -run 'PastedEscape|Unterminated|EmbeddedCloser' -v`
+Expected: FAIL
+
+- [ ] **Step 3: Implement**
+- [ ] **Step 4: Run**
+
+Run: `go test ./cmd/define/ -run 'Paste|Passage' -v` then `go test ./cmd/define/ -fuzz FuzzPasteScannerAcrossCalls -fuzztime 30s`
+Expected: PASS, no crashers
 
 - [ ] **Step 5: Commit**
 
@@ -447,7 +530,18 @@ Expected: FAIL — `undefined: newPassage`
 
 - [ ] **Step 3: Implement** — `passage` holds the raw text, its lines and `[][]wordRun`, with `runs(line) []wordRun` and `text(wordRun) string`. `wordAtCell` maps a display column to a byte offset using `visibleIndex` (`render.go:520`) and `nextDisplayUnit` (`display_unit.go:8`) — **do not write new cell arithmetic**.
 
-> **Name the shared helper, as the issue requires.** Multi-word deck keys highlight as phrases only across spaces and tabs — `phraseGap` (`highlight.go:95`), consumed at `highlight.go:150` and `highlightwriter.go:201-230`. A passage line that WRAPS must not let `hot` and `dog` on two rows form the phrase `hot dog`; reuse `phraseGap`'s rule rather than restating it.
+> **THE COORDINATE MAPPING, stated once — three spaces, two conversions.**
+> A passage has **logical lines** (what was pasted, split on `\n`). Each becomes **one footer entry**. The screen wraps each entry into **frame rows**. So:
+>
+> | space | unit | who owns it |
+> |---|---|---|
+> | passage | logical line + byte offset | `passage`, `wordRuns` |
+> | footer | entry index + row offset | `FooterRowAt` (`screen.go:247`) |
+> | frame | physical row + display cell | `selectionFrame`, `highlightRow` |
+>
+> **Forward** (a click): frame row → `FooterRowAt` → `(entry, offset)` → `wordAtCell(p, entry, col + offset*cols)`. **Inverse** (painting marks): a `mark`'s byte offsets → per-frame-row `[]cellRange` for the widened `highlightRow`. **The inverse was named nowhere in the first draft and every Chunk 3 test used a single-row frame** — build it here, beside `wordAtCell`, as its stated inverse, and give Tasks 3.2/3.3 at least one **multi-row** frame each.
+>
+> **Correction:** the first draft said to reuse `phraseGap` to stop a wrapped `hot\n  dog` forming a phrase. That was wrong, and the gate caught it. `phraseGap` (`highlight.go:95-105`) rejects a gap containing a newline — but under logical-line footer entries a display wrap inserts **no newline**, so `phraseGap` does not guard it at all. Deck-phrase highlighting runs on the **logical line**, before the screen wraps it, which is the correct place and needs no new rule. The issue's "reuse `phraseGap`" instruction is answered by this paragraph: the helper is *already* doing its job one layer up, and adding a second wrap-aware rule would be the duplication ARCH-DRY warns about.
 
 > **There is no spans→styled-string helper to reuse.** `highlightSpans` returns `[]span`, and both existing consumers open-code the loop (`editor.go:206-213`, `highlightwriter.go:141`), each with the `inputOn` re-open hazard the atlas names. Extract **one** helper here and have the passage use it; a fourth open-coded loop is the thing ARCH-DRY is for.
 
@@ -832,7 +926,8 @@ Expected: PASS, and `ask-prompt.txt` unchanged (`git diff --exit-code cmd/define
 **Files:**
 - Modify: `cmd/define/repl.go:68` (`parseREPLLine`)
 - Modify: **all three non-test callers** — `main.go:750`, `repl.go:346`, `replraw.go:546`
-- Modify: the ~10 test call sites in `route_test.go`, `askroute_test.go`, `commandloop_test.go`, `command_test.go`
+- Modify: the test call sites in `route_test.go`, **`repl_test.go:58`**, `askroute_test.go`, `commandloop_test.go`, `command_test.go` — `repl_test.go` was omitted from the first draft's list and the signature change breaks its build
+- Test: **the mark-me nudge row belongs in `repl_test.go`**, which field-compares `note`; `TestConsoleDecisionTable` (`route_test.go:16`) reduces to one of four outcome strings through the real dictionary and cannot see a note
 - Test: `cmd/define/route_test.go:16` (`TestConsoleDecisionTable` — **this file, not `repl_test.go`**)
 
 > Replace the `hasCurrent bool` parameter with a single session-state value. **Do not add a second boolean** — two bools side by side encode a precedence nobody declared, which is the consolidation `session` itself was created for. Expect a wide, mechanical diff across the call sites; that breadth is the reason to do it as one change rather than adding a parameter now and consolidating later.
@@ -882,6 +977,27 @@ func TestTheRequestCarriesThePassageWithMarksInPlace(t *testing.T) { /* … */ }
 // Marks CLEAR after the ask (#67): the transient state converts into deck
 // membership, and a bare Enter afterwards finds nothing to re-ask.
 func TestMarksClearAfterTheAsk(t *testing.T) { /* … */ }
+
+// ONE PREDICATE over runAsk's five outcomes, not five cases (ARCH-PURPOSE):
+// marks clear and words are admitted IFF AN ANSWER REACHED THE READER.
+// Collapsing a failure into success would silently empty the marks on a Ctrl-C,
+// or turn words green when no model was ever configured.
+func TestOnlyADeliveredAnswerClearsMarksAndAdmitsWords(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		outcome         func(*llmtest.Fake)
+		answerDelivered bool
+	}{
+		{"no model configured", noSeam, false},       // ask.go:151 — returns before sending
+		{"unavailable, nothing arrived", dead, false}, // ask.go:204
+		{"ctrl-C mid-stream, partial kept", interrupted, true}, // ask.go:184 — the reader READ it
+		{"truncated, partial kept", truncated, true},  // ask.go:205
+		{"request error", failing, false},             // ask.go:209
+		{"success", ok, true},
+	} {
+		// assert marks cleared == tc.answerDelivered, and deck admission likewise
+	}
+}
 
 // A lookup while a passage is on screen carries it as context.
 func TestALookupCarriesThePassage(t *testing.T) { /* … */ }
