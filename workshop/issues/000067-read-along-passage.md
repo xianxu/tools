@@ -577,10 +577,26 @@ worth deciding in the brainstorm rather than discovering later.
 
 ## Plan
 
-Awaiting brainstorm, then a durable plan in `workshop/plans/`.
+Durable plan: `workshop/plans/000067-read-along-passage-plan.md`. Five review
+boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
 
-- [ ] brainstorm the open questions above
-- [ ] `sdlc start-plan`, then write the plan
+- [x] brainstorm the open questions (2026-09-16, in-session; decisions recorded above)
+- [x] `sdlc start-plan`, write the plan
+- [ ] M1 — bracketed paste: mode 2004, the paste scanner, `KeyPaste` as ONE key,
+      the 1000-byte cap. Ships a standing bugfix on its own — today a pasted
+      newline submits mid-paste.
+- [ ] M2 — the passage on screen: `passage` + `wordAtCell`, rendered into the
+      screen's `footer` channel (chrome, not buffer text, because `screen.lines`
+      is immutable), under the normal deck-highlighting rules.
+- [ ] M3 — marks: `markSet`, `highlightRow` widened from one range to a set, the
+      three precedence rules, click/drag producing marks, and the generalised
+      actionability guard.
+- [ ] M4 — the ask: `renderPassagePrompt` with `[sel]` + bracket escaping under
+      its own task name, `parseREPLLine` marks-aware, the local nudge, and the
+      global level-default reversal.
+- [ ] M5 — the words become deck words: `CaptureMarked` through the one `Upsert`,
+      the passage re-rendering green, and (droppable) the authentic sentence as a
+      practice item.
 
 ## Log
 
