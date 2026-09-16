@@ -259,6 +259,26 @@ absent, write for a capable adult reader and do not guess at their level"*
 the level sentence *"the sentence that makes the whole adaptive loop worth
 building."* Changing it is a reversal to record, not a tweak to slip in.
 
+Sharpened by the operator moments later: **college-bound, but without the
+sophistication or the knowledge yet — and curious.** That is a persona with two
+dials set in OPPOSITE directions, and reading it as one dial is the failure mode:
+
+- **Language: hold it.** They are going to college. Do not simplify the prose,
+  shorten the sentences, or swap a hard word for an easy one. In a VOCABULARY
+  tool, replacing the difficult word with a plain synonym defeats the entire
+  purpose — a real risk, because "high school student" read carelessly means
+  exactly that to a model.
+- **Background: assume none.** Do not take the ecliptic, the equatorial bulge or
+  the synodic month as known. This is the dial the feature exists to move, and it
+  is the operator's original thesis restated as a persona: *learning words is not
+  just learning words, but some base level information around those words.*
+- **Curious: go one step past the question.** Volunteer the connecting fact, which
+  is what "slightly more surrounding information than a dictionary app" asks for.
+
+Worth a live conformance check rather than a prompt line alone: an explanation of
+a hard word must not paraphrase the hard word away. The repo already measures
+prompts against the live proxy this way.
+
 It is the better default here, and for the reason the atlas already gives in a
 neighbouring case: an abstract instruction produces *"a confident generic
 answer."* "Capable adult reader" is exactly that shape. "Curious high school
@@ -387,3 +407,7 @@ Delta:
 - Default level with no learner model is "a curious high school student",
   REVERSING `askSystem`'s "do not guess at their level". Scope (global vs
   read-along) returned to the operator, and flagged that it is not a CEFR band.
+- Persona sharpened: college-bound, no sophistication or knowledge yet, curious.
+  Two dials in opposite directions — HOLD the language level, DROP the assumed
+  background. Guarding the failure mode (simplifying the hard word away) is a
+  live conformance check, not just a prompt line.
