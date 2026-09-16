@@ -53,7 +53,10 @@ func TestDecodeKey(t *testing.T) {
 // arrives in its own read decodes as Escape-then-junk, so arrow keys break
 // precisely when the terminal is slow.
 func TestDecodeKeyPartialSequences(t *testing.T) {
-	for _, in := range []string{"", "\x1b", "\x1b[", "\x1b[3", "\xe2", "\xe2\x99"} {
+	// "\x1b[200~" used to sit in the inert table above, consuming 6 as an
+	// unmodelled sequence. Since #67 it OPENS a paste, so a lone start marker is
+	// a prefix like any other: the body and its closer have not arrived yet.
+	for _, in := range []string{"", "\x1b", "\x1b[", "\x1b[3", "\xe2", "\xe2\x99", "\x1b[200~"} {
 		if _, n := decodeKey([]byte(in)); n != 0 {
 			t.Errorf("decodeKey(%q) consumed %d, want 0 — a partial sequence must wait", in, n)
 		}
@@ -68,7 +71,6 @@ func TestDecodeKeyUnknownSequencesAreInert(t *testing.T) {
 	}{
 		{"\x1b[15~", 5},  // F5 — the tilde family's unmodelled half
 		{"\x1b[1;5C", 6}, // Ctrl-Right
-		{"\x1b[200~", 6}, // bracketed-paste start
 		{"\x1bZ", 2},     // unknown two-byte
 		{"\x00", 1},      // stray control byte
 	} {

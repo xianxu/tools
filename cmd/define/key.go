@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"unicode/utf8"
 )
@@ -75,15 +76,49 @@ type Key struct {
 	click    *pointerClick // immutable ticket for a completed application click
 }
 
-// decodeKey converts the front of buf into a Key.
+// keyDecoder is decodeKey plus the one piece of state a byte stream needs.
+//
+// A bracketed paste spans reads, so its scanner has to survive between calls —
+// everything else here is a pure function of the buffer. The streaming caller
+// (readInput) holds one for the life of its goroutine; every other call site
+// goes through decodeKey, which allocates a fresh one.
+type keyDecoder struct{ paste pasteScanner }
+
+// decodeKey converts the front of buf into a Key, with no carried state.
+//
+// It is the stateless entry the package has always had, kept because 38 call
+// sites and both fuzz targets want exactly that: a fresh decoder cannot be
+// mid-paste, so paste state can never leak between fuzz inputs or between
+// unrelated tests.
+func decodeKey(buf []byte) (Key, int) {
+	var d keyDecoder
+	return d.decode(buf)
+}
+
+// decode converts the front of buf into a Key.
 //
 // consumed == 0 means buf holds a PREFIX of a longer sequence and the caller
 // must read more before deciding. Without that signal a lone ESC arriving in its
 // own read decodes as Escape-then-junk, and arrow keys break exactly when the
 // terminal is slow.
-func decodeKey(buf []byte) (Key, int) {
+func (d *keyDecoder) decode(buf []byte) (Key, int) {
 	if len(buf) == 0 {
 		return Key{}, 0
+	}
+	// The paste scanner goes FIRST, and its condition is not "the byte is ESC".
+	//
+	// While draining an over-cap paste the head of the buffer is ordinary body
+	// text, so an ESC-only hook would never consult the scanner again and the
+	// rest of the paste would arrive as runes — the exact failure the drain
+	// exists to prevent. The rule is: every byte while draining, 0x1b otherwise.
+	if d.paste.draining || buf[0] == 0x1b {
+		if k, used := d.paste.scan(buf); used > 0 {
+			return k, used
+		} else if d.paste.draining || bytes.HasPrefix(buf, []byte(pasteStart)) {
+			// Ours, but incomplete: wait rather than letting the CSI scan below
+			// swallow a start marker as an unmodelled sequence.
+			return Key{}, 0
+		}
 	}
 	switch b := buf[0]; b {
 	case 0x03:

@@ -159,6 +159,10 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 		defer close(out)
 		var buf []byte
 		chunk := make([]byte, 256)
+		// ONE decoder for the life of this goroutine: a bracketed paste spans
+		// reads, so its scanner has to survive between them. Every other caller
+		// uses the stateless decodeKey.
+		var dec keyDecoder
 		saturated := false
 		for {
 			if ctx.Err() != nil {
@@ -171,7 +175,7 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 					if ctx.Err() != nil {
 						return
 					}
-					k, used := decodeKey(buf)
+					k, used := dec.decode(buf)
 					if used == 0 {
 						break
 					}

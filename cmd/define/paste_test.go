@@ -222,3 +222,61 @@ func FuzzPasteScannerAcrossCalls(f *testing.F) {
 		}
 	})
 }
+
+// --- the decoder hook -------------------------------------------------------
+
+func TestDecodeKeyTakesAPasteAsOneKey(t *testing.T) {
+	in := append(wholePaste("hot dog"), 'x')
+	k, used := decodeKey(in)
+	if k.Kind != KeyPaste {
+		t.Fatalf("kind = %v, want KeyPaste", k.Kind)
+	}
+	if string(k.Raw) != "hot dog" {
+		t.Errorf("Raw = %q, want %q", k.Raw, "hot dog")
+	}
+	if used != len(in)-1 {
+		t.Errorf("used = %d, want everything but the trailing x", used)
+	}
+}
+
+// The standing bug this milestone fixes, asserted at its CAUSE (key.go:87)
+// rather than where it was observed (the editor's ActSubmit).
+func TestAPastedNewlineIsNotEnter(t *testing.T) {
+	k, _ := decodeKey(wholePaste("a\nb"))
+	if k.Kind == KeyEnter {
+		t.Fatal("a pasted newline decoded as Enter; the paste would submit mid-text")
+	}
+	if string(k.Raw) != "a\nb" {
+		t.Errorf("Raw = %q, want the newline preserved inside the paste", k.Raw)
+	}
+}
+
+// PQ-1. The drain must survive a read boundary that lands on ORDINARY TEXT.
+// A hook that consults the scanner only on 0x1b never sees it again — the head
+// of the buffer is body bytes by then — and delivers the rest of an oversize
+// paste as keystrokes, which is the exact failure the drain exists to prevent.
+func TestAnOversizePasteKeepsDrainingAcrossReads(t *testing.T) {
+	var d keyDecoder
+	first := []byte(pasteStart + strings.Repeat("x", maxPasteRunes+10))
+	if _, used := d.decode(first); used == 0 {
+		t.Fatal("the over-cap decode consumed nothing")
+	}
+	k, used := d.decode([]byte("still body text, no closer yet"))
+	if used == 0 {
+		t.Fatal("draining stopped at a read boundary; the rest arrives as keystrokes")
+	}
+	if k.Kind == KeyRune {
+		t.Fatalf("a drained body byte decoded as the rune %q", k.Rune)
+	}
+}
+
+// decodeKey allocates a fresh decoder per call, which is what keeps its 38
+// existing call sites — and both fuzz targets — free of paste state.
+func TestAFreshDecodeKeyIsNotMidPaste(t *testing.T) {
+	if _, used := decodeKey([]byte(pasteStart + strings.Repeat("x", maxPasteRunes+10))); used == 0 {
+		t.Fatal("the over-cap decode consumed nothing")
+	}
+	if k, _ := decodeKey([]byte("a")); k.Kind != KeyRune || k.Rune != 'a' {
+		t.Errorf("paste state leaked into a fresh decodeKey: %v %q", k.Kind, k.Rune)
+	}
+}

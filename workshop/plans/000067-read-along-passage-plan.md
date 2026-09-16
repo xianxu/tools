@@ -59,12 +59,17 @@
 
 ### Integration points
 
+The Status column describes the ENTITY, not the file: `enterPaste` is a new
+function in an existing file, so it is `new`. `TestPlanTablesNameEntitiesThatExist`
+(`repo_guard_test.go:897`) reads it that way — it exempts `new` rows while a plan
+is in progress and checks everything else against the tree.
+
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `pasteOn`/`pasteOff` + `enterPaste` | `cmd/define/rawterm.go` | modified | terminal mode 2004 |
+| `pasteOn`/`pasteOff` + `enterPaste` | `cmd/define/rawterm.go` | new | terminal mode 2004 |
 | `KeyPaste` + decode | `cmd/define/key.go` | modified | the byte stream |
 | passage-as-footer | `cmd/define/replraw.go` | modified | `liveScreen.Draw` |
-| `Capturer.CaptureMarked` | `cmd/define/capture.go` | modified | `store.Store` |
+| `CaptureMarked` | `cmd/define/capture.go` | new | `store.Store` |
 
 - **pasteOn/pasteOff** — enabling mode 2004 so pastes arrive bracketed.
   - **Injected into:** nothing; it is a terminal-lifecycle sibling of `enterMouse`, and `restore()` must turn it off in the same ordered teardown.
