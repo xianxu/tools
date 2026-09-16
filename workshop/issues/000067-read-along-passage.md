@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-16
 updated: 2026-09-16
-estimate_hours: 6.9
+estimate_hours: 7.12
 started: 2026-09-16T12:50:20-07:00
 ---
 
@@ -596,7 +596,8 @@ worth deciding in the brainstorm rather than discovering later.
 model: estimate-logic-v3.1
 familiarity: 1.0
 item: issue-spec               design=0.90 impl=0.08
-item: plan-rounds              design=0.10 impl=0.12
+item: milestone-review         design=0.10 impl=0.12
+item: milestone-review         design=0.10 impl=0.12
 item: greenfield-go-module     design=0.16 impl=0.20
 item: cross-cutting-refactor   design=0.08 impl=0.16
 item: smaller-go-module        design=0.03 impl=0.16
@@ -627,11 +628,11 @@ item: smaller-go-module        design=0.02 impl=0.14
 item: atlas-docs               design=0.02 impl=0.05
 item: milestone-review         design=0.00 impl=0.16
 design-buffer: 0.15
-total: 6.88
+total: 7.12
 ```
 
-Derived after the plan cleared plan-quality (#187), in plan-task order: rows 3–9
-are M1, 10–14 M2, 15–20 M3, 21–27 M4, 28–31 M5.
+Derived after the plan cleared plan-quality (#187), in plan-task order: rows 4–10
+are M1, 11–15 M2, 16–21 M3, 22–28 M4, 29–32 M5.
 
 Familiarity **1.0**. The design is warm — three code surveys in this session read
 the input path, the screen/selection stack and the ask/store path end to end — but
@@ -654,11 +655,13 @@ is v3.1's 40% of the v2 table.
   band because two *design* errors were found and corrected here rather than in
   code: a scanner that double-counted re-presented bytes, and a `phraseGap` claim
   that did not hold.
-- **`plan-rounds` counts two plan-quality rounds as SPENT, not budgeted.** Round 1
-  returned four Importants (the unreachable drain, the unhandled untrusted-input
-  class, the unstated coordinate mapping, the uncollapsed ask outcomes); round 2
-  disposed of all six and passed. Priced at #5's measured 0.10/0.12 for the pair,
-  following #24's rule that a round this block can already see is counted.
+- **Rows 2–3 are the two plan-quality rounds, counted as SPENT, not budgeted** —
+  priced as `milestone-review`, which is the primitive #24 used for exactly this
+  (a plan round is a review round). Round 1 returned four Importants: the drain
+  state unreachable through an ESC-only hook, an unhandled untrusted-input class
+  at the paste boundary, the passage/footer/frame coordinate mapping unstated, and
+  the ask's five non-success outcomes uncollapsed. Round 2 disposed of all six and
+  passed. #24's rule applies — a round this block can already see is counted.
 - **Two `greenfield-go-module` rows, and only two.** `paste.go` and `passage.go`
   are new files with new state and no mirror in the tree. Everything else extends
   something that exists, which is `smaller-go-module` territory.
@@ -676,7 +679,7 @@ is v3.1's 40% of the v2 table.
 - **One `milestone-review` per Mx, five in total**, because each `Mx` row in the
   Plan commits to its own `sdlc milestone-close`. The last is priced slightly
   higher (0.16) as the issue close rather than a milestone.
-- Design buffer **+15%** for a thorough plan doc. 2.29 × 1.15 + 4.25 = 6.88.
+- Design buffer **+15%** for a thorough plan doc. 2.39 × 1.15 + 4.37 = 7.12.
 
 *Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
 `baseline-v3.1.md`. Method A only.*
