@@ -44,3 +44,28 @@ func TestPracticeLongRunOwnershipFollowsPhysicalRows(t *testing.T) {
 		t.Fatal("first completed target row lost ownership")
 	}
 }
+
+func TestPracticeActionsFollowPhysicalOutputIntoScreen(t *testing.T) {
+	for _, color := range []bool{false, true} {
+		l := newLiveScreen(io.Discard, 20, 20)
+		defer l.Stop()
+		p := play.Presentation{Text: strings.Repeat("a", 23) + "\nhola"}
+		writePracticePresentation(l, p, []Region{{Line: 2, Col: 0, Width: 4, Text: "hola"}}, deps{lang: "es"}, options{width: 20, color: color, tintBackground: languageDark}, surfaceProse, "", "")
+		r, ok := l.s.RegionAt(3, 0)
+		if !ok || r.Text != "hola" || stripEscapes(l.s.lines[3]) != "hola" {
+			t.Fatalf("color=%v action misplaced: rows=%q regions=%+v", color, l.s.lines, l.s.regions)
+		}
+		l.Stop()
+	}
+}
+
+func TestStructuredRegionSinkUsesPhysicalGeometry(t *testing.T) {
+	var w recordingRegionWriter
+	o := renderedOutput{text: strings.Repeat("a", 23) + "\nhola", regions: []Region{{Line: 1, Col: 0, Width: 4, Text: "hola"}}}
+	if err := writeOutput(&w, o, 20); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.regions) != 1 || w.regions[0].Line != 2 {
+		t.Fatalf("regions=%+v", w.regions)
+	}
+}

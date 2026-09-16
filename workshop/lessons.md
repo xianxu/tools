@@ -4674,3 +4674,8 @@ complete display units before terminal painting, and project actions and semanti
 exclusions through that same geometry. Test source-glyph conservation alongside
 cell backgrounds, including long headwords, wide/combining glyphs and practice
 rows. Keep historical resize clipping separate from initial output layout.
+
+When a layout transform changes physical row geometry, enumerate every structured
+consumer: text conservation alone is insufficient. Feed click regions into the
+same transform as text; test both the production presenter-to-screen path and
+compatibility sinks. Clone caller metadata before adjusting source offsets.

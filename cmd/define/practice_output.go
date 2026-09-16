@@ -9,7 +9,7 @@ import (
 
 // Practice owns its prose and answer exclusions; dictionary rows arrive with
 // their frozen section paint and bypass mixed-language row classification.
-func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy tintPolicy, vocab Vocabulary, sf surface, subject string, width int) renderedOutput {
+func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy tintPolicy, vocab Vocabulary, sf surface, subject string, width int, actions ...Region) renderedOutput {
 	var text strings.Builder
 	var spans []languageSpan
 	var exclusions []languageSpan
@@ -46,10 +46,11 @@ func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy t
 	}
 	text.WriteString(p.Text[at:])
 	styled := text.String()
-	wrapped := strings.Join(outputWrappedRows(styled, width), "\n")
+	mappedActions := layoutOutput(renderedOutput{text: styled, regions: actions}, width)
+	wrapped := mappedActions.text
 	owned := projectDisplayText(languageText{text: styled, spans: spans}, wrapped)
 	protected := projectDisplayText(languageText{text: styled, spans: exclusions}, wrapped)
-	o := renderedOutput{text: wrapped}
+	o := renderedOutput{text: wrapped, regions: mappedActions.regions}
 	pos := 0
 	ownerIndex, exclusionIndex := 0, 0
 	for _, line := range strings.Split(wrapped, "\n") {

@@ -40,6 +40,30 @@ rounds:
           family: terminal-serialization-preserves-source
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-15T17:12:05-07:00"
+      agent: codex
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: Finalized-row metadata preservation remains covered by the passing answer termination tests.
+          round: 3
+        - id: BR-2
+          disposition: addressed
+          note: The revised Core concepts table matches the inspected declarations, locations and adapters.
+          round: 3
+        - id: BR-3
+          disposition: addressed
+          note: HEAD preserves overlong dictionary source and wide display units. Reverting output_layout.go's fix in a temporary overlay makes TestTerminalSerializationPreservesOverlongDictionarySource fail; HEAD passes.
+          round: 3
+      findings:
+        - id: BR-4
+          severity: Critical
+          title: Practice click targets use obsolete geometry after physical wrapping
+          detail: cmd/define/practice_language.go:48 maps actions with wrapMovedRegions, while line 45 renders text through outputWrappedRows. At width 20, a presentation containing 23 a characters followed by newline and hola places the hola action on the preceding aaa row. This is the 2nd finding in family terminal-serialization-preserves-source. Enforce one geometry projection for text and all associated metadata; enumerate structured-output consumers and remove parallel coordinate mappings. ARCH-DRY, ARCH-PURPOSE.
+          family: terminal-serialization-preserves-source
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#66 (boundary-review)
@@ -68,6 +92,19 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-3** [Critical] `terminal-serialization-preserves-source` Tinted one-shot output truncates overlong words
   cmd/define/output_layout.go:221 passes wrapped logical lines directly to paintLanguageRow, whose language_row.go:55 stops at the terminal width. wrapText deliberately preserves overlong words, so the painter discards their remaining characters. A scratch regression through renderDefinitionOutput and serializeOutput at width 20 renders anticonstitucionalmente as anticonstitucionalme under both dark and light profiles; off preserves it. Split overflowing output into physical rows before painting, preserving text and projected metadata. Cover overlong headwords, body tokens, and wide display units while retaining the specified historical clipping policy. ARCH-PURPOSE.
 
+## Round 3 — 2026-09-15T17:12:05-07:00 (codex) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Finalized-row metadata preservation remains covered by the passing answer termination tests.
+- BR-2 — addressed — The revised Core concepts table matches the inspected declarations, locations and adapters.
+- BR-3 — addressed — HEAD preserves overlong dictionary source and wide display units. Reverting output_layout.go's fix in a temporary overlay makes TestTerminalSerializationPreservesOverlongDictionarySource fail; HEAD passes.
+
+### Raised
+
+- **BR-4** [Critical] `terminal-serialization-preserves-source` Practice click targets use obsolete geometry after physical wrapping
+  cmd/define/practice_language.go:48 maps actions with wrapMovedRegions, while line 45 renders text through outputWrappedRows. At width 20, a presentation containing 23 a characters followed by newline and hola places the hola action on the preceding aaa row. This is the 2nd finding in family terminal-serialization-preserves-source. Enforce one geometry projection for text and all associated metadata; enumerate structured-output consumers and remove parallel coordinate mappings. ARCH-DRY, ARCH-PURPOSE.
+
 ## Open findings
 
-- **BR-3** [Critical] `terminal-serialization-preserves-source` Tinted one-shot output truncates overlong words
+- **BR-4** [Critical] `terminal-serialization-preserves-source` Practice click targets use obsolete geometry after physical wrapping

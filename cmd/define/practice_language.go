@@ -42,10 +42,16 @@ func writePracticePresentation(w io.Writer, p play.Presentation, rs []Region, d 
 	if !opt.color {
 		v = nil
 	}
-	output := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), v, sf, subject, opt.width)
+	actions := append([]Region(nil), mergeRegions(rs, own)...)
+	for i := range actions {
+		actions[i].Line-- // source presentation excludes the surrounding blank line
+	}
+	output := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), v, sf, subject, opt.width, actions...)
 	output.text = "\n" + output.text + "\n"
 	output.rows = append([]rowPaint{{}}, output.rows...)
-	output.regions = wrapMovedRegions(text, mergeRegions(rs, own), opt.width)
+	for i := range output.regions {
+		output.regions[i].Line++
+	}
 	writeOutput(w, output, opt.width)
 }
 

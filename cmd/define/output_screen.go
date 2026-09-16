@@ -14,6 +14,7 @@ func writeOutput(w io.Writer, o renderedOutput, width int) error {
 		return sink.WriteOutput(o)
 	}
 	if sink, ok := w.(regionWriter); ok {
+		o = layoutOutput(o, width)
 		sink.WriteRegions(serializeOutput(o, width), o.regions)
 		return nil
 	}

@@ -176,3 +176,18 @@ Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bo
   projection; historical screen rows retain clip-only resizing. Regression scope
   includes headword/body tokens, wide glyphs, action/exclusion mapping, all profiles
   and clean width-zero serialization.
+
+### 2026-09-15 — BR4: one geometry for text and metadata
+
+Invariant: text, actions and exclusions share physical-row geometry (ARCH-DRY,
+ARCH-PURPOSE). Consumer enumeration found practice actions still using legacy
+word-only mapping and the regionWriter fallback serializing text without moving
+actions. Practice now supplies source actions to renderPracticeOutput's shared
+layoutOutput, and the fallback layouts the entire renderedOutput before emitting.
+Definitions already use layoutOutput; pinned liveScreen layouts whole outputs;
+streaming owns physical rows and has no actions; nested-session transfer carries
+already-physical text/actions/paint. Footer chrome has no click regions and uses
+shared physical display-unit boundaries for exclusion slicing. Legacy WriteRegions
+retains paired legacy wrapping/mapping outside the structured-output path.
+Production-path regressions through writePracticePresentation into liveScreen and
+through the regionWriter fallback fail before and pass after these corrections.

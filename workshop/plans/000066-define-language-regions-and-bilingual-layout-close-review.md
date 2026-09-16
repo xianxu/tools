@@ -191,3 +191,95 @@ Scratch regressions reproduced truncation through both direct serialization and 
 ### 7. Plan revision recommendations
 
 Append a `## Revisions` entry adding overlong-token conservation to serializer verification, explicitly distinguishing complete one-shot output from historical viewport clipping.
+
+---
+
+## Re-review — 2026-09-15T17:12:05-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 66 — define: preserve bilingual layout and tint complete language regions |
+| repo | tools |
+| issue file | workshop/issues/000066-define-language-regions-and-bilingual-layout.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 05a8e8de6e0e22312e95c6649a74936ecb139591..dc59b226d021760ce61bcfbb6555714199b4a260 |
+| command | sdlc close --issue 66 |
+| reviewer | codex |
+| timestamp | 2026-09-15T17:12:05-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+BR-3’s text-truncation fix is verified, but practice output still projects click targets using different geometry from its text. A regression probe confirms a target can land on the wrong word. The existing define suite passes; this uncovered case blocks shipping.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Finalized-row metadata preservation remains covered by the passing answer termination tests.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      The revised Core concepts table matches the inspected declarations, locations and adapters.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      HEAD preserves overlong dictionary source and wide display units. Reverting output_layout.go's fix in a temporary overlay makes TestTerminalSerializationPreservesOverlongDictionarySource fail; HEAD passes.
+findings:
+  - id: new
+    severity: Critical
+    family: terminal-serialization-preserves-source
+    title: |
+      Practice click targets use obsolete geometry after physical wrapping
+    detail: |
+      cmd/define/practice_language.go:48 maps actions with wrapMovedRegions, while line 45 renders text through outputWrappedRows. At width 20, a presentation containing 23 a characters followed by newline and hola places the hola action on the preceding aaa row. This is the 2nd finding in family terminal-serialization-preserves-source. Enforce one geometry projection for text and all associated metadata; enumerate structured-output consumers and remove parallel coordinate mappings. ARCH-DRY, ARCH-PURPOSE.
+```
+
+1. **Strengths**
+
+   - Oxford parsing preserves ordered structure and provenance, with neutral fallback and a visible formatting diagnostic.
+   - Shared row painting keeps synthetic padding separate from selectable source.
+   - BR-3 regressions cover long headwords/body tokens, wide/combining units, exclusions and actions.
+   - README, atlas and conformance registry updates describe the new surface.
+
+2. **Critical findings**
+
+   - [practice_language.go:48](/Users/xianxu/workspace/tools/cmd/define/practice_language.go:48): text and actions follow different wrapping paths. The temporary production-path probe produced rows `["", "aaaaaaaaaaaaaaaaaaaa", "aaa", "hola"]`, with the `hola` action attached to row 2. Project actions through the same physical layout as text, and add a regression through `writePracticePresentation` into `liveScreen`.
+
+3. **Important findings**
+
+   None separately.
+
+4. **Minor findings**
+
+   None.
+
+5. **Test coverage notes**
+
+   - Passed `go test ./cmd/define/... -count=1`.
+   - Passed focused terminal-serialization and physical-output regressions.
+   - BR-3 mutation failed as expected.
+   - New practice-coordinate probe failed on HEAD.
+   - Pinned diff check passed. Native/PTY conformance was inspected, not rerun. Repository files were unchanged.
+
+6. **Architectural notes**
+
+   - **ARCH-DRY — flag:** practice retains a parallel coordinate mapper.
+   - **ARCH-PURE — pass:** parsing, layout and painting remain independently testable.
+   - **ARCH-PURPOSE — flag:** preserving mouse regions is incomplete.
+   - **ARCH-MOCK — pass:** existing capture/fake seams and native/PTY checks are extended.
+   - **ARCH-CONSTRAINTS — pass:** bounded source, metadata and pending-stream handling remain.
+   - **ARCH-SECURE — pass:** provenance validation and neutral fallback are preserved.
+   - **ARCH-ORDER — pass:** finalized ownership and termination paths have behavioral coverage.
+   - **ARCH-FUNERAL — pass:** metadata follows response/screen lifetime; no new runtime persistent store.
+
+7. **Plan revision recommendations**
+
+   Append a `## Revisions` entry naming the invariant: **text, actions and exclusions must share physical-row geometry**. Record the structured-consumer enumeration, the practice mapper correction and its regression evidence.

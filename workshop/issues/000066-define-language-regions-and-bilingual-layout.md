@@ -166,6 +166,13 @@ formatting preserved. This supersedes #65's text-only/no-padding tint decision.
   User asked about the UI framework: answered existing custom Go/ANSI liveScreen,
   not React-style library; this does not change the approved implementation scope.
 
+- 2026-09-15: post-BR3 full suite passed (define 129.099s), race and strict
+  native/PTY passed. Close round 3 accepted BR3 but found BR4 practice click
+  targets retaining obsolete word-only geometry. Enumerated structured consumers;
+  corrected practice source-action projection and regionWriter fallback together.
+  Both production-path regressions failed before and pass after; focused batch
+  passed (1.933s). Source actions are cloned before surrounding-line adjustment.
+
 ## Revisions
 
 ### 2026-09-15 — Uniform dictionary sections
