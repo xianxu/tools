@@ -726,7 +726,7 @@ boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
 
 - [x] brainstorm the open questions (2026-09-16, in-session; decisions recorded above)
 - [x] `sdlc start-plan`, write the plan
-- [x] M1 — bracketed paste: mode 2004, the paste scanner, `KeyPaste` as ONE key,
+- [ ] M1 — bracketed paste: mode 2004, the paste scanner, `KeyPaste` as ONE key,
       the 1000-RUNE cap (runes, not bytes — a byte cap refuses a CJK paragraph at a third of its length). Ships a standing bugfix on its own — today a pasted
       newline submits mid-paste.
 - [ ] M2 — the passage on screen: `passage` + `wordAtCell`, rendered into the
