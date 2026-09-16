@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-16
 updated: 2026-09-16
-estimate_hours:
+estimate_hours: 6.9
 started: 2026-09-16T12:50:20-07:00
 ---
 
@@ -589,6 +589,97 @@ worth deciding in the brainstorm rather than discovering later.
   rows in `TestConsoleDecisionTable`, not branches in a loop.
 - The NOAD-as-context inversion is stated in the atlas, with the route back to
   the full entry.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.90 impl=0.08
+item: plan-rounds              design=0.10 impl=0.12
+item: greenfield-go-module     design=0.16 impl=0.20
+item: cross-cutting-refactor   design=0.08 impl=0.16
+item: smaller-go-module        design=0.03 impl=0.16
+item: smaller-go-module        design=0.03 impl=0.12
+item: smaller-go-module        design=0.03 impl=0.10
+item: atlas-docs               design=0.02 impl=0.05
+item: milestone-review         design=0.00 impl=0.14
+item: greenfield-go-module     design=0.16 impl=0.24
+item: cross-cutting-refactor   design=0.08 impl=0.16
+item: smaller-go-module        design=0.03 impl=0.10
+item: atlas-docs               design=0.02 impl=0.05
+item: milestone-review         design=0.00 impl=0.14
+item: smaller-go-module        design=0.03 impl=0.12
+item: cross-cutting-refactor   design=0.08 impl=0.18
+item: tui-screen               design=0.12 impl=0.24
+item: tui-screen               design=0.10 impl=0.20
+item: atlas-docs               design=0.02 impl=0.05
+item: milestone-review         design=0.00 impl=0.14
+item: smaller-go-module        design=0.04 impl=0.16
+item: cross-cutting-refactor   design=0.08 impl=0.16
+item: smaller-go-module        design=0.05 impl=0.18
+item: smaller-go-module        design=0.03 impl=0.12
+item: real-api-discovery       design=0.00 impl=0.18
+item: atlas-docs               design=0.02 impl=0.05
+item: milestone-review         design=0.00 impl=0.14
+item: smaller-go-module        design=0.04 impl=0.16
+item: smaller-go-module        design=0.02 impl=0.14
+item: atlas-docs               design=0.02 impl=0.05
+item: milestone-review         design=0.00 impl=0.16
+design-buffer: 0.15
+total: 6.88
+```
+
+Derived after the plan cleared plan-quality (#187), in plan-task order: rows 3–9
+are M1, 10–14 M2, 15–20 M3, 21–27 M4, 28–31 M5.
+
+Familiarity **1.0**. The design is warm — three code surveys in this session read
+the input path, the screen/selection stack and the ask/store path end to end — but
+**no code has been written**, so there is no editing warmth to discount for. The
+plan carries the `pasteScanner` implementation verbatim and full test bodies for
+M1/M2; that is spec quality, priced through the ×0.2 design discount, not
+familiarity.
+
+Design carries v2's ×0.2 spec-quality discount on every code row: the plan
+pre-resolves the scanner's contract, the three-space coordinate mapping, the mark
+precedence rules, the `[sel]` grammar and the ask-outcome predicate. Implementation
+is v3.1's 40% of the v2 table.
+
+- **`issue-spec` is NOT discounted — it IS the design**, and it is priced inside the
+  table's undiscounted 0.5–1.5 band. **0.90** covers a long exploration that moved
+  the unit twice (word → concept → structure), four operator refinements to the
+  selection model, three parallel code surveys, the durable plan, and two
+  fresh-eyes plan-document reviews whose findings were substantive — one reviewer
+  built and ran the paste scanner and measured its failure. Near the top of the
+  band because two *design* errors were found and corrected here rather than in
+  code: a scanner that double-counted re-presented bytes, and a `phraseGap` claim
+  that did not hold.
+- **`plan-rounds` counts two plan-quality rounds as SPENT, not budgeted.** Round 1
+  returned four Importants (the unreachable drain, the unhandled untrusted-input
+  class, the unstated coordinate mapping, the uncollapsed ask outcomes); round 2
+  disposed of all six and passed. Priced at #5's measured 0.10/0.12 for the pair,
+  following #24's rule that a round this block can already see is counted.
+- **Two `greenfield-go-module` rows, and only two.** `paste.go` and `passage.go`
+  are new files with new state and no mirror in the tree. Everything else extends
+  something that exists, which is `smaller-go-module` territory.
+- **Four `cross-cutting-refactor` rows**, each earning it by call-site count rather
+  than by feel: `decodeKey` → method (39 sites, plus fuzz-freshness), the three
+  `view.Draw` sites, `highlightRow`'s signature plus its new inverse, and
+  `parseREPLLine`'s `hasCurrent` → session-state across three non-test and ~11 test
+  callers.
+- **Two `tui-screen` rows** for Tasks 3.3 and 3.4 — mark painting and the
+  click/drag gesture are screen state machines with their own tests, which is what
+  that primitive names.
+- **One `real-api-discovery`** for Task 4.4's live conformance row: it reaches the
+  real proxy, and the persona it defends ("hold the language, drop the background")
+  is exactly the kind of prompt claim that needs a real answer to falsify.
+- **One `milestone-review` per Mx, five in total**, because each `Mx` row in the
+  Plan commits to its own `sdlc milestone-close`. The last is priced slightly
+  higher (0.16) as the issue close rather than a milestone.
+- Design buffer **+15%** for a thorough plan doc. 2.29 × 1.15 + 4.25 = 6.88.
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
 
 ## Plan
 
