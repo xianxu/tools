@@ -281,7 +281,7 @@ const (
 	// RegionOriginLang by name is a second copy of "these are all the kinds",
 	// and a third kind added above this line would simply never be exercised —
 	// which is Done-when 7 ("one registry, not two special cases") quietly
-	// failing. Same move TestEveryEnabledMouseModeIsDecoded makes with mouseOn.
+	// failing. Same move TestEveryEnabledInputModeIsDecoded makes with the terminal-mode enable constants.
 	numRegionKinds
 )
 

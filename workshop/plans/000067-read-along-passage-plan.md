@@ -19,7 +19,6 @@
 | Name | Lives in | Status |
 |------|----------|--------|
 | `pasteScanner` | `cmd/define/paste.go` | new |
-| `spansToStyled` | `cmd/define/highlight.go` | new |
 | `passage` | `cmd/define/passage.go` | new |
 | `wordAtCell` | `cmd/define/passage.go` | new |
 | `markSet` | `cmd/define/marks.go` | new |
@@ -1140,3 +1139,39 @@ Recorded so a reviewer does not read them as omissions (ARCH-PURPOSE — these a
 - **A new `RegionKind` for passage words.** Resolved away in Chunk 3: the passage is a surface, not a set of regions.
 - **Persisting the passage across restarts.** The passage is transient; the residue (the deck word) is what persists.
 - **Relaxing the dictionary-hit admission rule** so non-headword phrases can be learned. Recorded as revisitable once there is usage data.
+
+---
+
+## Revisions
+
+### 2026-09-16 — M1 as shipped
+
+Recorded because a plan a reader trusts must not contradict the tree. Each item is
+a deliberate departure, not drift.
+
+- **The parse boundary is `sanitisePasteBody` in `paste.go`, not `newPassage`.**
+  Task 1.2b put it in a function M2 creates, so its tests referenced a symbol that
+  did not exist yet. The scanner is the better home anyway: the bytes become a
+  typed value at the moment they stop being a wire format, and nothing downstream
+  can forget to ask.
+- **A paste inserts into the line.** The plan had `runEditor` intercept `KeyPaste`
+  and leave it without a destination until M2. That would have REGRESSED the case
+  that already worked — a pasted word typed itself in fine; only a pasted newline
+  misbehaved. `Apply` now takes a paste as one atomic insertion.
+- **No `spansToStyled`.** The plan's entity table added one, on the claim that no
+  spans-to-styled helper existed. `highlightRegion` (`highlightwriter.go:269`) is
+  exactly that and already has seven callers; the row is removed and the passage
+  uses it.
+- **`TestEveryEnabledMouseModeIsDecoded` is now `TestEveryEnabledInputModeIsDecoded`,**
+  since it no longer reads only `mouseOn`.
+- **A new rule the plan did not have: a paste is abandoned on a control byte.**
+  The M1 boundary review found (C1/BR-1) that an unterminated `ESC[200~`
+  permanently deafened the input path — raw mode disables ISIG, so Ctrl-C is
+  reachable only as a decoded `KeyInterrupt`, and the program could not be quit
+  from the keyboard. The plan named this case as a "known limit" and promised a
+  pinning test; neither shipped, and the limit was worse than stated because the
+  drain latched. `indexPasteAbandon` ends an open paste at the first byte that
+  cannot be paste text, which restores exactly the pre-milestone behaviour.
+- **M2 adds `pasteIsPassage`,** which the plan did not specify. It reuses
+  `readsAsQuestion`'s four-word floor rather than inventing a threshold: one to
+  three words on one line is a headword shape, and `hot dog` is a dictionary entry.

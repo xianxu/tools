@@ -73,6 +73,22 @@ Typing, scrolling or changing screens clears the highlight. If copying fails,
 click the failure notice to retry. When type-ahead is full, a notice reports that
 the newest key was ignored; mouse selection and interrupts remain responsive.
 
+### Paste
+
+Pasting works properly now: `define` asks the terminal to bracket pastes, so a
+newline inside pasted text no longer acts as a return and submits the line
+mid-paste.
+
+What a paste becomes depends on its shape. One to three words on a single line
+goes into the line you are typing — that is someone pasting `sycophantic` to look
+it up. Four or more words, or anything containing a newline, is reading material
+and becomes the passage.
+
+A paste is capped at **1000 characters** — a sentence to a paragraph. Over that it
+is refused with a message rather than half-taken, because a passage you can only
+partly see would get you an answer about text that is not on screen. Characters,
+not bytes, so a paragraph of Chinese or Japanese is a paragraph.
+
 ### The directory is the deck, so it asks first
 
 The directory you run `define` in **is** the deck. That makes running it in the

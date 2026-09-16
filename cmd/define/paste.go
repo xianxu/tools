@@ -59,7 +59,32 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 		body = buf[opened:]
 	}
 
-	if end := bytes.Index(body, []byte(pasteEnd)); end >= 0 {
+	// A paste is TEXT, and sanitisePasteBody already says what that means: every
+	// control rune but newline and tab is stripped. So a control byte arriving
+	// inside an OPEN paste means the terminal never closed it — the paste is
+	// malformed, and waiting for a closer that is not coming is not an option.
+	//
+	// Raw mode disables ISIG, so Ctrl-C is reachable ONLY as a decoded
+	// KeyInterrupt. A paste that swallows it makes the program unquittable from
+	// the keyboard, which is what an earlier version of this file did: under the
+	// cap it returned 0 forever and readInput never advanced its buffer; over the
+	// cap `draining` latched and discarded every byte until a closer that never
+	// came. Found by the M1 boundary review, reproduced through the real
+	// readInput goroutine.
+	//
+	// Abandoning restores exactly the behaviour before this milestone: the start
+	// marker decodes as an inert unmodelled sequence and the rest is ordinary
+	// input.
+	closer := bytes.Index(body, []byte(pasteEnd))
+	if quit := indexPasteAbandon(body); quit >= 0 && (closer < 0 || quit < closer) {
+		s.draining = false
+		if opened > 0 {
+			return Key{Kind: KeyUnknown, Raw: []byte(pasteStart)}, opened
+		}
+		return Key{}, 0
+	}
+
+	if end := closer; end >= 0 {
 		// An embedded closer ends the paste — that IS the protocol, and the
 		// remainder is ordinary input. Decided rather than inherited, because
 		// the remainder can contain a carriage return.
@@ -150,4 +175,19 @@ func pasteLineRunes(s string) []rune {
 		out = append(out, r)
 	}
 	return out
+}
+
+// indexPasteAbandon finds the first byte that cannot be inside a paste.
+//
+// The set is the control bytes the program acts on regardless of mode —
+// interrupt and end-of-file — because those are the two the reader must never
+// lose. Newline and tab are deliberately absent: they are paste text, which is
+// the whole reason bracketing exists.
+func indexPasteAbandon(b []byte) int {
+	for i, c := range b {
+		if c == 0x03 || c == 0x04 {
+			return i
+		}
+	}
+	return -1
 }

@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -160,8 +164,11 @@ func TestAPastedEscapeNeverLeavesTheBoundary(t *testing.T) {
 func TestTheBoundaryKeepsNewlinesAndDropsOtherControls(t *testing.T) {
 	var s pasteScanner
 	k, _ := s.scan(wholePaste("a\nb\tc\x00d\x07e"))
-	if got := string(k.Raw); got != "a\nb\tc de" && got != "a\nb\tcde" {
-		t.Errorf("Raw = %q; want the newline and tab kept and NUL/BEL dropped", got)
+	// ONE outcome, not either: a test that accepts both pins neither, and NUL/BEL
+	// handling is exactly the thing a later refactor would change silently.
+	// Control bytes are DROPPED, leaving the text either side adjacent.
+	if got, want := string(k.Raw), "a\nb\tcde"; got != want {
+		t.Errorf("Raw = %q, want %q — newline and tab kept, NUL and BEL dropped", got, want)
 	}
 	if !strings.Contains(string(k.Raw), "\n") {
 		t.Error("the newline was dropped; a passage has lines")
@@ -330,13 +337,21 @@ func TestARefusedPasteLeavesTheLineAlone(t *testing.T) {
 	}
 }
 
-// End to end through the loop: a paste reaches the line, and the session does
-// not submit or look anything up on the way.
+// End to end through the loop: a HEADWORD-SHAPED paste reaches the line, and
+// the session does not submit or look anything up on the way.
+//
+// Narrowed in M2, which gave reading material a destination of its own: a paste
+// with a newline or four or more words now becomes the PASSAGE (pasteIsPassage),
+// and TestThePassageSurvivesALookup owns that half. What stays here is the case
+// this milestone was about — a paste arriving as one key, into the line, without
+// submitting. Apply's own contract is still asserted directly in
+// TestAPastedNewlineDoesNotSubmitAndBecomesASpace, which is a unit test of a pure
+// function rather than of the classification above it.
 func TestEditorLoopTakesAPasteWithoutSubmitting(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 	view := paintInto(&out)
-	ks := keySeq(Key{Kind: KeyPaste, Raw: []byte("hot\ndog")})
+	ks := keySeq(Key{Kind: KeyPaste, Raw: []byte("hot dog")})
 	runEditor(t.Context(), ks, nil, rig.deps, opt,
 		console{view: view, finish: finish, stdout: &out, stderr: &errb})
 	if !strings.Contains(out.String(), "hot dog") {
@@ -358,5 +373,116 @@ func TestEditorLoopReportsARefusedPaste(t *testing.T) {
 		console{view: view, finish: finish, stdout: &out, stderr: &errb})
 	if !strings.Contains(errb.String(), "longer than") {
 		t.Errorf("the refusal was silent; stderr = %q", errb.String())
+	}
+}
+
+// C1 from the M1 boundary review. An unterminated ESC[200~ used to deafen the
+// input path FOREVER: under the cap scan returned 0 and readInput never advanced
+// its buffer; over the cap the drain latched and discarded everything until a
+// closer that never came. Raw mode disables ISIG, so Ctrl-C is reachable only as
+// a decoded KeyInterrupt — the program could not be quit from the keyboard.
+//
+// Driven through the real decoder, in the caller's re-presenting shape.
+func TestAnUnterminatedPasteDoesNotSwallowEnterOrInterrupt(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"under the cap", "hello"},
+		{"over the cap, draining", strings.Repeat("x", maxPasteRunes+50) + "hello"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var d keyDecoder
+			buf := []byte(pasteStart + tc.body + "\r\x03")
+			var got []KeyKind
+			for len(buf) > 0 {
+				k, used := d.decode(buf)
+				if used == 0 {
+					break
+				}
+				got = append(got, k.Kind)
+				buf = buf[used:]
+			}
+			if !slices.Contains(got, KeyEnter) {
+				t.Errorf("Enter never emerged from an unterminated paste: %v", got)
+			}
+			if !slices.Contains(got, KeyInterrupt) {
+				t.Errorf("Ctrl-C never emerged: the program cannot be quit from the keyboard (%v)", got)
+			}
+		})
+	}
+}
+
+// A well-formed paste still wins: the abandon rule must not fire on a closer
+// that is already present.
+func TestAClosedPasteIsUnaffectedByTheAbandonRule(t *testing.T) {
+	k, used := decodeKey(append(wholePaste("fine"), 0x03))
+	if k.Kind != KeyPaste || string(k.Raw) != "fine" {
+		t.Errorf("a closed paste followed by Ctrl-C decoded as %v %q", k.Kind, k.Raw)
+	}
+	if used != len(wholePaste("fine")) {
+		t.Errorf("used = %d, want the paste only", used)
+	}
+}
+
+// BR-3 from the M1 boundary review: readInput's long-lived keyDecoder was the
+// one piece of production state this milestone introduced, and reverting it to
+// the stateless decodeKey left the whole suite green.
+//
+// The FIRST version of this test did not fix that — it split a small paste
+// across reads and passed under the mutation. The reason is the scanner's own
+// contract: it accumulates nothing and the caller re-presents its whole buffer,
+// so a fresh decoder handles a split paste perfectly well. The buffer was never
+// advanced, so nothing was lost.
+//
+// What genuinely needs continuity is the DRAIN, which is the only state the
+// buffer cannot carry. An over-cap paste CONSUMES as it goes, so the caller does
+// advance — and a per-call decoder then starts the next read with no paste open
+// and hands the discarded body to the line as keystrokes. Verified by mutation:
+// this test goes red when `dec.decode` is replaced by `decodeKey`.
+func TestReadKeysCarriesTheDrainAcrossReads(t *testing.T) {
+	pr, pw := io.Pipe()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	keys := readKeys(ctx, pr, &interrupter{fn: cancel})
+
+	go func() {
+		pw.Write([]byte(pasteStart + strings.Repeat("x", maxPasteRunes+50)))
+		time.Sleep(50 * time.Millisecond)
+		pw.Write([]byte("tail body" + pasteEnd))
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case k := <-keys:
+			switch k.Kind {
+			case KeyPasteRefused:
+				return // the drain survived and ended at its closer
+			case KeyRune:
+				t.Fatalf("a drained body byte reached the line as the rune %q — the drain did not survive the read", k.Rune)
+			}
+		case <-deadline:
+			t.Fatal("the drain never ended")
+		}
+	}
+}
+
+// BR-6: the plan required this to be a DECISION rather than an inherited side
+// effect. A KeyPaste is a non-pointer, non-KeyUnknown key, so the router cancels
+// any gesture in flight (selection_input.go). That is right — a paste replaces
+// the passage, so a drag over the old one means nothing — but it is only right
+// on purpose.
+func TestAPasteCancelsALiveDrag(t *testing.T) {
+	l := newLiveScreen(&bytes.Buffer{}, 24, 80)
+	defer l.Stop()
+	l.Draw("› ", []string{"the slow precession of the equinox"})
+
+	l.pointerLocked(selectionPress, selectionPoint{row: 0, col: 0})
+	l.pointerLocked(selectionMotion, selectionPoint{row: 0, col: 8})
+	if !l.gesture.active {
+		t.Fatal("the drag never started; the rest of this test would be vacuous")
+	}
+
+	cancelPointerInput(l, Key{Kind: KeyPaste, Raw: []byte("new passage entirely")}, true)
+	if l.gesture.active {
+		t.Error("a paste left a drag in flight; the next release would select across replaced text")
 	}
 }
