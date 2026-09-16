@@ -126,7 +126,7 @@ Direct pure-core tests use independent source-order and terminal-cell oracles; i
 - [x] Update README/atlas to supersede text-only tint. Add integration-registry rows if new conformance files are introduced.
 - [x] Run full Go suite, focused race checks, bounded source/stream fuzz, vet, Linux build and diff check. Run strict native `rendir` conformance and real PTY dark/light/off tests at multiple widths.
 - [x] Capture actual rendered `rendir`, inspect dark/light output visually, and show the operator concrete output. Use the terminal-state oracle above; no visual-completion claim based solely on the design mockup.
-- [ ] Run the function-level mutations above, commit, pass the single SDLC close review, then publish.
+- [x] Run the function-level mutations above, commit, pass the single SDLC close review, then publish.
 
 Commands: `go test ./... -count=1`; focused `go test -race ./cmd/define/...`; bounded new fuzz targets; `go vet ./...`; `GOOS=linux CGO_ENABLED=0 go build ./...`; strict relevant `-tags conformance` tests; `git diff --check`. Exact focused test names land with each regression; passing requires the independent behavioral assertions above, not only unchanged text snapshots.
 
@@ -191,3 +191,9 @@ shared physical display-unit boundaries for exclusion slicing. Legacy WriteRegio
 retains paired legacy wrapping/mapping outside the structured-output path.
 Production-path regressions through writePracticePresentation into liveScreen and
 through the regionWriter fallback fail before and pass after these corrections.
+
+### 2026-09-15 — acceptance and publication
+
+Close round 4 returned SHIP: all four findings addressed, none new. Final full
+suite (127.818s), race and strict native/PTY checks passed in the implementation
+session. Published PR #49; deterministic merge/archive is the remaining SDLC step.
