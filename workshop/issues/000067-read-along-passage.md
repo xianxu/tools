@@ -180,9 +180,15 @@ enough to block design.
 
 2. **Two decorations on one token, and ANSI does not nest.** A marked word may
    ALSO be a deck word — exactly what the 2026-09-16 screenshot shows, where
-   `equinox` and `synodic` came back green. Blue background plus green foreground
-   have to compose on the same token, and the atlas is explicit about why that is
-   hard: *"`RenderLine` writes `knownOn + word + sgrOff + inputOn` for each known
+   `equinox` and `synodic` came back green.
+
+   **Superseded in part (see Revisions, 2026-09-16, mark precedence):** they do
+   NOT compose. An explicit fg/bg pair overrides what it re-asserts over, so a
+   marked deck word renders in the MARK treatment and loses its green for as long
+   as the mark lasts. The mark is the salient state and it is short-lived.
+
+   What remains true, and is the whole reason this is a collision, is the ANSI
+   hazard underneath: *"`RenderLine` writes `knownOn + word + sgrOff + inputOn` for each known
    span: without re-opening `inputOn`, everything after the first highlighted word
    goes plain."* A `sgrOff` emitted by the deck highlighter would kill a selection
    background set by a different writer. There must be ONE composition point, not
@@ -558,15 +564,19 @@ worth deciding in the brainstorm rather than discovering later.
   word under it.
 - Marks accumulate, stay visible in their own treatment, and clicking a marked
   span unmarks it.
-- A marked word that is ALSO a deck word renders both treatments correctly, and
-  the token after it is not left plain (the ANSI-nesting regression).
+- A marked word that is ALSO a deck word renders in the MARK treatment, not in
+  both and not in green — and the token AFTER the mark still carries the style it
+  had (the ANSI-nesting regression). The second half needs a test that inspects
+  the style after the span: stripping escapes is exactly what hides a lost one.
 - Marking N spans produces ONE explanation covering the passage AND each mark,
   asserted through the LLM fake by reading the real request — including that the
   marks arrive positioned within the passage, with a passage containing a literal
   bracket among the rows.
-- An explained span with a dictionary entry enters the deck and appears in a
-  later recall exercise; one without is explained and not retained. Both
-  directions covered.
+- An explained span with a dictionary entry enters the deck and is SCHEDULABLE —
+  it reaches recall by the ordinary route, because `harvest` authors items for
+  deck words. One without an entry is explained and not retained. Both directions
+  covered. (Reaching recall with the PASSAGE's own sentence as material is a
+  separate issue; see Revisions.)
 - A marked word is distinguishable from a typed lookup in the event log.
 - Pasting multi-line text does not submit on the embedded newline.
 - A bare Enter with marks present asks; with a passage but no marks it does the
@@ -595,8 +605,7 @@ boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
       its own task name, `parseREPLLine` marks-aware, the local nudge, and the
       global level-default reversal.
 - [ ] M5 — the words become deck words: `CaptureMarked` through the one `Upsert`,
-      the passage re-rendering green, and (droppable) the authentic sentence as a
-      practice item.
+      the word becoming schedulable, and the passage re-rendering green.
 
 ## Log
 
@@ -757,3 +766,32 @@ Delta:
   structurally impossible for this behaviour.
 - Admission routes through `Capturer` (one `Upsert`, `vocab.Add` only after the deck
   accepts) — which is also what makes the green honest.
+
+### 2026-09-16 — mark precedence recorded; the authentic sentence split out
+
+Reason: a fresh-eyes plan review caught the plan citing this issue for a decision
+this issue stated the opposite of; and investigating distractors showed the
+authentic-sentence task was larger than scoped.
+
+Delta:
+- **Mark precedence is now recorded here, where the plan wrongly claimed it already
+  was.** A marked deck word renders in the mark treatment and loses its green while
+  marked; the two do not compose. Collision 2 and the matching Done-when are
+  amended. The ANSI hazard under collision 2 is unchanged and still governs.
+- **The authentic sentence as practice material is OUT of this issue.** It cannot
+  stand alone: distractors come from the deck's BANDED words via `pickDistractors`
+  (`harvest.go:390`) and are then vetoed, so the sentence replaces the authoring
+  step, not the pipeline. Worse, wild prose routinely FAILS the author prompt's own
+  requirements — it must point at the word without defining it, and never gloss it,
+  *"not as an appositive, not as a relative clause"* — and expository prose defines
+  terms in place, which is exactly the appositive that makes a reading test rather
+  than a vocabulary test. A real sentence needs MORE judging, not less. This
+  corrects the earlier "an authentic sentence is better material than an authored
+  one" note above: it is more REAL, not automatically better as a stem.
+- It also lands on an unfinished thread: `usage/` already caches real sentences per
+  word (news + NOAD examples) and `bothSources` is wired into `deps`, but `Usages`
+  has NO CALLER — the atlas's *"#10's authoring step is the consumer"* never
+  happened. Absorbing it here would have made this issue a second stalled producer.
+  Filed separately so one consumer serves all three sources.
+- Done-when for recall is corrected accordingly: admission alone makes a word
+  schedulable, because `harvest` authors items for deck words by the ordinary route.
