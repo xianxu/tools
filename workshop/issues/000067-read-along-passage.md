@@ -45,14 +45,33 @@ Draft from the operator's request (2026-09-16); **needs a brainstorm before a
 plan.**
 
 **The gesture.** Paste a passage into `define`. It stays on screen. Click a word,
-or drag across a phrase, to mark it opaque. `define` explains the marked spans in
-the context of that passage.
+or drag across a phrase, to mark it opaque. Marks ACCUMULATE. When the reader
+asks, `define` explains the passage with the marked spans called out.
 
-**Selections are a SET, answered together.** N marked spans in one passage
-produce ONE model call, not N. The relations among the marked words are most of
-what a reader is missing, and per-span glosses discard exactly that — the same
-finding that runs through this whole line of work: the unit is the structure, not
-the node.
+**A click is a one-word drag** (operator, 2026-09-16). It exists so selecting a
+single word is easy, not so it means something different — both gestures produce
+a SPAN, differing only in how the span is derived: word-snapped via `wordRuns`
+for a click, anchor→end for a drag. One path, not two (ARCH-DRY).
+
+**Marks persist and are visible as a set.** A second selection does not replace
+the first: earlier marks stay on screen in a distinct treatment (operator
+proposes a blue background) so the reader can see what is currently being asked
+about. Selecting is therefore a TOGGLE over a set — clicking a marked word
+unmarks it — not an append-only list.
+
+**The request is the whole sentence with its marks inline** (operator,
+2026-09-16). The reader's actual question is:
+
+> what does this mean: "this is a whole sentence about [some topic] that user
+> doesn't [understand]"
+
+So the model answers BOTH — the passage as a whole, AND each bracketed span. This
+settles the set-vs-per-span question: you cannot answer "what does this sentence
+mean" N times. ONE call, one passage, marks carried inline.
+
+Inline markers rather than a passage plus a list of spans, because position is
+then unambiguous: a word occurring twice in the passage needs no occurrence
+index, the bracket is already at the right one.
 
 **The dictionary is the admission gate to the deck.** Every explained span is run
 through the dictionary — the classifier `define` already uses for free-form input
@@ -107,8 +126,9 @@ a registry that was built anticipating a third consumer (ARCH-DRY):
 
 ### Open questions for the brainstorm
 
-- Does a marked span explain on release, or does the reader mark several and then
-  ask? (Set-wise answering argues for the second; immediacy argues for the first.)
+- ~~Explain on release, or mark several then ask?~~ **Settled 2026-09-16:**
+  accumulate, then ask — the request is the whole sentence with marks in it.
+  Still open: what the ask gesture IS (Enter? a key? a click outside?).
 - Word regions must survive wrapping — same class as `phraseGap`, which already
   stops a wrapped `hot\n  dog` forming a false phrase. Reuse or extend?
 - A dragged phrase with no dictionary entry is still learnable (`at the zenith
@@ -121,13 +141,63 @@ a registry that was built anticipating a third consumer (ARCH-DRY):
 - Where does the passage live — session-only, or on disk like every other context
   source? (Compare #56, where the transcript is the one in-memory exception.)
 - Does this compose with `/bilingual` and #64's interaction stage?
+- What marker does a selection use? **Not a bare `[...]`** — see the collision
+  below. And what escapes a literal bracket already in the passage?
+- Does an explained passage become the example sentence for the deck items its
+  marks produce? (See "an authentic sentence" below.)
+
+### Three collisions the design has to answer
+
+1. **The bracket grammar is already taken.** `askSystem` reserves
+   `[lang=es]…[/lang]` in the ANSWER direction and instructs the model to escape
+   literal brackets as `&#91;`/`&#93;` (`askctx.go:153`). Introducing a second,
+   different meaning for `[...]` in the PROMPT direction invites the model to
+   confuse the two or echo them back. The selection marker must be chosen against
+   that existing grammar, and the passage's own literal brackets need an escaping
+   rule in the prompt direction too — which today only exists for the answer.
+
+2. **Two decorations on one token, and ANSI does not nest.** A marked word may
+   ALSO be a deck word — exactly what the 2026-09-16 screenshot shows, where
+   `equinox` and `synodic` came back green. Blue background plus green foreground
+   have to compose on the same token, and the atlas is explicit about why that is
+   hard: *"`RenderLine` writes `knownOn + word + sgrOff + inputOn` for each known
+   span: without re-opening `inputOn`, everything after the first highlighted word
+   goes plain."* A `sgrOff` emitted by the deck highlighter would kill a selection
+   background set by a different writer. There must be ONE composition point, not
+   two writers layering escapes independently — same reason `highlightWriter`
+   exists rather than definitions and answers each growing their own.
+
+3. **"A click on ordinary text is NOTHING" stops being true.** That is a stated
+   invariant (atlas §Clickable regions: *"no beep, no message. Pointing at a word
+   that offers nothing is not an error"*), and inside a passage every word now
+   offers something. This is a real change to a documented rule, scoped to the
+   passage surface — it should be written down as scoped, not quietly broken. Note
+   the same gesture also keeps its old meaning elsewhere: a click on a rendered
+   entry's headword still plays it.
+
+### An authentic sentence is better material than an authored one
+
+Today `items/<lang>/` holds practice sentences the MODEL writes, gated by an
+entailment judge and a veto (atlas §Authored items). A passage the learner
+actually met needs no authoring, no judge and no veto — it is real, it is the
+context in which they first hit the word, and it is already on screen. If a
+marked word enters the deck, the sentence it was marked in is the obvious example
+to carry with it. That is a quality improvement and a model-call saving at once;
+worth deciding in the brainstorm rather than discovering later.
 
 ## Done when
 
 - A pasted passage stays on screen and its words are individually clickable;
-  dragging selects a phrase across word boundaries.
-- Marking N spans produces ONE explanation that resolves them against the
-  passage, asserted through the LLM fake by reading the real request.
+  dragging selects a phrase across word boundaries; a click selects exactly the
+  word under it.
+- Marks accumulate, stay visible in their own treatment, and clicking a marked
+  span unmarks it.
+- A marked word that is ALSO a deck word renders both treatments correctly, and
+  the token after it is not left plain (the ANSI-nesting regression).
+- Marking N spans produces ONE explanation covering the passage AND each mark,
+  asserted through the LLM fake by reading the real request — including that the
+  marks arrive positioned within the passage, with a passage containing a literal
+  bracket among the rows.
 - An explained span with a dictionary entry enters the deck and appears in a
   later recall exercise; one without is explained and not retained. Both
   directions covered.
@@ -162,3 +232,21 @@ framings were tried and discarded on the way, both worth not re-deriving:
 Also discarded: piping the harvested `Domain` into `askContext`. Bare session
 words were already enough for the model to infer "astronomical prose" unaided, so
 that would solve a problem not currently hurting.
+
+## Revisions
+
+### 2026-09-16 — operator refinement of the selection model
+
+Reason: four follow-up asks in the filing conversation, before any brainstorm.
+
+Delta:
+- Multi-select made explicit; marks ACCUMULATE and persist with their own visual
+  treatment; selection is a toggle over a set.
+- A click is defined as a one-word drag — a convenience, not a second meaning.
+- The request representation is now the whole passage with marks INLINE, and the
+  model answers the passage as well as each mark. This CLOSES the open question
+  of explain-on-release vs accumulate-then-ask, in favour of the latter.
+- Added three collisions the earlier draft missed: the reserved `[lang=…]` bracket
+  grammar, ANSI composition of a selection background with the deck highlight,
+  and the now-scoped "a click on ordinary text is nothing" invariant.
+- Added the authentic-example-sentence opportunity against `items/<lang>/`.
