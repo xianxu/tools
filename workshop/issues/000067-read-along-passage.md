@@ -212,6 +212,75 @@ reachable via `/pron`.
   present, the two diverge unless the scoping is written down. Same family as
   collision 3 above — one invariant, two places it is now conditional.
 
+### The line classifier, corrected — and where marking actually lives
+
+Stated during the filing conversation and corrected against the code, because the
+obvious framing ("one word = lookup, many words = infer") is the one the design
+deliberately rejects. **Word count is not the signal — the dictionary is.**
+`hot dog` and `a priori` are multi-word LOOKUPS; only a MISS is classified. A
+one-word miss is *not found*, never a question.
+
+| input | decided by | outcome |
+|---|---|---|
+| `/lang es` | `/` in column 1 | command |
+| `?hot dog` | forced hatch | question, dictionary never consulted |
+| `\how so` | forced hatch | lookup, question fallback suppressed |
+| any line NOAD has | **dictionary hit** | lookup — any word count |
+| miss, reads interrogative | `readsAsQuestion` | question |
+| miss, otherwise | — | not found |
+| blank, current word | `hasCurrent` | replay |
+| blank, nothing | — | nothing |
+| **blank, marks present** | **passage state** | **implicit "what does this mean"** |
+| **typed line, marks present** | **passage state** | **that question, passage + marks as context** |
+
+**Marking is not a third row of the TEXT classifier.** The first rows classify a
+line the user typed; the marking case has no text at all — it is a blank line plus
+out-of-band state, and Enter submits a SELECTION. So it extends the blank-line
+branch, which already reads session state through `hasCurrent`. Filed as "a row in
+the word/question classifier" it would pull passage state into the line parser and
+turn marks into syntax.
+
+The last two rows stay separate on purpose: an implicit *what does this mean* and
+an explicit typed question over the same marks are different requests, and the
+second is the more valuable one.
+
+**Undecided:** what a plain LOOKUP means while a passage is on screen. Mark
+`precession`, then type `zenith` — still a lookup, but should it carry the passage
+as context? Nearly free, probably right, nobody has decided it.
+
+### The default level, when there is no learner model
+
+Operator, 2026-09-16: absent a learner model, assume **a curious high school
+student**.
+
+This REVERSES a stated rule. `askSystem` currently says *"If the learner model is
+absent, write for a capable adult reader and do not guess at their level"*
+(`askctx.go:153`) — a deliberate refusal to guess, sitting under a comment calling
+the level sentence *"the sentence that makes the whole adaptive loop worth
+building."* Changing it is a reversal to record, not a tweak to slip in.
+
+It is the better default here, and for the reason the atlas already gives in a
+neighbouring case: an abstract instruction produces *"a confident generic
+answer."* "Capable adult reader" is exactly that shape. "Curious high school
+student" is concrete enough for a model to act on. Keep the word **curious** — it
+licenses going a little past the question, which is the whole point of the feature
+(*"slightly more surrounding information than a dictionary app"*).
+
+**Two things to settle:**
+
+1. **Scope.** Global, or read-along only? Two prompts carrying two different
+   defaults is a drift hazard (ARCH-DRY) — there should be ONE answer to "what
+   level do we assume," stated once. Near term that is a one-line edit to
+   `askSystem` that read-along inherits. Longer term it is the zero value of the
+   per-deck level record #64 introduces, and #67 should consume that rather than
+   restate it.
+2. **It is not a CEFR band.** `store.Band` is A1–C2, a LANGUAGE-PROFICIENCY scale,
+   and `ParseBand` maps #17's prose onto it. "Curious high school student" is an
+   assumption about PRIOR KNOWLEDGE, not vocabulary difficulty — a C1 reader can
+   still lack the astronomy. Those are separate axes, and collapsing the new
+   default into a band would lose precisely the thing this feature exists to
+   supply. Whatever holds it, it is not `Band`.
+
 ### An authentic sentence is better material than an authored one
 
 Today `items/<lang>/` holds practice sentences the MODEL writes, gated by an
@@ -301,3 +370,20 @@ by a successful lookup) and a precedent-backed precedence proposed. Two knock-on
 recorded: the two-boolean signature smell, and the scoping of the "headword click
 is a shortcut for bare Enter" invariant. One sub-case returned to the operator:
 blank Enter with a passage but no marks.
+
+### 2026-09-16 — line classifier corrected, default level set
+
+Reason: operator restated the decision table and set a default level.
+
+Delta:
+- Recorded the corrected classifier. The count-based framing is rejected: the
+  dictionary is the classifier, hits win at any word count, and a one-word miss is
+  not-found rather than a question.
+- Established that marking extends the BLANK-LINE branch, not the word/question
+  classifier — it is out-of-band state, not text. This changes where the code goes.
+- Split implicit "what does this mean" from an explicit typed question over the
+  same marks; they are different requests.
+- New undecided row: does a lookup carry the passage as context?
+- Default level with no learner model is "a curious high school student",
+  REVERSING `askSystem`'s "do not guess at their level". Scope (global vs
+  read-along) returned to the operator, and flagged that it is not a CEFR band.
