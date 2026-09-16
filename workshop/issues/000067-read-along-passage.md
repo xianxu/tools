@@ -233,16 +233,59 @@ one-word miss is *not found*, never a question.
 | **blank, marks present** | **passage state** | **implicit "what does this mean"** |
 | **typed line, marks present** | **passage state** | **that question, passage + marks as context** |
 
-**Marking is not a third row of the TEXT classifier.** The first rows classify a
-line the user typed; the marking case has no text at all — it is a blank line plus
-out-of-band state, and Enter submits a SELECTION. So it extends the blank-line
-branch, which already reads session state through `hasCurrent`. Filed as "a row in
-the word/question classifier" it would pull passage state into the line parser and
-turn marks into syntax.
+**Marking is a classifier INPUT that arrives out-of-band.** Two half-truths were
+traded before this landed, and the synthesis is sharper than either:
+
+- Marks are not text. The parser cannot read them off the line, so they are not
+  syntax and passage state must not be smuggled into the line string.
+- But marks are decisive EVIDENCE about the text. Operator, 2026-09-16: *"a line
+  of text with user marking is surely a sentence; a piece of text without it, you
+  are much less sure."* That is exactly right. `readsAsQuestion` exists to GUESS
+  prose-or-headword from shape — four words, a trailing `?`, a leading
+  interrogative. A mark is PROOF of prose, so the guess is not needed.
+
+So the heuristic arms of `readsAsQuestion` are the fallback for UNMARKED text, and
+marking short-circuits them. This is not a separate branch and it is not new
+syntax: it makes an existing classification certain. It also means the marked case
+is not only the blank-line branch — marked-and-typed is one decision too, which is
+a further argument for passing session state as ONE value rather than growing a
+second boolean.
 
 The last two rows stay separate on purpose: an implicit *what does this mean* and
 an explicit typed question over the same marks are different requests, and the
 second is the more valuable one.
+
+### A one-word miss could be a did-you-mean (separate issue)
+
+Operator, 2026-09-16: rather than reporting *not found*, let the model correct a
+typo — in a dictionary context it will find words that look or sound like it.
+
+Right direction, and there is no cheaper offline route: `complete.go` is PREFIX
+typeahead over History, not a speller, and Dictionary.app matches inflections
+(`bargainer` → `bargain`) but not misspellings. So a model call is the honest
+mechanism.
+
+One free pass first, though: the deck and History are local word lists already in
+memory, so edit-distance against words THIS learner has actually seen catches the
+common case — retyping a word you looked up before — at no cost and no latency.
+Note `sycophanti` is a literal prefix of `sycophantic`, so typeahead already
+offers it WHILE typing; the miss only survives when the suggestion is ignored.
+
+**Three constraints keep this from being a blanket change:**
+
+1. **`-raw` never asks.** A stated absolute enforced at `mayAsk`, precisely because
+   guarding only one route left three of six cells asking anyway. A typo in
+   scripting mode stays not-found, exit 1.
+2. **History keeps typos on purpose** (#20) so they stay Up-arrow recallable, and
+   the atlas notes that highlighting a misspelling as a known word *"is the
+   opposite of reinforcement."* If a typo auto-resolves, `recallLine` has to decide
+   which form is the canonical re-submittable one — the typo or the correction.
+3. **The event log distinguishes a not-found lookup from an ask**, deliberately:
+   *"a question recorded as a not-found lookup is data that was never a lookup."* A
+   did-you-mean is arguably neither, and #17 folds over these events.
+
+**This belongs in its own issue**, not #67: it changes the console classifier
+globally rather than the read-along surface.
 
 **Undecided:** what a plain LOOKUP means while a passage is on screen. Mark
 `precession`, then type `zenith` — still a lookup, but should it carry the passage
@@ -411,3 +454,18 @@ Delta:
   Two dials in opposite directions — HOLD the language level, DROP the assumed
   background. Guarding the failure mode (simplifying the hard word away) is a
   live conformance check, not just a prompt line.
+
+### 2026-09-16 — marking reclassified, did-you-mean split out
+
+Reason: operator pushed back on two points; both improved the model.
+
+Delta:
+- Marking is neither syntax nor merely a separate branch: it is a classifier INPUT
+  arriving out-of-band, and it makes `readsAsQuestion`'s heuristics unnecessary
+  rather than competing with them. The heuristics are the unmarked fallback.
+  Supersedes the previous revision's "extends the blank-line branch" framing,
+  which was true but too narrow — marked-and-typed is one decision too.
+- Recorded the did-you-mean proposal for one-word misses, with its three
+  constraints (`-raw` asks never, History keeps typos deliberately, the event log
+  separates not-found from ask). Flagged as ITS OWN ISSUE — it changes the console
+  classifier globally, not this surface.
