@@ -265,13 +265,34 @@ typeahead over History, not a speller, and Dictionary.app matches inflections
 (`bargainer` → `bargain`) but not misspellings. So a model call is the honest
 mechanism.
 
-One free pass first, though: the deck and History are local word lists already in
-memory, so edit-distance against words THIS learner has actually seen catches the
-common case — retyping a word you looked up before — at no cost and no latency.
-Note `sycophanti` is a literal prefix of `sycophantic`, so typeahead already
-offers it WHILE typing; the miss only survives when the suggestion is ignored.
+**No local speller** (operator, 2026-09-16 — a local edit-distance pass over the
+deck/History was proposed and rejected). The deck is ALREADY in the prompt, so the
+model can spot the misspelling with no new machinery. Keeping it simple wins twice:
 
-**Three constraints keep this from being a blanket change:**
+- Edit-distance would need a threshold, tie-breaking, an auto-correct-vs-suggest
+  decision and tests around the near-misses — real surface for a case that is
+  otherwise free.
+- And it would cover the NARROWER half. It can only find a typo of a word the
+  learner has already seen; a learner mistyping a word they are meeting for the
+  FIRST time — the more common case — finds nothing locally and round-trips anyway.
+
+It is also BETTER, not merely simpler: the deck is a personalized ranking signal.
+`sycophanti` resolves to `sycophantic` because that word is in THIS learner's deck,
+where a generic speller would have no reason to prefer it over any other near
+neighbour.
+
+The plumbing already exists. `question` carries HOW it arrived, and the atlas notes
+that for an unforced question *"is not a word is true by construction"* — the
+provenance that makes a did-you-mean honest travels with the question already. What
+is needed is a prompt line licensing the correction (today `askSystem` says only
+*"Say plainly when you are unsure"*) plus routing a one-word miss to the ask.
+
+Note in passing that `sycophanti` is a literal prefix of `sycophantic`, so typeahead
+already offers it WHILE typing; the miss only survives when the suggestion is
+ignored.
+
+**Three constraints keep this from being a blanket change** — none of them touched
+by dropping the local speller, since they govern WHETHER to ask, not how to correct:
 
 1. **`-raw` never asks.** A stated absolute enforced at `mayAsk`, precisely because
    guarding only one route left three of six cells asking anyway. A typo in
@@ -512,3 +533,15 @@ Delta:
   an instruction ("click or drag what you don't understand, then press return")
   rather than a question back. The zero-marks-means-whole-passage alternative is
   recorded as declined-but-available.
+
+### 2026-09-16 — no local speller
+
+Reason: operator rejected the proposed edit-distance pass in favour of letting the
+model correct, since the deck is already in the prompt.
+
+Delta: local spell-correction dropped. Recorded the two reasons it is the better
+call — edit-distance covers only typos of words already seen, which is the narrower
+half, and the deck in context is a personalized ranking signal a generic speller
+could not match. Also recorded that `question` already carries the "the dictionary
+missed this" provenance, so the change is a prompt line plus routing, not plumbing.
+The three constraints are unaffected: they govern whether to ask, not how to correct.
