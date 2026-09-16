@@ -414,6 +414,33 @@ simply with no brackets in it, and it is the literal reading of "what does this
 mean: <sentence>". Declined because Enter is cheap to press and a passage is an
 expensive call, but it is a real option if the nudge proves annoying in practice.
 
+### Click-to-select applies to the ANSWER area too (operator, 2026-09-16)
+
+Once a click selects a word in a passage, the same gesture should work wherever
+text is on screen: **click a word in an answer and it is selected and copied to the
+clipboard.**
+
+This is the same rule, not a second feature — *a click is a one-word drag* — and it
+makes the codebase MORE consistent rather than less (ARCH-DRY):
+
+- A drag in the answer area already copies (`selectionCopy`, `selection.go:72`), and
+  `clipboardWriter` already exists for it. Click-to-copy reuses that effect
+  wholesale; only the span derivation is new, and it is the same word-snap the
+  passage surface needs.
+- So the word-snap helper is built ONCE and has two consumers from the start: copy
+  in an answer, mark in a passage. That is a good reason to build it EARLY, before
+  the passage surface, where it ships value on its own.
+
+**Precedence: regions win.** A click on a headword still plays it
+(`RegionHeadword`), a click on an ORIGIN language still plays it there. Word-snap
+applies to cells no region claims.
+
+**This generalises collision 3 rather than adding to it.** The invariant *"a click
+on ordinary text is NOTHING"* now becomes *"a click on ordinary text selects that
+word"* — everywhere, not just inside a passage. One uniform rule is easier to state
+and easier to test than a surface-conditional one, so this REPLACES the scoped
+exception the earlier revision proposed.
+
 ### An authentic sentence is better material than an authored one
 
 Today `items/<lang>/` holds practice sentences the MODEL writes, gated by an
@@ -576,3 +603,14 @@ Delta: settled the selection marker (`[sel]`, one grammar), the passage's home
 example sentence (in, droppable step), passage-as-lookup-context (yes), #64/bilingual
 composition (free), the non-headword rule (holds, revisitable) and wrapping (reuse
 `phraseGap`).
+
+### 2026-09-16 — click-to-select generalised to the answer area
+
+Reason: operator asked for click-to-select-and-copy in the answer area, not only in
+a passage.
+
+Delta: added it as a consumer of the SAME word-snap helper, to be built early since
+it ships independently (a drag already copies; only span derivation is new).
+Supersedes the scoped treatment of collision 3: "a click on ordinary text is
+nothing" becomes "a click on ordinary text selects that word" uniformly, with
+regions taking precedence where they exist.
