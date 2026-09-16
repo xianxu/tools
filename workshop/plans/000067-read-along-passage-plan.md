@@ -19,6 +19,10 @@
 | Name | Lives in | Status |
 |------|----------|--------|
 | `pasteScanner` | `cmd/define/paste.go` | new |
+| `sanitisePasteBody` | `cmd/define/paste.go` | new |
+| `indexPasteAbandon` | `cmd/define/paste.go` | new |
+| `pasteLineRunes` | `cmd/define/paste.go` | new |
+| `keyDecoder` | `cmd/define/key.go` | new |
 | `passage` | `cmd/define/passage.go` | new |
 | `wordAtCell` | `cmd/define/passage.go` | new |
 | `markSet` | `cmd/define/marks.go` | new |
@@ -1172,6 +1176,10 @@ a deliberate departure, not drift.
   pinning test; neither shipped, and the limit was worse than stated because the
   drain latched. `indexPasteAbandon` ends an open paste at the first byte that
   cannot be paste text, which restores exactly the pre-milestone behaviour.
-- **M2 adds `pasteIsPassage`,** which the plan did not specify. It reuses
-  `readsAsQuestion`'s four-word floor rather than inventing a threshold: one to
-  three words on one line is a headword shape, and `hot dog` is a dictionary entry.
+- **A second departure found in review round 2 (BR-12): the cap is two predicates,
+  not one.** `maxPasteRunes` is semantic and can only be judged on COMPLETE text,
+  at the closer; `maxPasteBytes` is the memory bound and is judged while the text
+  is still arriving. One predicate served both, and since `utf8.RuneCount` counts
+  each orphan byte of a split rune as a `RuneError`, a legal 1000-rune CJK paste
+  split at the wrong byte counted 1001 and was refused — on exactly the decks the
+  rune cap exists for.

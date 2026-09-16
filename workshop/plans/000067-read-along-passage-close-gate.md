@@ -128,6 +128,120 @@ rounds:
           round: 1
       boundary: M1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-16T15:55:32-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'Mutation-verified: stubbing indexPasteAbandon to never match reddens both rows of TestAnUnterminatedPasteDoesNotSwallowEnterOrInterrupt. Residual, acceptable: a quiet unterminated paste still swallows Enter until Ctrl-C/Ctrl-D, which is now the documented exit.'
+          round: 2
+        - id: BR-2
+          disposition: not-addressed
+          note: 'Suite is green at HEAD, but 3 of the 4 named sites remain: key_test.go:399 still says "Adding a mode to mouseOn", doc_sync_test.go:390 and :427 still name TestEveryEnabledMouseModeIsDecoded. currentTruthFiles (repo_guard_test.go:1738) excludes *_test.go, so no guard can ever see them.'
+          round: 2
+        - id: BR-3
+          disposition: addressed
+          note: 'Mutation-verified: replacing dec.decode(buf) with decodeKey(buf) at selection_input.go:178 reddens TestReadKeysCarriesTheDrainAcrossReads with "a drained body byte reached the line as the rune ''x''".'
+          round: 2
+        - id: BR-4
+          disposition: not-addressed
+          note: The Revisions section landed and spansToStyled is gone, but every M1 checkbox (Tasks 1.1-1.5, including the atlas item) is still unticked, and the Pure entities table still omits sanitisePasteBody, pasteLineRunes, indexPasteAbandon and keyDecoder.
+          round: 2
+        - id: BR-5
+          disposition: not-addressed
+          note: The cap is now documented, but README.md:80-83 describes M2 routing that does not exist at HEAD, and the behaviour BR-5 actually named — pasteLineRunes flattening newlines and tabs to spaces — is still absent from both README and atlas, as is the new abandon rule.
+          round: 2
+        - id: BR-6
+          disposition: not-addressed
+          note: 'TestAPasteCancelsALiveDrag calls cancelPointerInput directly, which cancels for every kind but KeyUnknown. Mutation-verified: adding "&& k.Kind != KeyPaste" to route''s condition at selection_input.go:47 leaves the suite green. Assert through pointerRouter.route.'
+          round: 2
+        - id: BR-7
+          disposition: not-addressed
+          note: paste.go:128 is still unicode.IsControl (category Cc only); no decision recorded in the plan's Revisions or the atlas.
+          round: 2
+        - id: BR-8
+          disposition: not-addressed
+          note: key.go:66 is byte-identical to the base; the struct doc still says Raw is an unmodelled sequence to be ignored.
+          round: 2
+        - id: BR-9
+          disposition: not-addressed
+          note: 'First half fixed — TestTheBoundaryKeepsNewlinesAndDropsOtherControls now pins "a\nb\tcde" exactly. Second half open: TestTheDrainDoesNotCutAStraddlingCloser (paste_test.go:134) still hands each scan a fresh buffer instead of the leftover the caller re-presents.'
+          round: 2
+        - id: BR-10
+          disposition: addressed
+          note: The M1 row now reads "the 1000-RUNE cap (runes, not bytes ...)", matching paste.go, the plan and the atlas.
+          round: 2
+      findings:
+        - id: BR-11
+          severity: Important
+          title: Prose committed in this window asserts M2 behaviour and names symbols the tree does not declare
+          detail: |-
+            This is the 2nd finding in family `doc-contradicts-type` (BR-8 is still open as the
+            1st), so do NOT fix these instances alone. The rule that covers all of them: prose
+            committed in a window may describe only what that window's tree contains — every
+            identifier it names must be declared at HEAD, and every behavioural claim must have a
+            test. Measured prevalence in this window, 3 forward-reference sites plus the 3
+            backward ones BR-2 left: README.md:80-83 claims a 4+-word or multi-line paste "becomes
+            the passage" (pasteIsPassage is not declared at HEAD; every paste goes into the line);
+            paste_test.go:344-346 cites pasteIsPassage and TestThePassageSurvivesALookup, neither
+            declared; paste.go:126-131 justifies the boundary by "the footer" and "the mark
+            painting", which M3 builds. The enumeration is mechanical and the repo already owns
+            half of it — TestPlanCitesTestsThatExist and TestPlanTablesNameEntitiesThatExist do
+            exactly this derivation for plan files, and TestNoArtifactNamesARetiredSymbol does the
+            backward half for currentTruthFiles. Extending that derivation to README, atlas and Go
+            doc comments (and dropping the *_test.go exemption for Test* names, which is what hid
+            BR-2's residual) closes both directions at once. ARCH-PURPOSE — the class, not the site.
+          family: doc-contradicts-type
+          round: 2
+        - id: BR-12
+          severity: Important
+          title: The rune cap is evaluated on a possibly-truncated buffer, so a legal 1000-rune CJK paste is refused
+          detail: |-
+            paste.go:97 decides drain-vs-wait with utf8.RuneCount over a body that may end mid-rune.
+            Reproduced at HEAD: a 1000-rune CJK paste split so the first scan sees 2999 body bytes
+            counts 1001 (999 complete runes plus 2 orphan bytes each counted as RuneError), latches
+            draining, and the closer then returns KeyPasteRefused for a paste that fits — a false
+            refusal on exactly the decks /lang exists for, which is the argued point of the rune
+            cap. The structural cause is that one predicate serves two purposes: the no-closer
+            branch is a MEMORY bound and belongs in bytes (len(body) > maxPasteRunes*utf8.UTFMax),
+            while the SEMANTIC cap belongs only where the text is complete, at the closer where it
+            already runs. TestPasteScannerCapsInRunesNotBytes uses a single unsplit scan, so it
+            cannot see this even though paste.go:41 documents multi-read as the normal path; the
+            regression row is a cap-sized CJK paste split at body length 2999. ARCH-CONSTRAINTS.
+          family: decision-on-incomplete-input
+          round: 2
+        - id: BR-13
+          severity: Minor
+          title: enterPaste/leavePaste is the third copy of the same terminal-mode pair, and restore's ordering is still undeclared
+          detail: |-
+            rawterm.go:105-192 now holds three near-identical enter/leave pairs differing only in
+            (flag field, on-string, off-string), and rawSession carries three independent bools —
+            8 representable combinations for about 4 legal ones. A single ordered table of
+            {flag, on, off} collapses the duplication (ARCH-DRY) and, more usefully, makes
+            restore()'s teardown ORDER a declared list rather than three hand-written calls;
+            that order is the thing rawterm_test.go:144-151 asserts and the one thing a fourth
+            mode's author will not see in the enterPaste template they copy (ARCH-ORDER).
+          family: repeated-shape-not-extracted
+          round: 2
+        - id: BR-14
+          severity: Minor
+          title: The issue Log records no boundary-review round and its "full suite green" claim was false at the commit it describes
+          detail: |-
+            This is the 2nd finding in family `issue-row-stale`, so state the rule rather than
+            patching the line: every claim in the issue that asserts a property of the tree is
+            verification evidence and must be re-stated at the boundary that re-verified it.
+            The "M1 implemented" entry (issue:937) claims "full suite green" for c1844b3, where
+            BR-2 proved the suite was red; it is uncorrected, and there is no ## Log entry for
+            boundary-review round 1 at all, which AGENTS.md section 3 requires alongside the
+            Review-Verdict trailer. Prevalence in this issue: 2 of 2 tree-asserting claims were
+            wrong at some point (the M1 checkbox's "1000-byte cap", fixed as BR-10, and this one).
+            The enumeration is short — the Log's verification claims, the Plan checkboxes, and the
+            Estimate block's actuals — and appending one Log entry per gate round covers it.
+          family: issue-row-stale
+          round: 2
+      boundary: M1
+      blocked: true
 ---
 
 # Gate ledger — tools#67 (boundary-review)
@@ -209,15 +323,81 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   workshop/issues/000067-read-along-passage.md, M1 checkbox. Rune-vs-byte is the argued
   point of the cap, so the tracker row inverts it.
 
+## Round 2 — 2026-09-16T15:55:32-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Mutation-verified: stubbing indexPasteAbandon to never match reddens both rows of TestAnUnterminatedPasteDoesNotSwallowEnterOrInterrupt. Residual, acceptable: a quiet unterminated paste still swallows Enter until Ctrl-C/Ctrl-D, which is now the documented exit.
+- BR-2 — not-addressed — Suite is green at HEAD, but 3 of the 4 named sites remain: key_test.go:399 still says "Adding a mode to mouseOn", doc_sync_test.go:390 and :427 still name TestEveryEnabledMouseModeIsDecoded. currentTruthFiles (repo_guard_test.go:1738) excludes *_test.go, so no guard can ever see them.
+- BR-3 — addressed — Mutation-verified: replacing dec.decode(buf) with decodeKey(buf) at selection_input.go:178 reddens TestReadKeysCarriesTheDrainAcrossReads with "a drained body byte reached the line as the rune 'x'".
+- BR-4 — not-addressed — The Revisions section landed and spansToStyled is gone, but every M1 checkbox (Tasks 1.1-1.5, including the atlas item) is still unticked, and the Pure entities table still omits sanitisePasteBody, pasteLineRunes, indexPasteAbandon and keyDecoder.
+- BR-5 — not-addressed — The cap is now documented, but README.md:80-83 describes M2 routing that does not exist at HEAD, and the behaviour BR-5 actually named — pasteLineRunes flattening newlines and tabs to spaces — is still absent from both README and atlas, as is the new abandon rule.
+- BR-6 — not-addressed — TestAPasteCancelsALiveDrag calls cancelPointerInput directly, which cancels for every kind but KeyUnknown. Mutation-verified: adding "&& k.Kind != KeyPaste" to route's condition at selection_input.go:47 leaves the suite green. Assert through pointerRouter.route.
+- BR-7 — not-addressed — paste.go:128 is still unicode.IsControl (category Cc only); no decision recorded in the plan's Revisions or the atlas.
+- BR-8 — not-addressed — key.go:66 is byte-identical to the base; the struct doc still says Raw is an unmodelled sequence to be ignored.
+- BR-9 — not-addressed — First half fixed — TestTheBoundaryKeepsNewlinesAndDropsOtherControls now pins "a\nb\tcde" exactly. Second half open: TestTheDrainDoesNotCutAStraddlingCloser (paste_test.go:134) still hands each scan a fresh buffer instead of the leftover the caller re-presents.
+- BR-10 — addressed — The M1 row now reads "the 1000-RUNE cap (runes, not bytes ...)", matching paste.go, the plan and the atlas.
+
+### Raised
+
+- **BR-11** [Important] `doc-contradicts-type` Prose committed in this window asserts M2 behaviour and names symbols the tree does not declare
+  This is the 2nd finding in family `doc-contradicts-type` (BR-8 is still open as the
+  1st), so do NOT fix these instances alone. The rule that covers all of them: prose
+  committed in a window may describe only what that window's tree contains — every
+  identifier it names must be declared at HEAD, and every behavioural claim must have a
+  test. Measured prevalence in this window, 3 forward-reference sites plus the 3
+  backward ones BR-2 left: README.md:80-83 claims a 4+-word or multi-line paste "becomes
+  the passage" (pasteIsPassage is not declared at HEAD; every paste goes into the line);
+  paste_test.go:344-346 cites pasteIsPassage and TestThePassageSurvivesALookup, neither
+  declared; paste.go:126-131 justifies the boundary by "the footer" and "the mark
+  painting", which M3 builds. The enumeration is mechanical and the repo already owns
+  half of it — TestPlanCitesTestsThatExist and TestPlanTablesNameEntitiesThatExist do
+  exactly this derivation for plan files, and TestNoArtifactNamesARetiredSymbol does the
+  backward half for currentTruthFiles. Extending that derivation to README, atlas and Go
+  doc comments (and dropping the *_test.go exemption for Test* names, which is what hid
+  BR-2's residual) closes both directions at once. ARCH-PURPOSE — the class, not the site.
+- **BR-12** [Important] `decision-on-incomplete-input` The rune cap is evaluated on a possibly-truncated buffer, so a legal 1000-rune CJK paste is refused
+  paste.go:97 decides drain-vs-wait with utf8.RuneCount over a body that may end mid-rune.
+  Reproduced at HEAD: a 1000-rune CJK paste split so the first scan sees 2999 body bytes
+  counts 1001 (999 complete runes plus 2 orphan bytes each counted as RuneError), latches
+  draining, and the closer then returns KeyPasteRefused for a paste that fits — a false
+  refusal on exactly the decks /lang exists for, which is the argued point of the rune
+  cap. The structural cause is that one predicate serves two purposes: the no-closer
+  branch is a MEMORY bound and belongs in bytes (len(body) > maxPasteRunes*utf8.UTFMax),
+  while the SEMANTIC cap belongs only where the text is complete, at the closer where it
+  already runs. TestPasteScannerCapsInRunesNotBytes uses a single unsplit scan, so it
+  cannot see this even though paste.go:41 documents multi-read as the normal path; the
+  regression row is a cap-sized CJK paste split at body length 2999. ARCH-CONSTRAINTS.
+- **BR-13** [Minor] `repeated-shape-not-extracted` enterPaste/leavePaste is the third copy of the same terminal-mode pair, and restore's ordering is still undeclared
+  rawterm.go:105-192 now holds three near-identical enter/leave pairs differing only in
+  (flag field, on-string, off-string), and rawSession carries three independent bools —
+  8 representable combinations for about 4 legal ones. A single ordered table of
+  {flag, on, off} collapses the duplication (ARCH-DRY) and, more usefully, makes
+  restore()'s teardown ORDER a declared list rather than three hand-written calls;
+  that order is the thing rawterm_test.go:144-151 asserts and the one thing a fourth
+  mode's author will not see in the enterPaste template they copy (ARCH-ORDER).
+- **BR-14** [Minor] `issue-row-stale` The issue Log records no boundary-review round and its "full suite green" claim was false at the commit it describes
+  This is the 2nd finding in family `issue-row-stale`, so state the rule rather than
+  patching the line: every claim in the issue that asserts a property of the tree is
+  verification evidence and must be re-stated at the boundary that re-verified it.
+  The "M1 implemented" entry (issue:937) claims "full suite green" for c1844b3, where
+  BR-2 proved the suite was red; it is uncorrected, and there is no ## Log entry for
+  boundary-review round 1 at all, which AGENTS.md section 3 requires alongside the
+  Review-Verdict trailer. Prevalence in this issue: 2 of 2 tree-asserting claims were
+  wrong at some point (the M1 checkbox's "1000-byte cap", fixed as BR-10, and this one).
+  The enumeration is short — the Log's verification claims, the Plan checkboxes, and the
+  Estimate block's actuals — and appending one Log entry per gate round covers it.
+
 ## Open findings
 
-- **BR-1** [Critical] `external-state-needs-bounded-exit` An unterminated ESC[200~ permanently deafens the input path, swallowing Enter and Ctrl-C
 - **BR-2** [Critical] `removed-symbol-unswept` Suite is red at HEAD — render.go still names the test this window renamed
-- **BR-3** [Important] `production-seam-untested` readInput's long-lived keyDecoder has no test — reverting it leaves the whole suite green
 - **BR-4** [Important] `plan-artifact-stale` The durable plan contradicts the shipped code and carries no Revisions entry
 - **BR-5** [Important] `readme-surface-undocumented` cmd/define/README.md not updated for the paste behaviour or the 1000-character refusal
 - **BR-6** [Important] `decided-behaviour-unpinned` No test for a paste arriving during a live drag, which the plan required as a decision
 - **BR-7** [Minor] `boundary-parses-partial-class` sanitisePasteBody drops Cc controls but lets bidi/format controls through
 - **BR-8** [Minor] `doc-contradicts-type` Key struct doc still says Raw is an unmodelled sequence to be ignored, not inserted
 - **BR-9** [Minor] `test-accepts-two-outcomes` TestTheBoundaryKeepsNewlinesAndDropsOtherControls accepts either outcome, pinning neither
-- **BR-10** [Minor] `issue-row-stale` The issue's M1 row says "1000-byte cap"; the code, plan and atlas all say runes
+- **BR-11** [Important] `doc-contradicts-type` Prose committed in this window asserts M2 behaviour and names symbols the tree does not declare
+- **BR-12** [Important] `decision-on-incomplete-input` The rune cap is evaluated on a possibly-truncated buffer, so a legal 1000-rune CJK paste is refused
+- **BR-13** [Minor] `repeated-shape-not-extracted` enterPaste/leavePaste is the third copy of the same terminal-mode pair, and restore's ordering is still undeclared
+- **BR-14** [Minor] `issue-row-stale` The issue Log records no boundary-review round and its "full suite green" claim was false at the commit it describes

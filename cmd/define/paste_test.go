@@ -106,9 +106,13 @@ func TestPasteScannerRefusesAnOversizePasteItCanSeeWhole(t *testing.T) {
 // An oversize paste is CONSUMED as it arrives, not held: otherwise readInput's
 // buffer grows with the input, and the ARCH-CONSTRAINTS memory bound is a
 // comment rather than a property.
+//
+// The trigger is the BYTE bound, not the rune cap — those became separate
+// predicates in round 2 (BR-12), because the rune cap cannot be evaluated on a
+// buffer that may end mid-rune.
 func TestPasteScannerDrainsAnOversizePasteBoundedly(t *testing.T) {
 	var s pasteScanner
-	k, used := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteRunes*3)))
+	k, used := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50)))
 	if used == 0 {
 		t.Fatal("an over-cap paste consumed nothing; the caller's buffer grows without bound")
 	}
@@ -131,7 +135,7 @@ func TestPasteScannerDrainsAnOversizePasteBoundedly(t *testing.T) {
 // care decodeX10Mouse takes (key.go:330).
 func TestTheDrainDoesNotCutAStraddlingCloser(t *testing.T) {
 	var s pasteScanner
-	if _, used := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteRunes*2))); used == 0 {
+	if _, used := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50))); used == 0 {
 		t.Fatal("the over-cap scan consumed nothing")
 	}
 	half := pasteEnd[:3]
@@ -265,7 +269,7 @@ func TestAPastedNewlineIsNotEnter(t *testing.T) {
 // paste as keystrokes, which is the exact failure the drain exists to prevent.
 func TestAnOversizePasteKeepsDrainingAcrossReads(t *testing.T) {
 	var d keyDecoder
-	first := []byte(pasteStart + strings.Repeat("x", maxPasteRunes+10))
+	first := []byte(pasteStart + strings.Repeat("x", maxPasteBytes+50))
 	if _, used := d.decode(first); used == 0 {
 		t.Fatal("the over-cap decode consumed nothing")
 	}
@@ -281,7 +285,7 @@ func TestAnOversizePasteKeepsDrainingAcrossReads(t *testing.T) {
 // decodeKey allocates a fresh decoder per call, which is what keeps its 38
 // existing call sites — and both fuzz targets — free of paste state.
 func TestAFreshDecodeKeyIsNotMidPaste(t *testing.T) {
-	if _, used := decodeKey([]byte(pasteStart + strings.Repeat("x", maxPasteRunes+10))); used == 0 {
+	if _, used := decodeKey([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50))); used == 0 {
 		t.Fatal("the over-cap decode consumed nothing")
 	}
 	if k, _ := decodeKey([]byte("a")); k.Kind != KeyRune || k.Rune != 'a' {
@@ -386,7 +390,7 @@ func TestEditorLoopReportsARefusedPaste(t *testing.T) {
 func TestAnUnterminatedPasteDoesNotSwallowEnterOrInterrupt(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"under the cap", "hello"},
-		{"over the cap, draining", strings.Repeat("x", maxPasteRunes+50) + "hello"},
+		{"over the byte bound, draining", strings.Repeat("x", maxPasteBytes+50) + "hello"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var d keyDecoder
@@ -444,7 +448,7 @@ func TestReadKeysCarriesTheDrainAcrossReads(t *testing.T) {
 	keys := readKeys(ctx, pr, &interrupter{fn: cancel})
 
 	go func() {
-		pw.Write([]byte(pasteStart + strings.Repeat("x", maxPasteRunes+50)))
+		pw.Write([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50)))
 		time.Sleep(50 * time.Millisecond)
 		pw.Write([]byte("tail body" + pasteEnd))
 	}()
@@ -466,23 +470,63 @@ func TestReadKeysCarriesTheDrainAcrossReads(t *testing.T) {
 }
 
 // BR-6: the plan required this to be a DECISION rather than an inherited side
-// effect. A KeyPaste is a non-pointer, non-KeyUnknown key, so the router cancels
-// any gesture in flight (selection_input.go). That is right — a paste replaces
-// the passage, so a drag over the old one means nothing — but it is only right
-// on purpose.
+// effect. A KeyPaste is a non-pointer, non-KeyUnknown key, so pointerRouter.route
+// cancels any gesture in flight (selection_input.go:47). That is right — a paste
+// replaces the passage, so a drag over the old one means nothing — but it is only
+// right on purpose.
+//
+// Asserted through route rather than cancelPointerInput. The first version called
+// cancelPointerInput directly, which cancels for every kind but KeyUnknown, so it
+// could not tell whether route had exempted KeyPaste: adding "&& k.Kind !=
+// KeyPaste" to route's condition left it green. Mutation-verified now.
 func TestAPasteCancelsALiveDrag(t *testing.T) {
-	l := newLiveScreen(&bytes.Buffer{}, 24, 80)
-	defer l.Stop()
-	l.Draw("› ", []string{"the slow precession of the equinox"})
+	live := newLiveScreen(&bytes.Buffer{}, 24, 80)
+	defer live.Stop()
+	live.Draw("\u203a ", []string{"the slow precession of the equinox"})
+	router := newPointerRouter(live, nil)
 
-	l.pointerLocked(selectionPress, selectionPoint{row: 0, col: 0})
-	l.pointerLocked(selectionMotion, selectionPoint{row: 0, col: 8})
-	if !l.gesture.active {
+	live.pointerLocked(selectionPress, selectionPoint{row: 0, col: 0})
+	live.pointerLocked(selectionMotion, selectionPoint{row: 0, col: 8})
+	live.mu.Lock()
+	active := live.gesture.active
+	live.mu.Unlock()
+	if !active {
 		t.Fatal("the drag never started; the rest of this test would be vacuous")
 	}
 
-	cancelPointerInput(l, Key{Kind: KeyPaste, Raw: []byte("new passage entirely")}, true)
-	if l.gesture.active {
-		t.Error("a paste left a drag in flight; the next release would select across replaced text")
+	// THROUGH route, not cancelPointerInput. route is where the exemption would
+	// live, and cancelPointerInput cancels for every kind but KeyUnknown — so a
+	// test calling it directly cannot tell whether route let KeyPaste past.
+	router.route(Key{Kind: KeyPaste, Raw: []byte("a new passage entirely")})
+	live.mu.Lock()
+	still := live.gesture.active
+	live.mu.Unlock()
+	if still {
+		t.Error("a paste left a drag in flight; its release would select across replaced text")
+	}
+}
+
+// BR-12 from the M1 boundary review round 2. The rune cap used to be evaluated
+// on a buffer that could end mid-rune, and utf8.RuneCount counts each orphan
+// byte as a RuneError — so a 1000-rune CJK paste split at the wrong byte counted
+// 1001, latched the drain, and was refused. A false refusal on exactly the decks
+// the rune cap exists for.
+//
+// Driven at every split point, because the bug only appears at some of them.
+func TestALegalCJKPasteIsNotRefusedAtAnySplit(t *testing.T) {
+	body := strings.Repeat("漢", maxPasteRunes)
+	whole := wholePaste(body)
+	for _, split := range []int{256, 512, 1000, 2999, 3001, len(whole) - 1} {
+		if split <= 0 || split >= len(whole) {
+			continue
+		}
+		var s pasteScanner
+		if k, used := s.scan(whole[:split]); used != 0 {
+			t.Fatalf("split %d: the partial buffer consumed %d as %v; it must wait", split, used, k.Kind)
+		}
+		k, _ := s.scan(whole)
+		if k.Kind != KeyPaste {
+			t.Errorf("split %d: a legal %d-rune paste decoded as %v", split, maxPasteRunes, k.Kind)
+		}
 	}
 }

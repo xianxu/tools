@@ -18,6 +18,15 @@ import (
 // keystrokes, and readInput's buffer would grow with the input.
 const maxPasteRunes = 1000
 
+// maxPasteBytes is the MEMORY bound on an unterminated paste, in the widest
+// bytes a rune can take.
+//
+// Separate from maxPasteRunes on purpose: the rune cap is semantic and can only
+// be judged on complete text, at the closer. This one is judged while the text is
+// still arriving and may end mid-rune, so it has to be in bytes or it refuses
+// legal pastes (BR-12).
+const maxPasteBytes = maxPasteRunes * utf8.UTFMax
+
 // The bracketed-paste markers (DEC mode 2004). The terminal wraps a paste in
 // them so a program can tell pasted text from typed text — which is the whole
 // point here, since a pasted newline must not submit the line.
@@ -100,8 +109,20 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 		return Key{Kind: KeyPaste, Raw: []byte(sanitisePasteBody(string(text)))}, used
 	}
 
-	// No closer yet. Under the cap, wait: the caller will re-present with more.
-	if !s.draining && utf8.RuneCount(body) <= maxPasteRunes {
+	// No closer yet. This branch is a MEMORY bound and it is measured in BYTES.
+	//
+	// The semantic cap is in runes, but it cannot be applied here: the buffer may
+	// end mid-rune, and utf8.RuneCount counts each orphan byte as a RuneError. A
+	// 1000-rune CJK paste split so one scan sees 2999 body bytes counts 1001 —
+	// 999 whole runes plus two orphans — latches the drain, and then refuses a
+	// paste that fits. A false refusal on exactly the decks /lang exists for,
+	// which is the argued point of having a rune cap at all. Found by the M1
+	// boundary review (BR-12).
+	//
+	// So one predicate no longer serves two purposes. Here: bound the memory, in
+	// the widest bytes a rune can take. At the closer, where the text is whole:
+	// the rune cap, and only there.
+	if !s.draining && len(body) <= maxPasteBytes {
 		return Key{}, 0
 	}
 
@@ -129,8 +150,14 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 // unrepresentable instead of checked downstream — the same move oneLine makes at
 // the store boundary (store/item.go:200).
 //
-// Newlines and tabs SURVIVE: a passage has lines, and a tab is text. Every other
-// control rune goes, including the C1 range utf8 decodes from valid input.
+// Newlines and tabs SURVIVE: a passage has lines, and a tab is text.
+//
+// The set removed is unicode.IsControl — category Cc, which is C0 and C1. That is
+// the DECISION, not an accident of which predicate came to hand: Cc is what a
+// terminal would act on, and it is what makes a pasted escape or a stray NUL
+// unable to reach the screen. Format characters (Cf: zero-width joiner, bidi
+// marks) are deliberately KEPT, because they are part of the text a reader
+// pasted — stripping them would silently alter words in scripts that need them.
 func sanitisePasteBody(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))

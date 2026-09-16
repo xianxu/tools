@@ -396,9 +396,11 @@ func TestMouseDecoderRejectsWhatNoTerminalSends(t *testing.T) {
 // mode 1000 without decoding its native X10 form let a click type " !!" into the
 // word being looked up: the mode was asked for, and its answer was not read.
 //
-// So the modes are read OFF THE CONSTANT the program actually sends. Adding a
-// mode to mouseOn without adding a row here reddens the suite, which is the only
-// version of this rule that survives the next person to enable something.
+// So the modes are read OFF THE CONSTANTS the program actually sends. Adding a
+// mode to any of them without adding a row here reddens the suite, which is the
+// only version of this rule that survives the next person to enable something —
+// and #67 proved it needs the plural: the source was mouseOn alone, so mode 2004
+// would have been enabled where no guard could see it.
 func TestEveryEnabledInputModeIsDecoded(t *testing.T) {
 	// What each mode can answer in, and one well-formed sample of it.
 	//

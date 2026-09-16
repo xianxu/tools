@@ -313,6 +313,29 @@ Stripping at the boundary makes that unrepresentable rather than checked
 downstream — the move `oneLine` already makes at the store boundary. Newlines and
 tabs survive; a passage has lines.
 
+**A paste goes into the LINE, as one insertion.** `Apply` takes the whole body at
+once — atomic because it is atomic on the wire — and `pasteLineRunes` turns
+interior newlines and tabs into spaces, since the line editor holds one line.
+Spaces rather than nothing: `hot\ndog` is two words, and joining them would invent
+one. `parseREPLLine` collapses the run afterwards.
+
+**An open paste is ABANDONED on a control byte, and that is a Critical this
+milestone shipped and then fixed.** An unterminated `ESC[200~` used to deafen the
+input path permanently: under the bound the scanner consumed nothing, so
+`readInput` never advanced its buffer and later keystrokes joined the same one;
+over it the drain latched and discarded everything waiting for a closer that never
+came. Raw mode disables ISIG, so Ctrl-C exists only as a decoded `KeyInterrupt` —
+the program could not be quit from the keyboard. The fix uses the rule the file
+already had: a paste is text, `sanitisePasteBody` says what text means, so a
+control byte inside an open paste means the terminal never closed it.
+
+**The cap is TWO predicates, and collapsing them refuses legal pastes.**
+`maxPasteRunes` is semantic and can only be judged on complete text, at the
+closer. `maxPasteBytes` is the memory bound and is judged while bytes are still
+arriving — necessarily in bytes, because a buffer may end mid-rune and
+`utf8.RuneCount` counts each orphan byte as a `RuneError`. With one predicate, a
+legal 1000-rune CJK paste split at the wrong byte counted 1001 and was refused.
+
 **`TestEveryEnabledInputModeIsDecoded` was widened, and finding the hole is the
 story.** It encoded the right rule — *for every mode we enable, the decoder
 answers every encoding that mode can reply in* — but read its modes off `mouseOn`

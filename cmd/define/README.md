@@ -77,17 +77,18 @@ the newest key was ignored; mouse selection and interrupts remain responsive.
 
 Pasting works properly now: `define` asks the terminal to bracket pastes, so a
 newline inside pasted text no longer acts as a return and submits the line
-mid-paste.
-
-What a paste becomes depends on its shape. One to three words on a single line
-goes into the line you are typing — that is someone pasting `sycophantic` to look
-it up. Four or more words, or anything containing a newline, is reading material
-and becomes the passage.
+mid-paste. The whole paste arrives at once and goes in at the cursor; newlines and
+tabs inside it become spaces, since the line editor holds one line.
 
 A paste is capped at **1000 characters** — a sentence to a paragraph. Over that it
 is refused with a message rather than half-taken, because a passage you can only
 partly see would get you an answer about text that is not on screen. Characters,
 not bytes, so a paragraph of Chinese or Japanese is a paragraph.
+
+Escape sequences and control characters in pasted text are stripped, so pasting
+from a coloured terminal or a log file cannot repaint your screen. If a paste
+never finishes — a terminal that sends the opening marker and then stops — it is
+abandoned rather than waited on, so the keyboard, including Ctrl-C, keeps working.
 
 ### The directory is the deck, so it asks first
 

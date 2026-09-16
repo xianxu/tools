@@ -387,7 +387,7 @@ func TestDocsQuoteTheCommandList(t *testing.T) {
 // one milestone, so the next milestone shipped surface with no row to remind
 // anyone. A task cannot cover work that has not been planned yet; a guard can.
 //
-// Same shape as `TestEveryEnabledMouseModeIsDecoded`: the SET has one owner
+// Same shape as `TestEveryEnabledInputModeIsDecoded`: the SET has one owner
 // (`numRegionKinds`), and the check derives from it rather than restating it. A
 // third kind added to the registry reddens this until the atlas says what it
 // offers — which is the only version of "keep the docs current" that survives
@@ -424,7 +424,7 @@ func TestAtlasDescribesEveryRegionKind(t *testing.T) {
 // a later fix; a guard derived from the declared set can.
 //
 // Same move as `TestAtlasDescribesEveryRegionKind` and
-// `TestEveryEnabledMouseModeIsDecoded`: the SET has one owner, and the check
+// `TestEveryEnabledInputModeIsDecoded`: the SET has one owner, and the check
 // reads it rather than restating it. Adding a field reddens this until the atlas
 // says what it is for.
 //
