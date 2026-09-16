@@ -129,8 +129,8 @@ a registry that was built anticipating a third consumer (ARCH-DRY):
 - ~~Explain on release, or mark several then ask?~~ **Settled 2026-09-16:**
   accumulate, then ask — the request is the whole sentence with marks in it.
 - ~~What is the ask gesture?~~ **Settled 2026-09-16: a bare Enter.** See below.
-- Still open: a blank Enter with a passage on screen but ZERO marks — explain the
-  whole passage, or fall through to replay? (Operator's call.)
+- ~~Blank Enter with a passage but ZERO marks?~~ **Settled 2026-09-16:** neither
+  explain-everything nor replay — a local nudge. See below.
 - Word regions must survive wrapping — same class as `phraseGap`, which already
   stops a wrapped `hot\n  dog` forming a false phrase. Reuse or extend?
 - A dragged phrase with no dictionary entry is still learnable (`at the zenith
@@ -331,18 +331,47 @@ licenses going a little past the question, which is the whole point of the featu
 
 **Two things to settle:**
 
-1. **Scope.** Global, or read-along only? Two prompts carrying two different
-   defaults is a drift hazard (ARCH-DRY) — there should be ONE answer to "what
-   level do we assume," stated once. Near term that is a one-line edit to
-   `askSystem` that read-along inherits. Longer term it is the zero value of the
-   per-deck level record #64 introduces, and #67 should consume that rather than
-   restate it.
+1. **Scope: GLOBAL** (operator, 2026-09-16). One answer to "what level do we
+   assume," stated once — a one-line reversal in `askSystem` that read-along
+   inherits, not a second default in a second prompt (ARCH-DRY). Split only if it
+   proves wrong in practice. Longer term it is the zero value of the per-deck level
+   record #64 introduces, and both surfaces consume that rather than restate it.
 2. **It is not a CEFR band.** `store.Band` is A1–C2, a LANGUAGE-PROFICIENCY scale,
    and `ParseBand` maps #17's prose onto it. "Curious high school student" is an
    assumption about PRIOR KNOWLEDGE, not vocabulary difficulty — a C1 reader can
    still lack the astronomy. Those are separate axes, and collapsing the new
    default into a band would lose precisely the thing this feature exists to
    supply. Whatever holds it, it is not `Band`.
+
+### Blank Enter, passage present, nothing marked — the tool answers, not the model
+
+Operator proposed replying to the effect of *"what do you want to know about it?"*
+That is the right RESPONSE from the wrong PRODUCER.
+
+It is a deterministic answer to a deterministic state — a passage is loaded and the
+mark set is empty. Routing it through the model buys latency, cost and
+nondeterminism (it may decide to explain the passage anyway) to produce what is
+essentially a UI hint. This repo already guards that instinct elsewhere: the sitting
+path pins its model seam to PANIC rather than nil so *"a network dependency [cannot]
+creep into a path that promises to be offline."*
+
+**It already has a home.** `nothingSays` is, in its own words, *"the ONE answer to
+'this line meant nothing — why, and what should the user do about it'"* — which is
+precisely the question here, and it is local by construction. Its note-less default
+is already a nudge rather than an error (*"type a word, or press return to replay
+the last one"*); only the hatch-with-no-payload notes carry exit 2. So this is a new
+`note`, not a new mechanism and not an error path.
+
+**Instruct rather than ask.** "Click or drag what you don't understand, then press
+return" beats "what do you want to know about it?" — the user just pressed Enter, so
+bouncing a question back is a small dead end, and this is a brand-new gesture nobody
+discovers unaided. The nudge teaches it at exactly the moment it is needed.
+
+**The alternative being declined, for the record:** treat zero marks as *the whole
+passage is marked*. It needs no new code at all — the request shape is identical,
+simply with no brackets in it, and it is the literal reading of "what does this
+mean: <sentence>". Declined because Enter is cheap to press and a passage is an
+expensive call, but it is a real option if the nudge proves annoying in practice.
 
 ### An authentic sentence is better material than an authored one
 
@@ -469,3 +498,17 @@ Delta:
   constraints (`-raw` asks never, History keeps typos deliberately, the event log
   separates not-found from ask). Flagged as ITS OWN ISSUE — it changes the console
   classifier globally, not this surface.
+
+### 2026-09-16 — default level scoped global; empty-mark Enter settled
+
+Reason: operator answered the two remaining interaction questions.
+
+Delta:
+- The no-model default level is GLOBAL — one `askSystem` line, read-along inherits.
+  DRY first; split only if practice shows it wrong.
+- Blank Enter with a passage and no marks produces a LOCAL nudge via `nothingSays`,
+  not a model round-trip: deterministic state, deterministic answer, and that
+  function already exists to answer "what should the user do about it". Phrased as
+  an instruction ("click or drag what you don't understand, then press return")
+  rather than a question back. The zero-marks-means-whole-passage alternative is
+  recorded as declined-but-available.
