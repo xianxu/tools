@@ -128,7 +128,9 @@ a registry that was built anticipating a third consumer (ARCH-DRY):
 
 - ~~Explain on release, or mark several then ask?~~ **Settled 2026-09-16:**
   accumulate, then ask — the request is the whole sentence with marks in it.
-  Still open: what the ask gesture IS (Enter? a key? a click outside?).
+- ~~What is the ask gesture?~~ **Settled 2026-09-16: a bare Enter.** See below.
+- Still open: a blank Enter with a passage on screen but ZERO marks — explain the
+  whole passage, or fall through to replay? (Operator's call.)
 - Word regions must survive wrapping — same class as `phraseGap`, which already
   stops a wrapped `hot\n  dog` forming a false phrase. Reuse or extend?
 - A dragged phrase with no dictionary entry is still learnable (`at the zenith
@@ -175,6 +177,41 @@ a registry that was built anticipating a third consumer (ARCH-DRY):
    the same gesture also keeps its old meaning elsewhere: a click on a rendered
    entry's headword still plays it.
 
+### Enter is the ask, and it is a row in the decision table
+
+Operator, 2026-09-16: the ask gesture is **a bare Enter**. Only the BLANK line is
+claimed — a non-empty line submits as it does today, and the natural reading is
+that a typed question carries the marks as context ("explain these, specifically
+answering this").
+
+It belongs in `parseREPLLine`, not in either loop. That function is the single
+decision table both loops route through, and the atlas gives the reason in its
+own words: *"a prefix checked in either loop alone makes the loops disagree about
+what a line means."* Enter-asks is a ROW, and `TestConsoleDecisionTable` gains
+rows rather than the loops gaining branches.
+
+**The conflict is narrower than it looks.** A blank Enter today means *replay the
+current word*, guarded by `hasCurrent` (`repl.go:104`). But `session.current` is
+set only by a SUCCESSFUL LOOKUP — so in the common flow (paste → mark → Enter)
+there is no current word and no conflict at all. It arises only when a lookup
+preceded the paste.
+
+Proposed rule, with precedent: **marks win over replay**, and pasting a passage
+clears `session.current` the same way a question deliberately never becomes it
+(atlas: *"A question does not become the current word either"*). Replay stays
+reachable via `/pron`.
+
+**Two consequences to carry into the plan:**
+
+- `parseREPLLine(line string, hasCurrent bool)` would grow a second boolean, and
+  two bools next to each other encode a precedence nobody declared. Pass the
+  session state as ONE value instead — the same consolidation `session` itself
+  was created for.
+- It scopes the headword-click shortcut. The atlas states a click on the headword
+  *"is a shortcut for the bare Enter beside it"*; if Enter asks while marks are
+  present, the two diverge unless the scoping is written down. Same family as
+  collision 3 above — one invariant, two places it is now conditional.
+
 ### An authentic sentence is better material than an authored one
 
 Today `items/<lang>/` holds practice sentences the MODEL writes, gated by an
@@ -203,6 +240,9 @@ worth deciding in the brainstorm rather than discovering later.
   directions covered.
 - A marked word is distinguishable from a typed lookup in the event log.
 - Pasting multi-line text does not submit on the embedded newline.
+- A bare Enter with marks present asks; with a passage but no marks it does the
+  decided thing; with no passage it still replays the current word. All three are
+  rows in `TestConsoleDecisionTable`, not branches in a loop.
 - The NOAD-as-context inversion is stated in the atlas, with the route back to
   the full entry.
 
@@ -250,3 +290,14 @@ Delta:
   grammar, ANSI composition of a selection background with the deck highlight,
   and the now-scoped "a click on ordinary text is nothing" invariant.
 - Added the authentic-example-sentence opportunity against `items/<lang>/`.
+
+### 2026-09-16 — the ask gesture is a bare Enter
+
+Reason: operator answered the one question left open by the previous revision.
+
+Delta: Enter-asks specified as a row in `parseREPLLine`'s decision table, with
+the `hasCurrent` replay conflict analysed (narrow — `session.current` is set only
+by a successful lookup) and a precedent-backed precedence proposed. Two knock-ons
+recorded: the two-boolean signature smell, and the scoping of the "headword click
+is a shortcut for bare Enter" invariant. One sub-case returned to the operator:
+blank Enter with a passage but no marks.
