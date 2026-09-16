@@ -131,22 +131,42 @@ a registry that was built anticipating a third consumer (ARCH-DRY):
 - ~~What is the ask gesture?~~ **Settled 2026-09-16: a bare Enter.** See below.
 - ~~Blank Enter with a passage but ZERO marks?~~ **Settled 2026-09-16:** neither
   explain-everything nor replay — a local nudge. See below.
-- Word regions must survive wrapping — same class as `phraseGap`, which already
-  stops a wrapped `hot\n  dog` forming a false phrase. Reuse or extend?
-- A dragged phrase with no dictionary entry is still learnable (`at the zenith
-  of`, idioms, constructions). The operator's rule keeps them out of the deck;
-  is that right permanently, or right for M1?
-- **Click density is a free readability measure** — four opaque words in a
-  twenty-word sentence vs one in forty is a calibrated difficulty reading of real
-  text against this learner, far better evidence than the current CEFR guess.
-  `define` has never had this. In scope, or its own issue?
-- Where does the passage live — session-only, or on disk like every other context
-  source? (Compare #56, where the transcript is the one in-memory exception.)
-- Does this compose with `/bilingual` and #64's interaction stage?
-- What marker does a selection use? **Not a bare `[...]`** — see the collision
-  below. And what escapes a literal bracket already in the passage?
-- Does an explained passage become the example sentence for the deck items its
-  marks produce? (See "an authentic sentence" below.)
+Resolved at `start-plan`, 2026-09-16 — recorded with rationale so the plan does
+not re-litigate them. Any of these is cheap to revisit; none is load-bearing
+enough to block design.
+
+- **Selection marker: `[sel]…[/sel]`.** Same family as the reserved
+  `[lang=xx]…[/lang]` rather than a second bracket dialect (ARCH-DRY), so the model
+  meets one grammar. A literal bracket in the passage escapes as `&#91;`/`&#93;` —
+  the rule `askSystem` already states for the ANSWER direction, now extended to the
+  prompt direction, which is where it was always missing.
+- **The passage lives in the SESSION, not on disk.** It is transient reading
+  material, not learner data. What deserves to persist is the residue — the marked
+  word plus the sentence it was marked in — and that lands on the deck word. So
+  #56's asymmetry does not apply here: nothing valuable is trapped in memory,
+  because the valuable part is extracted before the process ends. Also answers
+  ARCH-FUNERAL: the passage dies with the session; the example sentence is bounded
+  by the deck that holds it.
+- **Click density: OUT of scope, its own issue.** A genuinely separable extension
+  rather than the deferred point of this one (ARCH-PURPOSE). It needs the marking
+  data this issue produces, so it is a natural successor, not a parallel concern.
+- **The passage becomes the example sentence: IN scope**, final milestone, as a
+  step that can be dropped on its own. The operator asked for marked words to enter
+  recall; a real sentence is materially better material than an authored one and it
+  is already on screen. Left out, the recall item is worse for no reason.
+- **A lookup while a passage is on screen carries the passage as context: YES.** It
+  is one more optional field on `askContext`, which is already "whatever this
+  directory happens to hold". No new mechanism.
+- **`/bilingual` and #64 compose for free.** The passage explanation renders through
+  `renderAskPrompt` like every other question, so it inherits whatever language and
+  level policy exists then. No work in this issue; #64 will find one more consumer
+  already deriving from its record rather than restating it.
+- **A dragged phrase with no dictionary entry stays out of the deck** — the
+  operator's rule holds for this issue. Recorded as revisitable: `at the zenith of`
+  is learnable and NOAD has no entry for it, so the rule may want relaxing once
+  there is usage data.
+- **Word regions must survive wrapping** — reuse `phraseGap`'s discipline rather
+  than reinventing it; the plan names the shared helper.
 
 ### Three collisions the design has to answer
 
@@ -545,3 +565,14 @@ half, and the deck in context is a personalized ranking signal a generic speller
 could not match. Also recorded that `question` already carries the "the dictionary
 missed this" provenance, so the change is a prompt line plus routing, not plumbing.
 The three constraints are unaffected: they govern whether to ask, not how to correct.
+
+### 2026-09-16 — open questions resolved at start-plan
+
+Reason: entering design; the remaining questions were decidable without further
+operator input and are recorded with rationale rather than left to the plan.
+
+Delta: settled the selection marker (`[sel]`, one grammar), the passage's home
+(session; the residue persists, not the passage), density (out, own issue), the
+example sentence (in, droppable step), passage-as-lookup-context (yes), #64/bilingual
+composition (free), the non-headword rule (holds, revisitable) and wrapping (reuse
+`phraseGap`).
