@@ -525,11 +525,16 @@ without new machinery. See Open decisions.
 - `markClickable` (`screen.go:362`) is the precedent for decorating a span safely:
   attributes only (`\x1b[4m`/`\x1b[24m`), never colour, closing with `24` rather
   than `0` so the palette survives.
-- Mode 2004 is absent, and `TestEveryEnabledMouseModeIsDecoded` (`key_test.go:400`)
-  already encodes "for every mode we ENABLE, the decoder answers every encoding it
-  can reply in" — so a half-done paste fails a test by design. `ESC[200~` is
-  currently PINNED as `KeyUnknown` at `key_test.go:71`; that assertion must be
-  rewritten deliberately.
+- Mode 2004 is absent. `TestEveryEnabledMouseModeIsDecoded` (`key_test.go:400`)
+  states the right rule — "for every mode we ENABLE, the decoder answers every
+  encoding it can reply in" — but **it would NOT catch this**: it derives its modes
+  by regex over `mouseOn` alone (`key_test.go:417`), so a separate `pasteOn`
+  constant is invisible to it. Corrected 2026-09-16 by a plan review; an earlier
+  revision of this section claimed the guard covered it. Widening the guard's
+  source is therefore part of the work, not a nicety — otherwise 2004 is the first
+  mode enabled outside the one test written to prevent exactly that.
+  `ESC[200~` is currently PINNED as `KeyUnknown` at `key_test.go:71`; that
+  assertion must be rewritten deliberately.
 - **A paste must not arrive as N keystrokes.** `readInput` delivers into a 256-key
   channel with a hard drop-newest policy (`selection_input.go:157,204`), and `Apply`
   inserts one rune per key with no bulk path (`editor.go:55`). A pasted paragraph
