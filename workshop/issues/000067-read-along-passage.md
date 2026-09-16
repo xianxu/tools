@@ -414,33 +414,6 @@ simply with no brackets in it, and it is the literal reading of "what does this
 mean: <sentence>". Declined because Enter is cheap to press and a passage is an
 expensive call, but it is a real option if the nudge proves annoying in practice.
 
-### Click-to-select applies to the ANSWER area too (operator, 2026-09-16)
-
-Once a click selects a word in a passage, the same gesture should work wherever
-text is on screen: **click a word in an answer and it is selected and copied to the
-clipboard.**
-
-This is the same rule, not a second feature — *a click is a one-word drag* — and it
-makes the codebase MORE consistent rather than less (ARCH-DRY):
-
-- A drag in the answer area already copies (`selectionCopy`, `selection.go:72`), and
-  `clipboardWriter` already exists for it. Click-to-copy reuses that effect
-  wholesale; only the span derivation is new, and it is the same word-snap the
-  passage surface needs.
-- So the word-snap helper is built ONCE and has two consumers from the start: copy
-  in an answer, mark in a passage. That is a good reason to build it EARLY, before
-  the passage surface, where it ships value on its own.
-
-**Precedence: regions win.** A click on a headword still plays it
-(`RegionHeadword`), a click on an ORIGIN language still plays it there. Word-snap
-applies to cells no region claims.
-
-**This generalises collision 3 rather than adding to it.** The invariant *"a click
-on ordinary text is NOTHING"* now becomes *"a click on ordinary text selects that
-word"* — everywhere, not just inside a passage. One uniform rule is easier to state
-and easier to test than a surface-conditional one, so this REPLACES the scoped
-exception the earlier revision proposed.
-
 ### Survey findings, 2026-09-16 — three that change the design
 
 Three parallel code surveys ran at `start-plan`. Most of the earlier capability
@@ -450,10 +423,14 @@ table held up. These did not:
 `RegionHeadword`, `RegionOriginLang`, `RegionWord` (`render.go:254`). `RegionWord`
 is a DECK word in prose, produced by `deckSpans` → `wordRegions`
 (`deckwords.go:59,90`), and `playRegion` (`replraw.go:707`) plays it in the
-session's voice. So in today's answer area, clicking `equinox` already plays it.
-The operator's click-to-copy therefore does not land on empty ground — it lands on
-a shipped behaviour, and "regions win" would mean deck words play while every
-other word copies. That is a fork, not a detail; see Open decisions below.
+session's voice — so clicking `equinox` in an answer already plays it today.
+
+This is why the click-to-copy-in-the-answer request was WITHDRAWN (see Revisions):
+it would have collided with a shipped gesture on exactly the words most likely to
+appear in an answer, and "regions win" would have made a click mean *play* or
+*copy* depending on whether the word happened to be in the deck — a distinction
+invisible except for the colour. Outside a passage, a click keeps every meaning it
+has today.
 
 **2. `TestEveryRegionKindIsActionable` asserts *actionable == plays audio***
 (`editorloop_test.go:953`, plus `...ThroughTheSharedRegistry` at `:985`). It derives
@@ -691,3 +668,15 @@ it ships independently (a drag already copies; only span derivation is new).
 Supersedes the scoped treatment of collision 3: "a click on ordinary text is
 nothing" becomes "a click on ordinary text selects that word" uniformly, with
 regions taking precedence where they exist.
+
+### 2026-09-16 — click-to-copy in the answer area withdrawn
+
+Reason: operator withdrew the request after the survey showed `RegionWord` already
+claims clicks on deck words in prose and plays them.
+
+Delta: the answer-area click section is removed from the Spec. Collision 3 returns
+to its SCOPED form — "a click on ordinary text is nothing" becomes false only inside
+a passage, and every click outside one keeps its current meaning. The word-snap
+helper now has ONE consumer (the passage surface) rather than two, so it is no
+longer a candidate to build first for its own sake; it is built where it is used.
+Supersedes the revision directly above it.
