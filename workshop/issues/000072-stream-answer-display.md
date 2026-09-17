@@ -305,6 +305,41 @@ guard was mutation-tested against the restored `highlightRegion` call. Fuzz:
 ~600k executions of `FuzzLanguageDecoderChunks` with the retention invariant
 asserted after every chunk, no failures.
 
+### 2026-09-17 — boundary review round 1
+
+Seven findings, one blocking, and the blocking one was a genuine miss.
+
+**BR-1: the delivered test measured the wrong property.**
+`TestALongPassageReachesTheScreenInPieces` checked the largest single write
+*after* the run — granularity, not ordering. The review mutation-tested it in a
+scratch worktree and showed a decoder that buffers the passage and releases it
+rune-by-rune at the close marker PASSES: still a blank screen for the whole
+generation, still green. Confirmed here, and the test now asserts ordering
+through the production chain — the dribble variant fails at "nothing reached the
+screen until delta 102 of 161".
+
+The barrier the plan promised (`Reply{AfterText, FinishRelease}`, disposed
+`addressed` at PQ-5) could not carry it: `AfterText` holds the stream after the
+FIRST text delta, which in this capture is exactly `[lang=es]` — a marker with no
+prose — so the sink is legitimately empty there whether or not the bug is
+present. The property is delivered instead by a client wrapper reporting each
+delta after the real writers have handled it: same observable, no clock, no held
+connection. Recorded rather than quietly substituted, because the plan named a
+mechanism and this is not it.
+
+**The six Minors, all fixed rather than deferred.** Both properties now also run
+at width 100, putting the wrap writer's row-commit path — the remaining hold — on
+the tested path (BR-2). `splitWordInsideAPassage` takes the wanted language,
+which it needed all along and passed without only because every split candidate
+in the capture happens to sit in an `en` region (BR-3). One span accumulator
+where there were three, and one decode core with a per-chunk hook (BR-4).
+"Dominant passage" is one predicate over one denominator, shared by the guard
+that promotes a capture and the guard that replays it (BR-5). `annotatedRegions`
+ends a region where the parser does — at a nested open rather than at the first
+close, which the nested `[lang=en]Sycophant[lang=es][/lang][/lang]` in this very
+capture exercises (BR-6). And the method is `runVocabulary`, not a second
+`vocabularyFor` (BR-7).
+
 ## Revisions
 
 ### 2026-09-17 — plan-quality round 1 (4 blocking findings)
