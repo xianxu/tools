@@ -2,8 +2,9 @@ package main
 
 import "slices"
 
-// passageCell is a point in the passage's own coordinate space: a logical line
-// and a display column within it, already corrected for any wrap (wrappedColumn).
+// passageCell is a point in the passage's own coordinate space: a line and a
+// display column within it. No wrap correction: the passage wraps at
+// construction, so one of its lines IS one buffer line.
 //
 // Distinct from selectionPoint, which is a physical terminal cell. The conversion
 // between them belongs to the screen, and keeping the types apart is what stops a

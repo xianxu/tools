@@ -114,9 +114,9 @@ func (p *passage) empty() bool { return strings.TrimSpace(p.src) == "" }
 // a word goes through here, so a click and any later gesture cannot disagree
 // about what was pointed at.
 //
-// The column must already be corrected for a continuation row — see
-// wrappedColumn, which is the other half and is kept separate so the correction
-// has one name rather than being inlined at each caller.
+// The column is a display column of the PASSAGE LINE, which is also a buffer line
+// and a frame row: the passage wraps at construction, so the three spaces line up
+// and no continuation-row correction exists to get wrong.
 func wordAtCell(p *passage, line, col int) (passageSpan, bool) {
 	if p == nil || line < 0 || line >= len(p.lines) || col < 0 {
 		return passageSpan{}, false
