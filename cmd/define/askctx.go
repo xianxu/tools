@@ -56,7 +56,7 @@ const (
 // maxTurns bounds the transcript carried into a follow-up. Enough for "give me
 // three more examples" to resolve against what was just said, short enough that
 // a long session does not grow the prompt without limit.
-const maxTurns = 6
+const maxTurns = 20
 
 // askTask names this request. It keys the cassette and names the golden, so it
 // is part of the contract rather than a label.

@@ -59,20 +59,33 @@ func TestRenderAskPromptOmitsAbsentContext(t *testing.T) {
 	}
 }
 
+// wantTurns is the window this test PINS, written out rather than read from
+// maxTurns. Every assertion here used to derive from the constant under test —
+// including the loop bound, so exactly three were always evicted and even the
+// literal "d" was invariant. The test therefore passed for any window at all:
+// #56 moved the limit from 6 to 20 and nothing went red. A check must not
+// consult the thing it checks.
+const wantTurns = 20
+
 func TestRecentTurnsBoundsTheTranscript(t *testing.T) {
+	// Independent of wantTurns on purpose: it is how many are EVICTED, so the
+	// two numbers cannot move together and cancel out.
+	const extra = 3
 	var many []exchange
-	for i := range maxTurns + 3 {
+	for i := range wantTurns + extra {
 		many = append(many, exchange{Question: string(rune('a' + i)), Answer: "x"})
 	}
 	got := recentTurns(many)
 
-	if len(got) != maxTurns {
-		t.Fatalf("kept %d turns, want %d", len(got), maxTurns)
+	// Catches a window in either direction: too small keeps fewer than
+	// wantTurns, too large fails to evict and keeps all wantTurns+extra.
+	if len(got) != wantTurns {
+		t.Fatalf("kept %d turns, want %d", len(got), wantTurns)
 	}
 	// The OLDEST are dropped and order is preserved: a follow-up resolves
 	// against what was just said, so the tail is the part that must survive.
-	if got[0].Question != "d" || got[len(got)-1].Question != string(rune('a'+maxTurns+2)) {
-		t.Errorf("kept %v — want the newest %d in order", got, maxTurns)
+	if got[0].Question != string(rune('a'+extra)) || got[len(got)-1].Question != string(rune('a'+wantTurns+extra-1)) {
+		t.Errorf("kept %v — want the newest %d in order", got, wantTurns)
 	}
 	if short := recentTurns(many[:2]); len(short) != 2 {
 		t.Errorf("a short transcript was truncated: %v", short)

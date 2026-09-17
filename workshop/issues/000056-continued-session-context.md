@@ -61,12 +61,13 @@ not an established diagnosis.
 
 ## Plan
 
-- [ ] Reproduce the continuity gap and inspect the actual requests, session
-  lifecycle, history cutoff, and prompt instructions.
-- [ ] Design the smallest change that makes the conversation the primary
-  context, with an explicit bounded retention policy and regression scenarios.
-- [ ] Implement, verify request contents and conversational behavior, and
-  document the resulting session-context contract.
+Replaced 2026-09-17 — see the second entry under `## Revisions`. The rows below
+are the narrowed scope, not the original investigation.
+
+- [x] raise `maxTurns` from 6 to 20 in `cmd/define/askctx.go`
+- [x] pin the window in `TestRecentTurnsBoundsTheTranscript` with an expectation
+      that does not read `maxTurns`
+- [x] check whether any documentation states the limit
 
 ## Log
 
@@ -80,6 +81,24 @@ not an established diagnosis.
 - ARCH-DRY: build on or repair the existing session transcript rather than
   introduce a second conversation store. ARCH-PURPOSE: evaluate natural
   follow-up understanding, not just the presence of history in a request.
+
+### 2026-09-17
+
+Closed. `maxTurns` 6 → 20; the suite is green (the two `operation not permitted`
+failures under the sandbox are exec-based path tests, re-run outside it and
+passing — not this change).
+
+The real work was the test, not the constant. `TestRecentTurnsBoundsTheTranscript`
+derived EVERY assertion from `maxTurns`, including its loop bound `maxTurns + 3`
+— so exactly three were always evicted and even the literal `"d"` was invariant.
+It passed at 6 and at 20 alike, pinning nothing. Confirmed by measurement before
+touching it: set the constant to 20 against the unmodified test, whole suite
+green, and `git log -S` shows the probe never reached a commit. The rewritten
+test reads `wantTurns = 20`, with `extra` kept independent so the two numbers
+cannot move together and cancel out; verified RED at 6 ("kept 6 turns, want 20")
+and green at 20. ARCH-DRY was the temptation to resist here — sharing the
+constant between the code and its test is exactly what made the check consult
+the thing it checks.
 
 ## Revisions
 
@@ -103,3 +122,32 @@ This replaces the broader Spec, Done-when, and Plan above with the following:
 - Update the documented limit and run the relevant context/request tests.
 - Prior user questions and model answers remain the context for abbreviated
   follow-ups; the change only lengthens the existing window.
+
+### 2026-09-17 — Plan rows replaced, and the narrowed scope executed
+
+**Reason.** The 2026-09-13 revision said it replaced the Spec, Done-when and
+Plan, but only the prose was replaced — the `## Plan` checkboxes were left
+describing the superseded three-step investigation ("reproduce the continuity
+gap", "design the smallest change"). Closing against them would have ticked
+boxes for work nobody did, and the close gate's plan check would have been
+asserting the wrong thing.
+
+**Delta.**
+
+- `## Plan` now carries the three narrowed steps that were actually performed.
+  The original rows are preserved in this file's history, not rewritten in place.
+- `maxTurns` 6 → 20 (`cmd/define/askctx.go:59`).
+- The comment above `maxTurns` STAYS as written. Operator decision, 2026-09-17:
+  20 is still bounded, so "short enough that a long session does not grow the
+  prompt without limit" continues to hold. Recorded because the alternative was
+  considered and declined, not overlooked — the per-turn size is unbounded
+  (`recordExchange` stores the whole answer), so the policy is twenty TURNS
+  rather than a token budget.
+- **Documentation: no change needed, deliberately.** The six-turn window was
+  stated nowhere outside that code comment — not in `cmd/define/README.md`, not
+  in `atlas/define.md`, which describes the context as "the session's own earlier
+  exchanges" and gives no count. The number was NOT added to the atlas: a count
+  written in prose beside a constant is a second source of truth that nothing
+  checks, which is the drift `render.go:57` already records having been bitten by
+  twice. The atlas keeps the shape; the constant keeps the number.
+
