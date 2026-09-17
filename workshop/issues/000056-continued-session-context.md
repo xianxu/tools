@@ -1,12 +1,13 @@
 ---
 id: 000056
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-13
 updated: 2026-09-17
 estimate_hours:
 started: 2026-09-17T09:04:42-07:00
+actual_hours: 0.84
 ---
 
 # define: keep questions in a continued session conversation
@@ -83,6 +84,7 @@ are the narrowed scope, not the original investigation.
   follow-up understanding, not just the presence of history in a request.
 
 ### 2026-09-17
+- 2026-09-17: closed — maxTurns 6→20 at askctx.go:59; TestRecentTurnsBoundsTheTranscript rewritten to pin the window independently of the constant — verified RED at 6 ("kept 6 turns, want 20") and green at 20; full cmd/define suite green (the two operation-not-permitted path tests are sandbox artifacts, re-run unsandboxed and passing). --no-atlas: no new architectural surface — the window was documented nowhere outside the code comment, and the number was deliberately NOT added to atlas/define.md to avoid a prose count drifting against the constant. --no-judge: operator waived the boundary review, one-constant change.; review verdict: not-run
 
 Closed. `maxTurns` 6 → 20; the suite is green (the two `operation not permitted`
 failures under the sandbox are exec-based path tests, re-run outside it and
