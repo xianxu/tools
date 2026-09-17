@@ -21,7 +21,7 @@ type session struct {
 	// is a different signal from "what this learner has been studying", and the
 	// prompt carries both.
 	words []string
-	// passage is the text being read, pinned in the footer (#67). Session-scoped
+	// passage is the text being read, written to the buffer (#67). Session-scoped
 	// like the rest of this struct: it is transient reading material, and what
 	// deserves to persist is the residue — a marked word on the deck — not the
 	// passage. A second paste replaces it.
@@ -44,10 +44,18 @@ func (s *session) hasCurrent() bool { return s.current != "" }
 
 // lineState is everything the session holds that changes what a line MEANS,
 // handed over as one value so no caller has to remember the precedence.
-func (s *session) lineState() lineState {
+// lineState takes whether the live passage is ON SCREEN, because "a passage was
+// once pasted" is not authority over Enter for the rest of the session.
+//
+// It was `s.passage != nil` when the passage was pinned footer chrome, where it
+// could not scroll away. The footer-to-buffer reversal changed the surface's
+// LIFETIME and this predicate was not re-derived: a bare Enter never returned to
+// replaying the current word again, and the nudge pointed at something long
+// off-screen (BR-28).
+func (s *session) lineState(visible bool) lineState {
 	return lineState{
 		hasCurrent: s.hasCurrent(),
-		hasPassage: s.passage != nil && !s.passage.empty(),
+		hasPassage: visible,
 		hasMarks:   !s.marks.empty(),
 	}
 }
@@ -81,17 +89,17 @@ func (s *session) ownsBufferLine(line int) bool {
 }
 
 // passageCell converts an absolute buffer point into the passage's own
-// coordinates, CLAMPED to the passage.
+// coordinates, REFUSING a row the live passage does not own.
 //
-// Clamped rather than refused, because a drag that runs off the end of the
-// passage still means "from here to the end" — the anchor gate has already
-// established that the gesture started inside it.
-func (s *session) passageCell(p selectionPoint) passageCell {
-	if s.passage == nil {
-		return passageCell{line: -1, col: p.col}
+// Refusing rather than clamping. Clamping was the first version and it is what
+// let a drag in a SUPERSEDED passage land inside the current one: every row
+// outside got pulled to the nearest line that existed. A point that is not in
+// this passage is not a point in this passage (BR-28).
+func (s *session) passageCell(p selectionPoint) (passageCell, bool) {
+	if !s.ownsBufferLine(p.row) {
+		return passageCell{}, false
 	}
-	line := p.row - s.passageBase
-	return passageCell{line: min(max(line, 0), s.passage.lineCount()-1), col: p.col}
+	return passageCell{line: p.row - s.passageBase, col: p.col}, true
 }
 
 // passageSpanAt resolves a clicked region to a span of the CURRENT passage, or
@@ -101,4 +109,12 @@ func (s *session) passageSpanAt(line int, r Region) (passageSpan, bool) {
 		return passageSpan{}, false
 	}
 	return wordAtCell(s.passage, line-s.passageBase, r.Col)
+}
+
+// passageVisible reports whether any line of the live passage is in the viewport.
+func (s *session) passageVisible(top, bottom int) bool {
+	if s.passage == nil || s.passage.empty() {
+		return false
+	}
+	return s.passageBase < bottom && s.passageBase+s.passage.lineCount() > top
 }

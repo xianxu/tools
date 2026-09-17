@@ -54,7 +54,27 @@ const (
 	// marked spans called out (#67). Not cmdAsk, because there is no typed
 	// question — the request IS the passage.
 	cmdAskPassage
+	// numReplKinds is NOT a kind: it is the registry's extent, so a guard can
+	// DERIVE the set. #67 added cmdAskPassage and the PIPED loop silently had no
+	// case for it — a kind can only be produced where a passage exists, so the
+	// omission was invisible, but nothing said that on purpose.
+	numReplKinds
 )
+
+// replKindReachesTheEditor declares which kinds each loop must handle.
+//
+// A TOTAL map, so a kind added without an answer reddens rather than falling
+// through. `piped` is false for cmdAskPassage because parseREPLLine can only
+// produce it from lineState.hasMarks, which the piped loop passes as false — that
+// is a REASON, and it is written down here instead of being left as a gap.
+var replKindHandling = map[replKind]struct{ editor, piped bool }{
+	cmdNothing:    {true, true},
+	cmdDefine:     {true, true},
+	cmdReplay:     {true, true},
+	cmdCommand:    {true, true},
+	cmdAsk:        {true, true},
+	cmdAskPassage: {true, false},
+}
 
 // noteEmptyQuestion is the hint for a bare "?" — the hatch typed with nothing
 // after it. "type a word, or press return to replay the last one" is the wrong
@@ -381,7 +401,7 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 			}
 			return 0
 		case line := <-lines:
-			switch cmd := parseREPLLine(line, sess.lineState()); cmd.kind {
+			switch cmd := parseREPLLine(line, sess.lineState(false)); cmd.kind {
 			case cmdNothing:
 				fmt.Fprintf(stderr, "define: %s\n", nothingSays(cmd, true))
 				// A hatch typed with no payload is a malformed LINE, the same

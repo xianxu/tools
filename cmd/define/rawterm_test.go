@@ -117,10 +117,15 @@ func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
 	// escape sequences and their ORDER.
 	r := &rawSession{control: &b}
 
-	r.enterAlt()
-	r.enterMouse()
-	r.enterPaste()
-	if got, want := b.String(), altScreenOn+mouseOn+pasteOn; got != want {
+	r.enterModes()
+	// DERIVED: entering runs enabledModes in reverse teardown order, so the alt
+	// screen is taken first and the input modes apply to it. A literal here would
+	// be a second statement of the order.
+	var want string
+	for i := len(enabledModes) - 1; i >= 0; i-- {
+		want += enabledModes[i].on
+	}
+	if got := b.String(); got != want {
 		t.Fatalf("entering wrote %q, want %q", got, want)
 	}
 	b.Reset()
@@ -149,7 +154,7 @@ func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
 	if strings.Index(got, pasteOff) > strings.Index(got, altScreenOff) {
 		t.Errorf("restore gave paste mode back after the screen: %q", got)
 	}
-	if r.alt || r.mouse || r.paste {
+	if anyModeClaimed(r) {
 		t.Error("restore returned with state still claimed")
 	}
 }
@@ -169,10 +174,8 @@ func TestRestoreSendsNothingItDidNotTake(t *testing.T) {
 // leave would then be sent for a screen the terminal never showed.
 func TestEnterDoesNotClaimAStateItCouldNotWrite(t *testing.T) {
 	r := &rawSession{control: failingWriter{}}
-	r.enterAlt()
-	r.enterMouse()
-	r.enterPaste()
-	if r.alt || r.mouse || r.paste {
+	r.enterModes()
+	if anyModeClaimed(r) {
 		t.Error("a failed write still claimed the terminal state")
 	}
 }
@@ -184,18 +187,27 @@ func (failingWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
 // Idempotence, for the same reason restore has it: both run from more than one
 // path, and making a second call an error would make the paths care about each
 // other.
-func TestLeaveAltIsIdempotent(t *testing.T) {
+func TestLeaveModesIsIdempotent(t *testing.T) {
 	var b strings.Builder
 	r := &rawSession{control: &b}
-	r.enterAlt()
+	r.enterModes()
 	b.Reset()
-	r.leaveAlt()
-	r.leaveAlt()
-	if r.alt {
-		t.Error("leaveAlt set alt")
+	r.leaveModes()
+	first := b.String()
+	r.leaveModes()
+	if anyModeClaimed(r) {
+		t.Error("leaveModes left a mode claimed")
 	}
-	if got := b.String(); got != altScreenOff {
-		t.Errorf("two leaves wrote %q, want one %q", got, altScreenOff)
+	if got := b.String(); got != first {
+		t.Errorf("two leaves wrote %q, want one round of %q", got, first)
+	}
+	// And it gives back everything the list holds, in the list's own order.
+	var want string
+	for _, m := range enabledModes {
+		want += m.off
+	}
+	if first != want {
+		t.Errorf("leaveModes wrote %q, want %q — the order is the teardown order", first, want)
 	}
 }
 
@@ -227,9 +239,7 @@ func TestNewConsoleEnablesEveryMode(t *testing.T) {
 func TestRestoreGivesBackEveryMode(t *testing.T) {
 	var control strings.Builder
 	sess := &rawSession{control: &control}
-	sess.enterAlt()
-	sess.enterMouse()
-	sess.enterPaste()
+	sess.enterModes()
 	control.Reset()
 	sess.restore()
 	for _, m := range enabledModes {
@@ -238,4 +248,17 @@ func TestRestoreGivesBackEveryMode(t *testing.T) {
 				m.name, control.String())
 		}
 	}
+}
+
+// anyModeClaimed reports whether the session still believes it holds any mode.
+//
+// Derived from the session's own map rather than checking three named fields, so
+// a mode added to enabledModes is covered without this helper changing.
+func anyModeClaimed(r *rawSession) bool {
+	for _, held := range r.modes {
+		if held {
+			return true
+		}
+	}
+	return false
 }

@@ -33,7 +33,7 @@
 | `passageRegions` | `cmd/define/passage.go` | new |
 | `regionPlaysAudio` | `cmd/define/replraw.go` | new |
 | `regionUnderlines` | `cmd/define/replraw.go` | new |
-| `keyBecomesASittingInput` | `cmd/define/play_loop.go` | new |
+| `sittingKeyHandling` | `cmd/define/play_loop.go` | new |
 | `lineState` | `cmd/define/repl.go` | new |
 | `parseREPLLine` | `cmd/define/repl.go` | modified |
 | `askSystem` | `cmd/define/askctx.go` | modified |
@@ -75,22 +75,23 @@ is in progress and checks everything else against the tree.
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `pasteOn`/`pasteOff` + `enterPaste` | `cmd/define/rawterm.go` | new | terminal mode 2004 |
+| `enabledModes` + `enterModes`/`leaveModes` | `cmd/define/rawterm.go` | new | every terminal mode, derived from one list |
 | `KeyPaste` + decode | `cmd/define/key.go` | modified | the byte stream |
-| passage-as-footer | `cmd/define/replraw.go` | modified | `liveScreen.Draw` |
+| passage-in-the-buffer | `cmd/define/replraw.go` | modified | `liveScreen.WriteRegions` |
 | `CaptureMarked` | `cmd/define/capture.go` | new | `store.Store` |
 
-- **pasteOn/pasteOff** — enabling mode 2004 so pastes arrive bracketed.
-  - **Injected into:** nothing; it is a terminal-lifecycle sibling of `enterMouse`, and `restore()` must turn it off in the same ordered teardown.
-  - **Future extensions:** None expected. It is one mode.
+- **enabledModes** — every mode the program asks a terminal for, in TEARDOWN order, each marked with whether the terminal replies in it.
+  - **Injected into:** nothing; `enterModes`/`leaveModes` loop it, `restore()` calls the latter, the decoder guard derives its encodings from the `replies` half, and both the in-process and PTY assertions loop it.
+  - **Future extensions:** a fourth mode is a row, and every guard picks it up — which is the point. It began as `pasteOn`/`pasteOff` plus a hand-written `enterPaste`, and the three hand-written pairs were the duplication BR-13 named.
 
 - **KeyPaste** — a new `KeyKind` whose `Raw` carries the whole pasted text, produced only by `pasteScanner`.
   - **Injected into:** `Apply` (which must NOT insert it as runes) and `runEditor` (which routes it to the passage).
   - **Future extensions:** A paste into the *line* rather than the passage, if that is ever wanted, is a second case on the same key.
 
-- **passage-as-footer** — the passage rendered into the `footer []string` the editor already passes to `Draw` every frame.
-  - **Injected into:** `console.view.Draw`, unchanged in signature. `FooterRowAt` already resolves a click to `(entry, offset)` and already refuses rows `fitFooter` dropped.
-  - **Future extensions:** A second pinned artifact (a second passage, a glossary strip) is another footer entry.
+- **passage-in-the-buffer** — the passage written to the record with one clickable `Region` per word.
+  - **Injected into:** `console.view.WriteRegions`, unchanged in signature. Marks are a paint-time overlay handed down by `SetPassage` on every draw, together with the live passage's buffer range — one call, because both answer "is the live passage reachable here?".
+  - **Future extensions:** #69's header, which turns the whole screen into a screen program and would let a passage be revisited rather than scrolled past.
+  - **Superseded:** this row said `passage-as-footer` and described `Draw`. See Revisions.
 
 - **CaptureMarked** — admission of a marked word into the deck.
   - **Injected into:** nothing new; it is a fifth verb on the existing `Capturer` interface, and it MUST reuse `decideCapture` and the existing `Upsert` → `vocab.Add` ordering rather than adding a second appender (`capture.go:47` states why).
@@ -562,7 +563,7 @@ Expected: FAIL — `undefined: newPassage`
 - [x] **Step 4: Run** `go test ./cmd/define/ -run 'TestPassage|TestWordAtCell|Highlight' -v`; Expected: PASS
 - [x] **Step 5: Commit**
 
-### Task 2.2: Render the passage into the footer — at every `Draw`, not one
+### Task 2.2: Write the passage into the buffer, with a region per word
 
 **Files:**
 - Modify: `cmd/define/replraw.go:398-410` (the `draw()` closure), **and `replraw.go:506` and `replraw.go:567`**
@@ -576,7 +577,7 @@ Expected: FAIL — `undefined: newPassage`
 ```go
 // The passage renders under the NORMAL rules — a deck word inside it is coloured,
 // which is what makes "marks clear and the words turn green" work later.
-func TestThePassageRendersWithDeckColour(t *testing.T) { /* … */ }
+func TestThePassageIsWrittenWithDeckColour(t *testing.T) { /* … */ }
 
 // THE REGRESSION the first draft would have shipped: the passage must survive a
 // submit. Paste, then look a word up, then assert the passage is STILL drawn.
@@ -704,7 +705,7 @@ Expected: PASS (3 tests)
 
 - [x] **Step 5: Commit**
 
-### Task 3.2: Widen `highlightRow` from one range to a set
+### Task 3.2: ~~Widen `highlightRow`~~ — superseded: marks paint over buffer bytes
 
 **Files:**
 - Modify: `cmd/define/selection_frame.go:208` (`highlightRow`), `cmd/define/screen.go:512-524` (its one caller)
@@ -1189,3 +1190,27 @@ a deliberate departure, not drift.
   each orphan byte of a split rune as a `RuneError`, a legal 1000-rune CJK paste
   split at the wrong byte counted 1001 and was refused — on exactly the decks the
   rune cap exists for.
+
+### 2026-09-16 — the footer-to-buffer reversal, recorded as a Revision
+
+Reason: the rule BR-24 names has two clauses, and the first pass followed only
+one. Ticking the boxes and correcting the tables is the first; **appending the
+departure here instead of overwriting the prose** is the second, and the
+Architecture paragraph was rewritten in place with no entry.
+
+Delta, stated as a reversal rather than as if it had always been so:
+
+- The passage was designed as **footer chrome**, redrawn every frame, to make
+  "marks clear and the asked-about words turn green" possible — `screen.lines` is
+  immutable once written. The operator ran it and the passage was welded to the
+  prompt forever, under every later lookup. The green re-render was dropped and
+  the passage became a **buffer record**.
+- That reversed two further decisions in this plan. `highlightRow` was to be
+  widened to a set of ranges for a paint-time mark layer; with marks painted over
+  buffer bytes by `paintMarks`, it has no consumer and `selection_frame.go` is
+  untouched by this window. And `RegionPassageWord`, "resolved away in Chunk 3",
+  is shipped — the click map is how buffer content is reached.
+- Tasks 2.2 through 2.4 were written against the footer and their titles and steps
+  are corrected in place, which is the part that cannot be appended: a task
+  description that describes work nobody did is not history, it is a false claim
+  about the tree that this repo's guards read.

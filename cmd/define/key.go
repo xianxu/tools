@@ -72,9 +72,13 @@ const (
 	numKeyKinds
 )
 
-// Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
-// so it can be ignored rather than inserted as garbage — the failure mode of a
-// decoder that falls through to "it must be text".
+// Key is one decoded keypress.
+//
+// Raw carries BYTES, and what they mean depends on the kind. For KeyUnknown they
+// are an unmodelled escape sequence, kept so it can be ignored rather than
+// inserted as garbage — the failure mode of a decoder that falls through to "it
+// must be text". For KeyPaste they are the opposite: sanitised TEXT that Apply
+// inserts at the cursor. One field, two meanings, disambiguated by Kind.
 type Key struct {
 	Kind KeyKind
 	Rune rune

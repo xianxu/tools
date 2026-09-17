@@ -336,3 +336,35 @@ func TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll(t *testing.T) {
 		t.Errorf("the phrase did not reach the wire as one span:\n%s", fake.Requests()[0].Prompt())
 	}
 }
+
+// The cmdAskPassage branch in runEditor is PRODUCTION WIRING, and deleting it
+// used to leave the suite green: every other test called ask() directly, so the
+// gesture that reaches it — a bare Enter with marks — was never driven end to end.
+func TestABareEnterWithMarksAsksThroughTheLoop(t *testing.T) {
+	d, fake, _, _ := askRig(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture})
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	d.dict, d.player, d.audio = rig.deps.dict, rig.deps.player, rig.deps.audio
+
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	// The scripted pointer freezes its frame at construction, so the region the
+	// paste would create is offered up front — at the column the passage puts
+	// `precession` on, and on the buffer line the paste lands at (base 0).
+	view.offer(0, 9, Region{Kind: RegionPassageWord, Text: "precession", Word: "precession"})
+	pointer := scriptedPointer(view)
+	ks := keySeq(
+		Key{Kind: KeyPaste, Raw: []byte("the slow precession of the equinox")},
+		completedPointerClick(t, pointer, 0, 9),
+		Key{Kind: KeyEnter},
+	)
+	runEditor(t.Context(), ks, nil, d, opt,
+		console{view: view, pointer: pointer, finish: finish, stdout: &out, stderr: &errb})
+
+	if len(fake.Requests()) == 0 {
+		t.Fatalf("a bare Enter with a mark sent nothing; stderr = %q", errb.String())
+	}
+	if got := fake.Requests()[0].Prompt(); !strings.Contains(got, headerPassage) {
+		t.Errorf("the request was not a passage ask:\n%s", got)
+	}
+}

@@ -46,6 +46,14 @@ type screen struct {
 	// regions is what each buffer line OFFERS, keyed by line. Sparse: most lines
 	// have none, and a session's worth of empty slices would be the bulk of it.
 	regions map[int][]Region
+	// passageLo and passageHi bound the LIVE passage in buffer lines, half-open.
+	//
+	// The screen needs them because the copy-vs-mark decision is made here, and
+	// `regions` is never pruned: a superseded passage's rows still carry
+	// RegionPassageWord forever, so "does this row have a passage word" answered
+	// yes for a passage that scrolled away and a drag there marked the CURRENT
+	// one (#67, BR-28).
+	passageLo, passageHi int
 	// marks is the paint-time mark overlay, keyed by buffer line (#67).
 	//
 	// PAINT TIME, because the buffer's bytes are immutable once written and a
@@ -998,14 +1006,29 @@ func (l *liveScreen) BufferLines() int {
 	return n
 }
 
-// SetMarks replaces the paint-time mark overlay.
+// SetPassage tells the screen where the LIVE passage is and what is marked in it.
 //
-// Replaces rather than merges: the session's mark set is the whole truth, handed
-// down entire on every draw, so a stale line cannot survive a clear.
-func (l *liveScreen) SetMarks(m map[int][]cellRange) {
+// One call for both, because they answer the same question — "is the live passage
+// reachable at this point?" — and a screen that knew the marks but not the range
+// would gate the paint and not the gesture. Replaces rather than merges: the
+// session's state is the whole truth, handed down entire on every draw, so
+// nothing stale can survive a clear.
+func (l *liveScreen) SetPassage(lo, hi int, m map[int][]cellRange) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.s.marks = m
+	l.s.passageLo, l.s.passageHi, l.s.marks = lo, hi, m
+}
+
+// VisibleRange is the buffer lines the viewport is showing, half-open.
+//
+// The caller needs it to answer whether the live passage is still on screen —
+// "a passage was once pasted" is not authority over Enter for the rest of the
+// session.
+func (l *liveScreen) VisibleRange() (int, int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	frame, top := l.s.visible()
+	return top, top + len(frame)
 }
 
 // RegionAtRow resolves a click: a VIEWPORT row and display column to whatever is

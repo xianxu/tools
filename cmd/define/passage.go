@@ -15,11 +15,15 @@ type passageSpan struct {
 
 // passage is the text being read, and everything derived from it.
 //
-// It is CHROME, not scrollback. screen.lines is append-only and immutable once
-// written, and deck colour is baked in at write time — so a passage printed as
-// ordinary output could never re-render, and "marks clear and the words you
-// asked about turn green" (#67) would be impossible. It lives in the footer,
-// which Draw rebuilds from source on every frame.
+// It is a RECORD: written to the buffer, scrolling away like a definition or an
+// answer, with its deck colour baked in at write time.
+//
+// It was footer CHROME first, because screen.lines is immutable once written and
+// "marks clear and the asked-about words turn green" needs a region the frame
+// rebuilds. The footer never scrolls, so the passage stayed welded to the prompt
+// under every later lookup; when the two requirements collided the green
+// re-render was the one dropped. Marks are paint-time over these immutable bytes,
+// which is what the buffer CAN do.
 type passage struct {
 	src   string
 	lines []string
@@ -38,7 +42,15 @@ func wrapPassageLines(text string, width int) []string {
 			out = append(out, line)
 			continue
 		}
-		out = append(out, strings.Split(wrapText(line, width, 0), "\n")...)
+		for _, wrapped := range strings.Split(wrapText(line, width, 0), "\n") {
+			// wrapText breaks at SPACES, so a token with none — a URL, a long
+			// identifier — comes back whole and over the margin. clipVisible then
+			// truncates it at paint time, leaving the tail neither readable nor
+			// CLICKABLE, which is the half of the operator's wrapping report that
+			// survived the first fix. Breaking it hard is worse than breaking at a
+			// space and better than losing it.
+			out = append(out, hardBreak(wrapped, width)...)
+		}
 	}
 	return out
 }
@@ -339,4 +351,33 @@ func passageText(p *passage, v Vocabulary, colour bool) string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\r\n")
+}
+
+// hardBreak splits a run that no space can break, at the margin, in whole display
+// units so a wide glyph is never cut in half.
+func hardBreak(line string, width int) []string {
+	if width <= 0 || visibleCells(line) <= width {
+		return []string{line}
+	}
+	var out []string
+	var b strings.Builder
+	col := 0
+	for i := 0; i < len(line); {
+		size, w := nextDisplayUnit(line[i:])
+		if size == 0 {
+			break
+		}
+		if col+w > width && b.Len() > 0 {
+			out = append(out, b.String())
+			b.Reset()
+			col = 0
+		}
+		b.WriteString(line[i : i+size])
+		col += w
+		i += size
+	}
+	if b.Len() > 0 {
+		out = append(out, b.String())
+	}
+	return out
 }

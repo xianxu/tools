@@ -4454,7 +4454,16 @@ func TestEveryKeyKindIsDecidedForASitting(t *testing.T) {
 			k.Rune = ' '
 		}
 		_, ok := toInput(k)
-		if want := keyBecomesASittingInput(kind); ok != want {
+		want, declared := sittingKeyHandling[kind]
+		if !declared {
+			// FAIL CLOSED. The first version of this guard used a predicate with
+			// a default, so a kind wired into neither agreed with itself and the
+			// guard passed — the one thing a registry guard must not do.
+			t.Errorf("KeyKind %d (%v) has no row in sittingKeyHandling — a kind nobody decided "+
+				"about is how a pasted answer came to vanish with no input and no notice", kind, kind)
+			continue
+		}
+		if ok != want {
 			t.Errorf("KeyKind %d (%v): toInput ok=%v, declared=%v — toInput and its "+
 				"declaration disagree, which is how a key comes to do nothing with nobody noticing",
 				kind, kind, ok, want)

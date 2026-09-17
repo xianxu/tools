@@ -432,7 +432,15 @@ func TestEveryEnabledInputModeIsDecoded(t *testing.T) {
 	// 1049 (the alternate screen) is deliberately absent: it changes what the
 	// terminal SHOWS and replies with nothing, so there is no encoding to decode.
 	// Adding a mode that does reply, without a row here, reddens the suite.
-	const inputModes = mouseOn + pasteOn
+	// DERIVED from enabledModes, not hand-concatenated: a fourth mode added to
+	// that list is invisible to a string this test builds for itself, which is
+	// exactly how 2004 nearly shipped outside the guard.
+	var inputModes string
+	for _, m := range enabledModes {
+		if m.replies {
+			inputModes += m.on
+		}
+	}
 	modes := regexp.MustCompile(`\x1b\[\?(\d+)h`).FindAllStringSubmatch(inputModes, -1)
 	if len(modes) == 0 {
 		t.Fatal("no modes found in the enable constants; this test would be vacuous")

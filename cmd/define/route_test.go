@@ -94,3 +94,32 @@ func routeFor(t *testing.T, line string) string {
 	}
 	return "nothing"
 }
+
+// EVERY repl kind is decided for BOTH loops, derived from numReplKinds.
+//
+// #67 added cmdAskPassage and the piped loop had no case for it. That is
+// harmless — parseREPLLine can only produce it from marks, and the piped loop has
+// no screen to mark on — but nothing said so, and the next kind might not be
+// harmless. A sentinel turns the omission into a decision.
+func TestEveryReplKindIsDecidedForBothLoops(t *testing.T) {
+	for kind := replKind(0); kind < numReplKinds; kind++ {
+		if _, declared := replKindHandling[kind]; !declared {
+			t.Errorf("replKind %d has no row in replKindHandling — a kind nobody decided about "+
+				"is how the piped loop came to silently ignore cmdAskPassage", kind)
+		}
+	}
+}
+
+// And the claim that the piped loop cannot see cmdAskPassage is CHECKED, not
+// asserted: it passes hasMarks=false, which is the only way to reach that kind.
+func TestThePipedLoopCannotProduceAPassageAsk(t *testing.T) {
+	for _, line := range []string{"", "sycophantic", "?what is this", "/lang es", `\word`} {
+		if got := parseREPLLine(line, lineState{hasCurrent: true}); got.kind == cmdAskPassage {
+			t.Errorf("parseREPLLine(%q) produced cmdAskPassage without marks", line)
+		}
+	}
+	// With marks it DOES, which is what makes the row above a real distinction.
+	if got := parseREPLLine("", lineState{hasPassage: true, hasMarks: true}); got.kind != cmdAskPassage {
+		t.Errorf("with marks, bare Enter = %v, want cmdAskPassage", got.kind)
+	}
+}

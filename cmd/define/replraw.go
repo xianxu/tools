@@ -77,16 +77,7 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 	// printed; here the screen places every line itself, so nothing depends on
 	// the line discipline and raw mode is continuous — which is what "render
 	// cooked, play raw" wanted all along.
-	sess.enterAlt()
-	// And the mouse, whose wheel both loops need (M1.4b): inside the alternate
-	// screen a terminal sends the wheel as ARROW KEYS unless asked to report the
-	// mouse, and Up/Down in the editor are the history walk — so a scroll walked
-	// history. The bytes are identical, so nothing could tell them apart; the
-	// report is the only way to be handed the gesture the user actually made.
-	//
-	// The shared router handles held drags and completed clicks.
-	sess.enterMouse()
-	sess.enterPaste()
+	sess.enterModes()
 	live := newScreen(stdout, terminalRows(stdout), terminalCols(stdout))
 	var clipboard clipboardWriter
 	var clipboardErr error
@@ -255,12 +246,17 @@ type display interface {
 	// painted by absolute buffer line, and only a line number ties the session's
 	// spans to the screen's cells (#67).
 	BufferLines() int
-	// SetMarks replaces the paint-time mark overlay, keyed by buffer line.
+	// SetPassage tells the screen where the LIVE passage is, in buffer lines, and
+	// what is marked in it.
 	//
-	// Derived on every draw from the session's marks rather than kept in step by
-	// hand: the session owns which spans are marked, and this is the one place
-	// that answer is translated into the screen's coordinates.
-	SetMarks(m map[int][]cellRange)
+	// One call for both, because they answer the same question — is the live
+	// passage reachable at this point? A screen that knew the marks but not the
+	// range would gate the paint and not the gesture, which is how a drag in a
+	// superseded passage came to mark the current one.
+	SetPassage(lo, hi int, m map[int][]cellRange)
+	// VisibleRange is the buffer lines on screen, half-open, so a caller can ask
+	// whether the live passage is still reachable.
+	VisibleRange() (int, int)
 	// FooterRowAt answers which footer entry a VIEWPORT row is showing, and which
 	// of that entry's physical rows — so a click can reach the live edge and not
 	// only the buffer (#40 D10), and so a caller that acts on a COLUMN can refuse
@@ -422,7 +418,11 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// The marks are re-derived here, every frame, from the session's spans —
 		// one owner, one translation, so the painted cells cannot drift from what
 		// the next Enter will ask about.
-		view.SetMarks(markCellRanges(sess.passage, sess.marks, sess.passageBase))
+		lo, hi := sess.passageBase, sess.passageBase
+		if sess.passage != nil {
+			hi = lo + sess.passage.lineCount()
+		}
+		view.SetPassage(lo, hi, markCellRanges(sess.passage, sess.marks, sess.passageBase))
 		// completionsFor rather than candidatesFor: draw renders only the grey
 		// tail, so resolving the pair here would build a recall list per
 		// keystroke that nothing reads. Same function that fills .complete, so
@@ -555,11 +555,14 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// message. Pointing at ordinary text is not an error.
 				//
 				// INSIDE A PASSAGE it is: every word offers marking, so the
-				// invariant above is scoped to everywhere else (#67). The passage
-				// is a SURFACE rather than a set of regions — a Region says "this
-				// particular span offers an action", which carries no information
-				// when every span does — so the hit test is FooterRowAt plus
-				// wordAtCell, and no new RegionKind exists.
+				// invariant above is scoped to everywhere else (#67).
+				//
+				// Every word being clickable does mean a per-span registry carries
+				// no information — which is why the passage was a surface while it
+				// was footer chrome. Moving it into the BUFFER reversed that: the
+				// click map is how buffer content is reached, so RegionPassageWord
+				// is the mechanism and the live-range check is what keeps a
+				// superseded passage's regions from answering.
 				hit, ok := con.pointer.resolve(k)
 				if !ok {
 					continue
@@ -570,8 +573,12 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// each word separately produced `[sel]at[/sel]
 					// [sel]the[/sel] [sel]zenith[/sel]` and then admitted every
 					// function word to the deck (#67, C-B).
-					for _, sp := range marksForDrag(sess.passage, sess.passageCell(hit.dragAnchor), sess.passageCell(hit.dragEnd)) {
-						sess.marks = sess.marks.toggle(sp)
+					from, okA := sess.passageCell(hit.dragAnchor)
+					to, okB := sess.passageCell(hit.dragEnd)
+					if okA && okB {
+						for _, sp := range marksForDrag(sess.passage, from, to) {
+							sess.marks = sess.marks.toggle(sp)
+						}
 					}
 					draw()
 					continue
@@ -639,7 +646,8 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// Bypassing it meant the interactive path quietly disagreed about
 				// what a line means — no trimming, and "hot  dog" not collapsed to
 				// the multi-word headword the dictionary actually has (ARCH-DRY).
-				cmd := parseREPLLine(e.String(), sess.lineState())
+				top, bottom := view.VisibleRange()
+				cmd := parseREPLLine(e.String(), sess.lineState(sess.passageVisible(top, bottom)))
 				// Redraw the committed line with NO suggestion before advancing:
 				// the grey tail was never accepted, so leaving it in scrollback
 				// claims the user typed something they did not.

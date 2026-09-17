@@ -1411,6 +1411,18 @@ func TestPlanCitesTestsThatExist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// ISSUES TOO, since #67. A Done-when row is a test obligation, and the close
+	// step's audit records the pinning test beside each row — an enumeration whose
+	// whole value is that a row with no test becomes VISIBLE rather than asserted.
+	//
+	// That audit shipped naming two tests which were in no file at all: the rule's
+	// own failure mode, and nothing read it. A plan was guarded and the issue that
+	// plan serves was not.
+	issues, err := filepath.Glob(filepath.Join(root, "workshop", "issues", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans = append(plans, issues...)
 	if len(plans) == 0 {
 		// conformance:inapplicable — every plan is archived at close, so no
 		// active plan is a legitimate state between issues.

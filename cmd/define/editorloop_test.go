@@ -76,8 +76,10 @@ type recordDisplay struct {
 	// that predates the board.
 	footerRows map[int][2]int
 	// bufferLines and marks are the passage's seams (#67).
-	bufferLines int
-	marks       map[int][]cellRange
+	bufferLines          int
+	marks                map[int][]cellRange
+	passageLo, passageHi int
+	visibleLo, visibleHi int
 }
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
@@ -144,10 +146,21 @@ func (d *recordDisplay) BufferLines() int {
 	return d.bufferLines
 }
 
-func (d *recordDisplay) SetMarks(m map[int][]cellRange) {
+func (d *recordDisplay) SetPassage(lo, hi int, m map[int][]cellRange) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.marks = m
+	d.passageLo, d.passageHi, d.marks = lo, hi, m
+}
+
+// VisibleRange: the double shows everything it was given, so the live passage is
+// always on screen unless a test says otherwise.
+func (d *recordDisplay) VisibleRange() (int, int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.visibleHi == 0 {
+		return 0, 1 << 20
+	}
+	return d.visibleLo, d.visibleHi
 }
 
 func (d *recordDisplay) markedCells() map[int][]cellRange {

@@ -30,9 +30,12 @@ type rawSession struct {
 	// the stdin handle worked only because interactive means both are the same
 	// tty — an assumption this type had never made before.
 	control io.Writer
-	alt     bool
-	mouse   bool
-	paste   bool
+	// modes is which modes this session actually took, by name.
+	//
+	// A MAP rather than three bools: the enter/leave pairs and the teardown order
+	// are derived from enabledModes, and a bool per mode is the parallel
+	// enumeration that derivation exists to remove.
+	modes map[string]bool
 }
 
 // enterRaw puts f into raw mode and sends mode sequences to control.
@@ -52,18 +55,9 @@ func (r *rawSession) restore() {
 	if r == nil {
 		return
 	}
-	// Mouse reporting goes first of all: a terminal left reporting the mouse
-	// sends escape sequences into whatever the user runs next, and unlike raw
-	// mode there is no `reset` reflex for it because the shell still looks fine.
-	r.leaveMouse()
-	// Bracketed paste goes back for the same reason and in the same breath: a
-	// terminal left bracketing pastes types ESC[200~ into the next program, and
-	// there is no reflex for that either.
-	r.leavePaste()
-	// The alternate screen goes next, so the terminal is back on the normal
-	// buffer before raw mode ends — the reverse order leaves a cooked terminal
-	// briefly drawing into a buffer that is about to be discarded.
-	r.leaveAlt()
+	// Every mode goes back, in enabledModes' own order — which IS the teardown
+	// order, and the reasons are stated there rather than restated here.
+	r.leaveModes()
 	if r.state == nil {
 		return
 	}
@@ -98,67 +92,12 @@ const (
 	altScreenOff = "\x1b[?1049l"
 )
 
-// enterAlt switches the terminal to the alternate screen.
-//
-// It lives on rawSession, and that placement is the whole point: a terminal left
-// in the alternate screen is as bad an outcome as one left raw — the user's
-// shell keeps working but everything they had scrolled back to is hidden behind
-// a buffer nobody is drawing. rawSession already guarantees restoration from a
-// defer AND on the cancellation path, so folding this in means the guarantee
-// covers both rather than two mechanisms each covering half.
-func (r *rawSession) enterAlt() {
-	if r == nil || r.control == nil || r.alt {
-		return
-	}
-	if _, err := fmt.Fprint(r.control, altScreenOn); err != nil {
-		// Not recorded as entered, so restore does not send a leave for a screen
-		// the terminal never showed. A dropped error here would make the flag a
-		// claim about a write rather than about the terminal.
-		return
-	}
-	r.alt = true
-}
-
-// leaveAlt returns to the normal screen. Idempotent, for the same reason
-// restore is: it runs from more than one path and claiming a second call is an
-// error would make the paths care about each other.
-func (r *rawSession) leaveAlt() {
-	if r == nil || r.control == nil || !r.alt {
-		return
-	}
-	fmt.Fprint(r.control, altScreenOff)
-	r.alt = false
-}
-
 // Button-event motion tracking (1002) and SGR coordinates (1006). Held drags
 // belong to the shared selection router; idle hover is not reported.
 const (
 	mouseOn  = "\x1b[?1002h\x1b[?1006h"
 	mouseOff = "\x1b[?1006l\x1b[?1002l"
 )
-
-// enterMouse asks the terminal to report the mouse.
-//
-// On rawSession for the same reason enterAlt is: restoration has to be one
-// guarantee rather than three that each cover part of the exit paths.
-func (r *rawSession) enterMouse() {
-	if r == nil || r.control == nil || r.mouse {
-		return
-	}
-	if _, err := fmt.Fprint(r.control, mouseOn); err != nil {
-		return // as enterAlt: the flag records the terminal's state, not the attempt
-	}
-	r.mouse = true
-}
-
-// leaveMouse stops it. Idempotent, like the rest of restore.
-func (r *rawSession) leaveMouse() {
-	if r == nil || r.control == nil || !r.mouse {
-		return
-	}
-	fmt.Fprint(r.control, mouseOff)
-	r.mouse = false
-}
 
 // Bracketed paste (2004). The terminal wraps pasted text in ESC[200~ / ESC[201~
 // so a program can tell it from typing — which is the whole point: without it a
@@ -168,46 +107,69 @@ const (
 	pasteOff = "\x1b[?2004l"
 )
 
-// enabledModes is every mode the program asks a terminal for, paired with the
-// sequence that gives it back.
+// enabledModes is every mode the program asks a terminal for, IN TEARDOWN ORDER.
 //
-// ONE list, so the guards DERIVE the set instead of hand-writing a case per mode.
-// #67 found the cost of not having it twice over: mode 2004 was nearly enabled
-// where TestEveryEnabledInputModeIsDecoded could not see it (it read mouseOn
-// alone), and then enterPaste shipped as production wiring no test exercised —
-// deleting the call left the whole suite green while the milestone silently
-// reverted.
+// ONE list, so everything derives from it instead of hand-writing a case per
+// mode. #67 paid for not having it three times: mode 2004 was nearly enabled
+// where the decoder guard could not see it, enterPaste shipped as wiring no test
+// exercised, and the teardown order lived only in restore()'s call sequence.
 //
-// Each entry earns two assertions: newConsole WRITES it, and a real terminal
-// gets it back (pty_conformance_test.go). Both are loops over this slice.
-var enabledModes = []struct{ name, on, off string }{
-	{"alternate screen", altScreenOn, altScreenOff},
-	{"mouse reporting", mouseOn, mouseOff},
-	{"bracketed paste", pasteOn, pasteOff},
+// The ORDER is the teardown order, and it is load-bearing. Mouse reporting goes
+// back first: a terminal left reporting it writes escapes into whatever runs
+// next, and unlike raw mode there is no `reset` reflex because the shell still
+// looks fine. Bracketed paste carries the identical hazard. The alternate screen
+// goes last, before raw mode ends, so a cooked terminal never briefly draws into
+// a buffer about to be discarded. Entering runs the list in reverse, so the alt
+// screen is taken first and the input modes apply to it.
+//
+// `replies` marks a mode the terminal ANSWERS in. Those owe the decoder a case,
+// which TestEveryEnabledInputModeIsDecoded derives from here; the alternate
+// screen replies with nothing, so it has no encoding to decode.
+var enabledModes = []struct {
+	name, on, off string
+	replies       bool
+}{
+	{"mouse reporting", mouseOn, mouseOff, true},
+	{"bracketed paste", pasteOn, pasteOff, true},
+	{"alternate screen", altScreenOn, altScreenOff, false},
 }
 
-// enterPaste asks the terminal to bracket pastes.
+// enterModes takes every mode, in reverse teardown order.
 //
-// A sibling of enterMouse in every respect, including the one that matters: the
-// flag is set only on a successful WRITE, so restore never sends a leave for a
-// mode the terminal never entered.
-func (r *rawSession) enterPaste() {
-	if r == nil || r.control == nil || r.paste {
-		return
+// A LOOP over the list rather than three calls, so a mode added to the list is
+// taken without anyone remembering to add a fourth call — which is the failure
+// enterPaste already had once.
+func (r *rawSession) enterModes() {
+	for i := len(enabledModes) - 1; i >= 0; i-- {
+		m := enabledModes[i]
+		r.enterMode(m.name, m.on)
 	}
-	if _, err := fmt.Fprint(r.control, pasteOn); err != nil {
-		return
-	}
-	r.paste = true
 }
 
-// leavePaste stops it. Idempotent, like the rest of restore.
-func (r *rawSession) leavePaste() {
-	if r == nil || r.control == nil || !r.paste {
+// enterMode writes one mode and records it ONLY on a successful write, so
+// restore never sends a leave for a mode the terminal never entered.
+func (r *rawSession) enterMode(name, on string) {
+	if r == nil || r.control == nil || r.modes[name] {
 		return
 	}
-	fmt.Fprint(r.control, pasteOff)
-	r.paste = false
+	if _, err := fmt.Fprint(r.control, on); err != nil {
+		return
+	}
+	if r.modes == nil {
+		r.modes = map[string]bool{}
+	}
+	r.modes[name] = true
+}
+
+// leaveModes gives them all back, in the list's own order.
+func (r *rawSession) leaveModes() {
+	for _, m := range enabledModes {
+		if r == nil || r.control == nil || !r.modes[m.name] {
+			continue
+		}
+		fmt.Fprint(r.control, m.off)
+		r.modes[m.name] = false
+	}
 }
 
 // winSize is the terminal's shape, measured where the signal arrives so the

@@ -179,6 +179,13 @@ func (l *liveScreen) passageDragLocked(a, b selectionPoint) (selectionPoint, sel
 	if a.row < 0 || a.row >= len(l.frame.rows) || !rowHasPassageWord(l.frame.rows[a.row]) {
 		return a, b, false
 	}
+	// AND the anchor must be in the LIVE passage. regions is never pruned, so a
+	// superseded passage's rows still carry RegionPassageWord — without this a
+	// drag up in an old passage marked words in the current one and swallowed the
+	// copy the reader asked for (BR-28).
+	if line, ok := l.s.LineAt(a.row); !ok || line < l.s.passageLo || line >= l.s.passageHi {
+		return a, b, false
+	}
 	toBuffer := func(p selectionPoint) selectionPoint {
 		line, ok := l.s.LineAt(p.row)
 		if !ok {

@@ -556,28 +556,35 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	return over()
 }
 
-// keyBecomesASittingInput declares which key kinds toInput turns into an answer.
+// sittingKeyHandling declares, for EVERY key kind, what a sitting does with it.
 //
-// DECLARED, and checked against toInput by a guard derived from numKeyKinds, so a
-// kind added without an answer here reddens rather than vanishing. #67 added
-// KeyPaste while turning mode 2004 on for this surface in the same window, and a
-// pasted answer simply disappeared — no input, no notice, no test. Nothing forced
-// the question because KeyKind had no sentinel.
+// A TOTAL MAP, not a predicate with a default, and that is the whole point. The
+// first version was a switch returning false for anything unlisted — so a new
+// kind agreed with toInput by both doing nothing, and the guard passed. It FAILED
+// OPEN, which is the one thing a registry guard must not do: numPasteExits and
+// numRegionKinds both fail closed, and this was written in the same window.
 //
-// It is narrower than "a sitting reacts to this": the VIEWPORT keys and KeyClick
-// are intercepted before toInput is reached (playSession's own loop), so they act
-// without becoming an Input. This predicate answers only for toInput, which is
-// what it is checked against — a declaration that covered two different questions
-// could not be checked against either.
-func keyBecomesASittingInput(k KeyKind) bool {
-	switch k {
-	case KeyInterrupt, KeyEOF, KeyEnter, KeyTab, KeyRune:
-		return true
-	}
-	// Everything else is inert HERE on purpose: the pointer phases are the
-	// router's, the viewport keys never reach this function, and a paste is text
-	// a sitting has no field for.
-	return false
+// A kind absent from this map reddens TestEveryKeyKindIsDecidedForASitting, which
+// is what forces the question #67 never got asked: it added KeyPaste and turned
+// mode 2004 on for this surface in the same window, and a pasted answer vanished.
+var sittingKeyHandling = map[KeyKind]bool{
+	// Answers.
+	KeyInterrupt: true, KeyEOF: true, KeyEnter: true, KeyTab: true, KeyRune: true,
+	// Intercepted BEFORE toInput by playSession's own loop, so they act without
+	// becoming an Input.
+	KeyClick: false, KeyPageUp: false, KeyPageDown: false,
+	KeyWheelUp: false, KeyWheelDown: false,
+	// The router's, never delivered to a loop.
+	KeyPointerPress: false, KeyPointerMotion: false, KeyPointerRelease: false,
+	// Inert here on purpose: a sitting takes keystrokes and has no field for
+	// text, so a paste would answer the question with the clipboard.
+	KeyPaste: false, KeyPasteRefused: false,
+	// Editing keys: a sitting has no line to edit.
+	KeyLeft: false, KeyRight: false, KeyUp: false, KeyDown: false,
+	KeyHome: false, KeyEnd: false, KeyBackspace: false, KeyDelete: false,
+	KeyKillLine: false,
+	// An unmodelled sequence is inert everywhere.
+	KeyUnknown: false,
 }
 
 // toInput translates a decoded terminal Key into play's own Input.

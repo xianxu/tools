@@ -618,9 +618,7 @@ func TestALegalCJKPasteIsNotRefusedAtAnySplit(t *testing.T) {
 func TestNewConsoleEnablesBracketedPaste(t *testing.T) {
 	var control strings.Builder
 	sess := &rawSession{control: &control}
-	sess.enterAlt()
-	sess.enterMouse()
-	sess.enterPaste()
+	sess.enterModes()
 	if got := control.String(); !strings.Contains(got, pasteOn) {
 		t.Errorf("bracketed paste was never enabled: %q", got)
 	}

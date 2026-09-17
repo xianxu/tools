@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // The passage tokenises through wordRuns, the ONE tokeniser (highlight.go).
@@ -305,6 +306,12 @@ func TestADragThatStartsOutsideThePassageIsNotAMark(t *testing.T) {
 	rows[1] = selectionRow{selectable: true, styled: p.line(0), regions: passageRegions(p)}
 	live.frame = newSelectionFrame(80, 24, rows)
 	live.frameID, live.framePublished = 1, true
+	// The buffer behind the frame, and the LIVE passage's range within it:
+	// regions alone are not enough, because a superseded passage's rows carry
+	// them forever.
+	live.s.lines = []string{"an ordinary line of output", p.line(0)}
+	live.s.rows, live.s.cols = 24, 80
+	live.SetPassage(1, 2, nil)
 
 	if _, _, ok := live.passageDragLocked(selectionPoint{row: 0, col: 0}, selectionPoint{row: 1, col: 10}); ok {
 		t.Error("a drag starting in ordinary output was taken as a passage drag; its copy is lost")
@@ -380,5 +387,140 @@ func TestTheTokenAfterAMarkKeepsItsStyle(t *testing.T) {
 	if !strings.Contains(before[closed:], knownOn) {
 		t.Errorf("the style was not resumed after the mark closed, so %q renders plain:\n%q",
 			"precession", got)
+	}
+}
+
+// A drag in a SUPERSEDED passage must not mark the current one. Its rows still
+// carry RegionPassageWord — screen.regions is never pruned — so the region kind
+// alone answers yes forever; only the live range can refuse it.
+//
+// Measured before the fix: a drag anchored on the old passage's row marked "zulu
+// yankee xray" of the CURRENT one, which then reached the prompt and the deck.
+func TestADragInASupersededPassageIsNotAMark(t *testing.T) {
+	old := newPassage("alpha beta gamma", 0)
+	live := newLiveScreen(&bytes.Buffer{}, 24, 80)
+	defer live.Stop()
+	rows := make([]selectionRow, 24)
+	rows[0] = selectionRow{selectable: true, styled: old.line(0), regions: passageRegions(old)}
+	live.frame = newSelectionFrame(80, 24, rows)
+	live.frameID, live.framePublished = 1, true
+	live.s.lines = []string{old.line(0), "", "zulu yankee xray"}
+	live.s.rows, live.s.cols = 24, 80
+	// The LIVE passage is further down the buffer; row 0 belongs to the old one.
+	live.SetPassage(2, 3, nil)
+
+	if _, _, ok := live.passageDragLocked(selectionPoint{row: 0, col: 0}, selectionPoint{row: 0, col: 10}); ok {
+		t.Error("a drag in a superseded passage was taken as a passage drag; it would mark the current one")
+	}
+}
+
+// passageCell REFUSES a row the live passage does not own, rather than clamping
+// it to the nearest line that exists — which is how an out-of-passage drag end
+// landed inside the current passage.
+func TestPassageCellRefusesARowItDoesNotOwn(t *testing.T) {
+	sess := &session{passage: newPassage("alpha beta\ngamma delta", 0), passageBase: 40}
+	if _, ok := sess.passageCell(selectionPoint{row: 41, col: 3}); !ok {
+		t.Error("a row inside the passage was refused")
+	}
+	for _, row := range []int{0, 39, 42, 1000} {
+		if c, ok := sess.passageCell(selectionPoint{row: row, col: 3}); ok {
+			t.Errorf("row %d was accepted as passage line %d; clamping is how a stale drag lands inside", row, c.line)
+		}
+	}
+}
+
+// "A passage was once pasted" is not authority over Enter for the rest of the
+// session. Once it has scrolled away a bare Enter must replay again, and the
+// nudge must stop pointing at something off-screen.
+func TestEnterReplaysAgainOnceThePassageHasScrolledAway(t *testing.T) {
+	sess := &session{current: "sycophantic", passage: newPassage("the slow precession", 0), passageBase: 5}
+
+	onScreen := sess.lineState(sess.passageVisible(0, 24))
+	if got := parseREPLLine("", onScreen); got.kind != cmdNothing || got.note != noteNothingMarked {
+		t.Errorf("with the passage on screen, bare Enter = %v %q; want the nudge", got.kind, got.note)
+	}
+	scrolledAway := sess.lineState(sess.passageVisible(100, 124))
+	if got := parseREPLLine("", scrolledAway); got.kind != cmdReplay {
+		t.Errorf("after the passage scrolled away, bare Enter = %v; want cmdReplay", got.kind)
+	}
+}
+
+// The passage is a RECORD: it goes into the buffer and scrolls away like a
+// definition or an answer, not into the footer where it was welded to the prompt
+// forever (operator-reported, with a screenshot).
+func TestThePassageIsWrittenToTheBufferNotTheFooter(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	ks := keySeq(Key{Kind: KeyPaste, Raw: []byte("the slow precession of the equinox")})
+	runEditor(t.Context(), ks, nil, rig.deps, opt,
+		console{view: view, finish: finish, stdout: &out, stderr: &errb})
+
+	if !strings.Contains(out.String(), "precession") {
+		t.Errorf("the passage never reached the buffer:\n%s", out.String())
+	}
+	if joined := strings.Join(view.footer(), "\n"); strings.Contains(joined, "precession") {
+		t.Errorf("the passage is in the footer, so it will never scroll away: %q", joined)
+	}
+}
+
+// MARK WINS over deck colour. An explicit fg/bg pair overrides the foreground it
+// resumes over anyway; painting the mark last makes that structural rather than a
+// rule someone has to remember.
+func TestAMarkedDeckWordRendersAsAMarkNotAsADeckWord(t *testing.T) {
+	v := &memVocabulary{}
+	v.Add("equinox")
+	p := newPassage("the slow equinox", 0)
+	line := passageText(p, v, true)
+	if !strings.Contains(line, knownOn+"equinox") {
+		t.Fatalf("setup: the deck word was not coloured: %q", line)
+	}
+	col, width, ok := spanCells(p.line(0), p.spans(0)[2])
+	if !ok {
+		t.Fatal("setup: could not locate the word's cells")
+	}
+	got := paintMarks(line, []cellRange{{start: col, end: col + width}})
+	at := strings.Index(got, "equinox")
+	if at < 0 {
+		t.Fatalf("the word was lost: %q", got)
+	}
+	// The mark opens last before the word, so it is what the terminal shows.
+	before := got[:at]
+	if strings.LastIndex(before, markOn) < strings.LastIndex(before, knownOn) {
+		t.Errorf("the deck colour won over the mark:\n%q", got)
+	}
+}
+
+// An UNBREAKABLE token — a URL, a long identifier — has no space for wrapText to
+// break at, so it came back whole and over the margin; clipVisible then truncated
+// it at paint time and the tail was neither readable nor clickable. That is the
+// half of the operator's wrapping report that survived the first fix.
+func TestAnUnbreakableTokenIsBrokenAtTheMargin(t *testing.T) {
+	url := "https://example.com/a/very/long/path/that/never/breaks/anywhere"
+	p := newPassage("see "+url+" for more", 30)
+	for i := range p.lines {
+		if got := visibleCells(p.line(i)); got > 30 {
+			t.Errorf("line %d is %d cells, past the margin — its tail is unclickable: %q", i, got, p.line(i))
+		}
+	}
+	// Nothing is lost: every character is still there to click.
+	var joined string
+	for i := range p.lines {
+		joined += p.line(i)
+	}
+	if !strings.Contains(strings.ReplaceAll(joined, " ", ""), strings.ReplaceAll(url, " ", "")) {
+		t.Errorf("the token was truncated rather than broken:\n%q", joined)
+	}
+}
+
+// A wide glyph is never cut in half by the hard break.
+func TestHardBreakNeverSplitsAWideGlyph(t *testing.T) {
+	for _, line := range hardBreak(strings.Repeat("漢", 20), 7) {
+		if visibleCells(line) > 7 {
+			t.Errorf("line %q is %d cells, over the margin", line, visibleCells(line))
+		}
+		if !utf8.ValidString(line) {
+			t.Errorf("the break cut a rune: %q", line)
+		}
 	}
 }

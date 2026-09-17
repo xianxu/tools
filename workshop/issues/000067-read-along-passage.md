@@ -525,7 +525,7 @@ without new machinery. See Open decisions.
 - `markClickable` (`screen.go:362`) is the precedent for decorating a span safely:
   attributes only (`\x1b[4m`/`\x1b[24m`), never colour, closing with `24` rather
   than `0` so the palette survives.
-- Mode 2004 is absent. `TestEveryEnabledMouseModeIsDecoded` (`key_test.go:400`)
+- Mode 2004 is absent. `TestEveryEnabledInputModeIsDecoded` (`key_test.go:400`)
   states the right rule — "for every mode we ENABLE, the decoder answers every
   encoding it can reply in" — but **it would NOT catch this**: it derives its modes
   by regex over `mouseOn` alone (`key_test.go:417`), so a separate `pasteOn`
@@ -958,7 +958,12 @@ Delta:
 
 ### 2026-09-16 — M1 implemented
 
-Bracketed paste lands. Four tasks, TDD throughout, full suite green (unsandboxed;
+Bracketed paste lands. Four tasks, TDD throughout. **The "full suite green" claim
+originally written here was FALSE for the commit it named** — the boundary review
+(BR-2) reproduced it red in a clean checkout, because
+`TestARemovedDeclarationIsSweptOrRetired` reads the COMMIT WINDOW and so could not
+go red until the rename was committed. The pre-commit run was honestly green and
+the claim was still wrong. Suite green at the reworked commit (unsandboxed;
 `TestLanguageTintInvocation` and the `language_prompt_paths` rows fail under the
 Bash sandbox and pass on the host — see `MEMORY.md`).
 
@@ -1029,3 +1034,28 @@ Delta, and the first item REVERSES a decision recorded above:
   reached. It is the first kind the audio registry does not answer for, which is
   what forced both declarations to be explicit rather than assumed total.
 - Smoke test passed on the operator's machine after these three fixes.
+
+### 2026-09-16 — boundary-review record
+
+One entry per round, because five ran and the Log held none — a reader could not
+see that the feature was reworked four times before it was right (BR-14).
+
+- **M1 round 1 — REWORK.** Two Criticals: an unterminated `ESC[200~` permanently
+  deafened the input path (Ctrl-C unreachable, so the program could not be quit),
+  and the suite was red at HEAD. Plus four Importants.
+- **M1 round 2 — REWORK.** BR-12: the rune cap was evaluated on a buffer that can
+  end mid-rune, so a legal 1000-rune CJK paste was refused — on exactly the decks
+  the rune cap exists for. Two of my own fixes asserted at the wrong layer and
+  passed under mutation.
+- **M1 round 3 — FIX-THEN-SHIP, gate still open.** A paste during a `/play`
+  sitting was dropped by omission; `enterPaste` was wiring no test exercised.
+- **M1 round 4 — REWORK.** The subtest named "over the byte bound, draining" never
+  drained: its own trailing Ctrl-C fired the abandon rule first. Fixed as a class —
+  `scan`'s seven exits are an enumeration with a guard derived from its extent.
+- **Close round 5 — REWORK.** Two Criticals in the gesture the issue is named for:
+  a drag marked each word separately (admitting `at`, `the`, `of` to the deck),
+  and a superseded passage's regions resolved against the current one.
+  `marksForDrag` had three passing tests and no production caller.
+- **Close round 6 — REWORK.** The live-passage gate was on the click path only;
+  `hasPassage` never expired. Six findings I had reported as fixed were measured
+  half-fixed, and one guard I wrote FAILED OPEN.

@@ -496,6 +496,94 @@ rounds:
           family: artifact-family-without-removal
           round: 5
       blocked: true
+    - "n": 6
+      timestamp: "2026-09-16T23:00:17-07:00"
+      agent: claude
+      dispose:
+        - id: BR-8
+          disposition: not-addressed
+          note: key.go:74-76 is byte-identical; the Key doc still says Raw is an unmodelled sequence to be ignored while KeyPaste's Raw is sanitised text that Apply inserts.
+          round: 6
+        - id: BR-11
+          disposition: not-addressed
+          note: 'The three named sites were repaired, but no forward-direction guard was written and five NEW contradicting sites shipped in this window: passage.go:17-21 ("It is CHROME, not scrollback ... It lives in the footer"), session.go:24 ("pinned in the footer"), replraw.go:558-562 ("the hit test is FooterRowAt plus wordAtCell, and no new RegionKind exists", three lines above code keying on RegionPassageWord), atlas/define.md:313-314 ("Newlines and tabs survive" while sanitisePasteBody turns tabs into spaces and paste_test.go:183 pins that), and the plan''s footer sections. currentTruthFiles now binds *_test.go (the backward half), which is real progress; the forward half — every identifier prose names must be declared at HEAD — does not exist.'
+          round: 6
+        - id: BR-13
+          disposition: not-addressed
+          note: 'enabledModes (rawterm.go:183) is the right list but nothing derives from it beyond the two new guards: three hand-written enter/leave pairs over three bools remain, restore() still hand-calls its teardown in an order the list does not express (list is alt/mouse/paste, teardown is mouse/paste/alt), and key_test.go:431 still hand-concatenates `const inputModes = mouseOn + pasteOn`, so a fourth mode is invisible to it.'
+          round: 6
+        - id: BR-14
+          disposition: not-addressed
+          note: 'issue:961 still claims "full suite green" for the commit BR-2 proved red, and ## Log still holds exactly one dated section with no per-round boundary-review entry (five rounds have now run). The milestone-collapse Revisions entry mentions "four review rounds" in passing, which is the nearest thing to a record.'
+          round: 6
+        - id: BR-15
+          disposition: not-addressed
+          note: 'The case and the declaration landed (play_loop.go:571, :617) and TestAPasteDuringASittingIsIgnored pins the behaviour — but the guard, which was the finding, cannot fail for the failure it names. Measured: adding a KeyKind before numKeyKinds leaves TestEveryKeyKindIsDecidedForASitting GREEN, because keyBecomesASittingInput and toInput both default to false, so a kind wired into neither agrees with itself. numPasteExits and numRegionKinds fail closed in this same window; this one fails open.'
+          round: 6
+        - id: BR-16
+          disposition: addressed
+          note: 'Mutation-verified: deleting sess.enterPaste() (replraw.go:89) reddens TestNewConsoleEnablesEveryMode with "newConsole never enabled bracketed paste". The PTY row TestPTYEveryEnabledModeIsAskedForAndGivenBack exists and loops enabledModes; it compiles under -tags conformance (go vet clean) and skips here because pty.Open is denied.'
+          round: 6
+        - id: BR-18
+          disposition: addressed
+          note: 'The CLICK path is genuinely fixed and pinned: passageSpanAt gates on ownsBufferLine (session.go:79,99) and TestAStalePassagesRegionsDoNotMarkTheCurrentOne asserts a stale region refuses. The enumerable siblings of the class are raised fresh below rather than re-raised here.'
+          round: 6
+        - id: BR-19
+          disposition: addressed
+          note: 'Production drags now go through marksForDrag (replraw.go:573) and yield ONE span; the anchor gate is enforced in passageDragLocked (selection_screen.go:177) so a drag from an answer keeps its copy; markedPassageText matches by position so a phrase reaches the wire as one bracket; TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll reads both the deck and the recorded prompt. Residual: passage.raw() still has zero consumers anywhere (raised Minor).'
+          round: 6
+        - id: BR-20
+          disposition: not-addressed
+          note: 'The tab instance is fixed and pinned to ONE outcome (paste.go sanitisePasteBody, paste_test.go:168-185). The rule fix was not written: no classes-by-consumers table test exists, and the second instance stands. Measured at HEAD: newPassage("see <67-cell URL> for more", 30) yields a 67-cell line and the frame draws "https://example.com/a/very/lon" — clipVisible truncates because wrapText cannot break an unbreakable token, so the tail is neither readable nor clickable. That is the operator-reported wrapping bug, half fixed.'
+          round: 6
+        - id: BR-21
+          disposition: addressed
+          note: sharedLevel / sharedAuthority / sharedLanguageGrammar extracted in askctx.go:147-191 and composed by both askSystem and passageSystem; escLeft/escRight extracted and consumed by both the prompt escape and the answer-direction rule. Both goldens now show the identical clauses.
+          round: 6
+        - id: BR-22
+          disposition: not-addressed
+          note: 'Half addressed with real evidence: TestTheTokenAfterAMarkKeepsItsStyle is mutation-red (replacing both "sgrOff + style.resume()" writes with bare sgrOff fails it), and the dragged-phrase row now has a test. But the audit asserts pins that do not exist — TestThePassageIsWrittenToTheBufferNotTheFooter and TestAMarkedDeckWordRendersAsAMarkNotAsADeckWord are in no _test.go file — so two rows are still asserted rather than visible, which is the rule''s own failure mode. No guard reads workshop/issues/; TestPlanCitesTestsThatExist globs workshop/plans/*-plan.md only, which is where the teeth belong.'
+          round: 6
+        - id: BR-23
+          disposition: not-addressed
+          note: 'The new "Read along" section (README.md:76-121) is accurate and thorough, and the old paste paragraph is gone. But the derived guard the rule named was not written (TestAtlasDescribesEveryRegionKind still reads only the atlas), and two rows now contradict the new section: README.md:163 "Enter on an empty line | replay the pronunciation" is unconditional, and README.md:169-174 still says "Underlined words are clickable" and "A click on ordinary text does nothing" while passage words are clickable and deliberately NOT underlined.'
+          round: 6
+        - id: BR-24
+          disposition: not-addressed
+          note: 'Boxes ticked and three of five sites repaired (Architecture paragraph, RegionPassageWord bullet, selectionFrame.highlightRow row removed). Remaining: Integration points row "passage-as-footer" (plan:80) and its bullet (:91); Task 2.2 title plus Step 3 (:591), Task 2.3, and Task 2.4''s ticked atlas row (:611) all still say footer; Task 3.2 "Widen highlightRow from one range to a set" (:707) is fully ticked though highlightRow is unchanged at selection_frame.go:208 and this window never touches that file; plan:579 and :583 declare TestThePassageRendersWithDeckColour and TestThePassageIsWrittenToTheBufferNotTheFooter, neither in the tree. And the rule''s own second clause was not followed: the footer-to-buffer reversal was applied by OVERWRITING the Architecture paragraph, with no Revisions entry appended.'
+          round: 6
+        - id: BR-25
+          disposition: addressed
+          note: 'ask.go:167 gathers once into askCtx and both renderers take it; the double deck/learner-model read and the duplicated warning are gone. Residual (Minor below): renderAskPrompt itself still runs twice on the passage path, purely.'
+          round: 6
+        - id: BR-26
+          disposition: not-addressed
+          note: replraw.go:425 calls SetMarks(markCellRanges(...)) and screen.go:622-624 applies paintMarks whenever a row has marks, with no reference to opt.color anywhere on the path; markOn is "\x1b[48;5;24m\x1b[38;5;231m". passageText still honours the flag, so the two halves of the same surface disagree under -no-color.
+          round: 6
+        - id: BR-27
+          disposition: not-addressed
+          note: replraw.go:609 still writes passageRegions into screen.regions on every passage paste with no removal path, and the plan's ARCH-FUNERAL paragraph is unchanged — it still says "no removal path needed", which holds for sess.passage and not for the screen's copy. Clearing a superseded passage's regions would also shrink the new Critical's blast radius.
+          round: 6
+      findings:
+        - id: BR-28
+          severity: Critical
+          title: The live-passage gate is on the click path only — a drag in a superseded passage marks the CURRENT one, and hasPassage never expires
+          detail: 'This is the 2nd finding in family `observation-outlives-its-subject`, so do NOT patch the drag call alone. The rule that covers both sites: the session must answer ONE question — "is the live passage reachable at this point?" — and every consumer of passage state routes through it. The enumeration is three long and two are ungated. (1) `passageSpanAt` (session.go:99) gates on `ownsBufferLine` — correct, and BR-18''s fix. (2) `passageCell` (session.go:89) CLAMPS instead of refusing, and `passageDragLocked` (selection_screen.go:177) only checks that the anchor row carries some `RegionPassageWord`, which a superseded passage''s rows still do because `screen.regions` is never pruned. Measured at HEAD with two passages, drag anchored on the old one''s buffer row 10 against a current passage at base 40: `passageCell(10,0) = {line:0 col:0}` and `marksForDrag` returns one span — MARKED "zulu yankee xray" of the current passage. Those words are then bracketed in the next prompt and, on a dictionary hit, admitted to the deck as durable EventMarked records; the copy the reader asked for is swallowed by the `continue` at replraw.go:576. (3) `lineState().hasPassage` (session.go:50) treats "a passage was once pasted" as permanent authority over Enter. Measured: with `current` set a bare Enter is `cmdReplay`; after one paste it is `cmdNothing`/`noteNothingMarked` and never returns to replay for the rest of the session — long after the passage has scrolled away, while the nudge points at something possibly off-screen. That decision was right when the passage was pinned footer chrome; the footer-to-buffer reversal changed the surface''s lifetime and the predicate was not re-derived. Fix: `passageCell` returns `(passageCell, bool)` and refuses a row outside `ownsBufferLine`; `hasPassage` means the live passage is on screen. Pin with a two-passage drag regression through runEditor and one asserting replay returns once the passage is gone. Note `pointerClick.line` cannot serve as the gate as written: resolvePointerLocked (selection_screen.go:116) overwrites it from `click.point`, which is the zero value on the drag path, so it carries row 0''s buffer line and `hasRegion` can be spuriously true — hasRegion/hasDrag/footer/retry/line is a five-field constellation whose legal combinations are unwritten and should collapse into a tagged variant. ARCH-ORDER, ARCH-PURPOSE.'
+          family: observation-outlives-its-subject
+          round: 6
+        - id: BR-29
+          severity: Important
+          title: Deleting the cmdAskPassage branch in runEditor leaves the suite green, and replKind has no sentinel so replLines silently has no case for it
+          detail: 'This is the 3rd finding in family `production-seam-untested` (BR-3, BR-16), so do NOT just add a test for this line. Measured: removing the whole `if cmd.kind == cmdAskPassage { askInSession(...) }` block at replraw.go:667-675 leaves `go test ./cmd/define/...` green apart from the two pty-denied rows — the one line that turns "Enter with marks" into an actual model call is unpinned. Every ask test builds `question{passage: ...}` by hand (passageprompt_test.go:171-340) and TestABlankLineWithMarksAsksAboutThePassage stops at parseREPLLine, so nothing joins the decision to the effect. The rule, which is BR-16''s one altitude up: a decision table''s kinds are a registry, so each kind''s disposition in each loop is DECLARED and DERIVED, not hand-written per loop. Second site proving it is a class: `replLines` (repl.go:384) has no case for cmdAskPassage at all — unreachable today only because the piped loop never decodes a paste — and `replKind` (repl.go:45) has no `numReplKinds`, which is why nothing forced the question. This window makes exactly that move three times (numPasteExits, numRegionKinds, numKeyKinds); make it a fourth and drive both loops from it, with the guard failing CLOSED (see the BR-15 disposition for the failure mode to avoid).'
+          family: production-seam-untested
+          round: 6
+        - id: BR-30
+          severity: Minor
+          title: passage.raw() has zero consumers anywhere in the tree
+          detail: 'passage.go:75. BR-19 named it and it survived the round: no production caller and no test caller. Delete it rather than keeping it for symmetry with lineCount/line/spans/text, all of which are used.'
+          family: tested-entity-not-wired
+          round: 6
+      blocked: true
 ---
 
 # Gate ledger — tools#67 (boundary-review)
@@ -754,6 +842,36 @@ enumeration is still hand-written in two places: key_test.go:436 and rawterm_tes
 - **BR-27** [Minor] `artifact-family-without-removal` Each paste appends one Region per word to screen.regions with no removal path, which the plan's ARCH-FUNERAL note does not cover
   replraw.go:605 writes passageRegions into the screen on every passage paste — roughly 170 entries for a 1000-character passage — and screen.regions is only ever appended to. The plan states "The passage and its marks are in-memory, die with the session, and are replaced wholesale by the next paste", which holds for sess.passage but not for the screen's copy: per-session growth per paste is larger than before this window. Note it and state the bound, or clear the superseded passage's regions (which would also help the stale-region Critical).
 
+## Round 6 — 2026-09-16T23:00:17-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-8 — not-addressed — key.go:74-76 is byte-identical; the Key doc still says Raw is an unmodelled sequence to be ignored while KeyPaste's Raw is sanitised text that Apply inserts.
+- BR-11 — not-addressed — The three named sites were repaired, but no forward-direction guard was written and five NEW contradicting sites shipped in this window: passage.go:17-21 ("It is CHROME, not scrollback ... It lives in the footer"), session.go:24 ("pinned in the footer"), replraw.go:558-562 ("the hit test is FooterRowAt plus wordAtCell, and no new RegionKind exists", three lines above code keying on RegionPassageWord), atlas/define.md:313-314 ("Newlines and tabs survive" while sanitisePasteBody turns tabs into spaces and paste_test.go:183 pins that), and the plan's footer sections. currentTruthFiles now binds *_test.go (the backward half), which is real progress; the forward half — every identifier prose names must be declared at HEAD — does not exist.
+- BR-13 — not-addressed — enabledModes (rawterm.go:183) is the right list but nothing derives from it beyond the two new guards: three hand-written enter/leave pairs over three bools remain, restore() still hand-calls its teardown in an order the list does not express (list is alt/mouse/paste, teardown is mouse/paste/alt), and key_test.go:431 still hand-concatenates `const inputModes = mouseOn + pasteOn`, so a fourth mode is invisible to it.
+- BR-14 — not-addressed — issue:961 still claims "full suite green" for the commit BR-2 proved red, and ## Log still holds exactly one dated section with no per-round boundary-review entry (five rounds have now run). The milestone-collapse Revisions entry mentions "four review rounds" in passing, which is the nearest thing to a record.
+- BR-15 — not-addressed — The case and the declaration landed (play_loop.go:571, :617) and TestAPasteDuringASittingIsIgnored pins the behaviour — but the guard, which was the finding, cannot fail for the failure it names. Measured: adding a KeyKind before numKeyKinds leaves TestEveryKeyKindIsDecidedForASitting GREEN, because keyBecomesASittingInput and toInput both default to false, so a kind wired into neither agrees with itself. numPasteExits and numRegionKinds fail closed in this same window; this one fails open.
+- BR-16 — addressed — Mutation-verified: deleting sess.enterPaste() (replraw.go:89) reddens TestNewConsoleEnablesEveryMode with "newConsole never enabled bracketed paste". The PTY row TestPTYEveryEnabledModeIsAskedForAndGivenBack exists and loops enabledModes; it compiles under -tags conformance (go vet clean) and skips here because pty.Open is denied.
+- BR-18 — addressed — The CLICK path is genuinely fixed and pinned: passageSpanAt gates on ownsBufferLine (session.go:79,99) and TestAStalePassagesRegionsDoNotMarkTheCurrentOne asserts a stale region refuses. The enumerable siblings of the class are raised fresh below rather than re-raised here.
+- BR-19 — addressed — Production drags now go through marksForDrag (replraw.go:573) and yield ONE span; the anchor gate is enforced in passageDragLocked (selection_screen.go:177) so a drag from an answer keeps its copy; markedPassageText matches by position so a phrase reaches the wire as one bracket; TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll reads both the deck and the recorded prompt. Residual: passage.raw() still has zero consumers anywhere (raised Minor).
+- BR-20 — not-addressed — The tab instance is fixed and pinned to ONE outcome (paste.go sanitisePasteBody, paste_test.go:168-185). The rule fix was not written: no classes-by-consumers table test exists, and the second instance stands. Measured at HEAD: newPassage("see <67-cell URL> for more", 30) yields a 67-cell line and the frame draws "https://example.com/a/very/lon" — clipVisible truncates because wrapText cannot break an unbreakable token, so the tail is neither readable nor clickable. That is the operator-reported wrapping bug, half fixed.
+- BR-21 — addressed — sharedLevel / sharedAuthority / sharedLanguageGrammar extracted in askctx.go:147-191 and composed by both askSystem and passageSystem; escLeft/escRight extracted and consumed by both the prompt escape and the answer-direction rule. Both goldens now show the identical clauses.
+- BR-22 — not-addressed — Half addressed with real evidence: TestTheTokenAfterAMarkKeepsItsStyle is mutation-red (replacing both "sgrOff + style.resume()" writes with bare sgrOff fails it), and the dragged-phrase row now has a test. But the audit asserts pins that do not exist — TestThePassageIsWrittenToTheBufferNotTheFooter and TestAMarkedDeckWordRendersAsAMarkNotAsADeckWord are in no _test.go file — so two rows are still asserted rather than visible, which is the rule's own failure mode. No guard reads workshop/issues/; TestPlanCitesTestsThatExist globs workshop/plans/*-plan.md only, which is where the teeth belong.
+- BR-23 — not-addressed — The new "Read along" section (README.md:76-121) is accurate and thorough, and the old paste paragraph is gone. But the derived guard the rule named was not written (TestAtlasDescribesEveryRegionKind still reads only the atlas), and two rows now contradict the new section: README.md:163 "Enter on an empty line | replay the pronunciation" is unconditional, and README.md:169-174 still says "Underlined words are clickable" and "A click on ordinary text does nothing" while passage words are clickable and deliberately NOT underlined.
+- BR-24 — not-addressed — Boxes ticked and three of five sites repaired (Architecture paragraph, RegionPassageWord bullet, selectionFrame.highlightRow row removed). Remaining: Integration points row "passage-as-footer" (plan:80) and its bullet (:91); Task 2.2 title plus Step 3 (:591), Task 2.3, and Task 2.4's ticked atlas row (:611) all still say footer; Task 3.2 "Widen highlightRow from one range to a set" (:707) is fully ticked though highlightRow is unchanged at selection_frame.go:208 and this window never touches that file; plan:579 and :583 declare TestThePassageRendersWithDeckColour and TestThePassageIsWrittenToTheBufferNotTheFooter, neither in the tree. And the rule's own second clause was not followed: the footer-to-buffer reversal was applied by OVERWRITING the Architecture paragraph, with no Revisions entry appended.
+- BR-25 — addressed — ask.go:167 gathers once into askCtx and both renderers take it; the double deck/learner-model read and the duplicated warning are gone. Residual (Minor below): renderAskPrompt itself still runs twice on the passage path, purely.
+- BR-26 — not-addressed — replraw.go:425 calls SetMarks(markCellRanges(...)) and screen.go:622-624 applies paintMarks whenever a row has marks, with no reference to opt.color anywhere on the path; markOn is "\x1b[48;5;24m\x1b[38;5;231m". passageText still honours the flag, so the two halves of the same surface disagree under -no-color.
+- BR-27 — not-addressed — replraw.go:609 still writes passageRegions into screen.regions on every passage paste with no removal path, and the plan's ARCH-FUNERAL paragraph is unchanged — it still says "no removal path needed", which holds for sess.passage and not for the screen's copy. Clearing a superseded passage's regions would also shrink the new Critical's blast radius.
+
+### Raised
+
+- **BR-28** [Critical] `observation-outlives-its-subject` The live-passage gate is on the click path only — a drag in a superseded passage marks the CURRENT one, and hasPassage never expires
+  This is the 2nd finding in family `observation-outlives-its-subject`, so do NOT patch the drag call alone. The rule that covers both sites: the session must answer ONE question — "is the live passage reachable at this point?" — and every consumer of passage state routes through it. The enumeration is three long and two are ungated. (1) `passageSpanAt` (session.go:99) gates on `ownsBufferLine` — correct, and BR-18's fix. (2) `passageCell` (session.go:89) CLAMPS instead of refusing, and `passageDragLocked` (selection_screen.go:177) only checks that the anchor row carries some `RegionPassageWord`, which a superseded passage's rows still do because `screen.regions` is never pruned. Measured at HEAD with two passages, drag anchored on the old one's buffer row 10 against a current passage at base 40: `passageCell(10,0) = {line:0 col:0}` and `marksForDrag` returns one span — MARKED "zulu yankee xray" of the current passage. Those words are then bracketed in the next prompt and, on a dictionary hit, admitted to the deck as durable EventMarked records; the copy the reader asked for is swallowed by the `continue` at replraw.go:576. (3) `lineState().hasPassage` (session.go:50) treats "a passage was once pasted" as permanent authority over Enter. Measured: with `current` set a bare Enter is `cmdReplay`; after one paste it is `cmdNothing`/`noteNothingMarked` and never returns to replay for the rest of the session — long after the passage has scrolled away, while the nudge points at something possibly off-screen. That decision was right when the passage was pinned footer chrome; the footer-to-buffer reversal changed the surface's lifetime and the predicate was not re-derived. Fix: `passageCell` returns `(passageCell, bool)` and refuses a row outside `ownsBufferLine`; `hasPassage` means the live passage is on screen. Pin with a two-passage drag regression through runEditor and one asserting replay returns once the passage is gone. Note `pointerClick.line` cannot serve as the gate as written: resolvePointerLocked (selection_screen.go:116) overwrites it from `click.point`, which is the zero value on the drag path, so it carries row 0's buffer line and `hasRegion` can be spuriously true — hasRegion/hasDrag/footer/retry/line is a five-field constellation whose legal combinations are unwritten and should collapse into a tagged variant. ARCH-ORDER, ARCH-PURPOSE.
+- **BR-29** [Important] `production-seam-untested` Deleting the cmdAskPassage branch in runEditor leaves the suite green, and replKind has no sentinel so replLines silently has no case for it
+  This is the 3rd finding in family `production-seam-untested` (BR-3, BR-16), so do NOT just add a test for this line. Measured: removing the whole `if cmd.kind == cmdAskPassage { askInSession(...) }` block at replraw.go:667-675 leaves `go test ./cmd/define/...` green apart from the two pty-denied rows — the one line that turns "Enter with marks" into an actual model call is unpinned. Every ask test builds `question{passage: ...}` by hand (passageprompt_test.go:171-340) and TestABlankLineWithMarksAsksAboutThePassage stops at parseREPLLine, so nothing joins the decision to the effect. The rule, which is BR-16's one altitude up: a decision table's kinds are a registry, so each kind's disposition in each loop is DECLARED and DERIVED, not hand-written per loop. Second site proving it is a class: `replLines` (repl.go:384) has no case for cmdAskPassage at all — unreachable today only because the piped loop never decodes a paste — and `replKind` (repl.go:45) has no `numReplKinds`, which is why nothing forced the question. This window makes exactly that move three times (numPasteExits, numRegionKinds, numKeyKinds); make it a fourth and drive both loops from it, with the guard failing CLOSED (see the BR-15 disposition for the failure mode to avoid).
+- **BR-30** [Minor] `tested-entity-not-wired` passage.raw() has zero consumers anywhere in the tree
+  passage.go:75. BR-19 named it and it survived the round: no production caller and no test caller. Delete it rather than keeping it for symmetry with lineCount/line/spans/text, all of which are used.
+
 ## Open findings
 
 - **BR-8** [Minor] `doc-contradicts-type` Key struct doc still says Raw is an unmodelled sequence to be ignored, not inserted
@@ -761,14 +879,12 @@ enumeration is still hand-written in two places: key_test.go:436 and rawterm_tes
 - **BR-13** [Minor] `repeated-shape-not-extracted` enterPaste/leavePaste is the third copy of the same terminal-mode pair, and restore's ordering is still undeclared
 - **BR-14** [Minor] `issue-row-stale` The issue Log records no boundary-review round and its "full suite green" claim was false at the commit it describes
 - **BR-15** [Important] `enum-grows-past-consumers` A paste during a review sitting is silently dropped — toInput has no case for KeyPaste, and this window turned mode 2004 on for that surface too
-- **BR-16** [Important] `production-seam-untested` sess.enterPaste() is production wiring no test exercises, and mode 2004 has no live conformance row while the mouse does
-- **BR-18** [Critical] `observation-outlives-its-subject` A superseded passage's regions stay clickable and resolve against the CURRENT passage, marking an unrelated word
-- **BR-19** [Critical] `tested-entity-not-wired` A drag marks each word separately, so the decided single span exists only in marksForDrag, which production never calls
 - **BR-20** [Important] `boundary-parses-partial-class` A tab survives the paste boundary but counts as one cell, so clicks land on the wrong word; an unbreakable token overflows the wrap
-- **BR-21** [Important] `repeated-shape-not-extracted` passageSystem restates askSystem's level default, dictionary authority and language grammar instead of composing them
 - **BR-22** [Important] `decided-behaviour-unpinned` The Done-when audit was not run: the style-after-the-mark regression is mutation-green, and the dragged-phrase row cannot hold as written
 - **BR-23** [Important] `readme-surface-undocumented` README's paste section is now wrong and the whole read-along surface — click, drag, Enter-asks, the nudge, admission — is undocumented
 - **BR-24** [Important] `plan-artifact-stale` The durable plan contradicts the tree in five places, and its unticked boxes switch off the two guards that would have caught two of them
-- **BR-25** [Important] `work-repeated-on-one-path` gatherAskContext runs twice on every passage ask, doubling the deck and learner-model reads and any warning they print
 - **BR-26** [Minor] `decoration-ignores-color-option` paintMarks emits a 256-colour SGR pair regardless of opt.color, so marking a word under -no-color produces colour
 - **BR-27** [Minor] `artifact-family-without-removal` Each paste appends one Region per word to screen.regions with no removal path, which the plan's ARCH-FUNERAL note does not cover
+- **BR-28** [Critical] `observation-outlives-its-subject` The live-passage gate is on the click path only — a drag in a superseded passage marks the CURRENT one, and hasPassage never expires
+- **BR-29** [Important] `production-seam-untested` Deleting the cmdAskPassage branch in runEditor leaves the suite green, and replKind has no sentinel so replLines silently has no case for it
+- **BR-30** [Minor] `tested-entity-not-wired` passage.raw() has zero consumers anywhere in the tree
