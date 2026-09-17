@@ -77,10 +77,31 @@ func TestAskAnnotatedCancellationFlushesBeforeHistory(t *testing.T) {
 	if len(sess.turns) != 1 || !strings.HasPrefix(sess.turns[0].Answer, "The") {
 		t.Fatalf("missing partial history: %+v / %s", sess.turns, errOut.String())
 	}
-	if strings.Contains(out.String(), languageDark) || strings.Contains(out.String(), "[lang") {
-		t.Fatalf("unfinished segment should be clean and neutral: %q", out.String())
+	if strings.Contains(out.String(), "[lang") {
+		t.Fatalf("annotation markers leaked into the answer: %q", out.String())
 	}
-	if strings.TrimRight(stripEscapes(out.String()), "\n") != sess.turns[0].Answer {
-		t.Fatal("partial display/history differ")
+	// An unterminated passage KEEPS the language its opening marker announced
+	// (#72). It was painted the instant it arrived, which is the whole of the
+	// change, and painted text cannot be taken back — least of all here, where
+	// the close marker a cancellation never delivers is what used to release it.
+	// This assertion is the accepted consequence, pinned where it happens.
+	if !strings.Contains(out.String(), languageDark) {
+		t.Fatalf("unterminated segment lost the ownership it announced: %q", out.String())
 	}
+	// A tinted row is padded to the terminal width, because that is how a
+	// background covers a row (#65) — so the comparison is against the row's
+	// TEXT, not its cells. The claim is unchanged: what was displayed is what was
+	// recorded.
+	if shown := trimRowPadding(stripEscapes(out.String())); shown != sess.turns[0].Answer {
+		t.Fatalf("partial display/history differ: %q vs %q", shown, sess.turns[0].Answer)
+	}
+}
+
+// trimRowPadding drops the trailing cells a background fill writes, per row.
+func trimRowPadding(s string) string {
+	rows := strings.Split(s, "\n")
+	for i, row := range rows {
+		rows[i] = strings.TrimRight(row, " ")
+	}
+	return strings.TrimRight(strings.Join(rows, "\n"), "\n")
 }

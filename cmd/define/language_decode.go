@@ -3,12 +3,26 @@ package main
 import (
 	"html"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
-const languageBodyLimit = 16 << 10
 const languageHeaderLimit = 64
+
+// maxLanguageDecoderRetained bounds everything this decoder holds BETWEEN
+// events, and exists because #72 deleted the segment body — the one quantity
+// anything used to assert a bound on.
+//
+// Its components: a marker candidate and an entity candidate, each stopped by
+// its own grammar at 64 bytes, plus a partial rune in each of the two control
+// filters (`filter` lexes, `literal` renders). `literalText` is reset by
+// `output`'s deferred flush, so it holds nothing once an event returns.
+//
+// Stated as a TOTAL rather than per field: `d.body.Len() < languageBodyLimit`
+// named one field, so it became uncheckable the moment that field went away
+// instead of failing. A total survives the next component being added.
+const maxLanguageDecoderRetained = 2*languageHeaderLimit + 2*utf8.UTFMax
 
 type languageDecodeState uint8
 
@@ -25,7 +39,6 @@ const (
 	decodeOpen
 	decodeClose
 	decodeBadHeader
-	decodeLimit
 	decodeFinish
 )
 
@@ -34,56 +47,55 @@ type languageDecodeEffect uint8
 const (
 	decodeNoEffect languageDecodeEffect = iota
 	decodeEmitNeutral
-	decodeAppend
-	decodeFlushOwned
-	decodeFlushNeutral
+	decodeEmitOwned
 )
 
-// stepLanguageDecode is the single owner of annotation transitions. limit in
-// neutral/recovery is rejected (false), so malformed internal events cannot
-// unexpectedly alter ownership.
-func stepLanguageDecode(s languageDecodeState, e languageDecodeEvent) (languageDecodeState, languageDecodeEffect, bool) {
+// stepLanguageDecode is the single owner of annotation transitions.
+//
+// OWNERSHIP IS DECIDED WHEN A PASSAGE OPENS (#72). Text inside a segment is
+// emitted as it arrives, owned by the language the opening marker announced,
+// rather than accumulated and released at the close. Holding it is what made an
+// answer invisible for the whole of its generation: measured, the entire
+// 1422-byte answer reached the screen in one write at 9.4 s, on a stream whose
+// deltas had been arriving 60 ms apart since 1.25 s.
+//
+// Three things go with the buffer — the body, its 16 KiB bound, and the
+// decodeLimit event that bound produced — and this function becomes TOTAL, since
+// the only rejected pair was a limit event in a state that could not produce one.
+//
+// What it costs, stated so it is not mistaken for an oversight: a segment that
+// nests, carries a bad header or never closes keeps the language it announced
+// instead of degrading to neutral. Painted text cannot be un-painted, so the
+// revocation the buffer bought was only ever available by withholding every
+// well-formed answer as well. Recovery still denies ownership to text arriving
+// AFTER the malformed event; only what was already emitted keeps its language.
+func stepLanguageDecode(s languageDecodeState, e languageDecodeEvent) (languageDecodeState, languageDecodeEffect) {
 	switch e {
 	case decodeText:
 		if s == decodeSegment {
-			return s, decodeAppend, true
+			return s, decodeEmitOwned
 		}
-		return s, decodeEmitNeutral, true
+		return s, decodeEmitNeutral
 	case decodeOpen:
 		if s == decodeNeutral {
-			return decodeSegment, decodeNoEffect, true
+			return decodeSegment, decodeNoEffect
 		}
 		if s == decodeSegment {
-			return decodeRecovery, decodeFlushNeutral, true
+			return decodeRecovery, decodeNoEffect // nested: neither passage is trusted from here
 		}
-		return s, decodeNoEffect, true
+		return s, decodeNoEffect
 	case decodeClose:
-		if s == decodeSegment {
-			return decodeNeutral, decodeFlushOwned, true
-		}
-		return decodeNeutral, decodeNoEffect, true
+		return decodeNeutral, decodeNoEffect
 	case decodeBadHeader:
-		if s == decodeSegment {
-			return decodeRecovery, decodeFlushNeutral, true
-		}
-		return decodeRecovery, decodeNoEffect, true
-	case decodeLimit:
-		if s == decodeSegment {
-			return decodeRecovery, decodeFlushNeutral, true
-		}
-		return s, decodeNoEffect, false
+		return decodeRecovery, decodeNoEffect
 	case decodeFinish:
-		if s == decodeSegment {
-			return decodeNeutral, decodeFlushNeutral, true
-		}
-		return decodeNeutral, decodeNoEffect, true
+		return decodeNeutral, decodeNoEffect
 	}
-	return s, decodeNoEffect, false
+	return s, decodeNoEffect
 }
 
 type languageDecoder struct {
 	state        languageDecodeState
-	body         strings.Builder
 	lang         store.Lang
 	marker       string
 	filter       answerTextFilter
@@ -128,37 +140,29 @@ func (d *languageDecoder) Finish() {
 }
 func (d *languageDecoder) event(e languageDecodeEvent, text string, lang store.Lang) {
 	old := d.state
-	next, effect, ok := stepLanguageDecode(old, e)
-	if !ok {
-		return
-	}
+	next, effect := stepLanguageDecode(old, e)
 	d.state = next
+	// ONE clearing rule for d.lang: it belongs to the segment being decoded, so
+	// it is dropped on every transition that LEAVES one. It used to be cleared
+	// inside the two flush effects — two sites, and the four ways out of a
+	// segment (close, nested open, bad header, finish) reached them unevenly.
+	if old == decodeSegment && next != decodeSegment {
+		d.lang = ""
+	}
 	switch effect {
 	case decodeEmitNeutral:
 		d.output(text, "")
-	case decodeAppend:
-		if d.body.Len()+len(text) > languageBodyLimit {
-			d.event(decodeLimit, "", "")
-			d.output(text, "")
-		} else {
-			d.body.WriteString(text)
-		}
-	case decodeFlushOwned:
-		d.output(d.body.String(), d.lang)
-		d.body.Reset()
-		d.lang = ""
-	case decodeFlushNeutral:
-		d.output(d.body.String(), "")
-		d.body.Reset()
-		d.lang = ""
+	case decodeEmitOwned:
+		d.output(text, d.lang)
 	}
 	if e == decodeOpen && old == decodeNeutral {
 		d.lang = lang
 	}
 }
+
 func (d *languageDecoder) lex(s string) {
-	// The upstream filter emits complete runes, so candidate/body limits never
-	// split UTF-8. The marker grammar itself is ASCII.
+	// The upstream filter emits complete runes, so the marker candidate's limit
+	// never splits UTF-8. The marker grammar itself is ASCII.
 	if d.marker == "" {
 		if s == "[" {
 			d.marker = s
@@ -257,4 +261,9 @@ func (d *languageDecoder) flushLiteral() {
 		d.literalText.Reset()
 		d.literalSpans = nil
 	}
+}
+
+// retained reports the bytes held between events — the envelope's oracle.
+func (d *languageDecoder) retained() int {
+	return len(d.marker) + len(d.entity) + len(d.filter.pending) + len(d.literal.pending) + d.literalText.Len()
 }

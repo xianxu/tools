@@ -22,6 +22,76 @@ import (
 // FROM the capture. Hardcoding one would rot silently the next time the capture
 // is re-recorded; this fails loudly instead.
 func splitWordInCapture(t *testing.T, name string) string {
+	return splitWordMatching(t, name, "", func(int, int) bool { return true })
+}
+
+// splitWordInsideAPassage is the OWNED counterpart (#72). Until own-at-open, a
+// passage arrived as one buffered lump and this cell of the enumeration —
+// {neutral, owned} x {split across deltas} — was unreachable: there were no
+// deltas left to split it across by the time anything was rendered.
+func splitWordInsideAPassage(t *testing.T, name string) string {
+	t.Helper()
+	full := strings.Join(captureDeltas(t, name), "")
+	regions := annotatedRegions(full)
+	if len(regions) == 0 {
+		t.Fatalf("%s carries no [lang=..] passage — it cannot exercise owned text", name)
+	}
+	return splitWordMatching(t, name, "inside a [lang=..] passage", func(start, end int) bool {
+		for _, r := range regions {
+			if r[0] <= start && end <= r[1] {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// annotatedRegions returns the byte ranges the capture's own markers enclose.
+func annotatedRegions(s string) [][2]int {
+	var out [][2]int
+	for at := 0; ; {
+		open := strings.Index(s[at:], "[lang=")
+		if open < 0 {
+			return out
+		}
+		open += at
+		head := strings.Index(s[open:], "]")
+		if head < 0 {
+			return out
+		}
+		body := open + head + 1
+		end := strings.Index(s[body:], "[/lang]")
+		if end < 0 {
+			return out
+		}
+		out = append(out, [2]int{body, body + end})
+		at = body + end + len("[/lang]")
+	}
+}
+
+func splitWordMatching(t *testing.T, name, where string, ok func(start, end int) bool) string {
+	t.Helper()
+	deltas := captureDeltas(t, name)
+
+	// A boundary splits a word when the delta before it ends in a word rune and
+	// the one after starts with one. wordRuns decides that, so this test and
+	// production cannot disagree about where a word is.
+	full := strings.Join(deltas, "")
+	at := 0
+	for _, d := range deltas[:max(0, len(deltas)-1)] {
+		at += len(d)
+		for _, r := range wordRuns(full) {
+			if r.start < at && at < r.end && ok(r.start, r.end) {
+				return full[r.start:r.end]
+			}
+		}
+	}
+	t.Fatalf("no word in %s is split across deltas %s— re-record the capture or pick another; "+
+		"skipping here would let this test go quietly inert", name, where+" ")
+	return ""
+}
+
+func captureDeltas(t *testing.T, name string) []string {
 	t.Helper()
 
 	var deltas []string
@@ -46,23 +116,7 @@ func splitWordInCapture(t *testing.T, name string) string {
 	if err := sc.Err(); err != nil {
 		t.Fatalf("scanning the capture: %v", err)
 	}
-
-	// A boundary splits a word when the delta before it ends in a word rune and
-	// the one after starts with one. wordRuns decides that, so this test and
-	// production cannot disagree about where a word is.
-	full := strings.Join(deltas, "")
-	at := 0
-	for _, d := range deltas[:max(0, len(deltas)-1)] {
-		at += len(d)
-		for _, r := range wordRuns(full) {
-			if r.start < at && at < r.end {
-				return full[r.start:r.end]
-			}
-		}
-	}
-	t.Fatalf("no word in %s is split across deltas — re-record the capture or pick another; "+
-		"skipping here would let this test go quietly inert", name)
-	return ""
+	return deltas
 }
 
 // M3's headline behaviour: a deck word in a streamed answer highlights even when
@@ -81,6 +135,32 @@ func TestStreamedAnswerHighlightsAWordSplitAcrossDeltas(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), knownOn+word) {
 		t.Errorf("%q arrives split across deltas and was not highlighted: %q", word, out.String())
+	}
+}
+
+// The owned half of M3's headline behaviour, reachable only since #72: a deck
+// word inside a [lang=..] passage highlights although the model delivered it in
+// two pieces.
+//
+// It is the same claim as the neutral test above and deliberately the same
+// shape, because the fix was to stop the two paths being different mechanisms —
+// the owned path rendered through a one-shot highlightRegion that could not see
+// past one call, and per-rune emission made every call one rune.
+func TestOwnedPassageHighlightsAWordSplitAcrossDeltas(t *testing.T) {
+	d, fake, _, _ := askRig(t)
+	d.lang = "en"
+	fake.Script("", llmtest.Reply{Capture: "stream-language.sse"})
+	word := splitWordInsideAPassage(t, "stream-language.sse")
+	d.vocab = vocab(word)
+
+	var out, errOut bytes.Buffer
+	code := runAsk(t.Context(), d, options{color: true}, &session{}, question{text: "Explain buenos días"}, &out, &errOut)
+
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), knownOn+word) {
+		t.Errorf("%q arrives split across deltas inside a passage and was not highlighted: %q", word, out.String())
 	}
 }
 
