@@ -71,14 +71,18 @@ func (a *languageAnswer) own(lang store.Lang) {
 	}
 	a.remember(a.highlight.Flush())
 	a.ownership = lang
-	a.highlight = newHighlightWriter(a, a.vocabularyFor(lang), knownOn)
+	a.highlight = newHighlightWriter(a, a.runVocabulary(lang), knownOn)
 }
 
-// vocabularyFor withholds the deck from text that is not in the session's
+// runVocabulary withholds the deck from text that is not in the session's
 // language, so an ambiguous spelling cannot acquire target-language styling by
 // coincidence. Neutral prose keeps the session's vocabulary: it makes no claim
 // about being foreign.
-func (a *languageAnswer) vocabularyFor(lang store.Lang) Vocabulary {
+//
+// NOT named vocabularyFor: that is the package function ask.go:164 calls to
+// decide what the whole answer highlights against, and two unrelated things of
+// one name in one package is a reader's trap.
+func (a *languageAnswer) runVocabulary(lang store.Lang) Vocabulary {
 	if lang == "" {
 		return a.vocab
 	}

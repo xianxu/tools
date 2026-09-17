@@ -119,26 +119,13 @@ func TestLongPassageStreamsAgainstLiveService(t *testing.T) {
 		Language: "es",
 		Question: "¿Cuál es la diferencia entre «sicofante» y «obsequioso»? Responde en tres párrafos cortos, en español.",
 	})
-	// MERGING accumulator, unlike the sibling above, which only concatenates by
-	// language and so does not care. Since #72 a passage is emitted as it
-	// arrives — one span per rune — so "the longest span" is 3 bytes for every
-	// answer ever written unless adjacent runs of one language are joined back
-	// up. The first version of this test measured the unmerged spans and
-	// declared a perfectly good Spanish answer fragmented.
+	// The SHARED accumulator, which merges adjacent runs of one language. Since
+	// #72 a passage is emitted as it arrives — one span per rune — so an
+	// unmerged view reports a longest span of 3 bytes for every answer ever
+	// written, and the first version of this test used one and declared a
+	// perfectly good Spanish answer fragmented.
 	var got languageText
-	decoder := newLanguageDecoder(func(v languageText) {
-		off := len(got.text)
-		got.text += v.text
-		for _, sp := range v.spans {
-			sp.start += off
-			sp.end += off
-			if n := len(got.spans); n > 0 && got.spans[n-1].end == sp.start && got.spans[n-1].lang == sp.lang {
-				got.spans[n-1].end = sp.end
-				continue
-			}
-			got.spans = append(got.spans, sp)
-		}
-	})
+	decoder := newLanguageDecoder(spanAccumulator(&got))
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	if _, err = client.Stream(ctx, req, decoder.Write); err != nil {
@@ -149,14 +136,13 @@ func TestLongPassageStreamsAgainstLiveService(t *testing.T) {
 	// The shape this capture exists to demonstrate, asserted before it is
 	// written: one passage carrying most of the answer. A fragmented answer is a
 	// legitimate model output and a useless fixture here.
-	longest := 0
-	for _, sp := range got.spans {
-		if n := sp.end - sp.start; n > longest {
-			longest = n
-		}
-	}
-	if len(got.text) < 500 || longest*10 < len(got.text)*6 {
-		t.Fatalf("not a long-passage answer: longest span %d of %d bytes — rerun, or pick a question that elicits one passage", longest, len(got.text))
+	//
+	// dominantPassage is the SAME predicate assertDominantPassage applies when
+	// replaying the promoted file, so the guard that admits a capture and the
+	// guard that depends on it cannot disagree about it.
+	if !dominantPassage(got) {
+		longest, total := longestPassage(got)
+		t.Fatalf("not a long-passage answer: longest span %d of %d bytes — rerun, or pick a question that elicits one passage", longest, total)
 	}
 	if strings.Contains(got.text, "[lang=") || strings.ContainsAny(got.text, "\x1b") {
 		t.Fatalf("metadata/control leak: %q", got.text)
@@ -166,5 +152,6 @@ func TestLongPassageStreamsAgainstLiveService(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Logf("longest passage %d of %d bytes", longest, len(got.text))
+	longest, total := longestPassage(got)
+	t.Logf("longest passage %d of %d bytes", longest, total)
 }

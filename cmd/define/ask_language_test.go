@@ -134,39 +134,86 @@ func (c *countingSink) Write(p []byte) (int, error) {
 func (c *countingSink) Len() int       { return c.buf.Len() }
 func (c *countingSink) String() string { return c.buf.String() }
 
+// deltaObserver watches the production stream without altering it: it reports
+// the index of each answer delta AFTER the real writers have handled it.
+//
+// The plan named Reply{AfterText, FinishRelease} for this, and that barrier
+// cannot carry the assertion: it holds the stream after the FIRST text delta,
+// which in this capture is exactly "[lang=es]" — a marker with no prose. The
+// sink is legitimately empty there whether or not the bug is present, so the
+// barrier would have asserted nothing. Observing deltas as they are processed
+// does assert it, and needs no clock.
+type deltaObserver struct {
+	llm.Client
+	seen func(n int)
+}
+
+func (o deltaObserver) Stream(ctx context.Context, r llm.Request, onDelta func(string)) (llm.Response, error) {
+	n := 0
+	return o.Client.Stream(ctx, r, func(s string) {
+		onDelta(s)
+		n++
+		o.seen(n)
+	})
+}
+
 // TestALongPassageReachesTheScreenInPieces is this issue at the level the
 // operator reported it: not "is the text right" but "when does it arrive".
 //
 // Every earlier test asserts the answer's final content, and a decoder that
 // buffers a whole passage produces byte-identical final content — which is
-// exactly how a ten-second blank screen passed a green suite. Write COUNT is the
-// observable that separates them, and it needs no clock: a buffered passage
-// reaches the sink in one write whenever it arrives, a streamed one in hundreds.
+// exactly how a ten-second blank screen passed a green suite.
+//
+// TWO properties, because one of them alone was not enough. ORDERING — text
+// reached the screen while deltas were still arriving — is the defect itself; a
+// granularity check alone passes an implementation that buffers the passage and
+// releases it rune-by-rune at the close marker, which is still a blank screen.
+// GRANULARITY — no single write carries the passage — is what rules out the
+// original shape, 818 bytes in one go. Both run at width 0 and at a real
+// terminal width, since the wrap writer's row-commit path is a second hold and
+// only the second case puts it on the tested path.
 func TestALongPassageReachesTheScreenInPieces(t *testing.T) {
 	assertDominantPassage(t, longPassageCapture)
 
-	d, fake, _, _ := askRig(t)
-	d.lang = "es"
-	fake.Script("", llmtest.Reply{Capture: longPassageCapture})
-	var sink countingSink
-	var errOut bytes.Buffer
-	code := runAsk(t.Context(), d, options{color: true}, &session{}, question{text: "sicofante vs obsequioso"}, &sink, &errOut)
+	for _, tc := range []struct {
+		name    string
+		width   int
+		largest int // a row at width 100 carries its own cells plus styling
+	}{
+		{"piped", 0, 64},
+		{"terminal", 100, 400},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, fake, _, _ := askRig(t)
+			d.lang = "es"
+			fake.Script("", llmtest.Reply{Capture: longPassageCapture})
+			var sink countingSink
+			firstVisible, deltas := 0, 0
+			d.newLLM = func(cfg llm.Config) llm.Client {
+				return deltaObserver{Client: llm.New(cfg), seen: func(n int) {
+					deltas = n
+					if firstVisible == 0 && sink.Len() > 0 {
+						firstVisible = n
+					}
+				}}
+			}
+			var errOut bytes.Buffer
+			code := runAsk(t.Context(), d, options{color: true, width: tc.width, tintBackground: languageDark}, &session{}, question{text: "sicofante vs obsequioso"}, &sink, &errOut)
 
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr = %s", code, errOut.String())
+			if code != 0 {
+				t.Fatalf("exit = %d, stderr = %s", code, errOut.String())
+			}
+			if firstVisible == 0 || firstVisible*4 > deltas {
+				t.Fatalf("nothing reached the screen until delta %d of %d; the answer is still being withheld until the stream is over", firstVisible, deltas)
+			}
+			if sink.largest > tc.largest {
+				t.Fatalf("a %d-byte answer arrived in %d writes, the largest %d; a buffered passage lands in one",
+					sink.Len(), sink.writes, sink.largest)
+			}
+			t.Logf("%d bytes in %d writes, largest %d, first visible at delta %d of %d",
+				sink.Len(), sink.writes, sink.largest, firstVisible, deltas)
+		})
 	}
-	// THE LARGEST SINGLE WRITE, not the write count, because it is the direct
-	// expression of the defect: the buffer handed the passage over in one piece.
-	// Measured against the buffer restored, this capture arrives in 11 writes,
-	// the largest 818 bytes — so a count threshold would catch it HERE, but only
-	// by accident of how much untagged prose this particular answer carries.
-	// Neutral text streamed per rune before this issue too, so any count is a
-	// number about the answer rather than about the mechanism.
-	if sink.largest > 64 {
-		t.Fatalf("a %d-byte answer arrived in %d writes, the largest %d bytes; a buffered passage lands in one",
-			sink.Len(), sink.writes, sink.largest)
-	}
-	t.Logf("%d bytes in %d writes, largest %d", sink.Len(), sink.writes, sink.largest)
 }
 
 // assertDominantPassage keeps the test above from going quietly inert.
@@ -177,18 +224,13 @@ func TestALongPassageReachesTheScreenInPieces(t *testing.T) {
 // internal/llm/llmtest/testdata/README.md.
 func assertDominantPassage(t *testing.T, name string) {
 	t.Helper()
-	full := strings.Join(captureDeltas(t, name), "")
-	longest := 0
-	for _, r := range annotatedRegions(full) {
-		if n := r[1] - r[0]; n > longest {
-			longest = n
-		}
-	}
-	// Half the RAW capture, which is a stricter bar than it looks: full still
-	// carries the marker bytes the decoder strips, so this ratio understates the
-	// share of visible text the passage covers (818 of 1261 decoded bytes, 65%,
-	// when this capture was recorded).
-	if longest*2 < len(full) {
-		t.Fatalf("%s: longest passage %d of %d raw bytes — no longer a single-passage answer, so it cannot exhibit the buffering this test exists for", name, longest, len(full))
+	// The SAME rule the conformance recorder applies before promoting a capture,
+	// over the same decoded denominator (dominantPassage). Stated twice over two
+	// denominators — raw bytes here, decoded text there — the guard that replays
+	// a capture and the guard that promotes it could disagree about the same file.
+	decoded := decodedChunks(strings.Join(captureDeltas(t, name), ""), 0)
+	if !dominantPassage(decoded) {
+		longest, total := longestPassage(decoded)
+		t.Fatalf("%s: longest passage %d of %d decoded bytes — no longer a single-passage answer, so it cannot exhibit the buffering this test exists for", name, longest, total)
 	}
 }

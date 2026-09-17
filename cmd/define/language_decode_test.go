@@ -6,22 +6,76 @@ import (
 	"testing"
 )
 
-func decodedChunks(s string, split int) languageText {
-	var out languageText
-	emit := func(v languageText) {
+// spanAccumulator joins a decoder's emissions into one languageText, merging
+// adjacent runs of the same language.
+//
+// Merging is not cosmetic since #72: a passage is emitted as it arrives, one span
+// per rune, so "the longest span" is 3 bytes for every answer ever written unless
+// adjacent runs are joined back up. The conformance recorder learned that the
+// expensive way, declaring a perfectly good Spanish answer fragmented.
+//
+// ONE copy, because there were three — this, decodedChunksBounded's clone, and a
+// third open-coded in the conformance recorder (ARCH-DRY).
+func spanAccumulator(out *languageText) func(languageText) {
+	return func(v languageText) {
 		n := len(out.text)
 		out.text += v.text
 		for _, sp := range v.spans {
 			sp.start += n
 			sp.end += n
+			if last := len(out.spans) - 1; last >= 0 && out.spans[last].end == sp.start && out.spans[last].lang == sp.lang {
+				out.spans[last].end = sp.end
+				continue
+			}
 			out.spans = append(out.spans, sp)
 		}
 	}
-	d := newLanguageDecoder(emit)
+}
+
+// The retention invariant lives in the fuzz path because that is where it can be
+// wrong: the bound is a property of the marker and entity GRAMMARS, and a
+// hand-written case only exercises the fragments its author thought of. It
+// replaced `d.body.Len() < languageBodyLimit`, which named a field — and so
+// stopped checking anything the moment #72 deleted that field, rather than
+// failing.
+//
+// decodeChunks runs a string through the decoder in two writes, calling after()
+// at every point the decoder is between events — which is where any claim about
+// what it RETAINS has to hold.
+func decodeChunks(s string, split int, after func(*languageDecoder)) languageText {
+	var out languageText
+	d := newLanguageDecoder(spanAccumulator(&out))
 	d.Write(s[:split])
+	after(d)
 	d.Write(s[split:])
+	after(d)
 	d.Finish()
+	after(d)
 	return out
+}
+
+func decodedChunks(s string, split int) languageText {
+	return decodeChunks(s, split, func(*languageDecoder) {})
+}
+
+// longestPassage reports the longest single-language run and the total decoded
+// length — the ONE definition of "a dominant passage", shared by the guard that
+// promotes a capture and the guard that replays it, so they cannot disagree
+// about the same file. Both measure DECODED text; the marker bytes a raw capture
+// carries are not text anyone sees.
+func longestPassage(v languageText) (longest, total int) {
+	for _, sp := range v.spans {
+		if n := sp.end - sp.start; n > longest {
+			longest = n
+		}
+	}
+	return longest, len(v.text)
+}
+
+// dominantPassage is that rule's threshold, stated once.
+func dominantPassage(v languageText) bool {
+	longest, total := longestPassage(v)
+	return total >= 500 && longest*10 >= total*6
 }
 func TestLanguageDecoderRecoveryAndSplits(t *testing.T) {
 	for _, tt := range []struct {
@@ -81,6 +135,7 @@ func TestAnswerTextFilterControls(t *testing.T) {
 		}
 	}
 }
+
 // decodedChunksBounded is decodedChunks with the retention invariant asserted
 // after every write.
 //
@@ -92,28 +147,11 @@ func TestAnswerTextFilterControls(t *testing.T) {
 // failing.
 func decodedChunksBounded(t *testing.T, s string, split int) languageText {
 	t.Helper()
-	var out languageText
-	d := newLanguageDecoder(func(v languageText) {
-		n := len(out.text)
-		out.text += v.text
-		for _, sp := range v.spans {
-			sp.start += n
-			sp.end += n
-			out.spans = append(out.spans, sp)
+	return decodeChunks(s, split, func(d *languageDecoder) {
+		if got := d.retained(); got > maxLanguageDecoderRetained {
+			t.Fatalf("decoder retained %d bytes, bound %d", got, maxLanguageDecoderRetained)
 		}
 	})
-	bounded := func(at string) {
-		if got := d.retained(); got > maxLanguageDecoderRetained {
-			t.Fatalf("%s: decoder retained %d bytes, bound %d", at, got, maxLanguageDecoderRetained)
-		}
-	}
-	d.Write(s[:split])
-	bounded("first chunk")
-	d.Write(s[split:])
-	bounded("second chunk")
-	d.Finish()
-	bounded("finish")
-	return out
 }
 
 func FuzzLanguageDecoderChunks(f *testing.F) {

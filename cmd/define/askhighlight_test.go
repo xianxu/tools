@@ -29,16 +29,22 @@ func splitWordInCapture(t *testing.T, name string) string {
 // passage arrived as one buffered lump and this cell of the enumeration —
 // {neutral, owned} x {split across deltas} — was unreachable: there were no
 // deltas left to split it across by the time anything was rendered.
-func splitWordInsideAPassage(t *testing.T, name string) string {
+// The LANGUAGE is a parameter, not an afterthought: only a region in the
+// session's own language can highlight at all, since the answer withholds the
+// deck from anything else. Without it this helper could hand back a word from a
+// foreign region and report a correct implementation as "was not highlighted" —
+// it passes today only because every split candidate in stream-language.sse
+// happens to sit in an `en` region, which a re-record can change.
+func splitWordInsideAPassage(t *testing.T, name string, lang string) string {
 	t.Helper()
 	full := strings.Join(captureDeltas(t, name), "")
 	regions := annotatedRegions(full)
 	if len(regions) == 0 {
 		t.Fatalf("%s carries no [lang=..] passage — it cannot exercise owned text", name)
 	}
-	return splitWordMatching(t, name, "inside a [lang=..] passage", func(start, end int) bool {
+	return splitWordMatching(t, name, "inside a [lang="+lang+"] passage", func(start, end int) bool {
 		for _, r := range regions {
-			if r[0] <= start && end <= r[1] {
+			if r.lang == lang && r.start <= start && end <= r.end {
 				return true
 			}
 		}
@@ -46,9 +52,23 @@ func splitWordInsideAPassage(t *testing.T, name string) string {
 	})
 }
 
-// annotatedRegions returns the byte ranges the capture's own markers enclose.
-func annotatedRegions(s string) [][2]int {
-	var out [][2]int
+type annotatedRegion struct {
+	start, end int
+	lang       string
+}
+
+// annotatedRegions returns the byte ranges the capture's markers enclose, with
+// the language each announces.
+//
+// A region ends at its close marker OR at a NESTED open, which is not a nicety:
+// it is what language_decode.go does, where a nested open drops into recovery and
+// the text after it is no longer owned. Taking the first `[/lang]` regardless —
+// the first version of this — returns a region whose body contains marker bytes
+// for the nested `[lang=en]Sycophant[lang=es][/lang][/lang]` that this capture
+// actually contains. A test helper that models the grammar differently from the
+// parser is a second grammar.
+func annotatedRegions(s string) []annotatedRegion {
+	var out []annotatedRegion
 	for at := 0; ; {
 		open := strings.Index(s[at:], "[lang=")
 		if open < 0 {
@@ -60,12 +80,20 @@ func annotatedRegions(s string) [][2]int {
 			return out
 		}
 		body := open + head + 1
-		end := strings.Index(s[body:], "[/lang]")
-		if end < 0 {
+		lang := s[open+len("[lang=") : body-1]
+		end := len(s)
+		next := body
+		if i := strings.Index(s[body:], "[/lang]"); i >= 0 {
+			end, next = body+i, body+i+len("[/lang]")
+		}
+		if i := strings.Index(s[body:], "[lang="); i >= 0 && body+i < end {
+			end, next = body+i, body+i // recovery starts here, and rescans from it
+		}
+		out = append(out, annotatedRegion{start: body, end: end, lang: lang})
+		if next <= at {
 			return out
 		}
-		out = append(out, [2]int{body, body + end})
-		at = body + end + len("[/lang]")
+		at = next
 	}
 }
 
@@ -150,7 +178,7 @@ func TestOwnedPassageHighlightsAWordSplitAcrossDeltas(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	d.lang = "en"
 	fake.Script("", llmtest.Reply{Capture: "stream-language.sse"})
-	word := splitWordInsideAPassage(t, "stream-language.sse")
+	word := splitWordInsideAPassage(t, "stream-language.sse", "en")
 	d.vocab = vocab(word)
 
 	var out, errOut bytes.Buffer
