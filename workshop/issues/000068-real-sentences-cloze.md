@@ -1,7 +1,7 @@
 ---
 id: 000068
-status: working
-deps: [tools#67, tools#73]
+status: blocked
+deps: [tools#67, tools#73, tools#74]
 github_issue:
 created: 2026-09-16
 updated: 2026-09-17
