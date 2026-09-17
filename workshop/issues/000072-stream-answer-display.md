@@ -59,22 +59,55 @@ prompt change and deletes none of #65/#66.
 ### Ownership is decided when a passage OPENS, not when it closes
 
 `stepLanguageDecode` stays the single source of transitions (ARCH-ORDER); what
-changes is its effect table. `decodeAppend` emits the text immediately, owned by
-the language the opening marker announced, instead of accumulating it;
-`decodeFlushOwned` and `decodeFlushNeutral` then have nothing left to flush.
+changes is its effect table, and the resulting enumeration is the deliverable:
+
+| state | `text` | `open` | `close` | `badHeader` | `finish` |
+|---|---|---|---|---|---|
+| `neutral` | `emitNeutral`, stay | → `segment` | → `neutral` | → `recovery` | → `neutral` |
+| `segment` | **`emitOwned`**, stay | → `recovery` | → `neutral` | → `recovery` | → `neutral` |
+| `recovery` | `emitNeutral`, stay | stay | → `neutral` | stay | → `neutral` |
+
+Three deletions fall out of it. `decodeAppend` becomes `decodeEmitOwned`.
+`decodeFlushOwned` and `decodeFlushNeutral` go, because nothing is buffered to
+flush. And **`decodeLimit` goes as an EVENT** — its sole producer was the
+`decodeAppend` arm (`language_decode.go:141`), so the `ok=false` rejection rule at
+`:42-44` disappears with it and `stepLanguageDecode` becomes total.
+
+`d.lang` is cleared today only inside the two flush effects (`:149`, `:153`).
+With those gone it gets ONE rule in `event()`: cleared on every transition that
+leaves `decodeSegment`. One site, so the three ways out (close, nested open, bad
+header, finish) cannot drift apart.
 
 **Accepted consequence, stated so it is not mistaken for an oversight:** a
-segment that nests, carries a bad header, exceeds a bound or never closes keeps
-the language it announced rather than degrading to neutral. Already-painted text
-cannot be revoked, and the alternative is a ten-second blank on every well-formed
-answer — a rare cosmetic wrong tint against a certain, universal cost. Recovery
-still suppresses ownership for text arriving *after* the malformed event; only
-text already emitted keeps its announced language.
+segment that nests, carries a bad header or never closes keeps the language it
+announced rather than degrading to neutral. Already-painted text cannot be
+revoked, and the alternative is a ten-second blank on every well-formed answer —
+a rare cosmetic wrong tint against a certain, universal cost. Recovery still
+suppresses ownership for text arriving *after* the malformed event; only text
+already emitted keeps its announced language. The fourth case, *exceeds a bound*,
+ceases to exist rather than changing behaviour: with nothing accumulating there is
+no bound to exceed.
 
-`languageBodyLimit` (16 KiB) goes with the buffer. Nothing accumulates, so the
-bound is satisfied by construction rather than by a check (ARCH-FUNERAL: the
-decoder then creates no growing structure at all; the 64-byte incomplete-marker
-candidate is the only hold left, and it is already bounded).
+### The owned path has to become a streaming path too (ARCH-DRY)
+
+`answer_language.go:42` renders an owned span with `highlightRegion`, which
+builds a **fresh** `newHighlightWriter` per call and flushes it
+(`highlightwriter.go:269-282`). That works today only because an owned span
+arrives as one complete buffered passage. Under own-at-open each owned emission
+is a rune, so `obsequious` could never match and
+`TestLanguageAnswerForeignHomographDoesNotUseTargetVocabulary` would drop from 1
+highlight to 0.
+
+So the owned path gets the same persistent `highlightWriter` the neutral path
+already uses. `languageAnswer` holds the current ownership; its sink tags writes
+with it; and at an ownership CHANGE the highlighter is flushed and replaced with
+one carrying that run's vocabulary (nil when the span's language is not the
+session's, per the existing `:37-41` rule). Flush-then-replace is what preserves
+the invariant the homograph test exists for: **a word may not highlight across an
+ownership boundary.** This retires the one-shot `highlightRegion` call from the
+answer path, leaving one mechanism where there were two — the atlas already
+claims `highlightWriter` is why definitions and answers are one mechanism, and
+the owned span was the exception to it.
 
 ### Operating envelope (ARCH-CONSTRAINTS)
 
@@ -82,7 +115,12 @@ Interaction path: streamed UI response, one answer at a time, no concurrency.
 
 - first text visible ≤ 0.5 s after the model's first text delta — measured basis 0.3 s at width 100
 - display cadence ~0.5 s per row at width 100 with ~60 ms deltas — measured
-- decoder hold ≤ 64 bytes (an incomplete marker candidate) plus one partial rune
+- decoder retention, every component of it, once `d.body` is gone:
+  `d.marker` ≤ 64 B (`languageHeaderLimit`), `d.entity` ≤ 64 B (`:241`),
+  `d.filter.pending` and `d.literal.pending` ≤ 3 B each — **two** filters, one
+  partial rune each (`answer_text.go:30-32`) — and `d.literalText` ≤ one emitted
+  rune. Total ≤ 200 B, bounded by the marker and entity grammars rather than by a
+  size check.
 - the segment-body bound disappears; there is no longer a quantity that can exceed one
 
 ### What #64 inherits
@@ -103,7 +141,13 @@ That question belongs with #64's stage model, not here.
   measured and recorded in `## Log` as a before/after.
 - A nested, malformed or unterminated segment keeps its announced language, with
   the termination-row assertions updated to state that rather than neutral.
-- `d.body` and `languageBodyLimit` are gone, not merely unused.
+- A deck word split across deltas **inside an owned passage** still highlights,
+  and still does not highlight across an ownership boundary — the owned path
+  proven to stream, not just the decoder.
+- `d.body`, `languageBodyLimit` and the `decodeLimit` event are gone, not merely
+  unused, and `stepLanguageDecode` is total.
+- The retention bound is asserted as an invariant over every component named in
+  the envelope, replacing the `d.body.Len()` guard that dies with the field.
 - Ctrl-C mid-answer still keeps what arrived, highlighted as before.
 - `atlas/define.md` states the streaming behaviour and replaces the sentence
   "malformed/nested/incomplete segments preserve neutral prose".
@@ -111,11 +155,40 @@ That question belongs with #64's stage model, not here.
 
 ## Plan
 
-- [ ] failing test first: emission before the close marker, through the production chain
-- [ ] own-at-open in `stepLanguageDecode`'s effects; delete `d.body` and `languageBodyLimit`
-- [ ] update the malformed/nested/unterminated assertions to announced-language
+- [ ] failing test first, pure and deterministic (ARCH-PURE): `languageDecoder`
+      emits owned text BEFORE the close marker — the observable no existing test
+      had. No clock, no socket.
+- [ ] own-at-open in `stepLanguageDecode`: `decodeEmitOwned`, drop the two flush
+      effects and the `decodeLimit` event, one `d.lang` clearing rule. Update
+      `TestLanguageDecodeTransitions`' independent matrices to the table above —
+      it stays independently stated, not read off the implementation.
+- [ ] `languageDecoder.lex` is the rune scanner over untrusted model output
+      (ARCH-SECURE): extend `FuzzLanguageDecoderChunks` to assert the retention
+      invariant after **every** chunk, seeded with own-at-open forms. Replace
+      `TestAnswerControlPayloadAndAnnotationMemoryAreBounded`'s `d.body.Len()`
+      check with that invariant over `marker`/`entity`/both filters/`literalText`.
+- [ ] `languageAnswer.accept`: the persistent per-ownership-run highlighter.
+      Tests — the homograph row unchanged (it is the boundary invariant), plus a
+      new row for a deck word split across deltas inside an owned passage,
+      mirroring `TestStreamedAnswerHighlightsAWordSplitAcrossDeltas` on the
+      neutral path. The enumeration is {neutral, owned} × {split across deltas}.
+- [ ] fixture rows whose expectations change with ownership-at-open:
+      `TestLanguageDecoderRecoveryAndSplits` nested (`red` becomes owned),
+      unterminated (`unfinished` becomes owned) and the 16385-byte row (no longer
+      an over-limit case). Each is a behaviour change stated in the Spec, not a
+      test bent to fit.
+- [ ] end-to-end, the level the operator saw it at: record a LONG-PASSAGE capture
+      via `scripts/llm-probe.sh record`. The committed `stream-language.sse`
+      closes its passages after ~6 of its 87 deltas, so it cannot exhibit this
+      bug at all — `llmtest/testdata/README.md`'s own rule, a capture is evidence
+      only for the shape its recording conditions elicit. Drive it through
+      `Reply{AfterText, FinishRelease}` and assert the sink holds text while the
+      stream is still open (ARCH-MOCK: the barrier is the seam, no wall clock in
+      the assertion).
 - [ ] re-measure the piped one-shot; record before/after in `## Log`
-- [ ] atlas, the #64 note, then `sdlc close`
+- [ ] atlas — the streaming behaviour, the replaced "malformed/nested/incomplete
+      segments preserve neutral prose" sentence, and the retired `highlightRegion`
+      exception — plus the #64 note, then `sdlc close`
 
 ## Log
 
@@ -134,3 +207,30 @@ to reach four cassette-replaying test files and, transitively, the whole answer-
 side ownership pipeline — most of #65/#66. Measuring the row cadence is what
 dissolved the dilemma: at ~0.5 s per row the annotation costs nothing visible
 once the passage buffer is gone, so streaming needed no prompt change at all.
+
+## Revisions
+
+### 2026-09-17 — plan-quality round 1 (4 blocking findings)
+
+Reason: `sdlc change-code`'s gate found a Critical the brainstorm missed, and
+three places where the plan asserted less than it needed to.
+
+- **PQ-1 (Critical), own-at-open breaks owned-path highlighting.** Verified
+  against the tree rather than taken on trust: `highlightRegion` builds a fresh
+  writer per call, so per-rune owned emissions match nothing. The Spec gains a
+  section and the Plan a step; the fix turns out to REMOVE a mechanism rather
+  than add one, which is why it reads as an ARCH-DRY win.
+- **PQ-2**, the post-change state × event → effect table is now written out,
+  including the two effects and the one EVENT that disappear, and the single new
+  `d.lang` clearing rule.
+- **PQ-3**, the envelope's retention figure was wrong — it omitted `d.entity` and
+  counted one partial rune where there are two filters. Corrected before the
+  assertion that will use it as its oracle is written.
+- **PQ-4**, the plan now names `stepLanguageDecode`, `languageDecoder.lex` and
+  `languageAnswer.accept` with a strategy line each, says what replaces the
+  `d.body.Len()` memory guard, and disposes of the three fixture rows whose
+  expectations change.
+- **PQ-5 (Minor)**, the timing budget gets a mechanical guard: the `AfterText`/
+  `FinishRelease` barrier asserts ORDERING (text on screen while the stream is
+  open) rather than a wall-clock duration, which is deterministic where a timing
+  assertion would be flaky. The 0.5 s figure stays a measured `## Log` fact.
