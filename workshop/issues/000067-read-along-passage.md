@@ -564,31 +564,55 @@ worth deciding in the brainstorm rather than discovering later.
 
 ## Done when
 
-- A pasted passage stays on screen and its words are individually clickable;
+**The audit, run at close.** A Done-when row is a TEST OBLIGATION, so each row
+names the test that pins it — a row with no test is then visible rather than
+asserted. This enumeration is the close step's own work product (BR-22).
+
+- A pasted passage is on screen and its words are individually clickable;
   dragging selects a phrase across word boundaries; a click selects exactly the
   word under it.
+  → `TestThePassageIsWrittenToTheBufferNotTheFooter`,
+  `TestPassageRegionsAddressEveryWord`, `TestADragAcrossAPassageProducesOneSpan`,
+  `TestAClickOnAPassageWordMarksIt`
 - Marks accumulate, stay visible in their own treatment, and clicking a marked
   span unmarks it.
-- A marked word that is ALSO a deck word renders in the MARK treatment, not in
-  both and not in green — and the token AFTER the mark still carries the style it
-  had (the ANSI-nesting regression). The second half needs a test that inspects
-  the style after the span: stripping escapes is exactly what hides a lost one.
+  → `TestMarkSetTogglesAndOrdersByPosition`, `TestAClickOnAPassageWordMarksIt`,
+  `TestAMarkedDeckWordRendersAsAMarkNotAsADeckWord`
+- A marked word that is ALSO a deck word renders in the MARK treatment, and the
+  token AFTER the mark still carries the style it had.
+  → `TestAMarkedDeckWordRendersAsAMarkNotAsADeckWord`,
+  `TestTheTokenAfterAMarkKeepsItsStyle` (mutation-verified: a bare `sgrOff` in
+  `paintMarks` reddens it)
 - Marking N spans produces ONE explanation covering the passage AND each mark,
-  asserted through the LLM fake by reading the real request — including that the
-  marks arrive positioned within the passage, with a passage containing a literal
-  bracket among the rows.
-- An explained span with a dictionary entry enters the deck and is SCHEDULABLE —
-  it reaches recall by the ordinary route, because `harvest` authors items for
-  deck words. One without an entry is explained and not retained. Both directions
-  covered. (Reaching recall with the PASSAGE's own sentence as material is a
-  separate issue; see Revisions.)
+  with the marks positioned within the passage, including a passage containing a
+  literal bracket.
+  → `TestMarkingWordsSendsOnePassageRequestAndClearsTheMarks`,
+  `TestASecondOccurrenceIsUnambiguous`, `TestALiteralBracketCannotForgeAMarker`
+- An explained span with a dictionary entry enters the deck and is SCHEDULABLE;
+  one without is explained and not retained. A dragged PHRASE is gated as a
+  phrase, not word by word.
+  → `TestAMarkedWordWithAnEntryEntersTheDeck`,
+  `TestAMarkedSpanWithoutAnEntryIsNotRetained`,
+  `TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll`
 - A marked word is distinguishable from a typed lookup in the event log.
+  → `TestAMarkedWordIsDistinguishableFromALookup`
 - Pasting multi-line text does not submit on the embedded newline.
-- A bare Enter with marks present asks; with a passage but no marks it does the
-  decided thing; with no passage it still replays the current word. All three are
-  rows in `TestConsoleDecisionTable`, not branches in a loop.
+  → `TestAPastedNewlineIsNotEnter`, `TestAPastedNewlineDoesNotSubmitAndBecomesASpace`,
+  `TestPTYAPastedPassageAppearsAndDoesNotSubmit` (live)
+- A bare Enter with marks present asks; with a passage but no marks it nudges
+  LOCALLY; with no passage it still replays the current word.
+  → `TestABlankLineWithMarksAsksAboutThePassage`,
+  `TestTheNothingMarkedNudgeIsAnInstruction`, `TestMarksDoNotChangeWhatATypedLineMeans`
 - The NOAD-as-context inversion is stated in the atlas, with the route back to
   the full entry.
+  → `atlas/define.md` § *Read-along*, "NOAD's role inverts here, deliberately"
+- Marks clear only when an answer reached the reader.
+  → `TestMarkingWordsSendsOnePassageRequestAndClearsTheMarks`,
+  `TestMarksSurviveAnAskThatDeliveredNothing`
+- A stale passage's regions cannot mark the current one.
+  → `TestAStalePassagesRegionsDoNotMarkTheCurrentOne`
+- The reversed level default keeps the hard word rather than paraphrasing it away.
+  → `TestPassageAnswerKeepsTheHardWordAgainstTheLiveService` (live)
 
 ## Estimate
 

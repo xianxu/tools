@@ -4,7 +4,7 @@
 
 **Goal:** Paste a sentence or paragraph into `define`, click or drag the words you do not understand, and get one explanation of the passage with those spans called out — after which the marks clear and the words you asked about show as deck words.
 
-**Architecture:** Five milestones, each its own review boundary. The passage is **chrome, not scrollback**: it lives in the screen's existing `footer []string` channel, which `Draw` re-renders every frame, which is what makes "marks clear and the passage re-renders under the normal rules" free rather than a new subsystem. Every new decision surface is a pure function over data (`pasteScanner`, `passage`, `markSet`, `renderPassagePrompt`); the IO shell is four small edits to existing seams (terminal mode, key decoder, `Draw` call, `Capturer`).
+**Architecture:** One review boundary (the milestones were collapsed — see Revisions). The passage is a **RECORD**: it is written to the buffer and scrolls away like a definition or an answer, with its deck colour baked in at write time. Marks are PAINT-TIME over those immutable bytes, the mechanism `markClickable` already uses for the clickable underline. It was footer chrome first, to make "the asked-about words turn green afterwards" possible; when that collided with "the passage should scroll like everything else", the green re-render was the requirement dropped. Every new decision surface is a pure function over data (`pasteScanner`, `passage`, `markSet`, `renderPassagePrompt`); the IO shell is small edits to existing seams (terminal mode, key decoder, the buffer write, `Capturer`).
 
 **Tech Stack:** Go, `package main` in `cmd/define/`. Terminal: raw mode + SGR. Model: `internal/llm` with `llmtest.Fake` (httptest, Anthropic wire protocol) and `llmtest.AssertGolden`. Store: `cmd/define/store` (YAML).
 
@@ -28,7 +28,13 @@
 | `markSet` | `cmd/define/marks.go` | new |
 | `renderPassagePrompt` | `cmd/define/passageprompt.go` | new |
 | `escapeReservedBrackets` | `cmd/define/passageprompt.go` | new |
-| `selectionFrame.highlightRow` | `cmd/define/selection_frame.go` | modified |
+| `paintMarks` | `cmd/define/passage.go` | new |
+| `markCellRanges` | `cmd/define/passage.go` | new |
+| `passageRegions` | `cmd/define/passage.go` | new |
+| `regionPlaysAudio` | `cmd/define/replraw.go` | new |
+| `regionUnderlines` | `cmd/define/replraw.go` | new |
+| `keyBecomesASittingInput` | `cmd/define/play_loop.go` | new |
+| `lineState` | `cmd/define/repl.go` | new |
 | `parseREPLLine` | `cmd/define/repl.go` | modified |
 | `askSystem` | `cmd/define/askctx.go` | modified |
 
@@ -481,7 +487,7 @@ Expected: FAIL
 
 **Files:** Create `cmd/define/passage.go`, `cmd/define/passage_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // The passage tokenises through wordRuns, the ONE tokeniser (highlight.go:33).
@@ -531,12 +537,12 @@ func TestWordAtCellSnapsToTheWordUnderTheColumn(t *testing.T) {
 func TestWordAtCellCorrectsForAWrappedRow(t *testing.T) { /* offset > 0 resolves against col+offset*cols */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'TestPassage|TestWordAtCell' -v`
 Expected: FAIL — `undefined: newPassage`
 
-- [ ] **Step 3: Implement** — `passage` holds the raw text, its lines and `[][]wordRun`, with `runs(line) []wordRun` and `text(wordRun) string`. `wordAtCell` maps a display column to a byte offset using `visibleIndex` (`render.go:520`) and `nextDisplayUnit` (`display_unit.go:8`) — **do not write new cell arithmetic**.
+- [x] **Step 3: Implement** — `passage` holds the raw text, its lines and `[][]wordRun`, with `runs(line) []wordRun` and `text(wordRun) string`. `wordAtCell` maps a display column to a byte offset using `visibleIndex` (`render.go:520`) and `nextDisplayUnit` (`display_unit.go:8`) — **do not write new cell arithmetic**.
 
 > **THE COORDINATE MAPPING, stated once — three spaces, two conversions.**
 > A passage has **logical lines** (what was pasted, split on `\n`). Each becomes **one footer entry**. The screen wraps each entry into **frame rows**. So:
@@ -553,8 +559,8 @@ Expected: FAIL — `undefined: newPassage`
 
 > **There is no spans→styled-string helper to reuse.** `highlightSpans` returns `[]span`, and both existing consumers open-code the loop (`editor.go:206-213`, `highlightwriter.go:141`), each with the `inputOn` re-open hazard the atlas names. Extract **one** helper here and have the passage use it; a fourth open-coded loop is the thing ARCH-DRY is for.
 
-- [ ] **Step 4: Run** `go test ./cmd/define/ -run 'TestPassage|TestWordAtCell|Highlight' -v`; Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run** `go test ./cmd/define/ -run 'TestPassage|TestWordAtCell|Highlight' -v`; Expected: PASS
+- [x] **Step 5: Commit**
 
 ### Task 2.2: Render the passage into the footer — at every `Draw`, not one
 
@@ -565,7 +571,7 @@ Expected: FAIL — `undefined: newPassage`
 
 > **The first draft covered one of three `Draw` call sites.** `replraw.go:506` and `:567` both call `view.Draw("", nil)` — a **nil footer**. `:567` fires on every submit, so the passage would vanish for the entire lookup/answer/playback window: exactly the interval the feature exists for. Either route all three through one helper that supplies the current footer, or make the footer the screen's own state rather than a `Draw` argument. **Route them through one helper** — three callers each remembering to pass the passage is the same shape of bug as three loops each deciding what a line means.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // The passage renders under the NORMAL rules — a deck word inside it is coloured,
@@ -574,36 +580,36 @@ func TestThePassageRendersWithDeckColour(t *testing.T) { /* … */ }
 
 // THE REGRESSION the first draft would have shipped: the passage must survive a
 // submit. Paste, then look a word up, then assert the passage is STILL drawn.
-func TestThePassageSurvivesALookup(t *testing.T) { /* … */ }
+func TestThePassageIsWrittenToTheBufferNotTheFooter(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'ThePassageRenders|ThePassageSurvives' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement** — passage lines become footer entries ahead of `menuLines`. Colour them with `deckVocabulary(d)` (**`vocab.go:266`**, not `vocabularyFor`) — `vocab.go:255` says why: *"the same set WITHOUT the colour condition"*, because a word is clickable whether or not it is coloured, and `vocabularyFor` (`vocab.go:248`) returns nil when `!opt.color`.
-- [ ] **Step 4: Run** `go test ./cmd/define/ -run 'EditorLoop|Passage' -v`; Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 3: Implement** — passage lines become footer entries ahead of `menuLines`. Colour them with `deckVocabulary(d)` (**`vocab.go:266`**, not `vocabularyFor`) — `vocab.go:255` says why: *"the same set WITHOUT the colour condition"*, because a word is clickable whether or not it is coloured, and `vocabularyFor` (`vocab.go:248`) returns nil when `!opt.color`.
+- [x] **Step 4: Run** `go test ./cmd/define/ -run 'EditorLoop|Passage' -v`; Expected: PASS
+- [x] **Step 5: Commit**
 
 ### Task 2.3: A passage that does not fit
 
 **Files:** Modify `cmd/define/replraw.go`; test `cmd/define/editorloop_test.go`
 
-- [ ] **Step 1: Write the failing tests** — on a short terminal, a passage taller than the available footer rows: the user is told, and **no click resolves to a word on a row that was not drawn**. `FooterRowAt` already refuses those rows; this pins that the passage path does not route around it.
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 1: Write the failing tests** — on a short terminal, a passage taller than the available footer rows: the user is told, and **no click resolves to a word on a row that was not drawn**. `FooterRowAt` already refuses those rows; this pins that the passage path does not route around it.
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'PassageTooTall|FooterRow' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run** the same selection; Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run** the same selection; Expected: PASS
+- [x] **Step 5: Commit**
 
 ### Task 2.4: Milestone close
 
-- [ ] Atlas: a new section *The passage* — footer chrome rather than buffer text, and the append-only reason that forces it (`screen.go:74-77` already states the rule; cite it rather than re-deriving).
-- [ ] `sdlc milestone-close --issue 67 --milestone M2`
+- [x] Atlas: a new section *The passage* — footer chrome rather than buffer text, and the append-only reason that forces it (`screen.go:74-77` already states the rule; cite it rather than re-deriving).
+- [x] `sdlc milestone-close --issue 67 --milestone M2`
 
 ---
 
@@ -637,7 +643,7 @@ So: one new effect, no new region kind, no change to `playRegion`, no change to 
 **Files:**
 - Create: `cmd/define/marks.go`, `cmd/define/marks_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // Marks are a SET with a toggle, not an append-only list: clicking a marked word
@@ -684,19 +690,19 @@ func TestADragAcrossLinesMarksEachLine(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'TestMarkSet|TestAClickMark|TestADragAcross' -v`
 Expected: FAIL — `undefined: markSet`
 
-- [ ] **Step 3: Implement** — `mark{line, start, end int}` (byte offsets into that passage line, matching `wordRuns`' units), `markSet` with `toggle`, `ordered`, `empty`, `clear`. `marksForDrag` converts two cells to per-line marks, snapping each end outward to whole words via `wordAtCell` — a drag that starts mid-word marks the whole word, because the unit everywhere else is a word.
+- [x] **Step 3: Implement** — `mark{line, start, end int}` (byte offsets into that passage line, matching `wordRuns`' units), `markSet` with `toggle`, `ordered`, `empty`, `clear`. `marksForDrag` converts two cells to per-line marks, snapping each end outward to whole words via `wordAtCell` — a drag that starts mid-word marks the whole word, because the unit everywhere else is a word.
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 Run: `go test ./cmd/define/ -run 'TestMarkSet|TestAClickMark|TestADragAcross' -v`
 Expected: PASS (3 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 3.2: Widen `highlightRow` from one range to a set
 
@@ -706,7 +712,7 @@ Expected: PASS (3 tests)
 
 > The live drag becomes a set of length one, so there is **one painter with two callers** rather than two painters (ARCH-DRY). The caller at `screen.go:512` converts the gesture's two `selectionPoint`s into per-row ranges — put that conversion in **one** helper next to `highlightRow`, or the first implementer to need it elsewhere will write a second.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // Two disjoint ranges on one row both paint, and the text between them is
@@ -758,19 +764,19 @@ func TestTheTokenAfterAMarkKeepsItsStyle(t *testing.T) {
 func TestHighlightRowPreservesTheText(t *testing.T) { /* strip escapes, compare to input */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run TestHighlightRow -v`
 Expected: FAIL — signature takes `(row int, a, b selectionPoint)`
 
-- [ ] **Step 3: Implement** — change the signature to `highlightRow(row int, ranges []cellRange, on string) string`. `cellRange` already exists (`output_layout.go:21`) — reuse it, do not declare a second pair type. The `on` parameter is what lets the drag pass `"\x1b[7m"` and marks pass the mark pair; **do not branch on a boolean inside the function**.
+- [x] **Step 3: Implement** — change the signature to `highlightRow(row int, ranges []cellRange, on string) string`. `cellRange` already exists (`output_layout.go:21`) — reuse it, do not declare a second pair type. The `on` parameter is what lets the drag pass `"\x1b[7m"` and marks pass the mark pair; **do not branch on a boolean inside the function**.
 
-- [ ] **Step 4: Run**
+- [x] **Step 4: Run**
 
 Run: `go test ./cmd/define/ -run 'Selection|Highlight' -v`
 Expected: PASS, including the existing `TestSelectionGesture*` rows
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 3.3: Paint marks, with precedence
 
@@ -781,7 +787,7 @@ Expected: PASS, including the existing `TestSelectionGesture*` rows
 
 Three rules, one test each:
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // RULE 1 — the mark WINS over deck colour. An explicit fg/bg pair overrides what
@@ -803,19 +809,19 @@ func TestALiveDragOverAMarkShowsTheDrag(t *testing.T) { /* … */ }
 func TestTheRowTintIsNotInjectedUnderAMark(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'AMarkedDeckWord|ALiveDrag|RowTintIsNotInjected' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement** — `selectionLayout.paint`'s condition widens from *"is there a live gesture"* to *"has this row anything to paint"*: marks paint whether or not a gesture is active, which is required because marks persist between gestures.
+- [x] **Step 3: Implement** — `selectionLayout.paint`'s condition widens from *"is there a live gesture"* to *"has this row anything to paint"*: marks paint whether or not a gesture is active, which is required because marks persist between gestures.
 
-- [ ] **Step 4: Run**
+- [x] **Step 4: Run**
 
 Run: `go test ./cmd/define/ -run 'Selection|Screen|Language' -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 3.4: Click and drag produce marks
 
@@ -825,7 +831,7 @@ Expected: PASS
 - Modify: `cmd/define/replraw.go:422-438` (`clicked` — one new case)
 - Test: `cmd/define/editorloop_test.go`, `cmd/define/selection_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // A click marks exactly the word under it — a click is a one-word drag (#67).
@@ -845,24 +851,24 @@ func TestADragInThePassageMarksRatherThanCopies(t *testing.T) { /* … */ }
 func TestOutsideThePassageEveryClickIsUnchanged(t *testing.T) { /* headword, RegionWord, ordinary, drag-copies */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'ThePassageMarks|UnmarksIt|OutsideThePassage' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement** — in `pointerLocked`, a drag whose anchor row is a passage row returns the new mark effect instead of `selectionCopy`; a click already returns a `pointerClick` carrying `footer`/`footerEntry`/`footerOffset`, and `clicked` resolves it through `FooterRowAt` + `wordAtCell`.
+- [x] **Step 3: Implement** — in `pointerLocked`, a drag whose anchor row is a passage row returns the new mark effect instead of `selectionCopy`; a click already returns a `pointerClick` carrying `footer`/`footerEntry`/`footerOffset`, and `clicked` resolves it through `FooterRowAt` + `wordAtCell`.
 
-- [ ] **Step 4: Run**
+- [x] **Step 4: Run**
 
 Run: `go test ./cmd/define/ -run 'Selection|EditorLoop|Pointer' -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 3.5: Milestone close
 
-- [ ] Atlas: the mark treatment, the three precedence rules, and **why the passage is a surface rather than a set of regions** — the reasoning above is the kind that gets re-litigated if it is not written down.
-- [ ] `sdlc milestone-close --issue 67 --milestone M3`
+- [x] Atlas: the mark treatment, the three precedence rules, and **why the passage is a surface rather than a set of regions** — the reasoning above is the kind that gets re-litigated if it is not written down.
+- [x] `sdlc milestone-close --issue 67 --milestone M3`
 
 ---
 
@@ -879,7 +885,7 @@ Expected: PASS
 
 > A **new `Task`** (`"passage-question"`) keys a new golden and a new cassette, leaving `ask-prompt.txt` untouched. Reuse `renderAskPrompt`'s `section` helper and its five header constants — the context blocks are the same blocks and must not fork (ARCH-DRY).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestRenderPassagePrompt(t *testing.T) {
@@ -915,19 +921,19 @@ func TestALiteralBracketInThePassageCannotForgeAMarker(t *testing.T) {
 func TestAPassageWithNoMarksStillRenders(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'PassagePrompt|SecondOccurrence|LiteralBracket|NoMarksStillRenders' -v`
 Expected: FAIL — `undefined: renderPassagePrompt`
 
-- [ ] **Step 3: Implement.** Generate the golden once: `go test ./cmd/define/ -run TestRenderPassagePrompt -update`, then **read the generated file** before committing it — a golden accepted unread is a snapshot of whatever the code did.
+- [x] **Step 3: Implement.** Generate the golden once: `go test ./cmd/define/ -run TestRenderPassagePrompt -update`, then **read the generated file** before committing it — a golden accepted unread is a snapshot of whatever the code did.
 
-- [ ] **Step 4: Run**
+- [x] **Step 4: Run**
 
 Run: `go test ./cmd/define/ -run 'PassagePrompt|Ask' -v`
 Expected: PASS, and `ask-prompt.txt` unchanged (`git diff --exit-code cmd/define/testdata/golden/ask-prompt.txt`)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 4.2: `parseREPLLine` learns about marks
 
@@ -940,7 +946,7 @@ Expected: PASS, and `ask-prompt.txt` unchanged (`git diff --exit-code cmd/define
 
 > Replace the `hasCurrent bool` parameter with a single session-state value. **Do not add a second boolean** — two bools side by side encode a precedence nobody declared, which is the consolidation `session` itself was created for. Expect a wide, mechanical diff across the call sites; that breadth is the reason to do it as one change rather than adding a parameter now and consolidating later.
 
-- [ ] **Step 1: Write the failing tests** — extend `TestConsoleDecisionTable` with five rows:
+- [x] **Step 1: Write the failing tests** — extend `TestConsoleDecisionTable` with five rows:
 
 | input | state | outcome |
 |---|---|---|
@@ -950,19 +956,19 @@ Expected: PASS, and `ask-prompt.txt` unchanged (`git diff --exit-code cmd/define
 | typed question | marks present | that question, passage + marks as context |
 | `/lang es` | marks present | `cmdCommand` — `/` still wins in column 1 |
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run TestConsoleDecisionTable -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement** — the nudge is a new `note` on `cmdNothing` routed through `nothingSays` (`repl.go:129`), phrased as an **instruction** (*"click or drag what you don't understand, then press return"*), **local, no model call**.
+- [x] **Step 3: Implement** — the nudge is a new `note` on `cmdNothing` routed through `nothingSays` (`repl.go:129`), phrased as an **instruction** (*"click or drag what you don't understand, then press return"*), **local, no model call**.
 
-- [ ] **Step 4: Run**
+- [x] **Step 4: Run**
 
 Run: `go test ./cmd/define/ -run 'ConsoleDecisionTable|Route|Command' -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 4.3: Wire the ask, and clear the marks
 
@@ -971,7 +977,7 @@ Expected: PASS
 - Modify: `cmd/define/askctx.go` — `askContext` gains an optional passage, so **a plain LOOKUP while a passage is on screen carries it as context** (resolved in-scope at start-plan, and otherwise silently dropped)
 - Test: `cmd/define/askrun_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // ONE request for N marks. The relations among the marked words are most of what
@@ -1013,14 +1019,14 @@ func TestALookupCarriesThePassage(t *testing.T) { /* … */ }
 
 > Use a `.sse` capture (`streamCapture = "stream-sample.sse"`, `askrun_test.go:43`) — `llmtest.Fake` 400s a non-streaming `Reply` scripted onto a streaming request, by design.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'SendsOneRequest|MarksInPlace|MarksClear|LookupCarries' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run** — `go test ./cmd/define/ -run Ask -v`; Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run** — `go test ./cmd/define/ -run Ask -v`; Expected: PASS
+- [x] **Step 5: Commit**
 
 ### Task 4.4: The global default level
 
@@ -1031,7 +1037,7 @@ Expected: FAIL
 
 > This **reverses** a stated rule — *"If the learner model is absent, write for a capable adult reader and do not guess at their level."* Global, one statement, both surfaces inherit (operator decision). Two dials in opposite directions: **hold the language level** (college-bound; do not simplify, do not swap a hard word for an easy one), **drop the assumed background** (do not take the ecliptic as known), and **be curious** (volunteer the connecting fact).
 
-- [ ] **Step 1: Write the failing conformance test** — assert that an explanation of a hard word **still contains that word** rather than paraphrasing it away. That is the failure mode the persona invites, and a prompt line alone does not defend it.
+- [x] **Step 1: Write the failing conformance test** — assert that an explanation of a hard word **still contains that word** rather than paraphrasing it away. That is the failure mode the persona invites, and a prompt line alone does not defend it.
 
 > **Conformance tests are build-tagged.** They carry `//go:build darwin && conformance` and do not compile into an ordinary run — so without the tag, "run it and watch it fail" reports PASS vacuously. Run them as:
 > ```
@@ -1039,20 +1045,20 @@ Expected: FAIL
 > ```
 > and run them **unsandboxed** — they reach the real dictionary and the live proxy.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `go test -tags conformance ./cmd/define/ -run TestDefaultLevelKeepsTheHardWord -v` (unsandboxed)
 Expected: FAIL — the current prompt writes for "a capable adult reader"
 
-- [ ] **Step 3: Implement** the `askSystem` change.
-- [ ] **Step 4: Run** the conformance row, then `go test ./cmd/define/ -run 'Ask|Golden' -v`, then regenerate both goldens with `-update` and **read both diffs**.
-- [ ] **Step 5: Commit**
+- [x] **Step 3: Implement** the `askSystem` change.
+- [x] **Step 4: Run** the conformance row, then `go test ./cmd/define/ -run 'Ask|Golden' -v`, then regenerate both goldens with `-update` and **read both diffs**.
+- [x] **Step 5: Commit**
 
 ### Task 4.5: Milestone close
 
-- [ ] Atlas: the decision table's new rows; the `[sel]` grammar and its escape; the reversed level default; **and the NOAD-as-context inversion with the route back to the full entry** (Done-when 9 — it has no other home).
-- [ ] Atlas: **the headword-click shortcut is now scoped.** The atlas states a headword click *"is a shortcut for the bare Enter beside it"*; with marks present Enter asks instead, so the two diverge unless the scoping is written down (one of the issue's two "consequences to carry into the plan").
-- [ ] `sdlc milestone-close --issue 67 --milestone M4`
+- [x] Atlas: the decision table's new rows; the `[sel]` grammar and its escape; the reversed level default; **and the NOAD-as-context inversion with the route back to the full entry** (Done-when 9 — it has no other home).
+- [x] Atlas: **the headword-click shortcut is now scoped.** The atlas states a headword click *"is a shortcut for the bare Enter beside it"*; with marks present Enter asks instead, so the two diverge unless the scoping is written down (one of the issue's two "consequences to carry into the plan").
+- [x] `sdlc milestone-close --issue 67 --milestone M4`
 
 ---
 
@@ -1069,7 +1075,7 @@ Expected: FAIL — the current prompt writes for "a capable adult reader"
 
 > **One `Upsert`.** The interface doc states why: *"capture is the only thing that records, and a second appender beside it is how that stops being true without anyone noticing."* Reuse `decideCapture` and keep `vocab.Add` (`capture.go:130`) **after** the `Upsert` (`capture.go:123`) — that ordering is what makes "the word turns green" honest rather than optimistic.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestAMarkedWordWithAnEntryEntersTheDeck(t *testing.T)        { /* deck + vocabulary set */ }
@@ -1089,20 +1095,20 @@ func TestAMarkedEventSurvivesAReadBack(t *testing.T) { /* write, re-read, assert
 func TestAMarkedWordIsNotInTypedLineHistory(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ ./cmd/define/store/ -run 'Marked|Capture' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run** — `go test ./cmd/define/... -run 'Capture|Event|History' -v`; Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run** — `go test ./cmd/define/... -run 'Capture|Event|History' -v`; Expected: PASS
+- [x] **Step 5: Commit**
 
 ### Task 5.2: The passage re-renders, and the words are green
 
 **Files:** `cmd/define/editorloop_test.go`
 
-- [ ] **Step 1: Write the failing test** — the end-to-end row this issue is named for:
+- [x] **Step 1: Write the failing test** — the end-to-end row this issue is named for:
 
 ```go
 // Paste, mark two words, Enter: the answer arrives, the marks are GONE, and both
@@ -1117,18 +1123,18 @@ func TestPasteMarkAskLeavesTheWordsGreen(t *testing.T) { /* … */ }
 func TestAMarkedWordBecomesSchedulable(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
-- [ ] **Step 3: Implement** — most should already work: the footer re-renders on every `Draw` and `vocab.Add` has already run.
-- [ ] **Step 4: Run** — `go test ./cmd/define/ -run 'PasteMarkAsk|Schedulable' -v`; Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run to verify they fail**
+- [x] **Step 3: Implement** — most should already work: the footer re-renders on every `Draw` and `vocab.Add` has already run.
+- [x] **Step 4: Run** — `go test ./cmd/define/ -run 'PasteMarkAsk|Schedulable' -v`; Expected: PASS
+- [x] **Step 5: Commit**
 
 ### Task 5.3: Issue close
 
-- [ ] Atlas: admission, the event kind, and the passage's lifecycle (replaced by the next paste, dies with the session).
-- [ ] Confirm every `## Done when` row in the issue has a test naming it.
-- [ ] Full suite: `go test ./cmd/define/...` — **note the sandbox**: `TestLanguageTintInvocation` and the `language_prompt_paths` rows fail with "operation not permitted" under the Bash sandbox and pass on the host. Re-run unsandboxed before diagnosing (`workshop/lessons.md`).
-- [ ] Conformance: `go test -tags conformance ./cmd/define/` (unsandboxed).
-- [ ] `sdlc close --issue 67 --verified '<evidence>'` — let it measure `--actual`; do not hand-type hours.
+- [x] Atlas: admission, the event kind, and the passage's lifecycle (replaced by the next paste, dies with the session).
+- [x] Confirm every `## Done when` row in the issue has a test naming it.
+- [x] Full suite: `go test ./cmd/define/...` — **note the sandbox**: `TestLanguageTintInvocation` and the `language_prompt_paths` rows fail with "operation not permitted" under the Bash sandbox and pass on the host. Re-run unsandboxed before diagnosing (`workshop/lessons.md`).
+- [x] Conformance: `go test -tags conformance ./cmd/define/` (unsandboxed).
+- [x] `sdlc close --issue 67 --verified '<evidence>'` — let it measure `--actual`; do not hand-type hours.
 
 ---
 
@@ -1140,7 +1146,7 @@ Recorded so a reviewer does not read them as omissions (ARCH-PURPOSE — these a
 - **Did-you-mean for one-word misses.** Own issue — it changes the console classifier globally, not this surface.
 - **Click-to-copy in the answer area.** Withdrawn by the operator after the survey showed `RegionWord` already claims those clicks.
 - **The authentic sentence as practice material.** Moved to **#68** (`use real sentences as cloze material`). It cannot stand alone: distractors come from the deck's banded words and are then vetoed, and — the finding that actually killed it — expository prose routinely *glosses* the word it uses, which is precisely the appositive the author prompt bans. A real sentence needs more judging, not less. #68 also finishes the unused `usage/` cache, which is the same problem one layer down.
-- **A new `RegionKind` for passage words.** Resolved away in Chunk 3: the passage is a surface, not a set of regions.
+- ~~**A new `RegionKind` for passage words.**~~ **Shipped as `RegionPassageWord`.** It was resolved away while the passage was footer chrome, where every word being clickable made a per-span registry carry no information. Moving the passage into the BUFFER reversed that: the click map is how buffer content is reached. It is the first kind the audio registry does not answer for, which forced `regionPlaysAudio` and `regionUnderlines` to be declared rather than assumed.
 - **Persisting the passage across restarts.** The passage is transient; the residue (the deck word) is what persists.
 - **Relaxing the dictionary-hit admission rule** so non-headword phrases can be learned. Recorded as revisitable once there is usage data.
 

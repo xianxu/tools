@@ -73,22 +73,52 @@ Typing, scrolling or changing screens clears the highlight. If copying fails,
 click the failure notice to retry. When type-ahead is full, a notice reports that
 the newest key was ignored; mouse selection and interrupts remain responsive.
 
-### Paste
+### Read along: paste a passage and mark what you cannot follow
 
-Pasting works properly now: `define` asks the terminal to bracket pastes, so a
-newline inside pasted text no longer acts as a return and submits the line
-mid-paste. The whole paste arrives at once and goes in at the cursor; newlines and
-tabs inside it become spaces, since the line editor holds one line.
+Paste a paragraph you are reading. Click the words you could not follow, or drag
+across a phrase, and press return: you get one answer about the passage *and*
+each thing you marked, with the sense that is actually in play here rather than a
+list of all of them.
 
-A paste is capped at **1000 characters** — a sentence to a paragraph. Over that it
+**Pasting.** `define` asks the terminal to bracket pastes, so a newline inside
+pasted text no longer acts as a return and submits the line mid-paste. What a
+paste becomes depends on its shape: one to three words on a single line goes into
+the line you are typing — that is someone pasting `sycophantic` to look it up —
+while four or more words, or anything with a newline, is reading material and
+becomes a passage.
+
+A passage is capped at **1000 characters**, a sentence to a paragraph. Over that it
 is refused with a message rather than half-taken, because a passage you can only
 partly see would get you an answer about text that is not on screen. Characters,
-not bytes, so a paragraph of Chinese or Japanese is a paragraph.
+not bytes, so a paragraph of Chinese or Japanese is a paragraph. Escape sequences
+and control characters are stripped, so pasting from a coloured terminal cannot
+repaint your screen, and a paste that never finishes is abandoned rather than
+waited on — the keyboard, including Ctrl-C, keeps working.
 
-Escape sequences and control characters in pasted text are stripped, so pasting
-from a coloured terminal or a log file cannot repaint your screen. If a paste
-never finishes — a terminal that sends the opening marker and then stops — it is
-abandoned rather than waited on, so the keyboard, including Ctrl-C, keeps working.
+**The passage is a record.** It goes into the scrollback like a definition or an
+answer and scrolls away as the session goes on. It wraps to your terminal at the
+width it was pasted at.
+
+**Marking.** Click a word to mark it; click it again to unmark. Drag across
+several words to mark them as ONE phrase — "at the zenith of" is one thing you are
+asking about, not four. Marked spans show in their own colour. Only words inside
+the passage currently on screen can be marked; clicking into one that has scrolled
+past does nothing.
+
+**Asking.** Press return with nothing typed and marks showing, and the whole
+passage goes out with your marks called out in place — one question, not one per
+word. Press return with a passage but nothing marked and `define` tells you to
+mark something; it does not ask the model. Type a question instead of pressing
+return and the passage goes along as context.
+
+**Afterwards** the marks clear — but only if an answer actually reached you, so a
+Ctrl-C or an unreachable model leaves your marking alone. Anything you marked that
+is a real dictionary word joins your deck and comes back in `/play`. A dragged
+phrase that is not in the dictionary is explained and not kept: the deck is a
+vocabulary deck.
+
+**Drag still copies everywhere else**, including a drag that starts outside the
+passage and ends inside it.
 
 ### The directory is the deck, so it asks first
 
