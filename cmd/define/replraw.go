@@ -536,7 +536,15 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// simply vanished would read as a broken terminal, and the
 				// reader has no other way to learn the limit. Apply already
 				// leaves the line untouched, so nothing half-arrives.
+				//
+				// THE FRAME IS CLEARED FIRST, like every other write this loop
+				// makes between prompts. A write with the prompt on screen lands
+				// INSIDE it — the invariant
+				// TestNothingIsWrittenWhileAPromptIsShown pins — and the first
+				// version of this notice broke it (BR-17).
+				view.Draw("", nil)
 				fmt.Fprintf(stderr, "define: that paste is longer than %d characters; paste less\r\n", maxPasteRunes)
+				draw()
 				continue
 			}
 			cands := candidatesFor(e.WalkBase(), hist, commands)

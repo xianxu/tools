@@ -112,7 +112,7 @@ func (d *keyDecoder) decode(buf []byte) (Key, int) {
 	// rest of the paste would arrive as runes — the exact failure the drain
 	// exists to prevent. The rule is: every byte while draining, 0x1b otherwise.
 	if d.paste.draining || buf[0] == 0x1b {
-		if k, used := d.paste.scan(buf); used > 0 {
+		if k, used, _ := d.paste.scan(buf); used > 0 {
 			return k, used
 		} else if d.paste.draining || bytes.HasPrefix(buf, []byte(pasteStart)) {
 			// Ours, but incomplete: wait rather than letting the CSI scan below

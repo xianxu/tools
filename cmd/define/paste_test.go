@@ -17,7 +17,7 @@ func wholePaste(body string) []byte { return []byte(pasteStart + body + pasteEnd
 func TestPasteScannerTakesAWholePaste(t *testing.T) {
 	var s pasteScanner
 	in := append(wholePaste("hello\nworld"), []byte("rest")...)
-	k, used := s.scan(in)
+	k, used, _ := s.scan(in)
 	if k.Kind != KeyPaste {
 		t.Fatalf("kind = %v, want KeyPaste", k.Kind)
 	}
@@ -37,11 +37,11 @@ func TestPasteScannerTakesAWholePaste(t *testing.T) {
 func TestPasteScannerSurvivesAReadBoundary(t *testing.T) {
 	var s pasteScanner
 	buf := []byte(pasteStart + "hello")
-	if _, used := s.scan(buf); used != 0 {
+	if _, used, _ := s.scan(buf); used != 0 {
 		t.Fatalf("an unterminated paste consumed %d bytes; it must consume none", used)
 	}
 	buf = append(buf, []byte(" world"+pasteEnd)...) // the caller APPENDS; it does not advance
-	k, used := s.scan(buf)
+	k, used, _ := s.scan(buf)
 	if string(k.Raw) != "hello world" {
 		t.Errorf("Raw = %q, want %q — the scanner double-counted the re-presented bytes", k.Raw, "hello world")
 	}
@@ -60,7 +60,7 @@ func TestPasteScannerTakesAPasteDeliveredInChunks(t *testing.T) {
 	var buf []byte
 	for i := 0; i < len(whole); i += 256 {
 		buf = append(buf, whole[i:min(i+256, len(whole))]...)
-		k, used := s.scan(buf)
+		k, used, _ := s.scan(buf)
 		if used == 0 {
 			continue
 		}
@@ -80,7 +80,7 @@ func TestPasteScannerTakesAPasteDeliveredInChunks(t *testing.T) {
 func TestPasteScannerCapsInRunesNotBytes(t *testing.T) {
 	body := strings.Repeat("漢", maxPasteRunes-1) // three bytes each: far over any byte cap
 	var s pasteScanner
-	k, _ := s.scan(wholePaste(body))
+	k, _, _ := s.scan(wholePaste(body))
 	if k.Kind != KeyPaste {
 		t.Fatalf("a %d-rune CJK paste was refused; the cap is counting bytes", maxPasteRunes-1)
 	}
@@ -91,7 +91,7 @@ func TestPasteScannerCapsInRunesNotBytes(t *testing.T) {
 
 func TestPasteScannerRefusesAnOversizePasteItCanSeeWhole(t *testing.T) {
 	var s pasteScanner
-	k, used := s.scan(wholePaste(strings.Repeat("x", maxPasteRunes+1)))
+	k, used, _ := s.scan(wholePaste(strings.Repeat("x", maxPasteRunes+1)))
 	if k.Kind != KeyPasteRefused {
 		t.Fatalf("kind = %v, want KeyPasteRefused", k.Kind)
 	}
@@ -112,7 +112,7 @@ func TestPasteScannerRefusesAnOversizePasteItCanSeeWhole(t *testing.T) {
 // buffer that may end mid-rune.
 func TestPasteScannerDrainsAnOversizePasteBoundedly(t *testing.T) {
 	var s pasteScanner
-	k, used := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50)))
+	k, used, _ := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50)))
 	if used == 0 {
 		t.Fatal("an over-cap paste consumed nothing; the caller's buffer grows without bound")
 	}
@@ -122,7 +122,7 @@ func TestPasteScannerDrainsAnOversizePasteBoundedly(t *testing.T) {
 	if !s.draining {
 		t.Fatal("the scanner did not enter the drain")
 	}
-	k, used = s.scan([]byte("more body" + pasteEnd))
+	k, used, _ = s.scan([]byte("more body" + pasteEnd))
 	if k.Kind != KeyPasteRefused || used == 0 {
 		t.Errorf("the closer did not end the drain: kind=%v used=%d", k.Kind, used)
 	}
@@ -135,14 +135,14 @@ func TestPasteScannerDrainsAnOversizePasteBoundedly(t *testing.T) {
 // care decodeX10Mouse takes (key.go:330).
 func TestTheDrainDoesNotCutAStraddlingCloser(t *testing.T) {
 	var s pasteScanner
-	if _, used := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50))); used == 0 {
+	if _, used, _ := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50))); used == 0 {
 		t.Fatal("the over-cap scan consumed nothing")
 	}
 	half := pasteEnd[:3]
-	if k, used := s.scan([]byte("tail" + half)); used >= len("tail"+half) {
+	if k, used, _ := s.scan([]byte("tail" + half)); used >= len("tail"+half) {
 		t.Errorf("the drain consumed into a partial closer (used=%d, kind=%v)", used, k.Kind)
 	}
-	k, _ := s.scan([]byte("tail" + pasteEnd))
+	k, _, _ := s.scan([]byte("tail" + pasteEnd))
 	if k.Kind != KeyPasteRefused {
 		t.Errorf("the straddling closer was lost: kind = %v", k.Kind)
 	}
@@ -155,7 +155,7 @@ func TestTheDrainDoesNotCutAStraddlingCloser(t *testing.T) {
 // without it having to be restated there.
 func TestAPastedEscapeNeverLeavesTheBoundary(t *testing.T) {
 	var s pasteScanner
-	k, _ := s.scan(wholePaste("the \x1b[31mslow\x1b[0m precession"))
+	k, _, _ := s.scan(wholePaste("the \x1b[31mslow\x1b[0m precession"))
 	if strings.ContainsRune(string(k.Raw), 0x1b) {
 		t.Errorf("an escape survived the boundary: %q", k.Raw)
 	}
@@ -167,7 +167,7 @@ func TestAPastedEscapeNeverLeavesTheBoundary(t *testing.T) {
 // Control characters go the same way, EXCEPT newline: a passage has lines.
 func TestTheBoundaryKeepsNewlinesAndDropsOtherControls(t *testing.T) {
 	var s pasteScanner
-	k, _ := s.scan(wholePaste("a\nb\tc\x00d\x07e"))
+	k, _, _ := s.scan(wholePaste("a\nb\tc\x00d\x07e"))
 	// ONE outcome, not either: a test that accepts both pins neither, and NUL/BEL
 	// handling is exactly the thing a later refactor would change silently.
 	// Control bytes are DROPPED, leaving the text either side adjacent.
@@ -184,7 +184,7 @@ func TestTheBoundaryKeepsNewlinesAndDropsOtherControls(t *testing.T) {
 // which submits.
 func TestAnEmbeddedCloserEndsThePaste(t *testing.T) {
 	var s pasteScanner
-	k, used := s.scan([]byte(pasteStart + "first" + pasteEnd + "second" + pasteEnd))
+	k, used, _ := s.scan([]byte(pasteStart + "first" + pasteEnd + "second" + pasteEnd))
 	if string(k.Raw) != "first" {
 		t.Errorf("Raw = %q, want %q — the first closer wins", k.Raw, "first")
 	}
@@ -195,10 +195,10 @@ func TestAnEmbeddedCloserEndsThePaste(t *testing.T) {
 
 func TestTextThatIsNotAPasteIsNotOurs(t *testing.T) {
 	var s pasteScanner
-	if k, used := s.scan([]byte("\x1b[A")); used != 0 || k.Kind != KeyUnknown {
+	if k, used, _ := s.scan([]byte("\x1b[A")); used != 0 || k.Kind != KeyUnknown {
 		t.Errorf("scan claimed a non-paste escape: kind=%v used=%d", k.Kind, used)
 	}
-	if k, used := s.scan([]byte("plain")); used != 0 || k.Kind != KeyUnknown {
+	if k, used, _ := s.scan([]byte("plain")); used != 0 || k.Kind != KeyUnknown {
 		t.Errorf("scan claimed ordinary text: kind=%v used=%d", k.Kind, used)
 	}
 }
@@ -219,7 +219,7 @@ func FuzzPasteScannerAcrossCalls(f *testing.F) {
 		for i := 0; i < len(in); i += split {
 			buf = append(buf, in[i:min(i+split, len(in))]...)
 			for {
-				k, used := s.scan(buf)
+				k, used, _ := s.scan(buf)
 				if used == 0 {
 					break
 				}
@@ -377,36 +377,115 @@ func TestEditorLoopReportsARefusedPaste(t *testing.T) {
 }
 
 // C1 from the M1 boundary review. An unterminated ESC[200~ used to deafen the
-// input path FOREVER: under the cap scan returned 0 and readInput never advanced
-// its buffer; over the cap the drain latched and discarded everything until a
-// closer that never came. Raw mode disables ISIG, so Ctrl-C is reachable only as
-// a decoded KeyInterrupt — the program could not be quit from the keyboard.
+// input path FOREVER. Raw mode disables ISIG, so Ctrl-C is reachable only as a
+// decoded KeyInterrupt — the program could not be quit from the keyboard.
 //
-// Driven through the real decoder, in the caller's re-presenting shape.
+// BOTH halves, and the second one is the point: round 4 caught that the earlier
+// "draining" row never drained, because the trailing \x03 fired the abandon rule
+// before the byte bound was reached. Each row now ASSERTS which exit it took, so
+// a case cannot silently go unexercised again.
 func TestAnUnterminatedPasteDoesNotSwallowEnterOrInterrupt(t *testing.T) {
-	for _, tc := range []struct{ name, body string }{
-		{"under the cap", "hello"},
-		{"over the byte bound, draining", strings.Repeat("x", maxPasteBytes+50) + "hello"},
+	t.Run("under the byte bound", func(t *testing.T) {
+		assertEscapesReach(t, pasteStart+"hello\r\x03", pasteAbandoned)
+	})
+	t.Run("after the drain has started", func(t *testing.T) {
+		var s pasteScanner
+		// No control byte here, so the byte bound — not the abandon rule —
+		// decides. Pinned by the exit, which is what the old row lacked.
+		_, used, exit := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50)))
+		if exit != pasteDrainStarted || used == 0 {
+			t.Fatalf("exit = %v used = %d; this row must reach the drain", exit, used)
+		}
+		if !s.draining {
+			t.Fatal("the scanner is not draining; the rest of this row is vacuous")
+		}
+		// Now the keyboard must still work.
+		var d keyDecoder
+		d.paste = s
+		assertKeysEmerge(t, &d, "more body\r\x03")
+	})
+}
+
+// assertEscapesReach drives the whole input through one decoder and requires that
+// Enter and the interrupt both come out.
+func assertEscapesReach(t *testing.T, in string, want pasteExit) {
+	t.Helper()
+	var s pasteScanner
+	if _, _, exit := s.scan([]byte(in)); exit != want {
+		t.Fatalf("exit = %v, want %v — this row is not exercising the case it names", exit, want)
+	}
+	var d keyDecoder
+	assertKeysEmerge(t, &d, in)
+}
+
+func assertKeysEmerge(t *testing.T, d *keyDecoder, in string) {
+	t.Helper()
+	buf := []byte(in)
+	var got []KeyKind
+	for len(buf) > 0 {
+		k, used := d.decode(buf)
+		if used == 0 {
+			break
+		}
+		got = append(got, k.Kind)
+		buf = buf[used:]
+	}
+	if !slices.Contains(got, KeyEnter) {
+		t.Errorf("Enter never emerged: %v", got)
+	}
+	if !slices.Contains(got, KeyInterrupt) {
+		t.Errorf("Ctrl-C never emerged — the program cannot be quit from the keyboard: %v", got)
+	}
+}
+
+// Every exit scan can take is reached by a named row. DERIVED from the
+// registry's extent, so an exit added without a row reddens here — the same move
+// TestEveryRegionKindIsActionable makes, and the guard that would have caught the
+// drain shipping untested.
+func TestEveryPasteExitIsExercised(t *testing.T) {
+	seen := map[pasteExit]string{}
+	for _, tc := range []struct {
+		name  string
+		drive func(*pasteScanner) pasteExit
+	}{
+		{"ordinary text", func(s *pasteScanner) pasteExit {
+			_, _, e := s.scan([]byte("plain"))
+			return e
+		}},
+		{"a prefix", func(s *pasteScanner) pasteExit {
+			_, _, e := s.scan([]byte(pasteStart + "partial"))
+			return e
+		}},
+		{"a control byte inside an open paste", func(s *pasteScanner) pasteExit {
+			_, _, e := s.scan([]byte(pasteStart + "oops\x03"))
+			return e
+		}},
+		{"a complete paste", func(s *pasteScanner) pasteExit {
+			_, _, e := s.scan(wholePaste("fine"))
+			return e
+		}},
+		{"a complete paste over the rune cap", func(s *pasteScanner) pasteExit {
+			_, _, e := s.scan(wholePaste(strings.Repeat("x", maxPasteRunes+1)))
+			return e
+		}},
+		{"over the byte bound", func(s *pasteScanner) pasteExit {
+			_, _, e := s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50)))
+			return e
+		}},
+		{"the drain reaching its closer", func(s *pasteScanner) pasteExit {
+			s.scan([]byte(pasteStart + strings.Repeat("x", maxPasteBytes+50)))
+			_, _, e := s.scan([]byte("tail" + pasteEnd))
+			return e
+		}},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var d keyDecoder
-			buf := []byte(pasteStart + tc.body + "\r\x03")
-			var got []KeyKind
-			for len(buf) > 0 {
-				k, used := d.decode(buf)
-				if used == 0 {
-					break
-				}
-				got = append(got, k.Kind)
-				buf = buf[used:]
-			}
-			if !slices.Contains(got, KeyEnter) {
-				t.Errorf("Enter never emerged from an unterminated paste: %v", got)
-			}
-			if !slices.Contains(got, KeyInterrupt) {
-				t.Errorf("Ctrl-C never emerged: the program cannot be quit from the keyboard (%v)", got)
-			}
-		})
+		var s pasteScanner
+		seen[tc.drive(&s)] = tc.name
+	}
+	for e := pasteExit(0); e < numPasteExits; e++ {
+		if _, ok := seen[e]; !ok {
+			t.Errorf("exit %d is reachable in scan and no row here exercises it — "+
+				"that is how the drain came to ship with a green test that never drained", e)
+		}
 	}
 }
 
@@ -517,10 +596,10 @@ func TestALegalCJKPasteIsNotRefusedAtAnySplit(t *testing.T) {
 			continue
 		}
 		var s pasteScanner
-		if k, used := s.scan(whole[:split]); used != 0 {
+		if k, used, _ := s.scan(whole[:split]); used != 0 {
 			t.Fatalf("split %d: the partial buffer consumed %d as %v; it must wait", split, used, k.Kind)
 		}
-		k, _ := s.scan(whole)
+		k, _, _ := s.scan(whole)
 		if k.Kind != KeyPaste {
 			t.Errorf("split %d: a legal %d-rune paste decoded as %v", split, maxPasteRunes, k.Kind)
 		}
@@ -550,5 +629,25 @@ func TestAPasteDuringASittingIsIgnored(t *testing.T) {
 		if in, ok := toInput(k); ok {
 			t.Errorf("%v produced the sitting input %v; a sitting takes keystrokes, not text", k.Kind, in.Kind)
 		}
+	}
+}
+
+// BR-17: the refusal notice is a write between prompts, so it clears the frame
+// first. A write with the prompt on screen lands inside it — the invariant
+// TestNothingIsWrittenWhileAPromptIsShown pins for every other write this loop
+// makes, and the first version of this notice was the exception.
+func TestTheRefusalNoticeDoesNotLandInsideThePrompt(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	runEditor(t.Context(), keySeq(Key{Kind: KeyPasteRefused}), nil, rig.deps, opt,
+		console{view: view, finish: finish, stdout: &out, stderr: &errb})
+
+	drawn := view.prompts
+	if len(drawn) < 2 {
+		t.Fatalf("the loop drew %d prompts; the notice did not clear the frame", len(drawn))
+	}
+	if drawn[len(drawn)-2] != "" {
+		t.Errorf("the prompt was still on screen when the notice was written: %q", drawn[len(drawn)-2])
 	}
 }

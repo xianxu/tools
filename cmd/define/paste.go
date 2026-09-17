@@ -51,18 +51,43 @@ const (
 // (state, input), drivable in a test without a terminal (ARCH-ORDER).
 type pasteScanner struct{ draining bool }
 
+// pasteExit names every way scan can return.
+//
+// An ENUMERATION rather than seven anonymous returns, and the reason is a bug
+// this file already had: a test named "over the byte bound, draining" never
+// reached the drain, because the abandon rule preempted it — so the drain shipped
+// with no regression test while a green subtest claimed otherwise. A case a test
+// cannot NAME is a case a test cannot be shown to reach (ARCH-ORDER).
+//
+// numPasteExits is the registry's extent, so the guard derives the set rather
+// than restating it — the same move numRegionKinds makes.
+type pasteExit int
+
+const (
+	pasteNotOurs      pasteExit = iota // the head is not a paste
+	pasteNeedMore                      // a prefix: read more, consume nothing
+	pasteAbandoned                     // a control byte inside an open paste
+	pasteDelivered                     // complete, within the cap
+	pasteRefusedWhole                  // complete, over the rune cap
+	pasteDrainStarted                  // over the byte bound: discarding
+	pasteDrainEnded                    // the drain reached its closer
+	numPasteExits
+)
+
 // scan reports what the head of buf means, in decodeKey's own (Key, int)
 // protocol: used == 0 means "a prefix, read more", and never "an empty paste".
+// The third return names WHICH exit was taken, so every one is reachable by a
+// test that says which it is exercising.
 //
 // It answers for a buffer that is ALREADY known to be ours in one of two ways:
 // the head is pasteStart, or a drain is in progress and every byte belongs to it
 // until the closer. decodeKey's hook has to honour both — see the comment there,
 // because hooking on ESC alone makes the drain unreachable.
-func (s *pasteScanner) scan(buf []byte) (Key, int) {
+func (s *pasteScanner) scan(buf []byte) (Key, int, pasteExit) {
 	body, opened := buf, 0
 	if !s.draining {
 		if !bytes.HasPrefix(buf, []byte(pasteStart)) {
-			return Key{}, 0
+			return Key{}, 0, pasteNotOurs
 		}
 		opened = len(pasteStart)
 		body = buf[opened:]
@@ -88,9 +113,9 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 	if quit := indexPasteAbandon(body); quit >= 0 && (closer < 0 || quit < closer) {
 		s.draining = false
 		if opened > 0 {
-			return Key{Kind: KeyUnknown, Raw: []byte(pasteStart)}, opened
+			return Key{Kind: KeyUnknown, Raw: []byte(pasteStart)}, opened, pasteAbandoned
 		}
-		return Key{}, 0
+		return Key{}, 0, pasteAbandoned
 	}
 
 	if end := closer; end >= 0 {
@@ -100,13 +125,13 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 		used := opened + end + len(pasteEnd)
 		if s.draining {
 			s.draining = false
-			return Key{Kind: KeyPasteRefused}, used
+			return Key{Kind: KeyPasteRefused}, used, pasteDrainEnded
 		}
 		text := body[:end]
 		if utf8.RuneCount(text) > maxPasteRunes {
-			return Key{Kind: KeyPasteRefused}, used
+			return Key{Kind: KeyPasteRefused}, used, pasteRefusedWhole
 		}
-		return Key{Kind: KeyPaste, Raw: []byte(sanitisePasteBody(string(text)))}, used
+		return Key{Kind: KeyPaste, Raw: []byte(sanitisePasteBody(string(text)))}, used, pasteDelivered
 	}
 
 	// No closer yet. This branch is a MEMORY bound and it is measured in BYTES.
@@ -123,7 +148,7 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 	// the widest bytes a rune can take. At the closer, where the text is whole:
 	// the rune cap, and only there.
 	if !s.draining && len(body) <= maxPasteBytes {
-		return Key{}, 0
+		return Key{}, 0, pasteNeedMore
 	}
 
 	// Over the cap. Start discarding, and CONSUME, so the caller's buffer stops
@@ -135,9 +160,9 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 	s.draining = true
 	used := opened + len(body) - (len(pasteEnd) - 1)
 	if used <= 0 {
-		return Key{}, 0
+		return Key{}, 0, pasteNeedMore
 	}
-	return Key{Kind: KeyUnknown}, used
+	return Key{Kind: KeyUnknown}, used, pasteDrainStarted
 }
 
 // sanitisePasteBody is where untrusted bytes become a typed value (ARCH-SECURE).

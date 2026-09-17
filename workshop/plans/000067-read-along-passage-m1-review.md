@@ -559,3 +559,176 @@ findings:
     detail: |
       This is the 2nd finding in family `production-seam-untested` (BR-3 was the 1st), so do not fix this site alone. Evidence: deleting replraw.go:89 leaves `go test ./cmd/define/ -run 'Paste|Raw|Editor|Console|Repl|Input'` green (ok, 15.9s) — with it gone the terminal never brackets and the whole milestone silently reverts to a pasted newline submitting mid-paste. rawterm_test.go:119-152 calls r.enterPaste() itself, so it pins the METHOD and never the call site, and it asserts into a bytes.Buffer, so it cannot show the sequence reaching a terminal. pty_conformance_test.go:664 is the exact missing precedent, and rawterm.go:163-166 states paste carries the identical no-reset-reflex hazard. The rule that covers the class - every terminal mode the program enables is asserted at the place it is ENABLED and given back on a real terminal, DERIVED from the enable-constant set rather than hand-written per mode. The enumeration is already owned by TestEveryEnabledInputModeIsDecoded: altScreenOn, mouseOn, pasteOn. Sweep it in this round - one in-process assertion per constant that newConsole writes it, one PTY row per constant that it reaches and leaves a real terminal. TestRestoreHandsBackEveryTerminalState hand-writes all three today, which is BR-13's duplication seen from the test side. ARCH-MOCK, ARCH-DRY.
 ```
+
+---
+
+## Re-review — 2026-09-16T17:27:39-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 67 — define: read-along — paste a passage, click or drag what is opaque |
+| repo | tools |
+| issue file | workshop/issues/000067-read-along-passage.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 98f5c779b468ada00c087bde6bd43cca9b0892cc..8ba9b971722adb5bbdfff2cdcbf6caab525d6ea0 |
+| command | sdlc milestone-close --issue 67 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-09-16T17:27:39-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The paste mechanism itself is in good shape — the scanner's "accumulates nothing" contract against `readInput`'s re-presenting buffer is correct and pinned the way the caller actually drives it, the two-predicate cap (BR-12) is a genuinely structural fix, and lifting the `*_test.go` exemption in `currentTruthFiles` was real class work that swept seven pre-existing stale mentions. The full suite is green at HEAD (`go test ./cmd/define/...`; only `TestLanguagePromptStartup` and `TestLanguageTintInvocation` fail, identically before and after every mutation I applied — `pty.Open` returns EPERM in this environment). What blocks SHIP is evidence, not code: **I restored the original Critical by mutation and the suite stayed green.** Adding `&& !s.draining` to `paste.go:88`'s abandon condition re-creates the unquittable-program failure BR-1 described for the over-the-cap half, and nothing reddens — the subtest named `"over the byte bound, draining"` never enters the drain (I instrumented it: `draining=false` after the first decode, because `indexPasteAbandon` preempts the byte-bound branch). Separately, **`sess.enterPaste()` is still unpinned in-process** — commenting out `replraw.go:89` leaves the whole suite green, and `TestNewConsoleEnablesBracketedPaste` (`paste_test.go:533`) never calls `newConsole`; it hand-builds a `rawSession`, so it pins the same methods `rawterm_test.go` already pinned. And one new live defect: the paste-refusal notice writes into a standing prompt, which this loop has a named invariant against. All three fixes are small and precisely located — this should be a short round, not a redesign.
+
+## 1. Strengths
+
+- **`paste.go:113-136` — splitting `maxPasteRunes` from `maxPasteBytes` is the right diagnosis, not a patch.** The comment states exactly why one predicate cannot serve both ("the buffer may end mid-rune, and `utf8.RuneCount` counts each orphan byte as a `RuneError`"), and `TestALegalCJKPasteIsNotRefusedAtAnySplit` (`paste_test.go:512`) drives every split point rather than the one that happened to fail. Confirmed-good ground.
+- **`repo_guard_test.go:1737-1748` — lifting the `*_test.go` exemption is a class fix with a measurement attached.** "Measured when the exemption was lifted: zero pre-existing violations" is the right thing to record, and the seven sites swept in the same commit prove the guard is live rather than vacuous.
+- **`key_test.go:404-462` — the widened mode guard exercises 2004 through the real `decodeKey` and asserts full consumption**, and it says in prose why 1049 is excluded. The rows are reachable and non-vacuous.
+- **`paste_test.go:425-466` — `TestReadKeysCarriesTheDrainAcrossReads` is a real regression test** and its comment records that the *first* version of it wasn't. That self-correction is the habit worth keeping.
+- **`plan.md:1147-1185` — the `## Revisions` entry is the right form**: five departures, each with the reason, appended rather than overwriting the superseded prose (AGENTS.md §1).
+
+## 2. Critical findings
+
+**`cmd/define/paste.go:86-94` — the over-the-cap half of BR-1's fix has no regression test; I restored the Critical by mutation and the suite stayed green.**
+
+Evidence: in a scratch worktree at HEAD, changing line 88 to `if quit := indexPasteAbandon(body); quit >= 0 && !s.draining && (closer < 0 || quit < closer)` leaves `go test ./cmd/define/...` green (only the two pty-environment failures, identical unmutated). Under that mutation an unterminated `ESC[200~` carrying more than `maxPasteBytes` latches the drain and discards Ctrl-C forever — the original unquittable-program defect, fully restored, silently.
+
+The reason no test catches it: `TestAnUnterminatedPasteDoesNotSwallowEnterOrInterrupt`'s second subtest is *named* `"over the byte bound, draining"` but never drains. `indexPasteAbandon` finds the trailing `\x03` in the same buffer and abandons at `paste.go:90` before the byte-bound branch at `:120` is reached — I logged `kind=KeyUnknown used=6 draining=false` after the first decode. No other test in `paste_test.go` puts a `0x03`/`0x04` in front of a scanner that is already draining.
+
+Fix sketch — and the rule, because this is the milestone's state machine: `scan` has seven exits, and the two unexercised ones are both in the drain. Write the transition table as a table-driven test — `(draining, buf) → (Kind, used, draining')` — so every `(state, event)` pair is a named row rather than a scenario someone remembered (ARCH-ORDER: "tests assert independently stated invariants rather than merely restating the transition implementation"). The two missing rows are (a) draining, body containing `0x03` before any closer → drain cleared, bytes released; (b) draining, fewer than `len(pasteEnd)` bytes available → `used <= 0`, wait. Row (a) is the one that reddens under the mutation above.
+
+## 3. Important findings
+
+**`cmd/define/replraw.go:539` — the paste-refusal notice writes with a live prompt on the frame, violating this loop's own pinned invariant.**
+
+`TestNothingIsWrittenWhileAPromptIsShown` (`editorloop_test.go:553`) asserts that every write during a session lands with `view.livePrompt() == ""`; its doc records the operator-reported bug it came from (`arrondissement` drawn twice). I copied that test verbatim in a scratch worktree and drove it with a single `KeyPasteRefused` instead of a lookup:
+
+```
+zz_scratch_test.go:24: write 1 of 1 landed with a prompt on the frame:
+  "\r\x1b[K\x1b[1;36m🇺🇸 › \x1b[0m\x1b[1m\x1b[0m"
+```
+
+In production `stdout` and `stderr` are the same `liveScreen` (`replraw.go:127`), so the notice repaints around the live edge and lands inside the prompt row; the branch then `continue`s with no `draw()`, so the frame stays wrong until the next keystroke. The precedent three cases above it does it correctly: `case res := <-bgResults:` calls `view.Draw("", nil)`, writes, then `draw()` (`replraw.go:504-510`), and its comment names this exact rule. `TestEditorLoopReportsARefusedPaste` (`paste_test.go:367`) cannot see it — it hands `runEditor` a separate `bytes.Buffer` for stderr, so there is no frame to observe. Fix: clear, write, redraw, and add a `KeyPasteRefused` case to the invariant test (or a sibling that reuses its `writerFunc` shape). ARCH-ORDER — a new branch in a loop that carries frame state has to honour the loop's existing pre-write protocol.
+
+*(The remaining Important items are prior findings re-opened; see the dispositions block and §7.)*
+
+## 4. Minor findings
+
+- `paste_test.go:145` — `TestTheDrainDoesNotCutAStraddlingCloser` still hands its third scan a freshly built `"tail" + pasteEnd` rather than the leftover the caller would re-present (BR-9's secondary clause).
+- `README.md:88-90` overstates the abandon rule: "so the keyboard, including Ctrl-C, keeps working." Verified — after an unterminated `ESC[200~`, feeding `hello\r` through the real decoder yields **zero** keys. Only `0x03`/`0x04` get through, and they flush the held bytes retroactively (so the Enter submits *after* the interrupt). Counted as a third live instance of the `doc-contradicts-type` family; see BR-11's note.
+- Three prunable worktrees from earlier rounds remain registered (`/private/tmp/claude-501/{base23,r3check,scratch/br7}`); `git worktree prune` clears them.
+
+## 5. Test coverage notes
+
+- Mutation results this round, all in scratch worktrees at HEAD: removing `sess.enterPaste()` → suite green; removing `case KeyPaste, KeyPasteRefused` from `toInput` → `TestAPasteDuringASittingIsIgnored` still passes; disabling abandon-while-draining → suite green. Three of this round's four claimed fixes have no test that fails without them.
+- `TestPTYBracketedPasteIsAskedForAndGivenBack` and `TestPTYAPastedNewlineDoesNotSubmit` **could not be verified here** — both SKIP with `pty_conformance_test.go:61: no pty available: operation not permitted`. They are behind `//go:build darwin && conformance` and are not in the default suite, so they are not a substitute for the in-process assertion BR-16 asked for. If the implementor ran them on the host, the `## Log` should say so with the output.
+- The genuinely strong pins: `TestPasteScannerSurvivesAReadBoundary`, `TestPasteScannerTakesAPasteDeliveredInChunks`, `TestALegalCJKPasteIsNotRefusedAtAnySplit`, `TestReadKeysCarriesTheDrainAcrossReads`, `FuzzPasteScannerAcrossCalls`, and `TestAPasteCancelsALiveDrag` (mutation-verified in round 2).
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag.** `rawterm.go:105-192` now carries three near-identical enter/leave pairs and `restore()` hand-orders three calls; `key_test.go:436`'s `const inputModes = mouseOn + pasteOn` and `rawterm_test.go:119-152` each hand-enumerate the same three modes. Four hand-maintained copies of one set. The collapse — an ordered `[]struct{flag *bool; on, off string}` owned by `rawSession`, with `restore` walking it and the tests deriving from it — closes BR-13 and BR-16's derivation half together. M2 adds no terminal modes, so this is the last cheap moment before the shape is copied a fourth time.
+- **ARCH-PURE — pass.** `pasteScanner`, `sanitisePasteBody`, `pasteLineRunes`, `indexPasteAbandon` are pure and their tests run with no IO. Reusing `escapeLen` (`render.go:582`) instead of writing a second escape grammar is exactly right.
+- **ARCH-PURPOSE — flag.** M1's stated purpose (a pasted newline must not submit) is delivered, and the deviation that makes a paste insert into the line is the better call, properly recorded. The flag is on the *answers*: BR-11, BR-15 and BR-16 each named a class and each got the site. Three rounds in, the ledger's repeating `family:` slugs are reporting that the enumerations were never written.
+- **ARCH-MOCK — flag.** The `control io.Writer` seam is good, and the PTY row is the right cadence for terminal conformance. But production flow and test flow do not share the boundary yet: no in-process test drives `newConsole`, which is the only place production takes the modes.
+- **ARCH-CONSTRAINTS — pass.** The memory bound is enforced, not asserted: the drain consumes, so `readInput`'s buffer is bounded at `maxPasteBytes + 5`. One key per paste correctly avoids the 256-key drop-newest channel.
+- **ARCH-SECURE — pass.** The boundary is at the point the bytes stop being a wire format, the Cc/Cf split is a stated decision, and `FuzzPasteScannerAcrossCalls` pins "no escape leaves as text" across calls.
+- **ARCH-ORDER — flag.** `pasteScanner`'s one-bool state is the right shape, but its transition set is not readable off a test (see the Critical). `rawSession`'s three independent bools declare eight states for about four legal ones.
+- **ARCH-FUNERAL — pass.** M1 creates nothing durable; the plan's note is accurate. The gate ledgers under `workshop/plans/` archive with the issue.
+
+## 7. Plan revision recommendations
+
+None for `000067-read-along-passage-plan.md` — the `## Revisions` entry now covers every departure I could find, and the entity tables match the tree.
+
+For the **issue** (`workshop/issues/000067-read-along-passage.md`), two `## Log` corrections are owed and neither is cosmetic (BR-14):
+
+- The `2026-09-16 — M1 implemented` entry (issue:937) still claims "full suite green" for `c1844b3`, where round 1 proved the suite was red. A verification claim that was false has to be restated at the boundary that re-verified it, with the commit it now holds for.
+- There is no `## Log` entry for boundary-review rounds 1, 2 or 3, which AGENTS.md §3 requires alongside the `Review-Verdict:` trailer. One line per round, naming the verdict and the findings closed, is the whole ask.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      Behaviour is correct at HEAD, but the over-the-cap half has no regression test: adding
+      `&& !s.draining` to paste.go:88 restores the unquittable-program defect and the whole
+      suite stays green. The subtest named "over the byte bound, draining" never drains —
+      indexPasteAbandon preempts the byte-bound branch (logged draining=false after the first
+      decode). Fix is one row, or better, scan's seven exits as a transition table.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Revisions section appended at plan.md:1147-1185, all M1 checkboxes ticked, Pure-entities
+      table now carries sanitisePasteBody/indexPasteAbandon/pasteLineRunes/keyDecoder and drops
+      spansToStyled; superseded in-body prose is covered by the Revisions entry per AGENTS.md 1.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      key.go:65-67 is byte-identical to the base — the struct doc still says Raw is an unmodelled
+      sequence to be ignored, while editor.go:64 inserts it as text.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      paste_test.go:174 now pins exactly "a\nb\tcde". Residual from the finding's second clause:
+      TestTheDrainDoesNotCutAStraddlingCloser:145 still builds a fresh buffer for its third scan.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      Instances repaired and the BACKWARD half of the class landed (currentTruthFiles now binds
+      *_test.go; 7 stale mentions swept). The FORWARD half was not written: no guard derives
+      "every identifier prose names must be declared at HEAD" over README/atlas/Go comments, and
+      repo_guard_test.go's only change this window is the exemption lift. Live prevalence at HEAD
+      is now 3 — key.go:65-67 (BR-8), README.md:88-90 ("the keyboard keeps working" is false; I
+      measured zero keys emerging after an unterminated paste plus hello\r), and the subtest name
+      in the Critical above. Recommend scoping the forward guard as its own issue rather than a
+      fourth round here.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      rawterm.go:105-192 still holds three hand-written enter/leave pairs and restore() still
+      hand-orders three calls; nothing in the window changes the shape.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      The issue's "full suite green" claim for c1844b3 is uncorrected at issue:937, and there is
+      still no Log entry for any boundary-review round.
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      The case landed at play_loop.go:593 and reads well, but deleting it leaves
+      TestAPasteDuringASittingIsIgnored green — the test asserts the pre-existing default, so it
+      is documentation, not a regression test. The durable ask is untouched: key.go:12-63 still
+      has no numKeyKinds sentinel, so the next KeyKind meets the same silence.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Commenting out replraw.go:89 leaves the full suite green (mutation-verified at HEAD).
+      TestNewConsoleEnablesBracketedPaste (paste_test.go:533) never calls newConsole — it builds a
+      bare rawSession and calls the three enters by hand, pinning what rawterm_test.go already
+      pinned. The PTY row does cover the call site but is darwin+conformance-gated and SKIPPED
+      here ("no pty available: operation not permitted"), so I could not verify it. The derived
+      enumeration is still hand-written in two places: key_test.go:436 and rawterm_test.go:119-152.
+findings:
+  - id: new
+    severity: Important
+    family: notice-bypasses-frame-protocol
+    title: |
+      The paste-refusal notice writes into a standing prompt, against this loop's own pinned invariant
+    detail: |
+      replraw.go:539 writes to stderr and continues with no frame clear and no redraw. In
+      production stdout and stderr are the same liveScreen (replraw.go:127), so the message
+      repaints around the live edge and lands inside the prompt row, and the frame stays wrong
+      until the next keystroke. Verified: TestNothingIsWrittenWhileAPromptIsShown
+      (editorloop_test.go:553), copied verbatim and driven with one KeyPasteRefused, fails with
+      'write 1 of 1 landed with a prompt on the frame'. The precedent three cases above it is
+      correct — case res := <-bgResults: does view.Draw("", nil), then writes, then draw()
+      (replraw.go:504-510), with a comment naming this exact rule. TestEditorLoopReportsARefusedPaste
+      cannot see it because it passes a separate bytes.Buffer for stderr. Fix: clear, write,
+      redraw, and drive KeyPasteRefused through the invariant test. ARCH-ORDER.
+```
