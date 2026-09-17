@@ -742,7 +742,6 @@ boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
 - [x] the words become deck words: `CaptureMarked` through the one `Upsert`, the
       word becoming schedulable, the passage re-rendering green.
 - [x] atlas
-- [ ] `sdlc close`
 
 ## Log
 
