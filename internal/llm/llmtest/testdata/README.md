@@ -47,3 +47,24 @@ CONFORMANCE_STRICT=1 DEFINE_LANGUAGE_CAPTURE="$PWD/internal/llm/llmtest/testdata
 
 Inspect the captured language ownership as well as the mechanical check: valid
 syntax alone does not establish that the model identified the languages correctly.
+
+## Long single passage
+
+`stream-long-passage.sse` was captured on 2026-09-17 from the production answer
+prompt with Spanish selected, and it exists because the capture above cannot
+carry the shape it is needed for. That one was recorded from a question asking
+for an inline foreign phrase, so its passages close every few deltas; the
+ordinary case is a monolingual answer written as ONE passage whose close marker
+arrives only when generation ends. Against the buffer that #72 removed, that was
+the difference between a visible answer and ten seconds of blank screen, and no
+committed capture could show it.
+
+The recorder refuses to promote an answer whose longest passage is not dominant —
+a fragmented reply is a legitimate model output and a useless fixture here. Note
+that with ENGLISH selected the model often leaves its English prose untagged and
+annotates only a foreign fragment (one recording produced a longest span of three
+bytes), which is why this is recorded in the study language.
+
+```sh
+CONFORMANCE_STRICT=1 DEFINE_LONG_PASSAGE_CAPTURE="$PWD/internal/llm/llmtest/testdata/stream-long-passage.sse" go test -tags conformance ./cmd/define -run '^TestLongPassageStreamsAgainstLiveService$' -count=1 -v
+```

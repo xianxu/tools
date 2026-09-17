@@ -4754,3 +4754,54 @@ deck admission walked the set, looked the word up, and kept it.
 **When a set has several consumers, check what each does with a member the others
 ignore.** Agreement among the ones you look at is not the invariant; the one that
 writes to disk is.
+
+## A double that implements more than it claims (define #72)
+
+`countingSink` embedded `bytes.Buffer` to count writes. `bytes.Buffer` has
+`WriteString`, `io.WriteString` prefers it, and the wrap writer uses
+`io.WriteString` — so every byte went through the promoted method and none
+through the counting `Write`. The sink reported **one write** for an answer that
+had in fact arrived in 1,232, which is the exact symptom of the bug it was built
+to disprove. It read as a confirmed regression for twenty minutes.
+
+**A double that measures something must implement nothing it did not write.**
+Embedding gives the thing under test a second door, and the promoted method is
+the one the standard library reaches for.
+
+## Test the mechanism, not the sample (define #72)
+
+"Did the answer stream" was first asserted as a write COUNT. Measured against the
+buffered implementation restored, the same capture arrives in 11 writes — so the
+threshold would have caught it, by accident of how much untagged prose that
+particular answer carried. Neutral text streamed per rune before the fix too, so
+a count is a number about the answer, not about the mechanism. The **largest
+single write** is the defect stated directly: the buffer handed a passage over in
+one piece, 818 bytes of it.
+
+Corollary, from the same round: a threshold that happens to pass is not evidence
+it discriminates. Restore the defect and watch the number move.
+
+## When the code and the report disagree, measure (define #72)
+
+Four tests, an atlas section and a `client.Stream` call all said answers streamed.
+The operator said the text appeared all at once. Both were right about different
+halves: the transport streamed (first delta 1.25s, 126 deltas over 10s at the
+wire) and the display did not (the whole 1422-byte answer in ONE write at 9.4s).
+
+A code reading establishes what a path *can* do; only a measurement establishes
+what it *did*. Two probes — one at the wire, one at the program's own stdout —
+located the seam between them in about five minutes, and neither required
+understanding the bug first.
+
+## A capture is evidence only for the shape it was recorded in (define #72)
+
+`stream-language.sse` was recorded from a question asking for an inline foreign
+phrase, so its annotated passages close every few deltas. The bug lived in the
+ordinary shape — one passage closing only when generation ends — which that
+capture cannot exhibit, so no test replaying it could ever have failed. The rule
+was already written in `llmtest/testdata/README.md`; what was missing was a
+capture of the OTHER shape.
+
+**When a fixture cannot exhibit the defect, adding assertions to it is wasted
+work.** Record the shape that can, and have the recorder refuse to promote one
+that does not.

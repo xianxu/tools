@@ -155,12 +155,13 @@ func TestALongPassageReachesTheScreenInPieces(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errOut.String())
 	}
-	// THE LARGEST SINGLE WRITE, not the count. Neutral prose streamed per rune
-	// even before this issue, so a write count is dominated by the untagged parts
-	// of an answer and would have passed on the buffered implementation too —
-	// the first version of this test asserted exactly that and proved nothing.
-	// What the buffer did was hand over the PASSAGE in one piece, 818 bytes of it
-	// in this capture, so that is what has to be impossible.
+	// THE LARGEST SINGLE WRITE, not the write count, because it is the direct
+	// expression of the defect: the buffer handed the passage over in one piece.
+	// Measured against the buffer restored, this capture arrives in 11 writes,
+	// the largest 818 bytes — so a count threshold would catch it HERE, but only
+	// by accident of how much untagged prose this particular answer carries.
+	// Neutral text streamed per rune before this issue too, so any count is a
+	// number about the answer rather than about the mechanism.
 	if sink.largest > 64 {
 		t.Fatalf("a %d-byte answer arrived in %d writes, the largest %d bytes; a buffered passage lands in one",
 			sink.Len(), sink.writes, sink.largest)

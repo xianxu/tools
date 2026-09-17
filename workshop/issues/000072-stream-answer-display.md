@@ -210,7 +210,7 @@ total: 2.47
 
 Derivation notes, so the numbers can be argued with rather than just checked:
 
-- **issue-spec design=1.0** is the top of the 0.5–1.5 band and earns it: the
+- **issue-spec design=1.0** is the midpoint of the 0.5–1.5 band and earns it: the
   brainstorm required a wire probe, a piped measurement, an isolated decoder
   test and a delta-replay cadence measurement, plus two reversals of direction
   (drop-the-annotation proposed, accepted, then withdrawn on blast radius) and a
