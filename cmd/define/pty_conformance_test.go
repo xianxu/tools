@@ -1324,20 +1324,30 @@ func TestPTYLanguageTint(t *testing.T) {
 	}
 }
 
-// Bracketed paste is asked for, and given back (#67 M1).
+// Bracketed paste is asked for, and given back (#67).
 //
 // The same guarantee the mouse row above makes, and for the same reason: a
 // terminal left bracketing pastes types ESC[200~ into whatever the user runs
-// next, and there is no `reset` reflex for that either. It rides rawSession's
-// restore beside mouseOff.
+// next, and there is no `reset` reflex for that either.
 //
 // A live row rather than a unit test because the unit tests write to a
 // strings.Builder — they prove the sequence is composed, not that it reaches a
-// terminal. BR-16 named the gap: the mouse had this row and paste did not.
+// terminal.
 func TestPTYBracketedPasteIsAskedForAndGivenBack(t *testing.T) {
-	cmd, f := startDefine(t, "--no-audio")
+	deck := t.TempDir()
+	// Writing the language makes the directory a DECK, so the session goes
+	// straight to the editor instead of asking to create one — the same setup
+	// TestPTYLanguagePrompt uses.
+	if err := store.WriteLang(deck, store.DefaultLang); err != nil {
+		t.Fatal(err)
+	}
+	cmd, f := startDefineInDir(t, deck, []string{"DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio")
 	out := watch(f)
-	started := out.take(time.Second)
+	// WAIT FOR THE PROMPT rather than sleeping a fixed second. The first version
+	// of this test slept, caught the deck-creation question instead of the
+	// editor, and failed for timing rather than behaviour — which is worse than
+	// having no row at all.
+	started := awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(s, pasteOn) })
 
 	if !strings.Contains(started, pasteOn) {
 		t.Errorf("the session never enabled bracketed paste, so a pasted newline submits the line: %q", started)
@@ -1351,24 +1361,33 @@ func TestPTYBracketedPasteIsAskedForAndGivenBack(t *testing.T) {
 	}
 }
 
-// A real paste through a real terminal: the newline inside it must not submit.
+// A real paste through a real terminal: the newline inside it must not submit,
+// and a passage-shaped paste must appear on screen.
 //
-// This is the milestone's whole claim, measured where it actually matters. The
-// unit tests assert the decoder; this asserts that a terminal in mode 2004, a
-// pty, and the editor together do what the decoder promises.
-func TestPTYAPastedNewlineDoesNotSubmit(t *testing.T) {
-	cmd, f := startDefine(t, "--no-audio")
+// This is the feature's whole claim, measured where it matters. The unit tests
+// assert the decoder and the renderer; this asserts that a terminal in mode 2004,
+// a pty and the editor together do what they promise.
+func TestPTYAPastedPassageAppearsAndDoesNotSubmit(t *testing.T) {
+	deck := t.TempDir()
+	// Writing the language makes the directory a DECK, so the session goes
+	// straight to the editor instead of asking to create one — the same setup
+	// TestPTYLanguagePrompt uses.
+	if err := store.WriteLang(deck, store.DefaultLang); err != nil {
+		t.Fatal(err)
+	}
+	cmd, f := startDefineInDir(t, deck, []string{"DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio")
 	out := watch(f)
-	out.take(time.Second)
+	awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(s, pasteOn) })
 
-	f.Write([]byte(pasteStart + "hot\ndog" + pasteEnd))
-	shown := out.take(2 * time.Second)
+	f.Write([]byte(pasteStart + "The slow precession of\nthe equinox" + pasteEnd))
+	shown := awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(unstyled(s), "precession") })
 
 	if strings.Contains(shown, "no dictionary entry") {
 		t.Errorf("the paste submitted mid-text — a lookup happened: %q", shown)
 	}
-	if !strings.Contains(shown, "hot dog") {
-		t.Errorf("the pasted text never reached the line: %q", shown)
+	plain := unstyled(shown)
+	if !strings.Contains(plain, "The slow precession of") || !strings.Contains(plain, "the equinox") {
+		t.Errorf("the pasted passage never appeared on screen: %q", plain)
 	}
 	f.Write([]byte("\x03"))
 	if err := cmd.Wait(); err != nil {
