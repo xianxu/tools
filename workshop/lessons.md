@@ -4742,3 +4742,15 @@ before the last commit.
 
 Sweep prose LAST, after the final commit, and let a guard read it: `currentTruthFiles`
 now binds `*_test.go`, and `TestPlanCitesTestsThatExist` now reads `workshop/issues/`.
+
+## An invisible state change with a durable effect (define #67)
+
+`markSet.toggle` compared spans for EQUALITY, so clicking a word inside a dragged
+phrase added a second, overlapping span. Two of its three consumers hid it — the
+painter drew the phrase's cells, so the screen did not change, and the prompt
+renderer skipped a mark that started before the last one ended. The third did not:
+deck admission walked the set, looked the word up, and kept it.
+
+**When a set has several consumers, check what each does with a member the others
+ignore.** Agreement among the ones you look at is not the invariant; the one that
+writes to disk is.

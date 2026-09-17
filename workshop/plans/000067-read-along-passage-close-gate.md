@@ -893,6 +893,84 @@ rounds:
           family: enum-grows-past-consumers
           round: 9
       blocked: false
+    - "n": 10
+      timestamp: "2026-09-17T01:09:35-07:00"
+      agent: claude
+      dispose:
+        - id: BR-14
+          disposition: not-addressed
+          note: Unchanged — the record (issue:1038-1061) still stops at "Close round 6"; the last commit to touch the issue file in this window is da997e4, so rounds 7, 8 and 9 have no entry.
+          round: 10
+        - id: BR-26
+          disposition: not-addressed
+          note: Unchanged — replraw.go:425 calls SetPassage unconditionally, screen.go:632 applies paintMarks whenever a row has marks, and grep for "color" in screen.go returns nothing; markOn is emitted under -no-color.
+          round: 10
+        - id: BR-27
+          disposition: not-addressed
+          note: Unchanged — replraw.go:617 appends passageRegions per paste, screen.addRegions (screen.go:188-206) only appends, and plan:104 still reads "no removal path needed … Nothing else is created".
+          round: 10
+        - id: BR-30
+          disposition: not-addressed
+          note: Unchanged — passage.go:87 still declares raw(); no caller in production or test anywhere in the tree. Fourth round it has survived.
+          round: 10
+        - id: BR-32
+          disposition: not-addressed
+          note: Re-measured at HEAD. Seam one is pinned. Seam two is not — replacing liveScreen.VisibleRange's body (screen.go:1027) with `return 0, 1<<20` leaves the whole package green except the two pty-EPERM rows, so hasPassage's expiry still rests on an unpinned shell computation.
+          round: 10
+        - id: BR-34
+          disposition: not-addressed
+          note: Re-measured at HEAD. The prose sites are corrected; the behavioural one is still unpinned — deleting the escapeLen skip at passage.go:366-370 leaves TestHardBreakNeverSplitsAnEscapeSequence and the entire package green, because the fixture's escape never straddles the margin.
+          round: 10
+        - id: BR-35
+          disposition: not-addressed
+          note: 'Unchanged — selection_screen.go:89 still returns `line: a.row` for a passage drag and resolvePointerLocked (:117-120) still overwrites click.line, click.footer, click.retry and click.region from the zero-valued click.point on that path.'
+          round: 10
+        - id: BR-36
+          disposition: not-addressed
+          note: Unchanged — escapeReservedBrackets (passageprompt.go:106) escapes only "[" and "]", and renderPassagePrompt splices the body under headerPassage ("## The passage") with no guard on a pasted line reading "## The question".
+          round: 10
+        - id: BR-37
+          disposition: not-addressed
+          note: 'The enumeration was run (zero `func Test` in the plan) but the class mechanism is untouched — repo_guard_test.go:1453 still matches only the backticked form. Residue also unchanged: plan:261 and :278-286 still state the footer design, the zero-matching `-run` survives, and the 495-line deletion still carries no Revisions entry.'
+          round: 10
+        - id: BR-38
+          disposition: not-addressed
+          note: Unchanged — route_test.go:128 still declares replLines2() beside the production replLines (repl.go:316) in the same package.
+          round: 10
+        - id: BR-39
+          disposition: not-addressed
+          note: 'The declaration half is good (total addsAWord map + totality guard, mutation-verified). The consumer half has no regression test: reverting stats.go:157 to `e.Kind == store.EventLookedUp` leaves schedule and store green, and stats_test.go never drives Summarise with an EventMarked row — so the commit''s own title claim ("a deck built by marking now counts as added") is unpinned.'
+          round: 10
+      findings:
+        - id: BR-40
+          severity: Important
+          title: markSet.toggle admits overlapping spans, so a click inside a dragged phrase is an invisible mark that the painter skips, the prompt drops, and the deck admits
+          detail: |-
+            This is the 4th finding in family `boundary-parses-partial-class` (BR-7, BR-20, BR-36), so do
+            NOT patch the click path. The rule is BR-20's, applied to a SET instead of a character class:
+            every class a constructor admits must be representable by every downstream consumer. The
+            admitting constructor is markSet.toggle (marks.go:35), whose only rejection is exact equality
+            (slices.Index), so a span contained by an existing mark is ADDED rather than toggled.
+            Measured at HEAD on newPassage("he stopped at the zenith of the arc", 0): drag cols 11-27 gives
+            one mark {0,11,27}="at the zenith of"; clicking col 18 yields wordAtCell {0,18,24}="zenith" and
+            the set becomes two marks. paintMarks output is byte-identical before and after (its `next`
+            cursor has already passed the contained range), markedPassageText is identical
+            (passageprompt.go:91 drops it via "overlapping or out of range: continue"), and
+            admitMarkedWords (ask.go:305) looks up BOTH — so "zenith" gets a durable Upsert plus an
+            EventMarked record from a mark the reader can neither see on screen nor find in the prompt.
+            Three consumers, three different repairs of one unenforced invariant, which is exactly what
+            markSet's own doc (marks.go:16-20) claims cannot happen. It also breaks two documented
+            contracts: README:100 "click it again to unmark" and atlas/define.md:1556 "a drag back over a
+            marked run clears it, because a drag and a click are ONE gesture".
+            Fix at the class: make overlap unrepresentable in the set — toggle removes any span overlapping
+            the incoming one, which also makes click-inside-a-phrase mean "unmark that word", the gesture
+            the atlas already claims. The guard at passageprompt.go:91 then becomes dead and can assert.
+            No test at any layer covers this: marks_test.go toggles only disjoint spans and
+            TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll is a single drag on a single line.
+            ARCH-ORDER, ARCH-DRY.
+          family: boundary-parses-partial-class
+          round: 10
+      blocked: false
 ---
 
 # Gate ledger — tools#67 (boundary-review)
@@ -1346,6 +1424,48 @@ enumeration is still hand-written in two places: key_test.go:436 and rawterm_tes
   each partition does with each kind, so the next EventKind reddens rather than
   disappears. ARCH-PURPOSE.
 
+## Round 10 — 2026-09-17T01:09:35-07:00 (claude) — passed
+
+### Disposed
+
+- BR-14 — not-addressed — Unchanged — the record (issue:1038-1061) still stops at "Close round 6"; the last commit to touch the issue file in this window is da997e4, so rounds 7, 8 and 9 have no entry.
+- BR-26 — not-addressed — Unchanged — replraw.go:425 calls SetPassage unconditionally, screen.go:632 applies paintMarks whenever a row has marks, and grep for "color" in screen.go returns nothing; markOn is emitted under -no-color.
+- BR-27 — not-addressed — Unchanged — replraw.go:617 appends passageRegions per paste, screen.addRegions (screen.go:188-206) only appends, and plan:104 still reads "no removal path needed … Nothing else is created".
+- BR-30 — not-addressed — Unchanged — passage.go:87 still declares raw(); no caller in production or test anywhere in the tree. Fourth round it has survived.
+- BR-32 — not-addressed — Re-measured at HEAD. Seam one is pinned. Seam two is not — replacing liveScreen.VisibleRange's body (screen.go:1027) with `return 0, 1<<20` leaves the whole package green except the two pty-EPERM rows, so hasPassage's expiry still rests on an unpinned shell computation.
+- BR-34 — not-addressed — Re-measured at HEAD. The prose sites are corrected; the behavioural one is still unpinned — deleting the escapeLen skip at passage.go:366-370 leaves TestHardBreakNeverSplitsAnEscapeSequence and the entire package green, because the fixture's escape never straddles the margin.
+- BR-35 — not-addressed — Unchanged — selection_screen.go:89 still returns `line: a.row` for a passage drag and resolvePointerLocked (:117-120) still overwrites click.line, click.footer, click.retry and click.region from the zero-valued click.point on that path.
+- BR-36 — not-addressed — Unchanged — escapeReservedBrackets (passageprompt.go:106) escapes only "[" and "]", and renderPassagePrompt splices the body under headerPassage ("## The passage") with no guard on a pasted line reading "## The question".
+- BR-37 — not-addressed — The enumeration was run (zero `func Test` in the plan) but the class mechanism is untouched — repo_guard_test.go:1453 still matches only the backticked form. Residue also unchanged: plan:261 and :278-286 still state the footer design, the zero-matching `-run` survives, and the 495-line deletion still carries no Revisions entry.
+- BR-38 — not-addressed — Unchanged — route_test.go:128 still declares replLines2() beside the production replLines (repl.go:316) in the same package.
+- BR-39 — not-addressed — The declaration half is good (total addsAWord map + totality guard, mutation-verified). The consumer half has no regression test: reverting stats.go:157 to `e.Kind == store.EventLookedUp` leaves schedule and store green, and stats_test.go never drives Summarise with an EventMarked row — so the commit's own title claim ("a deck built by marking now counts as added") is unpinned.
+
+### Raised
+
+- **BR-40** [Important] `boundary-parses-partial-class` markSet.toggle admits overlapping spans, so a click inside a dragged phrase is an invisible mark that the painter skips, the prompt drops, and the deck admits
+  This is the 4th finding in family `boundary-parses-partial-class` (BR-7, BR-20, BR-36), so do
+  NOT patch the click path. The rule is BR-20's, applied to a SET instead of a character class:
+  every class a constructor admits must be representable by every downstream consumer. The
+  admitting constructor is markSet.toggle (marks.go:35), whose only rejection is exact equality
+  (slices.Index), so a span contained by an existing mark is ADDED rather than toggled.
+  Measured at HEAD on newPassage("he stopped at the zenith of the arc", 0): drag cols 11-27 gives
+  one mark {0,11,27}="at the zenith of"; clicking col 18 yields wordAtCell {0,18,24}="zenith" and
+  the set becomes two marks. paintMarks output is byte-identical before and after (its `next`
+  cursor has already passed the contained range), markedPassageText is identical
+  (passageprompt.go:91 drops it via "overlapping or out of range: continue"), and
+  admitMarkedWords (ask.go:305) looks up BOTH — so "zenith" gets a durable Upsert plus an
+  EventMarked record from a mark the reader can neither see on screen nor find in the prompt.
+  Three consumers, three different repairs of one unenforced invariant, which is exactly what
+  markSet's own doc (marks.go:16-20) claims cannot happen. It also breaks two documented
+  contracts: README:100 "click it again to unmark" and atlas/define.md:1556 "a drag back over a
+  marked run clears it, because a drag and a click are ONE gesture".
+  Fix at the class: make overlap unrepresentable in the set — toggle removes any span overlapping
+  the incoming one, which also makes click-inside-a-phrase mean "unmark that word", the gesture
+  the atlas already claims. The guard at passageprompt.go:91 then becomes dead and can assert.
+  No test at any layer covers this: marks_test.go toggles only disjoint spans and
+  TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll is a single drag on a single line.
+  ARCH-ORDER, ARCH-DRY.
+
 ## Open findings
 
 - **BR-14** [Minor] `issue-row-stale` The issue Log records no boundary-review round and its "full suite green" claim was false at the commit it describes
@@ -1359,3 +1479,4 @@ enumeration is still hand-written in two places: key_test.go:436 and rawterm_tes
 - **BR-37** [Important] `plan-artifact-stale` The footer-reversal sweep stopped at BR-24's five named sites; five ticked steps still describe the reversed design and Task 5.2 declares two tests that exist in no file
 - **BR-38** [Minor] `name-collides-with-production-symbol` The test helper replLines2 shadows the production replLines in the same package
 - **BR-39** [Minor] `enum-grows-past-consumers` store.EventMarked was appended to the extent but no behavioural partition of EventKind was swept, so a deck word added by marking never counts as added
+- **BR-40** [Important] `boundary-parses-partial-class` markSet.toggle admits overlapping spans, so a click inside a dragged phrase is an invisible mark that the painter skips, the prompt drops, and the deck admits

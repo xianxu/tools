@@ -956,3 +956,180 @@ findings:
       each partition does with each kind, so the next EventKind reddens rather than
       disappears. ARCH-PURPOSE.
 ```
+
+---
+
+## Re-review — 2026-09-17T01:09:35-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 67 — define: read-along — paste a passage, click or drag what is opaque |
+| repo | tools |
+| issue file | workshop/issues/000067-read-along-passage.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 98f5c779b468ada00c087bde6bd43cca9b0892cc..dc9b439763f7cde32369071907807f5eeb0b01d1 |
+| command | sdlc close --issue 67 |
+| reviewer | claude |
+| timestamp | 2026-09-17T01:09:35-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+I've completed the inspection. Here is the review.
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The shipped feature is in good shape: the full `./cmd/define/...` suite is green at HEAD apart from `TestLanguagePromptStartup` and `TestLanguageTintInvocation`, which `t.Fatal` at `pty.Open` because `/dev/ptmx` is EPERM in this environment (both live in files this window never touched; the conformance suite, which was touched, skips cleanly on the same condition — `pty_conformance_test.go:1378`). All 23 tests cited by the issue's Done-when audit exist, every row of the plan's Core-concepts tables resolves to a real declaration at the stated path, and the atlas and README document the surface accurately and in depth. What keeps this from SHIP is not a correctness defect in the production path but the residue of nine rounds: two seams whose oracles I re-measured as mutation-green (`liveScreen.VisibleRange`, `hardBreak`'s escape skip), the plan-guard mechanism BR-37 named, and one new behavioural gap — `markSet` admits overlapping spans and its three consumers each repair that differently, so clicking a word inside a dragged phrase is a silent no-op that still writes to the deck. Ten of the eleven carried findings are unchanged at HEAD, and the eleventh (BR-39) has a plausible fix with no consumer-level regression test.
+
+## 1. Strengths
+
+- **`TestEveryRegionKindIsActionable` / `…ThroughTheSharedRegistry`** (`editorloop_test.go:1025`, `:1081`) are the model of what the repeat families kept asking for: the enumeration derives from `numRegionKinds`, the split is *declared* in `regionPlaysAudio`, and the guard asserts production `playRegion` against the declaration. A new kind with no case fails closed (`markedCells() == nil` catches it), rather than defaulting into silence.
+- **`pasteScanner`'s named exits** (`paste.go:57-72`). `pasteExit` + `numPasteExits` turns "a case a test cannot name is a case a test cannot be shown to reach" into a structural property, and the doc records the exact bug that motivated it (a green subtest that never reached the drain).
+- **The two-predicate cap** (`paste.go:19-28`, `paste.go:133-152`). Separating the semantic rune cap (judged at the closer, on whole text) from the byte memory bound (judged mid-arrival) is the right decomposition, and the comment explains why one predicate refuses a legal CJK paste.
+- **`askSystem` decomposed into `sharedLevel`/`sharedAuthority`/`sharedLanguageGrammar`** (`askctx.go:147-192`), with the `[lang=xx]` grammar built from the same `escLeft`/`escRight` constants the escaper uses. That is BR-21 answered structurally rather than by editing the second copy.
+- **`spanCells` colocated with `wordAtCell`** as an explicit inverse pair (`passage.go:286`), with the reason stated — the two directions cannot disagree about which cells a word occupies.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**A. `markSet` admits overlapping spans and its three consumers repair that three different ways** — `marks.go:35`, `passageprompt.go:92`, `passage.go:216`, `ask.go:305`.
+
+This is the 4th finding in family `boundary-parses-partial-class` (BR-7, BR-20, BR-36), so do **not** fix the click path. The rule, which is BR-20's stated one applied to a set instead of a character class: *every class a constructor admits must be representable by every downstream consumer* — and here the admitting constructor is `markSet.toggle`, whose only rejection test is exact equality (`slices.Index(m.spans, s)`), so a span that **contains** or **is contained by** an existing mark is added rather than toggled.
+
+Measured at HEAD (scratch test, since removed) on `newPassage("he stopped at the zenith of the arc", 0)`:
+
+```
+after drag  : 1 mark  {0,11,27} = "at the zenith of"
+click col 18: wordAtCell -> {0,18,24} = "zenith"  -> ADDED, not removed  (2 marks)
+paint before: "he stopped \x1b[48;5;24m…at the zenith of\x1b[0m the arc"
+paint after : identical — the click changed nothing on screen
+prompt before/after: identical — markedPassageText:91 drops it ("overlapping … continue")
+admitMarkedWords would look up: "at the zenith of", "zenith"
+```
+
+So the three consumers disagree: the painter skips it by accident (its `next` cursor has already passed the contained range), the prompt drops it by an explicit guard, and `admitMarkedWords` (`ask.go:305`) admits it — a durable `Upsert` + `EventMarked` from a mark the reader can neither see nor find in the prompt. Two documented contracts break with it: README:100 *"click it again to unmark"*, and `atlas/define.md:1556` *"a drag back over a marked run clears it, because a drag and a click are ONE gesture"* — a *click* inside a marked run does not. `markSet`'s own doc (`marks.go:16-20`) claims one definition three readers cannot drift from; this is the drift.
+
+Fix at the class: make overlap unrepresentable in the set rather than repaired per consumer — `toggle` collapses/removes any span that overlaps the incoming one (which also makes click-inside-a-phrase mean "unmark that word", the gesture the atlas already claims). Then the `continue` at `passageprompt.go:91` becomes dead and can assert instead. Pin with one test over the set and one end-to-end through the loop. ARCH-ORDER, ARCH-DRY.
+
+The three carried Importants (BR-32, BR-34, BR-37) are re-stated in the dispose block below with this round's measurements; I re-ran each mutation rather than trusting the prior round's note.
+
+## 4. Minor findings
+
+- `stats.go:152` — after the `AddsAWord` extraction, `(e.Found || e.Kind != store.EventLookedUp)` still names a kind literally in the code whose fix was "stop naming kinds literally"; and it is dead as written, since `CaptureMarked` passes `found=true` (`capture.go:214`). A second total declaration (`countsOnlyWhenFound`) or a comment saying why `Found` is lookup-only would close it.
+- `stats.go:163` — the residual `switch e.Kind { case store.EventReviewed: }` lost the comment that used to explain the exclusion when the lookup arm moved out; it now reads as an unexplained literal partition beside the one that was just de-literalised.
+- `pasteLineRunes` (`paste.go:229`) maps `'\t'` to space, but its only caller (`editor.go:64`) receives `Key.Raw` that `sanitisePasteBody` has already tab-expanded — the tab arm is unreachable on the production path. Harmless, but it reads as a second owner of the tab rule.
+
+## 5. Test coverage notes
+
+- **What cannot be verified at this gate:** both `(live)` Done-when rows. `TestPTYAPastedPassageAppearsAndDoesNotSubmit` skips (`no pty available: operation not permitted`), and `passage_conformance_test.go` is behind `//go:build conformance` and skips when the seam is unreachable. The ARCH-MOCK story is sound — fake behind the same seam, live check declared with a cadence — but the conformance half is unmeasured here and should be run on the operator's terminal before merge.
+- **Mutation results this round** (each restored; working tree clean):
+  - `stats.go:157` `store.AddsAWord(e.Kind)` → `e.Kind == store.EventLookedUp`: suite green. BR-39's behaviour is unpinned at the consumer.
+  - `screen.go:1027` `VisibleRange` body → `return 0, 1<<20`: full package green. BR-32 seam two unpinned.
+  - `passage.go:366-370` escapeLen skip removed from `hardBreak`: full package green. BR-34's behavioural leg unpinned.
+  - Seam one of BR-32 (`replraw.go:421-425` lo/hi) is genuinely pinned — I did not re-measure it, taking round 9's measurement, which matched mine on every other row.
+- The overlap gap in §3A has no test at any layer: `marks_test.go` toggles only disjoint spans, and `TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll` (`passageprompt_test.go:307`) is single-drag, single-line.
+- `marksForDrag` returns one span **per line**, so a phrase dragged across a wrap becomes two marks admitted independently. Documented in the code (`marks.go:62`), absent from README's "mark them as ONE phrase", and untested.
+
+## 6. Architectural notes
+
+Marker-by-marker, as required:
+
+- **ARCH-DRY — flag.** §3A: one invariant, three repairs. Everything else passes and passes well (shared prompt clauses, `escapeLen` reused in `sanitisePasteBody`, `highlightRegion` reused instead of a new spans-to-styled helper).
+- **ARCH-PURE — flag (BR-32).** The pure core is genuinely pure — `passage`, `markSet`, `paste`, `passageprompt` all have IO-free colocated tests. The flag is BR-29's rule one altitude up and still unmet: a pure gate is only as good as the value the shell computes for it, and `liveScreen.VisibleRange` is unpinned.
+- **ARCH-PURPOSE — flag (BR-37, BR-39).** The feature fulfils the issue's purpose end to end. Both flags are about answering a finding's *instance* rather than its class: BR-37's plan sites were swept but `repo_guard_test.go:1453`'s backtick-only regex still fails open for the next plan; BR-39's `stats.go` site was fixed with no consumer test.
+- **ARCH-MOCK — pass, with the caveat in §5.** `llmtest.Fake`, real `store.YAML` in `t.TempDir()`, `recordDisplay`, `scriptedPointer`; live rows declared for both the terminal and the model.
+- **ARCH-CONSTRAINTS — pass.** 1000-rune semantic cap, `maxPasteBytes` memory bound that *consumes*, exactly one model call per ask, and `gatherAskContext` called once (BR-25). `markCellRanges` returns nil when nothing is marked, so the per-keystroke draw allocates nothing in the common case.
+- **ARCH-SECURE — flag (BR-36).** `sanitisePasteBody` is a real parse-at-the-boundary; the gap is that the consumer enumeration stops before the prompt's own markdown-header structure.
+- **ARCH-ORDER — flag (BR-35, §3A).** `pasteScanner` is exemplary. The two flags are the same shape: state whose legal combinations are unwritten (`pointerClick`'s five-field constellation; `markSet`'s overlap).
+- **ARCH-FUNERAL — flag (BR-27).** `screen.addRegions` (`screen.go:188`) is append-only and each paste adds ~one Region per word with two retained strings; the plan still says "no removal path needed … Nothing else is created".
+
+## 7. Plan revision recommendations
+
+- **`## Revisions` — "the task bodies became intent-only"**: 26ef1c7 deleted 495 lines (every illustrative Go block) and added the banner at plan:110-118, with no Revisions entry. That is the second clause of BR-24's own rule — append the departure, do not only rewrite in place.
+- **`## Revisions` — ARCH-FUNERAL correction**: plan:104 asserts "no removal path needed … Nothing else is created". `screen.go:180-206` contradicts it. Either state the per-session bound on `screen.regions` or record the clearing decision.
+- **`## Revisions` — residual footer prose**: plan:261 (`Read first` pointing at `FooterRowAt`) and plan:278-286 (the footer/entry-index coordinate table) still describe the reversed design under a banner that names Read-firsts and design arguments as the load-bearing part that survived.
+- Task 5.2's title and its `-run 'PasteMarkAsk|Schedulable'` step (now around plan:601/610) still describe the green re-render the operator dropped; the `-run` pattern matches zero tests.
+
+```findings
+dispose:
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      Unchanged — the record (issue:1038-1061) still stops at "Close round 6"; the last commit to touch the issue file in this window is da997e4, so rounds 7, 8 and 9 have no entry.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      Unchanged — replraw.go:425 calls SetPassage unconditionally, screen.go:632 applies paintMarks whenever a row has marks, and grep for "color" in screen.go returns nothing; markOn is emitted under -no-color.
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      Unchanged — replraw.go:617 appends passageRegions per paste, screen.addRegions (screen.go:188-206) only appends, and plan:104 still reads "no removal path needed … Nothing else is created".
+  - id: BR-30
+    disposition: not-addressed
+    note: |
+      Unchanged — passage.go:87 still declares raw(); no caller in production or test anywhere in the tree. Fourth round it has survived.
+  - id: BR-32
+    disposition: not-addressed
+    note: |
+      Re-measured at HEAD. Seam one is pinned. Seam two is not — replacing liveScreen.VisibleRange's body (screen.go:1027) with `return 0, 1<<20` leaves the whole package green except the two pty-EPERM rows, so hasPassage's expiry still rests on an unpinned shell computation.
+  - id: BR-34
+    disposition: not-addressed
+    note: |
+      Re-measured at HEAD. The prose sites are corrected; the behavioural one is still unpinned — deleting the escapeLen skip at passage.go:366-370 leaves TestHardBreakNeverSplitsAnEscapeSequence and the entire package green, because the fixture's escape never straddles the margin.
+  - id: BR-35
+    disposition: not-addressed
+    note: |
+      Unchanged — selection_screen.go:89 still returns `line: a.row` for a passage drag and resolvePointerLocked (:117-120) still overwrites click.line, click.footer, click.retry and click.region from the zero-valued click.point on that path.
+  - id: BR-36
+    disposition: not-addressed
+    note: |
+      Unchanged — escapeReservedBrackets (passageprompt.go:106) escapes only "[" and "]", and renderPassagePrompt splices the body under headerPassage ("## The passage") with no guard on a pasted line reading "## The question".
+  - id: BR-37
+    disposition: not-addressed
+    note: |
+      The enumeration was run (zero `func Test` in the plan) but the class mechanism is untouched — repo_guard_test.go:1453 still matches only the backticked form. Residue also unchanged: plan:261 and :278-286 still state the footer design, the zero-matching `-run` survives, and the 495-line deletion still carries no Revisions entry.
+  - id: BR-38
+    disposition: not-addressed
+    note: |
+      Unchanged — route_test.go:128 still declares replLines2() beside the production replLines (repl.go:316) in the same package.
+  - id: BR-39
+    disposition: not-addressed
+    note: |
+      The declaration half is good (total addsAWord map + totality guard, mutation-verified). The consumer half has no regression test: reverting stats.go:157 to `e.Kind == store.EventLookedUp` leaves schedule and store green, and stats_test.go never drives Summarise with an EventMarked row — so the commit's own title claim ("a deck built by marking now counts as added") is unpinned.
+findings:
+  - id: new
+    severity: Important
+    family: boundary-parses-partial-class
+    title: |
+      markSet.toggle admits overlapping spans, so a click inside a dragged phrase is an invisible mark that the painter skips, the prompt drops, and the deck admits
+    detail: |
+      This is the 4th finding in family `boundary-parses-partial-class` (BR-7, BR-20, BR-36), so do
+      NOT patch the click path. The rule is BR-20's, applied to a SET instead of a character class:
+      every class a constructor admits must be representable by every downstream consumer. The
+      admitting constructor is markSet.toggle (marks.go:35), whose only rejection is exact equality
+      (slices.Index), so a span contained by an existing mark is ADDED rather than toggled.
+      Measured at HEAD on newPassage("he stopped at the zenith of the arc", 0): drag cols 11-27 gives
+      one mark {0,11,27}="at the zenith of"; clicking col 18 yields wordAtCell {0,18,24}="zenith" and
+      the set becomes two marks. paintMarks output is byte-identical before and after (its `next`
+      cursor has already passed the contained range), markedPassageText is identical
+      (passageprompt.go:91 drops it via "overlapping or out of range: continue"), and
+      admitMarkedWords (ask.go:305) looks up BOTH — so "zenith" gets a durable Upsert plus an
+      EventMarked record from a mark the reader can neither see on screen nor find in the prompt.
+      Three consumers, three different repairs of one unenforced invariant, which is exactly what
+      markSet's own doc (marks.go:16-20) claims cannot happen. It also breaks two documented
+      contracts: README:100 "click it again to unmark" and atlas/define.md:1556 "a drag back over a
+      marked run clears it, because a drag and a click are ONE gesture".
+      Fix at the class: make overlap unrepresentable in the set — toggle removes any span overlapping
+      the incoming one, which also makes click-inside-a-phrase mean "unmark that word", the gesture
+      the atlas already claims. The guard at passageprompt.go:91 then becomes dead and can assert.
+      No test at any layer covers this: marks_test.go toggles only disjoint spans and
+      TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll is a single drag on a single line.
+      ARCH-ORDER, ARCH-DRY.
+```

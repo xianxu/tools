@@ -1551,6 +1551,12 @@ first kind the AUDIO registry does not answer for, which forced two declarations
 (underlining every word says nothing and makes the passage unreadable). Both
 actionability guards consult the first, so a kind wired into neither still reddens.
 
+**Marks never overlap.** A click inside a dragged phrase CLEARS the phrase rather
+than adding a second span inside it. An overlapping mark was invisible and durable
+at once: the painter drew the phrase's cells so nothing changed on screen, the
+prompt skipped a mark starting before the last one ended — and admission walked the
+set regardless, so the word entered the deck having never been shown as marked.
+
 **A drag marks instead of copying, inside a passage only.** The screen tells by the
 region kind on the row AND the live buffer range the loop hands down. The kind
 alone is not enough: `screen.regions` is never pruned, so a superseded passage's

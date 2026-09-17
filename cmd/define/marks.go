@@ -33,13 +33,37 @@ type markSet struct {
 // (#67) — and because a click-mark and a drag-mark are the same kind of thing, so
 // either gesture must be able to cancel the other.
 func (m markSet) toggle(s passageSpan) markSet {
-	if i := slices.Index(m.spans, s); i >= 0 {
-		out := slices.Clone(m.spans)
-		return markSet{spans: slices.Delete(out, i, i+1)}
+	// OVERLAP counts as already marked, not just an exact match.
+	//
+	// A drag produces one span over several words; clicking a word inside it used
+	// to add a SECOND, overlapping span. Nothing showed it — paintMarks draws the
+	// phrase's cells and markedPassageText skips a mark that starts before the
+	// last one ended — but admitMarkedWords walks the set, so the word was looked
+	// up and silently entered the deck. An invisible mark with a durable effect.
+	//
+	// Removing every overlap is also the reading a reader expects: clicking
+	// inside a marked phrase clears that phrase, exactly as clicking a marked word
+	// clears the word.
+	var kept []passageSpan
+	overlapped := false
+	for _, x := range m.spans {
+		if spansOverlap(x, s) {
+			overlapped = true
+			continue
+		}
+		kept = append(kept, x)
+	}
+	if overlapped {
+		return markSet{spans: kept}
 	}
 	out := append(slices.Clone(m.spans), s)
 	slices.SortFunc(out, compareSpans)
 	return markSet{spans: out}
+}
+
+// spansOverlap reports whether two spans of the same line share any byte.
+func spansOverlap(a, b passageSpan) bool {
+	return a.line == b.line && a.start < b.end && b.start < a.end
 }
 
 // ordered is the marks in reading order.

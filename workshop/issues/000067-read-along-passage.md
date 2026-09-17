@@ -1,12 +1,13 @@
 ---
 id: 000067
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-17
 estimate_hours: 7.78
 started: 2026-09-16T12:50:20-07:00
+actual_hours: 11.11
 ---
 
 # define: read-along — paste a passage, click or drag what is opaque
@@ -769,6 +770,8 @@ boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
 
 ## Log
 
+
+- 2026-09-17: closed — Read-along ships; operator smoke-tested click and drag. Suite green verified AFTER the commit. Round 9 raised one new finding, Minor and user-visible: a deck built entirely by marking reported Added == 0 because schedule.Stats partitioned EventKind by naming kinds literally. Fixed as the family rule rather than an arm — addsAWord is a total map beside the extent, AddsAWord reads it, and a guard over EventKinds() requires a row so a new kind reddens instead of defaulting to no. BR-32/34/37 were fixed in earlier rounds and are recorded as demoted past the round cap; the gate reports no open blocking findings after five rounds.; review verdict: FIX-THEN-SHIP
 ### 2026-09-16
 
 Filed from a design conversation that walked words → concept → structure. Two

@@ -108,3 +108,49 @@ func TestABackwardsDragIsTheSameSelection(t *testing.T) {
 		t.Errorf("forwards %v != backwards %v", fwd, back)
 	}
 }
+
+// A click INSIDE a dragged phrase clears the phrase, rather than adding a second
+// overlapping span.
+//
+// The overlapping span was invisible and durable: paintMarks draws the phrase's
+// cells so nothing changed on screen, markedPassageText skips a mark starting
+// before the last one ended so the prompt dropped it — but admitMarkedWords walks
+// the set, so the word was looked up and entered the deck anyway.
+func TestAClickInsideADraggedPhraseClearsThePhrase(t *testing.T) {
+	p := newPassage("he stopped at the zenith of the arc", 0)
+	phrase := marksForDrag(p, passageCell{line: 0, col: 11}, passageCell{line: 0, col: 27})
+	if len(phrase) != 1 {
+		t.Fatalf("setup: drag produced %v", phrase)
+	}
+	m := markSet{}.toggle(phrase[0])
+
+	zenith := p.spans(0)[4] // "zenith", inside the phrase
+	m = m.toggle(zenith)
+
+	if got := m.ordered(); len(got) != 0 {
+		t.Errorf("clicking inside the phrase left %d marks (%v); the phrase should clear", len(got), got)
+	}
+}
+
+// No overlapping pair can exist in the set at all — the invariant, not just the
+// one gesture that used to break it.
+func TestAMarkSetNeverHoldsOverlappingSpans(t *testing.T) {
+	var m markSet
+	for _, s := range []passageSpan{
+		{line: 0, start: 11, end: 27}, // the phrase
+		{line: 0, start: 18, end: 24}, // "zenith", inside it
+		{line: 0, start: 0, end: 2},   // "he", disjoint
+		{line: 0, start: 1, end: 12},  // straddles "he" and the phrase's start
+	} {
+		m = m.toggle(s)
+	}
+	got := m.ordered()
+	for i := range got {
+		for j := i + 1; j < len(got); j++ {
+			if spansOverlap(got[i], got[j]) {
+				t.Errorf("the set holds overlapping spans %v and %v — one of them is invisible "+
+					"on screen and in the prompt, but the deck still admits it", got[i], got[j])
+			}
+		}
+	}
+}
