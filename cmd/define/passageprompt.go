@@ -74,9 +74,13 @@ func markedPassageText(p *passage, m markSet) string {
 	if p == nil {
 		return ""
 	}
-	marked := map[passageSpan]bool{}
-	for _, s := range m.ordered() {
-		marked[s] = true
+	// By POSITION, not by matching word runs. A mark can be a PHRASE — a drag
+	// produces one span covering several words — and the first version compared
+	// each mark to a whole word run, so a dragged phrase matched nothing and was
+	// silently dropped from the prompt (#67, C-B).
+	byLine := map[int][]passageSpan{}
+	for _, sp := range m.ordered() {
+		byLine[sp.line] = append(byLine[sp.line], sp)
 	}
 	var out strings.Builder
 	for i := range p.lines {
@@ -85,14 +89,12 @@ func markedPassageText(p *passage, m markSet) string {
 		}
 		line := p.line(i)
 		at := 0
-		for _, sp := range p.spans(i) {
-			out.WriteString(escapeReservedBrackets(line[at:sp.start]))
-			word := escapeReservedBrackets(line[sp.start:sp.end])
-			if marked[sp] {
-				out.WriteString(selOpen + word + selClose)
-			} else {
-				out.WriteString(word)
+		for _, sp := range byLine[i] {
+			if sp.start < at || sp.end > len(line) || sp.start >= sp.end {
+				continue // overlapping or out of range: the set is a set, not a stack
 			}
+			out.WriteString(escapeReservedBrackets(line[at:sp.start]))
+			out.WriteString(selOpen + escapeReservedBrackets(line[sp.start:sp.end]) + selClose)
 			at = sp.end
 		}
 		out.WriteString(escapeReservedBrackets(line[at:]))

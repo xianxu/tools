@@ -69,3 +69,36 @@ func (s *session) recordExchange(q, answer string) {
 	}
 	s.turns = append(s.turns, exchange{Question: q, Answer: answer})
 }
+
+// ownsBufferLine reports whether an absolute buffer line belongs to the passage
+// currently on screen.
+//
+// The identity check a Region cannot carry: regions are addressed relative to
+// the render they came from, and a superseded passage's stay in the screen's map
+// forever, so "is this region mine" can only be answered by line number.
+func (s *session) ownsBufferLine(line int) bool {
+	return s.passage != nil && line >= s.passageBase && line < s.passageBase+s.passage.lineCount()
+}
+
+// passageCell converts an absolute buffer point into the passage's own
+// coordinates, CLAMPED to the passage.
+//
+// Clamped rather than refused, because a drag that runs off the end of the
+// passage still means "from here to the end" — the anchor gate has already
+// established that the gesture started inside it.
+func (s *session) passageCell(p selectionPoint) passageCell {
+	if s.passage == nil {
+		return passageCell{line: -1, col: p.col}
+	}
+	line := p.row - s.passageBase
+	return passageCell{line: min(max(line, 0), s.passage.lineCount()-1), col: p.col}
+}
+
+// passageSpanAt resolves a clicked region to a span of the CURRENT passage, or
+// refuses when the region belongs to a superseded one.
+func (s *session) passageSpanAt(line int, r Region) (passageSpan, bool) {
+	if !s.ownsBufferLine(line) {
+		return passageSpan{}, false
+	}
+	return wordAtCell(s.passage, line-s.passageBase, r.Col)
+}

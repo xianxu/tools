@@ -160,23 +160,6 @@ func byteAtCell(line string, col int) (int, bool) {
 	return 0, false
 }
 
-// wrappedColumn corrects a click's column for the row it landed on.
-//
-// The screen wraps a passage line across several frame rows, and FooterRowAt
-// reports WHICH of them was hit (screen.go) precisely so a caller can do this:
-// column 4 of the first continuation is column width+4 of the line. A passage
-// wraps on any normal terminal, so this is the common path.
-//
-// One named function rather than the arithmetic inlined at each call site,
-// because two copies of an off-by-one is how a click comes to mark a word the
-// reader did not point at.
-func wrappedColumn(offset, col, width int) int {
-	if offset <= 0 || width <= 0 {
-		return col
-	}
-	return offset*width + col
-}
-
 // pasteIsPassage decides whether a paste is reading material or a headword.
 //
 // It reuses readsAsQuestion's FOUR-WORD FLOOR rather than inventing a threshold
@@ -356,17 +339,4 @@ func passageText(p *passage, v Vocabulary, colour bool) string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\r\n")
-}
-
-// passageSpanOf recovers the passage span a clicked region stands for.
-//
-// Region.Line IS the passage line — regions are addressed relative to the text
-// they were computed from, and the screen adds its own base when it stores them —
-// so the only work is turning the region's display column back into bytes, which
-// wordAtCell already owns.
-func passageSpanOf(p *passage, r Region) (passageSpan, bool) {
-	if p == nil || r.Kind != RegionPassageWord {
-		return passageSpan{}, false
-	}
-	return wordAtCell(p, r.Line, r.Col)
 }

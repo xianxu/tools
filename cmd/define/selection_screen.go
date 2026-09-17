@@ -80,10 +80,13 @@ func (l *liveScreen) pointerLocked(event selectionEvent, p selectionPoint) (poin
 		// The reader is choosing what to ask about; taking the text to the
 		// clipboard instead would answer a question they did not ask, and the
 		// copy gesture is still there everywhere else.
-		if dragged := l.passageWordsInLocked(l.gesture.anchor, l.gesture.end); len(dragged) > 0 {
+		// The ANCHOR decides, not overlap: a drag that starts in an answer and
+		// ends over the passage is a copy, and treating it as a mark would
+		// silently swallow the copy the reader asked for.
+		if a, b, ok := l.passageDragLocked(l.gesture.anchor, l.gesture.end); ok {
 			l.gesture = selectionGesture{}
 			l.repaint()
-			return pointerClick{screen: l, frame: l.frameID, dragged: dragged}, ""
+			return pointerClick{screen: l, frame: l.frameID, hasDrag: true, dragAnchor: a, dragEnd: b, line: a.row}, ""
 		}
 		text, err := selectedText(l.frame, l.gesture.anchor, l.gesture.end)
 		if err != nil {
@@ -110,6 +113,10 @@ func (l *liveScreen) resolvePointerLocked(click pointerClick) (pointerClick, boo
 		return pointerClick{}, false
 	}
 	row := l.frame.rows[p.row]
+	click.line = -1
+	if line, ok := l.s.LineAt(p.row); ok {
+		click.line = line
+	}
 	click.footer, click.footerEntry, click.footerOffset, click.retry = row.footer, row.footerEntry, row.footerOffset, row.retry
 	click.region, click.hasRegion = Region{}, false
 	// The original region can extend beyond a paint-time clip. A wide glyph
@@ -157,35 +164,36 @@ func (l *liveScreen) selectionNoticeLocked(text string) {
 	l.repaint()
 }
 
-// passageWordsInLocked is every passage word the gesture covers, in reading
-// order.
+// passageDragLocked reports a drag that began on a PASSAGE row, with both ends
+// converted to absolute buffer coordinates.
 //
-// Whole words: a drag that starts or ends mid-word takes that word, because the
-// unit everywhere else in this feature is a word and half of one is not a thing
-// anyone can ask about.
-func (l *liveScreen) passageWordsInLocked(a, b selectionPoint) []Region {
+// The anchor decides. Overlap across every covered row was the first rule, and it
+// meant a drag starting in an answer and ending over the passage lost its copy
+// and marked passage words instead — a gesture doing something the reader did not
+// ask for.
+//
+// It returns COORDINATES rather than the words it covered, because which words a
+// drag means is marksForDrag's answer and there must be exactly one of those.
+func (l *liveScreen) passageDragLocked(a, b selectionPoint) (selectionPoint, selectionPoint, bool) {
 	a, b = selectionOrdered(a, b)
-	var out []Region
-	for row := a.row; row <= b.row && row < len(l.frame.rows); row++ {
-		if row < 0 {
-			continue
+	if a.row < 0 || a.row >= len(l.frame.rows) || !rowHasPassageWord(l.frame.rows[a.row]) {
+		return a, b, false
+	}
+	toBuffer := func(p selectionPoint) selectionPoint {
+		line, ok := l.s.LineAt(p.row)
+		if !ok {
+			return selectionPoint{row: -1, col: p.col}
 		}
-		lo, hi := 0, l.frame.width-1
-		if row == a.row {
-			lo = a.col
-		}
-		if row == b.row {
-			hi = b.col
-		}
-		for _, r := range l.frame.rows[row].regions {
-			if r.Kind != RegionPassageWord {
-				continue
-			}
-			// Overlap, not containment: a drag that clips a word still means it.
-			if r.Col <= hi && r.Col+r.Width > lo {
-				out = append(out, r)
-			}
+		return selectionPoint{row: line, col: p.col}
+	}
+	return toBuffer(a), toBuffer(b), true
+}
+
+func rowHasPassageWord(r selectionRow) bool {
+	for _, x := range r.regions {
+		if x.Kind == RegionPassageWord {
+			return true
 		}
 	}
-	return out
+	return false
 }

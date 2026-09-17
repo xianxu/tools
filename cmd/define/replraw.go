@@ -564,20 +564,25 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				if !ok {
 					continue
 				}
-				if len(hit.dragged) > 0 {
-					// A drag marks every word it covered. Toggling each is what
-					// keeps a drag and a click ONE gesture: dragging back over a
-					// marked run clears it, exactly as clicking each word would.
-					for _, r := range hit.dragged {
-						if sp, found := passageSpanOf(sess.passage, r); found {
-							sess.marks = sess.marks.toggle(sp)
-						}
+				if hit.hasDrag {
+					// ONE SPAN per drag — a phrase if it covers several words —
+					// which is marksForDrag's answer and the only one. Marking
+					// each word separately produced `[sel]at[/sel]
+					// [sel]the[/sel] [sel]zenith[/sel]` and then admitted every
+					// function word to the deck (#67, C-B).
+					for _, sp := range marksForDrag(sess.passage, sess.passageCell(hit.dragAnchor), sess.passageCell(hit.dragEnd)) {
+						sess.marks = sess.marks.toggle(sp)
 					}
 					draw()
 					continue
 				}
 				if hit.hasRegion && hit.region.Kind == RegionPassageWord {
-					if sp, found := passageSpanOf(sess.passage, hit.region); found {
+					// The ABSOLUTE line is what says the region belongs to the
+					// passage on screen now. A superseded passage's regions stay
+					// in the map, and a Region's own Line is relative to the
+					// render it came from, so without this a click in an old
+					// passage marked an unrelated word in the current one.
+					if sp, found := sess.passageSpanAt(hit.line, hit.region); found {
 						sess.marks = sess.marks.toggle(sp)
 						draw()
 					}

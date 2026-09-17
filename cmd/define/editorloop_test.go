@@ -821,6 +821,17 @@ func scriptedPointer(view *recordDisplay) *pointerRouter {
 		rows[at[0]].selectable = true
 	}
 	view.mu.Unlock()
+	// A buffer behind the frame, so LineAt maps a viewport row to a buffer line.
+	// Without it every click carries line -1 and the passage identity check
+	// refuses it — correctly, which is why the guard needs a real mapping rather
+	// than an exemption.
+	for i := 0; i < 24; i++ {
+		live.s.lines = append(live.s.lines, "")
+	}
+	// rows is normally set by layoutSelectionFrame at paint time, and this screen
+	// never paints — without it visible() yields nothing and LineAt refuses every
+	// row.
+	live.s.rows, live.s.cols = 24, 100
 	live.frame = newSelectionFrame(100, 24, rows)
 	live.frameID = 1
 	live.framePublished = true
@@ -1002,7 +1013,10 @@ func TestEveryRegionKindIsActionable(t *testing.T) {
 			// passage whose first word sits at line 0 column 0 is what makes the
 			// offered region resolve to a word — the same arrangement the real
 			// gesture has, rather than a special case for the guard.
-			keys = append(keys, Key{Kind: KeyPaste, Raw: []byte("sycophantic is a passage of several words")})
+			// Three lines, so the region offered at viewport row 2 lands on a
+			// passage line: the identity check ties a click to the passage by
+			// BUFFER LINE, and a one-line passage at base 0 does not reach row 2.
+			keys = append(keys, Key{Kind: KeyPaste, Raw: []byte("alpha beta gamma\nfirst second third\nsycophantic is a passage of words")})
 		}
 		ks := keySeq(append(keys, completedPointerClick(t, pointer, 2, 0))...)
 		runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, pointer: pointer, finish: finish, stdout: &out, stderr: &errb})

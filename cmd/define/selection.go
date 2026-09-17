@@ -35,10 +35,19 @@ type pointerClick struct {
 	hasRegion                 bool
 	footerEntry, footerOffset int
 	footer, retry             bool
-	// dragged is the passage words a DRAG covered (#67). Non-empty turns the
-	// gesture from a copy into a mark: a drag across a passage is selecting what
-	// to ask about, not selecting text to take away.
-	dragged []Region
+	// line is the absolute BUFFER line the gesture landed on, or -1.
+	//
+	// A Region's own Line is relative to the render it came from, so it cannot
+	// say which passage it belongs to — and a superseded passage's regions stay
+	// in the map. Without the absolute line, clicking a word in an OLD passage
+	// resolved against the current one and marked an unrelated word (#67, C-A:
+	// measured alpha -> zulu).
+	line int
+	// dragAnchor and dragEnd are a drag's ends in absolute buffer coordinates,
+	// set only when hasDrag. The marks a drag produces are derived by
+	// marksForDrag, which is where the decided single-span rule lives.
+	dragAnchor, dragEnd selectionPoint
+	hasDrag             bool
 }
 
 // selectionStep owns the click/drag decision. A drag cannot become a click by

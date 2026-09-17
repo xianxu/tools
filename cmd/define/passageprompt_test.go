@@ -300,3 +300,39 @@ func TestAMarkedWordIsDistinguishableFromALookup(t *testing.T) {
 		t.Error("EventMarked is not in the extent, so every doc guard that derives from it misses the kind")
 	}
 }
+
+// A DRAGGED PHRASE is dictionary-gated AS A PHRASE, which is what the admission
+// rule was written for. Gating its words instead put `at`, `the` and `of` into
+// the deck as durable EventMarked records — the inverse of the Done-when.
+func TestADraggedPhraseIsAdmittedAsAPhraseOrNotAtAll(t *testing.T) {
+	d, fake, st, _ := askRig(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture})
+
+	p := newPassage("he stopped at the zenith of the arc", 0)
+	span := marksForDrag(p, passageCell{line: 0, col: 11}, passageCell{line: 0, col: 27})
+	if len(span) != 1 || p.text(span[0]) != "at the zenith of" {
+		t.Fatalf("setup: drag produced %v", span)
+	}
+	sess := &session{passage: p}
+	sess.marks = sess.marks.toggle(span[0])
+
+	var out, errb bytes.Buffer
+	ask(t.Context(), d, options{width: 80}, sess, &out, &errb,
+		question{text: "What does this mean?", forced: true,
+			passage: &passageAsk{Passage: p, Marks: sess.marks}})
+
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range deck {
+		switch w.Text {
+		case "at", "the", "of", "zenith":
+			t.Errorf("a dragged phrase admitted %q on its own; the gate is the PHRASE", w.Text)
+		}
+	}
+	// And the prompt carries it as ONE bracketed span.
+	if !strings.Contains(fake.Requests()[0].Prompt(), selOpen+"at the zenith of"+selClose) {
+		t.Errorf("the phrase did not reach the wire as one span:\n%s", fake.Requests()[0].Prompt())
+	}
+}

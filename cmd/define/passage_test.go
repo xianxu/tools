@@ -74,27 +74,6 @@ func TestWordAtCellSnapsToTheWordUnderTheColumn(t *testing.T) {
 	}
 }
 
-// A click on a CONTINUATION row carries a column in THAT ROW's coordinate space,
-// not the logical line's: column 4 of a continuation is column cols+4 of the
-// line. FooterRowAt hands back the offset precisely so a caller can correct for
-// it, and a passage wraps on any normal terminal — so this is the common case,
-// not an edge. One named place for the arithmetic, or two callers will disagree.
-func TestWrappedColumnCorrectsForTheContinuationRow(t *testing.T) {
-	for _, tc := range []struct {
-		offset, col, width, want int
-	}{
-		{0, 4, 20, 4},  // the first row is its own coordinate space
-		{1, 4, 20, 24}, // one wrap in
-		{2, 0, 20, 40}, // two wraps in, at the left edge
-		{1, 0, 80, 80}, // a wider terminal moves it further
-	} {
-		if got := wrappedColumn(tc.offset, tc.col, tc.width); got != tc.want {
-			t.Errorf("wrappedColumn(%d, %d, %d) = %d, want %d",
-				tc.offset, tc.col, tc.width, got, tc.want)
-		}
-	}
-}
-
 // The passage is built from already-sanitised text (the scanner strips escapes
 // at the wire boundary), but it must not ASSUME that: a passage that reached a
 // column table through an escape would map every later click to the wrong word.
@@ -171,7 +150,7 @@ func TestPassageRegionsAddressEveryWord(t *testing.T) {
 		if r.Kind != RegionPassageWord {
 			t.Errorf("region %q has kind %v", r.Text, r.Kind)
 		}
-		sp, ok := passageSpanOf(p, r)
+		sp, ok := (&session{passage: p}).passageSpanAt(r.Line, r)
 		if !ok || p.text(sp) != r.Text {
 			t.Errorf("region %q did not round-trip to its span (got %q)", r.Text, p.text(sp))
 		}
@@ -224,7 +203,7 @@ func TestAClickOnAPassageWordMarksIt(t *testing.T) {
 	sess := &session{passage: p}
 	r := passageRegions(p)[2]
 
-	sp, ok := passageSpanOf(p, r)
+	sp, ok := (&session{passage: p}).passageSpanAt(0, r)
 	if !ok || p.text(sp) != "precession" {
 		t.Fatalf("the region did not resolve to precession: %q", p.text(sp))
 	}
@@ -290,42 +269,69 @@ func TestPassageWordsAreNotUnderlined(t *testing.T) {
 	}
 }
 
-// A DRAG across a passage marks every word it covers, rather than copying the
-// text. The reader is choosing what to ask about; taking it to the clipboard
-// would answer a question they did not ask.
-func TestADragAcrossAPassageMarksItsWords(t *testing.T) {
-	p := newPassage("the slow precession of the equinox", 0)
-	live := newLiveScreen(&bytes.Buffer{}, 24, 80)
-	defer live.Stop()
-	rows := make([]selectionRow, 24)
-	rows[0] = selectionRow{selectable: true, styled: p.line(0), regions: passageRegions(p)}
-	live.frame = newSelectionFrame(80, 24, rows)
-	live.frameID, live.framePublished = 1, true
-
-	got := live.passageWordsInLocked(selectionPoint{row: 0, col: 4}, selectionPoint{row: 0, col: 12})
-	var words []string
-	for _, r := range got {
-		words = append(words, r.Text)
+// A DRAG produces ONE span — a phrase when it covers several words — which is
+// what the operator asked for and what marksForDrag implements.
+//
+// It did NOT, for one release: production toggled each covered word separately,
+// so a drag over "at the zenith of" sent four marks and admitted `at`, `the` and
+// `of` to the deck as words. marksForDrag had three passing tests and no
+// production caller at all.
+func TestADragAcrossAPassageProducesOneSpan(t *testing.T) {
+	p := newPassage("he stopped at the zenith of the arc", 0)
+	got := marksForDrag(p, passageCell{line: 0, col: 11}, passageCell{line: 0, col: 27})
+	if len(got) != 1 {
+		t.Fatalf("a drag produced %d marks, want ONE span: %v", len(got), got)
 	}
-	// Whole words at both ends: the drag starts inside "slow" and stops inside
-	// "precession", and half a word is not something anyone can ask about.
-	if strings.Join(words, " ") != "slow precession" {
-		t.Errorf("drag covered %q, want %q", strings.Join(words, " "), "slow precession")
+	if text := p.text(got[0]); text != "at the zenith of" {
+		t.Errorf("drag marked %q, want %q", text, "at the zenith of")
+	}
+	// And the span survives into the prompt as a single bracketed phrase.
+	var m markSet
+	m = m.toggle(got[0])
+	if want := "he stopped " + selOpen + "at the zenith of" + selClose + " the arc"; markedPassageText(p, m) != want {
+		t.Errorf("prompt =\n%s\nwant\n%s", markedPassageText(p, m), want)
 	}
 }
 
-// A drag OUTSIDE a passage still copies, which is the gesture everywhere else.
-func TestADragOutsideAPassageStillCopies(t *testing.T) {
+// The ANCHOR decides whether a drag marks. A drag that starts in an answer and
+// ends over the passage is a COPY — treating it as a mark would swallow the copy
+// the reader asked for.
+func TestADragThatStartsOutsideThePassageIsNotAMark(t *testing.T) {
 	live := newLiveScreen(&bytes.Buffer{}, 24, 80)
 	defer live.Stop()
+	p := newPassage("the slow precession of the equinox", 0)
 	rows := make([]selectionRow, 24)
-	rows[0] = selectionRow{selectable: true, styled: "an ordinary line of output",
-		regions: []Region{{Kind: RegionWord, Text: "ordinary", Col: 3, Width: 8}}}
+	rows[0] = selectionRow{selectable: true, styled: "an ordinary line of output"}
+	rows[1] = selectionRow{selectable: true, styled: p.line(0), regions: passageRegions(p)}
 	live.frame = newSelectionFrame(80, 24, rows)
 	live.frameID, live.framePublished = 1, true
 
-	if got := live.passageWordsInLocked(selectionPoint{row: 0, col: 0}, selectionPoint{row: 0, col: 20}); len(got) != 0 {
-		t.Errorf("a drag over a deck word was taken as a passage drag: %v", got)
+	if _, _, ok := live.passageDragLocked(selectionPoint{row: 0, col: 0}, selectionPoint{row: 1, col: 10}); ok {
+		t.Error("a drag starting in ordinary output was taken as a passage drag; its copy is lost")
+	}
+	if _, _, ok := live.passageDragLocked(selectionPoint{row: 1, col: 4}, selectionPoint{row: 1, col: 12}); !ok {
+		t.Error("a drag starting in the passage was not taken as one")
+	}
+}
+
+// A superseded passage's regions must not resolve against the CURRENT passage.
+// Measured before the fix: clicking `alpha` in the old passage marked `zulu` in
+// the new one, because a Region's Line is relative to its own render and nothing
+// removes the old regions.
+func TestAStalePassagesRegionsDoNotMarkTheCurrentOne(t *testing.T) {
+	first := newPassage("alpha beta gamma delta epsilon", 0)
+	sess := &session{passage: first, passageBase: 10}
+	r := passageRegions(first)[0]
+
+	if _, ok := sess.passageSpanAt(10, r); !ok {
+		t.Fatal("a click on the current passage did not resolve")
+	}
+	// A second paste lands further down the buffer; the first passage's regions
+	// are still in the screen's map at their old lines.
+	sess.passage = newPassage("zulu yankee xray whiskey victor", 0)
+	sess.passageBase = 40
+	if sp, ok := sess.passageSpanAt(10, r); ok {
+		t.Errorf("a stale region resolved to %q of the current passage", sess.passage.text(sp))
 	}
 }
 
