@@ -120,7 +120,7 @@ func TestPickOptionsNeverRepeatsAWord(t *testing.T) {
 }
 
 // D9: a young deck is a NORMAL state. Below two options it is not a question,
-// and the caller falls back to form 2.1.
+// and the caller triages the word on a board instead (#42).
 func TestPickOptionsWithATinyDeck(t *testing.T) {
 	for _, tc := range []struct{ pool, want int }{
 		{0, 0}, // not a question at all

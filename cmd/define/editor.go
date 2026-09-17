@@ -55,6 +55,18 @@ func Apply(e Editor, k Key, c candidates) (Editor, Action) {
 		e = e.stopWalk()
 		e.Line = append(e.Line[:e.Cursor:e.Cursor], append([]rune{k.Rune}, e.Line[e.Cursor:]...)...)
 		e.Cursor++
+	case KeyPaste:
+		// ONE insertion for a whole paste, not one per rune. Atomic here because
+		// it is atomic on the wire (#67): the decoder hands over a whole
+		// bracketed paste as a single key, which is what keeps a long paste out
+		// of the 256-key channel's drop-newest policy.
+		e = e.stopWalk()
+		ins := pasteLineRunes(string(k.Raw))
+		e.Line = append(e.Line[:e.Cursor:e.Cursor], append(ins, e.Line[e.Cursor:]...)...)
+		e.Cursor += len(ins)
+	case KeyPasteRefused:
+		// Nothing. The loop reports the refusal; a paste the user was told was
+		// too long must not half-arrive.
 	case KeyBackspace:
 		e = e.stopWalk()
 		if e.Cursor > 0 {

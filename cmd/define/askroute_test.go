@@ -330,12 +330,12 @@ func TestRecallPreservesWhatALineMeant(t *testing.T) {
 		{"a command is stored as typed", "/history 7", "/history 7"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := parseREPLLine(tc.typed, false).recallLine(); got != tc.want {
+			if got := parseREPLLine(tc.typed, lineState{}).recallLine(); got != tc.want {
 				t.Errorf("recallLine(%q) = %q, want %q", tc.typed, got, tc.want)
 			}
 			// And the round trip that makes it matter: what comes back must
 			// parse to the same kind it was.
-			first, again := parseREPLLine(tc.typed, false), parseREPLLine(tc.want, false)
+			first, again := parseREPLLine(tc.typed, lineState{}), parseREPLLine(tc.want, lineState{})
 			if first.kind != again.kind || first.literal != again.literal {
 				t.Errorf("re-submitting %q changed the meaning: kind %v/%v literal %v/%v",
 					tc.want, first.kind, again.kind, first.literal, again.literal)

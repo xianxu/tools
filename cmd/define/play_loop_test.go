@@ -2105,7 +2105,7 @@ func TestToInputSplitsEnterFromSpaceAndCarriesTab(t *testing.T) {
 }
 
 // AND THE SPLIT IS INVISIBLE TO EVERY FORM THAT HOLDS ONE WORD, which is the
-// property that let it ship without touching 2.1 or 2.3. Apply treats
+// property that let it ship without touching the cloze form. Apply treats
 // InputFinish exactly as InputReveal for them, so Enter still reveals.
 func TestEnterStillRevealsOnASingleWordForm(t *testing.T) {
 	for _, q := range []play.Question{
@@ -2174,7 +2174,7 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 		{"the first grid row", board, 7, 0, 0, true},
 		{"the second grid row", board, 8, 0, 4, true},
 		{"a gutter is not a cell", board, 7, gutter, 0, false},
-		{"the toggle row is not a cell", board, 9, 0, 0, false},
+		{"the prompt row is not a cell", board, 9, 0, 0, false},
 		{"a row the screen does not place", board, 3, 0, 0, false},
 		// The board keeps its rows fitting by relaying out, so this should never
 		// arise — which is why the loop refuses it rather than trusting that.
@@ -4437,5 +4437,36 @@ func TestBoardPromptHighlightsOnlyActiveMode(t *testing.T) {
 			t.Errorf("refusal changed: %q", got)
 		}
 		b.Toggle()
+	}
+}
+
+// EVERY key kind is DECIDED for a sitting, and the enumeration is derived from
+// numKeyKinds so a new kind cannot slip past.
+//
+// #67 is why this exists. It added KeyPaste and turned mode 2004 on for this
+// surface in the same window; toInput had no case, so a pasted answer vanished
+// with no input and no notice. Nothing forced the question because KeyKind had no
+// sentinel — the rule, not the missing case, is what this guard fixes.
+func TestEveryKeyKindIsDecidedForASitting(t *testing.T) {
+	for kind := KeyKind(0); kind < numKeyKinds; kind++ {
+		k := Key{Kind: kind}
+		if kind == KeyRune {
+			k.Rune = ' '
+		}
+		_, ok := toInput(k)
+		want, declared := sittingKeyHandling[kind]
+		if !declared {
+			// FAIL CLOSED. The first version of this guard used a predicate with
+			// a default, so a kind wired into neither agreed with itself and the
+			// guard passed — the one thing a registry guard must not do.
+			t.Errorf("KeyKind %d (%v) has no row in sittingKeyHandling — a kind nobody decided "+
+				"about is how a pasted answer came to vanish with no input and no notice", kind, kind)
+			continue
+		}
+		if ok != want {
+			t.Errorf("KeyKind %d (%v): toInput ok=%v, declared=%v — toInput and its "+
+				"declaration disagree, which is how a key comes to do nothing with nobody noticing",
+				kind, kind, ok, want)
+		}
 	}
 }

@@ -33,6 +33,11 @@ func TestSchedulePurity(t *testing.T) {
 			"Key", "Word", "ReviewEvent",
 			"EventReviewed", "EventLookedUp", "EventAsked",
 			"StartOfDay", "DaysBetween",
+			// AddsAWord is a map lookup over a declared extent — pure, and it is
+			// how this package stops partitioning EventKind by naming members
+			// literally. Naming them literally is what made a deck built by
+			// marking report Added == 0 when #67 added EventMarked.
+			"AddsAWord",
 		})
 	})
 }

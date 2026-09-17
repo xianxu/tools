@@ -56,7 +56,7 @@ already exists to turn a skip into a failure; the question is where it is set.
 **A guard is probably the deliverable**, in this repo's own idiom: a test that
 enumerates fuzz targets and asserts each is named by whatever runs them, so a
 sixteenth cannot be added into the same silence. That is the same move
-`TestEveryEnabledMouseModeIsDecoded` and `TestAtlasDescribesEveryRegionKind`
+`TestEveryEnabledInputModeIsDecoded` and `TestAtlasDescribesEveryRegionKind`
 make — the SET has one owner and the check derives from it.
 
 ## Done when

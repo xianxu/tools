@@ -44,7 +44,7 @@ func TestParseREPLLineClassifiesCommands(t *testing.T) {
 		{"", cmdNothing, "", nil},
 	} {
 		t.Run(tc.in, func(t *testing.T) {
-			got := parseREPLLine(tc.in, false)
+			got := parseREPLLine(tc.in, lineState{})
 			if got.kind != tc.kind || got.name != tc.name {
 				t.Errorf("parseREPLLine(%q) = kind %v name %q, want kind %v name %q",
 					tc.in, got.kind, got.name, tc.kind, tc.name)
@@ -133,7 +133,7 @@ func TestDispatchCommand(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, errb bytes.Buffer
 			cc := commandCtx{stdout: &out, stderr: &errb}
-			code := dispatchCommand(parseREPLLine(tc.line, false), dispatchCmds, cc)
+			code := dispatchCommand(parseREPLLine(tc.line, lineState{}), dispatchCmds, cc)
 
 			if code != tc.wantCode {
 				t.Errorf("exit = %d, want %d", code, tc.wantCode)
@@ -490,7 +490,7 @@ func TestDashHelpPrintsTheUsageForEveryCommand(t *testing.T) {
 	for _, c := range commands {
 		for _, flag := range usageFlags {
 			var out, errb bytes.Buffer
-			code := dispatchCommand(parseREPLLine("/"+c.name+" "+flag, false), commands, commandCtx{stdout: &out, stderr: &errb})
+			code := dispatchCommand(parseREPLLine("/"+c.name+" "+flag, lineState{}), commands, commandCtx{stdout: &out, stderr: &errb})
 			if code != 0 || out.String() != commandUsage(c, 0) || errb.Len() != 0 {
 				t.Errorf("/%s %s: exit %d, out %q, err %q", c.name, flag, code, out.String(), errb.String())
 			}
@@ -501,7 +501,7 @@ func TestDashHelpPrintsTheUsageForEveryCommand(t *testing.T) {
 // The usage is printed INSTEAD of running the command, not before it.
 func TestDashHelpDoesNotRunTheCommand(t *testing.T) {
 	var out bytes.Buffer
-	dispatchCommand(parseREPLLine("/history --help", false), dispatchCmds, commandCtx{stdout: &out, stderr: io.Discard})
+	dispatchCommand(parseREPLLine("/history --help", lineState{}), dispatchCmds, commandCtx{stdout: &out, stderr: io.Discard})
 	if strings.Contains(out.String(), "HISTORY RAN") {
 		t.Errorf("--help ran the command: %q", out.String())
 	}

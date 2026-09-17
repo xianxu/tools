@@ -50,7 +50,31 @@ const (
 	cmdReplay                  // replay the current word
 	cmdCommand                 // a /-prefixed command
 	cmdAsk                     // a question for the model
+	// cmdAskPassage is a bare Enter with marks: the whole passage, with the
+	// marked spans called out (#67). Not cmdAsk, because there is no typed
+	// question — the request IS the passage.
+	cmdAskPassage
+	// numReplKinds is NOT a kind: it is the registry's extent, so a guard can
+	// DERIVE the set. #67 added cmdAskPassage and the PIPED loop silently had no
+	// case for it — a kind can only be produced where a passage exists, so the
+	// omission was invisible, but nothing said that on purpose.
+	numReplKinds
 )
+
+// replKindReachesTheEditor declares which kinds each loop must handle.
+//
+// A TOTAL map, so a kind added without an answer reddens rather than falling
+// through. `piped` is false for cmdAskPassage because parseREPLLine can only
+// produce it from lineState.hasMarks, which the piped loop passes as false — that
+// is a REASON, and it is written down here instead of being left as a gap.
+var replKindHandling = map[replKind]struct{ editor, piped bool }{
+	cmdNothing:    {true, true},
+	cmdDefine:     {true, true},
+	cmdReplay:     {true, true},
+	cmdCommand:    {true, true},
+	cmdAsk:        {true, true},
+	cmdAskPassage: {true, false},
+}
 
 // noteEmptyQuestion is the hint for a bare "?" — the hatch typed with nothing
 // after it. "type a word, or press return to replay the last one" is the wrong
@@ -60,12 +84,36 @@ const noteEmptyQuestion = `type a question after "?"`
 // noteEmptyLiteral is its counterpart for the other hatch.
 const noteEmptyLiteral = `type a word after "\"`
 
+// noteNothingMarked answers a bare Enter on an unmarked passage. LOCAL and free:
+// the state is deterministic, so routing it through the model would buy latency
+// and nondeterminism to produce what is really a UI hint. An INSTRUCTION rather
+// than a question back, because the reader just pressed Enter and this is a
+// gesture nobody discovers unaided (#67).
+const noteNothingMarked = `click or drag what you don't understand, then press return`
+
 // parseREPLLine is the loop's decision table, kept pure so it is a unit test
 // rather than something only reachable through a fake terminal.
 //
-// hasCurrent is passed in rather than read from session state, so the function
+// The session's state is passed in rather than read, so the function
 // has no memory and "blank line with nothing to replay" is an ordinary case.
-func parseREPLLine(line string, hasCurrent bool) replCommand {
+// lineState is what the session holds that changes what a line MEANS.
+//
+// ONE value rather than a second boolean parameter. Two bools side by side encode
+// a precedence nobody declared, and this is the consolidation `session` itself
+// was created for — #16 replaced three separate declarations of "what is this
+// session holding" for the same reason.
+type lineState struct {
+	// hasCurrent is a word a bare Enter can replay.
+	hasCurrent bool
+	// hasPassage is a passage on screen. A bare Enter then means something else
+	// entirely, and a blank line with no marks is a nudge rather than a replay.
+	hasPassage bool
+	// hasMarks is at least one marked span, which is what makes a bare Enter an
+	// ASK (#67).
+	hasMarks bool
+}
+
+func parseREPLLine(line string, st lineState) replCommand {
 	// Commands are decided FIRST and HERE. This function is the one place both
 	// loops route a submitted line through, so putting the "/" test anywhere
 	// else means the raw editor and the line loop disagree about what a line
@@ -102,7 +150,17 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 	}
 	word := strings.TrimSpace(line)
 	if word == "" {
-		if hasCurrent {
+		// MARKS WIN over replay. In the common flow — paste, mark, Enter — there
+		// is no current word at all, since `current` is only set by a successful
+		// lookup; the two can only collide when a lookup preceded the paste, and
+		// there the marks are the more recent and more explicit intent (#67).
+		if st.hasMarks {
+			return replCommand{kind: cmdAskPassage}
+		}
+		if st.hasPassage {
+			return replCommand{kind: cmdNothing, note: noteNothingMarked}
+		}
+		if st.hasCurrent {
 			return replCommand{kind: cmdReplay}
 		}
 		return replCommand{kind: cmdNothing}
@@ -343,7 +401,7 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 			}
 			return 0
 		case line := <-lines:
-			switch cmd := parseREPLLine(line, sess.hasCurrent()); cmd.kind {
+			switch cmd := parseREPLLine(line, sess.lineState(false)); cmd.kind {
 			case cmdNothing:
 				fmt.Fprintf(stderr, "define: %s\n", nothingSays(cmd, true))
 				// A hatch typed with no payload is a malformed LINE, the same

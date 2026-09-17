@@ -107,8 +107,8 @@ func TestRawSessionRestoreIsIdempotent(t *testing.T) {
 //
 // The predecessor of this test could not fail. It built a session with a nil
 // file, so every enter and every leave returned at the same nil guard and the
-// assertion checked a field nothing had set: deleting `leaveAlt()` and
-// `leaveMouse()` from restore() left the whole suite green. That is why
+// assertion checked a field nothing had set: deleting the teardown from
+// restore() left the whole suite green. That is why
 // rawSession now writes its mode sequences to an io.Writer — the seam exists so
 // this protocol is assertable without a terminal.
 func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
@@ -117,10 +117,16 @@ func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
 	// escape sequences and their ORDER.
 	r := &rawSession{control: &b}
 
-	r.enterAlt()
-	r.enterMouse()
-	if got := b.String(); got != altScreenOn+mouseOn {
-		t.Fatalf("entering wrote %q, want %q", got, altScreenOn+mouseOn)
+	r.enterModes()
+	// DERIVED: entering runs enabledModes in reverse teardown order, so the alt
+	// screen is taken first and the input modes apply to it. A literal here would
+	// be a second statement of the order.
+	var want string
+	for i := len(enabledModes) - 1; i >= 0; i-- {
+		want += enabledModes[i].on
+	}
+	if got := b.String(); got != want {
+		t.Fatalf("entering wrote %q, want %q", got, want)
 	}
 	b.Reset()
 
@@ -132,6 +138,9 @@ func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
 	if !strings.Contains(got, mouseOff) {
 		t.Error("restore left mouse reporting on: the next program run in this terminal gets escape sequences typed into it")
 	}
+	if !strings.Contains(got, pasteOff) {
+		t.Error("restore left bracketed paste on: the next program gets ESC[200~ typed into it, which is the same class of mess as mouse reporting")
+	}
 	// ORDER, and it is not cosmetic. Mouse reporting goes first because it is
 	// the state with no `reset` reflex behind it — the shell looks fine while
 	// every click types garbage. The alternate screen goes before raw mode ends,
@@ -140,7 +149,12 @@ func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
 	if strings.Index(got, mouseOff) > strings.Index(got, altScreenOff) {
 		t.Errorf("restore gave the terminal back in the wrong order: %q", got)
 	}
-	if r.alt || r.mouse {
+	// Paste reporting is in the same class as the mouse — no `reset` reflex
+	// behind it — so it goes back before the screen does, for the same reason.
+	if strings.Index(got, pasteOff) > strings.Index(got, altScreenOff) {
+		t.Errorf("restore gave paste mode back after the screen: %q", got)
+	}
+	if anyModeClaimed(r) {
 		t.Error("restore returned with state still claimed")
 	}
 }
@@ -160,9 +174,8 @@ func TestRestoreSendsNothingItDidNotTake(t *testing.T) {
 // leave would then be sent for a screen the terminal never showed.
 func TestEnterDoesNotClaimAStateItCouldNotWrite(t *testing.T) {
 	r := &rawSession{control: failingWriter{}}
-	r.enterAlt()
-	r.enterMouse()
-	if r.alt || r.mouse {
+	r.enterModes()
+	if anyModeClaimed(r) {
 		t.Error("a failed write still claimed the terminal state")
 	}
 }
@@ -174,17 +187,78 @@ func (failingWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
 // Idempotence, for the same reason restore has it: both run from more than one
 // path, and making a second call an error would make the paths care about each
 // other.
-func TestLeaveAltIsIdempotent(t *testing.T) {
+func TestLeaveModesIsIdempotent(t *testing.T) {
 	var b strings.Builder
 	r := &rawSession{control: &b}
-	r.enterAlt()
+	r.enterModes()
 	b.Reset()
-	r.leaveAlt()
-	r.leaveAlt()
-	if r.alt {
-		t.Error("leaveAlt set alt")
+	r.leaveModes()
+	first := b.String()
+	r.leaveModes()
+	if anyModeClaimed(r) {
+		t.Error("leaveModes left a mode claimed")
 	}
-	if got := b.String(); got != altScreenOff {
-		t.Errorf("two leaves wrote %q, want one %q", got, altScreenOff)
+	if got := b.String(); got != first {
+		t.Errorf("two leaves wrote %q, want one round of %q", got, first)
 	}
+	// And it gives back everything the list holds, in the list's own order.
+	var want string
+	for _, m := range enabledModes {
+		want += m.off
+	}
+	if first != want {
+		t.Errorf("leaveModes wrote %q, want %q — the order is the teardown order", first, want)
+	}
+}
+
+// EVERY mode the program enables is written by NEWCONSOLE — the place it is
+// actually enabled — derived from enabledModes rather than hand-written per mode.
+//
+// #67's BR-16, and the distinction is the whole finding: the test that existed
+// called the mode enable itself, so it pinned the METHOD and never the call
+// site. Deleting the call from newConsole left the suite green while the entire
+// milestone silently reverted to a pasted newline submitting mid-paste. This
+// drives newConsole, so removing any enter reddens.
+func TestNewConsoleEnablesEveryMode(t *testing.T) {
+	var control strings.Builder
+	sess := &rawSession{control: &control}
+	con := newConsole(t.Context(), testDeps(t), sess, io.Discard,
+		func(tty io.Writer, rows, cols int) *liveScreen { return newLiveScreen(tty, rows, cols) })
+	if con.finish != nil {
+		defer con.finish()
+	}
+	for _, m := range enabledModes {
+		if !strings.Contains(control.String(), m.on) {
+			t.Errorf("newConsole never enabled %s, so the terminal is never asked for it: %q",
+				m.name, control.String())
+		}
+	}
+}
+
+// ...and every one is given back, in the ordered teardown, before raw mode ends.
+func TestRestoreGivesBackEveryMode(t *testing.T) {
+	var control strings.Builder
+	sess := &rawSession{control: &control}
+	sess.enterModes()
+	control.Reset()
+	sess.restore()
+	for _, m := range enabledModes {
+		if !strings.Contains(control.String(), m.off) {
+			t.Errorf("%s was left ON: the next program run in this terminal inherits it (%q)",
+				m.name, control.String())
+		}
+	}
+}
+
+// anyModeClaimed reports whether the session still believes it holds any mode.
+//
+// Derived from the session's own map rather than checking three named fields, so
+// a mode added to enabledModes is covered without this helper changing.
+func anyModeClaimed(r *rawSession) bool {
+	for _, held := range r.modes {
+		if held {
+			return true
+		}
+	}
+	return false
 }

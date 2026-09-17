@@ -73,6 +73,53 @@ Typing, scrolling or changing screens clears the highlight. If copying fails,
 click the failure notice to retry. When type-ahead is full, a notice reports that
 the newest key was ignored; mouse selection and interrupts remain responsive.
 
+### Read along: paste a passage and mark what you cannot follow
+
+Paste a paragraph you are reading. Click the words you could not follow, or drag
+across a phrase, and press return: you get one answer about the passage *and*
+each thing you marked, with the sense that is actually in play here rather than a
+list of all of them.
+
+**Pasting.** `define` asks the terminal to bracket pastes, so a newline inside
+pasted text no longer acts as a return and submits the line mid-paste. What a
+paste becomes depends on its shape: one to three words on a single line goes into
+the line you are typing — that is someone pasting `sycophantic` to look it up —
+while four or more words, or anything with a newline, is reading material and
+becomes a passage.
+
+A passage is capped at **1000 characters**, a sentence to a paragraph. Over that it
+is refused with a message rather than half-taken, because a passage you can only
+partly see would get you an answer about text that is not on screen. Characters,
+not bytes, so a paragraph of Chinese or Japanese is a paragraph. Escape sequences
+and control characters are stripped, so pasting from a coloured terminal cannot
+repaint your screen, and a paste that never finishes is abandoned rather than
+waited on — the keyboard, including Ctrl-C, keeps working.
+
+**The passage is a record.** It goes into the scrollback like a definition or an
+answer and scrolls away as the session goes on. It wraps to your terminal at the
+width it was pasted at.
+
+**Marking.** Click a word to mark it; click it again to unmark. Drag across
+several words to mark them as ONE phrase — "at the zenith of" is one thing you are
+asking about, not four. Marked spans show in their own colour. Only words inside
+the passage currently on screen can be marked; clicking into one that has scrolled
+past does nothing.
+
+**Asking.** Press return with nothing typed and marks showing, and the whole
+passage goes out with your marks called out in place — one question, not one per
+word. Press return with a passage but nothing marked and `define` tells you to
+mark something; it does not ask the model. Type a question instead of pressing
+return and the passage goes along as context.
+
+**Afterwards** the marks clear — but only if an answer actually reached you, so a
+Ctrl-C or an unreachable model leaves your marking alone. Anything you marked that
+is a real dictionary word joins your deck and comes back in `/play`. A dragged
+phrase that is not in the dictionary is explained and not kept: the deck is a
+vocabulary deck.
+
+**Drag still copies everywhere else**, including a drag that starts outside the
+passage and ends inside it.
+
 ### The directory is the deck, so it asks first
 
 The directory you run `define` in **is** the deck. That makes running it in the
@@ -596,7 +643,8 @@ A model that is configured but does not answer says so, and the question is kept
 words/en/sycophantic.yaml  one file per word, under its language
 words/es/madrugar.yaml     a different language, a different deck
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
-                           kinds: looked-up, asked, reviewed, flagged. A
+                           kinds: looked-up, asked, reviewed, flagged,
+                           marked. A
                            reviewed record carries correct:, and a MISS from a
                            multiple-choice form also carries missed: — which
                            kind of wrong answer it was (domain, register,

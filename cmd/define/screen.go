@@ -46,6 +46,25 @@ type screen struct {
 	// regions is what each buffer line OFFERS, keyed by line. Sparse: most lines
 	// have none, and a session's worth of empty slices would be the bulk of it.
 	regions map[int][]Region
+	// passageLo and passageHi bound the LIVE passage in buffer lines, half-open.
+	//
+	// The screen needs them because the copy-vs-mark decision is made here, and
+	// `regions` is never pruned: a superseded passage's rows still carry
+	// RegionPassageWord forever, so "does this row have a passage word" answered
+	// yes for a passage that scrolled away and a drag there marked the CURRENT
+	// one (#67, BR-28).
+	passageLo, passageHi int
+	// marks is the paint-time mark overlay, keyed by buffer line (#67).
+	//
+	// PAINT TIME, because the buffer's bytes are immutable once written and a
+	// mark is transient — it exists between marking a word and asking about it.
+	// The same mechanism markClickable uses for the underline, and for the same
+	// reason: decoration that changes belongs to the frame, not to the record.
+	//
+	// The session owns which SPANS are marked; this is those spans in the
+	// screen's own coordinates, handed down on every draw. One fact, one owner,
+	// two coordinate spaces.
+	marks map[int][]cellRange
 	// pinned makes the buffer region occupy its FULL height, so the footer sits
 	// at the terminal's bottom edge rather than directly under the content.
 	//
@@ -365,7 +384,20 @@ func markClickable(line string, rs []Region) string {
 	}
 	// By column, so the splices are applied left to right and the offsets stay
 	// meaningful as we walk.
-	spans := append([]Region(nil), rs...)
+	//
+	// Kinds that do not want an underline are dropped first. The mark means "this
+	// particular span offers something the text around it does not" — in a
+	// passage EVERY word is clickable, so underlining them all says nothing and
+	// only makes the passage hard to read (operator-reported, with a screenshot).
+	spans := make([]Region, 0, len(rs))
+	for _, r := range rs {
+		if regionUnderlines(r.Kind) {
+			spans = append(spans, r)
+		}
+	}
+	if len(spans) == 0 {
+		return line
+	}
 	slices.SortFunc(spans, func(a, b Region) int { return a.Col - b.Col })
 
 	var b strings.Builder
@@ -595,7 +627,11 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 	control(cursorHome + eraseDown)
 	frame, top := s.visible()
 	for i, line := range frame {
-		place(clipVisible(markClickable(line, s.regions[top+i]), s.cols), selectionRow{selectable: true, regions: s.regions[top+i], paint: s.paints[top+i]})
+		painted := markClickable(line, s.regions[top+i])
+		if m := s.marks[top+i]; len(m) > 0 {
+			painted = paintMarks(painted, m)
+		}
+		place(clipVisible(painted, s.cols), selectionRow{selectable: true, regions: s.regions[top+i], paint: s.paints[top+i]})
 		control("\r\n")
 	}
 	bufRows := len(frame)
@@ -953,6 +989,46 @@ func (l *liveScreen) WriteRegions(text string, rs []Region) {
 	l.s.addRegions(rs)
 	l.writeBuffer(text)
 	l.throttledPaint()
+}
+
+// BufferLines is how many lines the record holds right now.
+//
+// Read BEFORE a write, so a caller learns where that write will land. addRegions
+// makes the same adjustment for a partial last line, and for the same reason: a
+// render begins on the line the writer is already on.
+func (l *liveScreen) BufferLines() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := len(l.s.lines)
+	if l.s.partial {
+		n--
+	}
+	return n
+}
+
+// SetPassage tells the screen where the LIVE passage is and what is marked in it.
+//
+// One call for both, because they answer the same question — "is the live passage
+// reachable at this point?" — and a screen that knew the marks but not the range
+// would gate the paint and not the gesture. Replaces rather than merges: the
+// session's state is the whole truth, handed down entire on every draw, so
+// nothing stale can survive a clear.
+func (l *liveScreen) SetPassage(lo, hi int, m map[int][]cellRange) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.s.passageLo, l.s.passageHi, l.s.marks = lo, hi, m
+}
+
+// VisibleRange is the buffer lines the viewport is showing, half-open.
+//
+// The caller needs it to answer whether the live passage is still on screen —
+// "a passage was once pasted" is not authority over Enter for the rest of the
+// session.
+func (l *liveScreen) VisibleRange() (int, int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	frame, top := l.s.visible()
+	return top, top + len(frame)
 }
 
 // RegionAtRow resolves a click: a VIEWPORT row and display column to whatever is

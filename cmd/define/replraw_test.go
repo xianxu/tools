@@ -22,8 +22,7 @@ func TestHandBackStopsPaintingRestoresThenPrintsTheSession(t *testing.T) {
 	live.Write([]byte("arrondissement\nthe entry\n"))
 	control := &strings.Builder{}
 	sess := &rawSession{control: control}
-	sess.enterAlt()
-	sess.enterMouse()
+	sess.enterModes()
 	control.Reset()
 
 	handBack(live, sess, &normal)

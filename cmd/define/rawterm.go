@@ -18,8 +18,8 @@ import (
 type rawSession struct {
 	fd    int
 	state *term.State
-	// control is where the terminal's MODE sequences go — the alternate screen
-	// and mouse reporting. An io.Writer rather than the *os.File, for two
+	// control is where the terminal's MODE sequences go — the alternate screen,
+	// mouse reporting and bracketed paste. An io.Writer rather than the *os.File, for two
 	// reasons. It is the seam that makes the restore protocol assertable in
 	// process: the test that named itself the pin for this could not fail,
 	// because with a nil file every enter and every leave returned at the same
@@ -30,8 +30,12 @@ type rawSession struct {
 	// the stdin handle worked only because interactive means both are the same
 	// tty — an assumption this type had never made before.
 	control io.Writer
-	alt     bool
-	mouse   bool
+	// modes is which modes this session actually took, by name.
+	//
+	// A MAP rather than three bools: the enter/leave pairs and the teardown order
+	// are derived from enabledModes, and a bool per mode is the parallel
+	// enumeration that derivation exists to remove.
+	modes map[string]bool
 }
 
 // enterRaw puts f into raw mode and sends mode sequences to control.
@@ -51,14 +55,9 @@ func (r *rawSession) restore() {
 	if r == nil {
 		return
 	}
-	// Mouse reporting goes first of all: a terminal left reporting the mouse
-	// sends escape sequences into whatever the user runs next, and unlike raw
-	// mode there is no `reset` reflex for it because the shell still looks fine.
-	r.leaveMouse()
-	// The alternate screen goes next, so the terminal is back on the normal
-	// buffer before raw mode ends — the reverse order leaves a cooked terminal
-	// briefly drawing into a buffer that is about to be discarded.
-	r.leaveAlt()
+	// Every mode goes back, in enabledModes' own order — which IS the teardown
+	// order, and the reasons are stated there rather than restated here.
+	r.leaveModes()
 	if r.state == nil {
 		return
 	}
@@ -93,38 +92,6 @@ const (
 	altScreenOff = "\x1b[?1049l"
 )
 
-// enterAlt switches the terminal to the alternate screen.
-//
-// It lives on rawSession, and that placement is the whole point: a terminal left
-// in the alternate screen is as bad an outcome as one left raw — the user's
-// shell keeps working but everything they had scrolled back to is hidden behind
-// a buffer nobody is drawing. rawSession already guarantees restoration from a
-// defer AND on the cancellation path, so folding this in means the guarantee
-// covers both rather than two mechanisms each covering half.
-func (r *rawSession) enterAlt() {
-	if r == nil || r.control == nil || r.alt {
-		return
-	}
-	if _, err := fmt.Fprint(r.control, altScreenOn); err != nil {
-		// Not recorded as entered, so restore does not send a leave for a screen
-		// the terminal never showed. A dropped error here would make the flag a
-		// claim about a write rather than about the terminal.
-		return
-	}
-	r.alt = true
-}
-
-// leaveAlt returns to the normal screen. Idempotent, for the same reason
-// restore is: it runs from more than one path and claiming a second call is an
-// error would make the paths care about each other.
-func (r *rawSession) leaveAlt() {
-	if r == nil || r.control == nil || !r.alt {
-		return
-	}
-	fmt.Fprint(r.control, altScreenOff)
-	r.alt = false
-}
-
 // Button-event motion tracking (1002) and SGR coordinates (1006). Held drags
 // belong to the shared selection router; idle hover is not reported.
 const (
@@ -132,27 +99,77 @@ const (
 	mouseOff = "\x1b[?1006l\x1b[?1002l"
 )
 
-// enterMouse asks the terminal to report the mouse.
+// Bracketed paste (2004). The terminal wraps pasted text in ESC[200~ / ESC[201~
+// so a program can tell it from typing — which is the whole point: without it a
+// pasted newline is a carriage return and submits the line mid-paste.
+const (
+	pasteOn  = "\x1b[?2004h"
+	pasteOff = "\x1b[?2004l"
+)
+
+// enabledModes is every mode the program asks a terminal for, IN TEARDOWN ORDER.
 //
-// On rawSession for the same reason enterAlt is: restoration has to be one
-// guarantee rather than three that each cover part of the exit paths.
-func (r *rawSession) enterMouse() {
-	if r == nil || r.control == nil || r.mouse {
-		return
-	}
-	if _, err := fmt.Fprint(r.control, mouseOn); err != nil {
-		return // as enterAlt: the flag records the terminal's state, not the attempt
-	}
-	r.mouse = true
+// ONE list, so everything derives from it instead of hand-writing a case per
+// mode. #67 paid for not having it three times: mode 2004 was nearly enabled
+// where the decoder guard could not see it, the paste enable shipped as wiring no test
+// exercised, and the teardown order lived only in restore()'s call sequence.
+//
+// The ORDER is the teardown order, and it is load-bearing. Mouse reporting goes
+// back first: a terminal left reporting it writes escapes into whatever runs
+// next, and unlike raw mode there is no `reset` reflex because the shell still
+// looks fine. Bracketed paste carries the identical hazard. The alternate screen
+// goes last, before raw mode ends, so a cooked terminal never briefly draws into
+// a buffer about to be discarded. Entering runs the list in reverse, so the alt
+// screen is taken first and the input modes apply to it.
+//
+// `replies` marks a mode the terminal ANSWERS in. Those owe the decoder a case,
+// which TestEveryEnabledInputModeIsDecoded derives from here; the alternate
+// screen replies with nothing, so it has no encoding to decode.
+var enabledModes = []struct {
+	name, on, off string
+	replies       bool
+}{
+	{"mouse reporting", mouseOn, mouseOff, true},
+	{"bracketed paste", pasteOn, pasteOff, true},
+	{"alternate screen", altScreenOn, altScreenOff, false},
 }
 
-// leaveMouse stops it. Idempotent, like the rest of restore.
-func (r *rawSession) leaveMouse() {
-	if r == nil || r.control == nil || !r.mouse {
+// enterModes takes every mode, in reverse teardown order.
+//
+// A LOOP over the list rather than three calls, so a mode added to the list is
+// taken without anyone remembering to add a fourth call — which is the failure
+// the paste enable already had once.
+func (r *rawSession) enterModes() {
+	for i := len(enabledModes) - 1; i >= 0; i-- {
+		m := enabledModes[i]
+		r.enterMode(m.name, m.on)
+	}
+}
+
+// enterMode writes one mode and records it ONLY on a successful write, so
+// restore never sends a leave for a mode the terminal never entered.
+func (r *rawSession) enterMode(name, on string) {
+	if r == nil || r.control == nil || r.modes[name] {
 		return
 	}
-	fmt.Fprint(r.control, mouseOff)
-	r.mouse = false
+	if _, err := fmt.Fprint(r.control, on); err != nil {
+		return
+	}
+	if r.modes == nil {
+		r.modes = map[string]bool{}
+	}
+	r.modes[name] = true
+}
+
+// leaveModes gives them all back, in the list's own order.
+func (r *rawSession) leaveModes() {
+	for _, m := range enabledModes {
+		if r == nil || r.control == nil || !r.modes[m.name] {
+			continue
+		}
+		fmt.Fprint(r.control, m.off)
+		r.modes[m.name] = false
+	}
 }
 
 // winSize is the terminal's shape, measured where the signal arrives so the

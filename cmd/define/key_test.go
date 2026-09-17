@@ -53,7 +53,10 @@ func TestDecodeKey(t *testing.T) {
 // arrives in its own read decodes as Escape-then-junk, so arrow keys break
 // precisely when the terminal is slow.
 func TestDecodeKeyPartialSequences(t *testing.T) {
-	for _, in := range []string{"", "\x1b", "\x1b[", "\x1b[3", "\xe2", "\xe2\x99"} {
+	// "\x1b[200~" used to sit in the inert table above, consuming 6 as an
+	// unmodelled sequence. Since #67 it OPENS a paste, so a lone start marker is
+	// a prefix like any other: the body and its closer have not arrived yet.
+	for _, in := range []string{"", "\x1b", "\x1b[", "\x1b[3", "\xe2", "\xe2\x99", "\x1b[200~"} {
 		if _, n := decodeKey([]byte(in)); n != 0 {
 			t.Errorf("decodeKey(%q) consumed %d, want 0 — a partial sequence must wait", in, n)
 		}
@@ -68,7 +71,6 @@ func TestDecodeKeyUnknownSequencesAreInert(t *testing.T) {
 	}{
 		{"\x1b[15~", 5},  // F5 — the tilde family's unmodelled half
 		{"\x1b[1;5C", 6}, // Ctrl-Right
-		{"\x1b[200~", 6}, // bracketed-paste start
 		{"\x1bZ", 2},     // unknown two-byte
 		{"\x00", 1},      // stray control byte
 	} {
@@ -394,10 +396,12 @@ func TestMouseDecoderRejectsWhatNoTerminalSends(t *testing.T) {
 // mode 1000 without decoding its native X10 form let a click type " !!" into the
 // word being looked up: the mode was asked for, and its answer was not read.
 //
-// So the modes are read OFF THE CONSTANT the program actually sends. Adding a
-// mode to mouseOn without adding a row here reddens the suite, which is the only
-// version of this rule that survives the next person to enable something.
-func TestEveryEnabledMouseModeIsDecoded(t *testing.T) {
+// So the modes are read OFF THE CONSTANTS the program actually sends. Adding a
+// mode to any of them without adding a row here reddens the suite, which is the
+// only version of this rule that survives the next person to enable something —
+// and #67 proved it needs the plural: the source was mouseOn alone, so mode 2004
+// would have been enabled where no guard could see it.
+func TestEveryEnabledInputModeIsDecoded(t *testing.T) {
 	// What each mode can answer in, and one well-formed sample of it.
 	//
 	// 1005 (UTF-8) and 1015 (urxvt) are deliberately absent: a terminal uses
@@ -411,11 +415,35 @@ func TestEveryEnabledMouseModeIsDecoded(t *testing.T) {
 		"1006": {
 			{"SGR extended coordinates", "\x1b[<0;300;120M"},
 		},
+		"2004": {
+			{"a bracketed paste", "\x1b[200~hot dog\x1b[201~"},
+			{"a paste carrying a newline", "\x1b[200~a\nb\x1b[201~"},
+		},
 	}
 
-	modes := regexp.MustCompile(`\x1b\[\?(\d+)h`).FindAllStringSubmatch(mouseOn, -1)
+	// EVERY mode that makes the terminal SEND us something, read off the
+	// constants the program actually writes.
+	//
+	// It used to read mouseOn alone, and #67 found the hole by walking into it:
+	// mode 2004 was about to be enabled from a separate constant this test could
+	// not see — the first mode outside the one guard written to prevent exactly
+	// that. The rule was never about mice.
+	//
+	// 1049 (the alternate screen) is deliberately absent: it changes what the
+	// terminal SHOWS and replies with nothing, so there is no encoding to decode.
+	// Adding a mode that does reply, without a row here, reddens the suite.
+	// DERIVED from enabledModes, not hand-concatenated: a fourth mode added to
+	// that list is invisible to a string this test builds for itself, which is
+	// exactly how 2004 nearly shipped outside the guard.
+	var inputModes string
+	for _, m := range enabledModes {
+		if m.replies {
+			inputModes += m.on
+		}
+	}
+	modes := regexp.MustCompile(`\x1b\[\?(\d+)h`).FindAllStringSubmatch(inputModes, -1)
 	if len(modes) == 0 {
-		t.Fatal("no modes found in mouseOn; this test would be vacuous")
+		t.Fatal("no modes found in the enable constants; this test would be vacuous")
 	}
 	for _, m := range modes {
 		mode := m[1]

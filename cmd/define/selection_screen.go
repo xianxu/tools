@@ -72,6 +72,22 @@ func (l *liveScreen) pointerLocked(event selectionEvent, p selectionPoint) (poin
 		}
 		return click, ""
 	case selectionCopy:
+		// A DRAG ACROSS A PASSAGE MARKS rather than copies (#67). The screen can
+		// tell because the passage is buffer text with its own region kind on
+		// every word — plus the LIVE buffer range, because regions are never
+		// pruned and an old passage's rows answer yes forever.
+		//
+		// The reader is choosing what to ask about; taking the text to the
+		// clipboard instead would answer a question they did not ask, and the
+		// copy gesture is still there everywhere else.
+		// The ANCHOR decides, not overlap: a drag that starts in an answer and
+		// ends over the passage is a copy, and treating it as a mark would
+		// silently swallow the copy the reader asked for.
+		if a, b, ok := l.passageDragLocked(l.gesture.anchor, l.gesture.end); ok {
+			l.gesture = selectionGesture{}
+			l.repaint()
+			return pointerClick{screen: l, frame: l.frameID, hasDrag: true, dragAnchor: a, dragEnd: b, line: a.row}, ""
+		}
 		text, err := selectedText(l.frame, l.gesture.anchor, l.gesture.end)
 		if err != nil {
 			l.gesture = selectionGesture{}
@@ -97,6 +113,10 @@ func (l *liveScreen) resolvePointerLocked(click pointerClick) (pointerClick, boo
 		return pointerClick{}, false
 	}
 	row := l.frame.rows[p.row]
+	click.line = -1
+	if line, ok := l.s.LineAt(p.row); ok {
+		click.line = line
+	}
 	click.footer, click.footerEntry, click.footerOffset, click.retry = row.footer, row.footerEntry, row.footerOffset, row.retry
 	click.region, click.hasRegion = Region{}, false
 	// The original region can extend beyond a paint-time clip. A wide glyph
@@ -142,4 +162,45 @@ func (l *liveScreen) selectionNoticeLocked(text string) {
 	l.copySeq++
 	l.selectionNotice = text
 	l.repaint()
+}
+
+// passageDragLocked reports a drag that began on a PASSAGE row, with both ends
+// converted to absolute buffer coordinates.
+//
+// The anchor decides. Overlap across every covered row was the first rule, and it
+// meant a drag starting in an answer and ending over the passage lost its copy
+// and marked passage words instead — a gesture doing something the reader did not
+// ask for.
+//
+// It returns COORDINATES rather than the words it covered, because which words a
+// drag means is marksForDrag's answer and there must be exactly one of those.
+func (l *liveScreen) passageDragLocked(a, b selectionPoint) (selectionPoint, selectionPoint, bool) {
+	a, b = selectionOrdered(a, b)
+	if a.row < 0 || a.row >= len(l.frame.rows) || !rowHasPassageWord(l.frame.rows[a.row]) {
+		return a, b, false
+	}
+	// AND the anchor must be in the LIVE passage. regions is never pruned, so a
+	// superseded passage's rows still carry RegionPassageWord — without this a
+	// drag up in an old passage marked words in the current one and swallowed the
+	// copy the reader asked for (BR-28).
+	if line, ok := l.s.LineAt(a.row); !ok || line < l.s.passageLo || line >= l.s.passageHi {
+		return a, b, false
+	}
+	toBuffer := func(p selectionPoint) selectionPoint {
+		line, ok := l.s.LineAt(p.row)
+		if !ok {
+			return selectionPoint{row: -1, col: p.col}
+		}
+		return selectionPoint{row: line, col: p.col}
+	}
+	return toBuffer(a), toBuffer(b), true
+}
+
+func rowHasPassageWord(r selectionRow) bool {
+	for _, x := range r.regions {
+		if x.Kind == RegionPassageWord {
+			return true
+		}
+	}
+	return false
 }

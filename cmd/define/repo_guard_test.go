@@ -1411,6 +1411,18 @@ func TestPlanCitesTestsThatExist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// ISSUES TOO, since #67. A Done-when row is a test obligation, and the close
+	// step's audit records the pinning test beside each row — an enumeration whose
+	// whole value is that a row with no test becomes VISIBLE rather than asserted.
+	//
+	// That audit shipped naming two tests which were in no file at all: the rule's
+	// own failure mode, and nothing read it. A plan was guarded and the issue that
+	// plan serves was not.
+	issues, err := filepath.Glob(filepath.Join(root, "workshop", "issues", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans = append(plans, issues...)
 	if len(plans) == 0 {
 		// conformance:inapplicable — every plan is archived at close, so no
 		// active plan is a legitimate state between issues.
@@ -1734,8 +1746,20 @@ func currentTruthFiles(t *testing.T, root string) []string {
 	self := "cmd/define/repo_guard_test.go"
 	binds := func(p string) bool {
 		switch {
-		case strings.HasSuffix(p, "_test.go"):
+		// This file names removed and stale symbols on purpose — it is the guard.
+		case p == self:
 			return false
+		// TEST FILES BIND TOO, since #67 M1.
+		//
+		// They were exempt, and the exemption hid a whole class: prose in a
+		// _test.go naming a symbol the tree does not declare, or a test renamed
+		// in one file and still cited in another, was invisible to every guard
+		// here. Three such sites shipped in one milestone before a human reviewer
+		// found them by reading. Measured when the exemption was lifted: zero
+		// pre-existing violations, so the class was genuinely unguarded rather
+		// than tolerated.
+		case strings.HasSuffix(p, "_test.go"):
+			return true
 		case strings.HasSuffix(p, ".go"):
 			return true
 		case p == "README.md", strings.HasSuffix(p, "/README.md"), strings.HasPrefix(p, "atlas/"):

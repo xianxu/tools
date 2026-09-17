@@ -160,7 +160,7 @@ func subsequenceGap(want, got []rune) int {
 
 // EVERY captured language (#31). This is the STRONG form — exact alnum counts,
 // which catches insertion as well as loss — and it took testDict(t) while its
-// weaker sibling TestRenderLosesNothingInEveryCapturedLanguage already swept
+// weaker per-language sibling already swept
 // them all. So the corpus a new language contributed was checked by the test
 // that only detects DROPS and not by the one that also detects INSERTS, which is
 // the half that caught %q's escape sequences.

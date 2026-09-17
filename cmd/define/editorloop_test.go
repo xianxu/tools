@@ -75,6 +75,11 @@ type recordDisplay struct {
 	// "the live edge is not clickable here", which is the answer for every test
 	// that predates the board.
 	footerRows map[int][2]int
+	// bufferLines and marks are the passage's seams (#67).
+	bufferLines          int
+	marks                map[int][]cellRange
+	passageLo, passageHi int
+	visibleLo, visibleHi int
 }
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
@@ -122,6 +127,63 @@ func (d *recordDisplay) Draw(prompt string, menu []string) {
 		fmt.Fprint(d.w, "\r\n"+m)
 	}
 	fmt.Fprint(d.w, prompt)
+}
+
+// footer is the live edge's CURRENT footer — what is on screen now, as opposed
+// to `menus`, which is every one the loop drew.
+func (d *recordDisplay) footer() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.menu...)
+}
+
+// BufferLines and SetMarks are the passage's two seams (#67). The double records
+// what it was handed so a test can assert the marks the loop derived, rather than
+// only that it drew something.
+func (d *recordDisplay) BufferLines() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.bufferLines
+}
+
+func (d *recordDisplay) SetPassage(lo, hi int, m map[int][]cellRange) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.passageLo, d.passageHi, d.marks = lo, hi, m
+}
+
+// VisibleRange: the double shows everything it was given, so the live passage is
+// always on screen unless a test says otherwise.
+func (d *recordDisplay) VisibleRange() (int, int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.visibleHi == 0 {
+		return 0, 1 << 20
+	}
+	return d.visibleLo, d.visibleHi
+}
+
+// passageRange is what the loop last told the screen the live passage is, which
+// is the seam BR-28's gate is fed by — a test that never reads it lets the gate
+// be handed zeros and still pass.
+func (d *recordDisplay) passageRange() (int, int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.passageLo, d.passageHi
+}
+
+// seeOnly narrows what VisibleRange reports, so a test can put the passage
+// off-screen without scrolling a real terminal.
+func (d *recordDisplay) seeOnly(lo, hi int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.visibleLo, d.visibleHi = lo, hi
+}
+
+func (d *recordDisplay) markedCells() map[int][]cellRange {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.marks
 }
 
 func (d *recordDisplay) Page(n int) {
@@ -789,6 +851,17 @@ func scriptedPointer(view *recordDisplay) *pointerRouter {
 		rows[at[0]].selectable = true
 	}
 	view.mu.Unlock()
+	// A buffer behind the frame, so LineAt maps a viewport row to a buffer line.
+	// Without it every click carries line -1 and the passage identity check
+	// refuses it — correctly, which is why the guard needs a real mapping rather
+	// than an exemption.
+	for i := 0; i < 24; i++ {
+		live.s.lines = append(live.s.lines, "")
+	}
+	// rows is normally set by layoutSelectionFrame at paint time, and this screen
+	// never paints — without it visible() yields nothing and LineAt refuses every
+	// row.
+	live.s.rows, live.s.cols = 24, 100
 	live.frame = newSelectionFrame(100, 24, rows)
 	live.frameID = 1
 	live.framePublished = true
@@ -964,13 +1037,36 @@ func TestEveryRegionKindIsActionable(t *testing.T) {
 		view.offer(2, 0, Region{Kind: kind, Text: "sycophantic", Word: "sycophantic", Lang: "fr"})
 
 		pointer := scriptedPointer(view)
-		ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, completedPointerClick(t, pointer, 2, 0))...)
+		keys := append(runes("sycophantic"), Key{Kind: KeyEnter})
+		if !regionPlaysAudio(kind) {
+			// A kind whose action is MARKING needs something to mark. Pasting a
+			// passage whose first word sits at line 0 column 0 is what makes the
+			// offered region resolve to a word — the same arrangement the real
+			// gesture has, rather than a special case for the guard.
+			// Three lines, so the region offered at viewport row 2 lands on a
+			// passage line: the identity check ties a click to the passage by
+			// BUFFER LINE, and a one-line passage at base 0 does not reach row 2.
+			keys = append(keys, Key{Kind: KeyPaste, Raw: []byte("alpha beta gamma\nfirst second third\nsycophantic is a passage of words")})
+		}
+		ks := keySeq(append(keys, completedPointerClick(t, pointer, 2, 0))...)
 		runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, pointer: pointer, finish: finish, stdout: &out, stderr: &errb})
 
-		// Every kind must DO something: the lookup plays 3, so a kind that acted
-		// plays more. A kind added with no case in `clicked` reddens here.
-		if got := rig.player.count(); got <= 3 {
-			t.Errorf("RegionKind %d played nothing when clicked — it draws, invites a click, and does nothing", kind)
+		// Every kind must DO something, and WHAT counts depends on the kind: an
+		// audio kind plays (the lookup plays 3, so a kind that acted plays more);
+		// a passage word marks. The split is declared in regionPlaysAudio, and
+		// the loop below derives its enumeration from numRegionKinds — so a kind
+		// added with no case in `clicked` and no declaration reddens here.
+		if regionPlaysAudio(kind) {
+			if got := rig.player.count(); got <= 3 {
+				t.Errorf("RegionKind %d played nothing when clicked — it draws, invites a click, and does nothing", kind)
+			}
+			continue
+		}
+		if got := rig.player.count(); got > 3 {
+			t.Errorf("RegionKind %d played audio; regionPlaysAudio says it should not", kind)
+		}
+		if view.markedCells() == nil {
+			t.Errorf("RegionKind %d neither played nor marked — it draws, invites a click, and does nothing", kind)
 		}
 	}
 }
@@ -992,9 +1088,14 @@ func TestEveryRegionKindIsActionableThroughTheSharedRegistry(t *testing.T) {
 			Region{Kind: kind, Text: "sycophantic", Word: "sycophantic", Lang: "fr"},
 			"", &out, &errb)
 
-		if rig.player.count() == 0 {
-			t.Errorf("RegionKind %d played nothing through playRegion — a sitting draws the "+
-				"underline and a click on it does nothing", kind)
+		// The registry is no longer TOTAL, and that is the point of the split: it
+		// must play exactly what it claims, and decline the rest rather than
+		// falling back to the headword.
+		played := rig.player.count() > 0
+		if want := regionPlaysAudio(kind); played != want {
+			t.Errorf("RegionKind %d: playRegion played=%v, regionPlaysAudio=%v — the registry "+
+				"and its declaration disagree, which is how a kind comes to act in one loop and not the other",
+				kind, played, want)
 		}
 	}
 }

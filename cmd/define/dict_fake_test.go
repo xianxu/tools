@@ -288,7 +288,7 @@ func TestEveryCapturedLanguageLoads(t *testing.T) {
 	}
 }
 
-// TestRenderLosesNothingInEveryCapturedLanguage lived here and was DELETED by
+// The older per-language variant of the no-data-loss test lived here and was DELETED by
 // #31, not lost.
 //
 // It asserted only that a captured entry renders to something non-empty, and it

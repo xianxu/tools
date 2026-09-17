@@ -77,15 +77,7 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 	// printed; here the screen places every line itself, so nothing depends on
 	// the line discipline and raw mode is continuous — which is what "render
 	// cooked, play raw" wanted all along.
-	sess.enterAlt()
-	// And the mouse, whose wheel both loops need (M1.4b): inside the alternate
-	// screen a terminal sends the wheel as ARROW KEYS unless asked to report the
-	// mouse, and Up/Down in the editor are the history walk — so a scroll walked
-	// history. The bytes are identical, so nothing could tell them apart; the
-	// report is the only way to be handed the gesture the user actually made.
-	//
-	// The shared router handles held drags and completed clicks.
-	sess.enterMouse()
+	sess.enterModes()
 	live := newScreen(stdout, terminalRows(stdout), terminalCols(stdout))
 	var clipboard clipboardWriter
 	var clipboardErr error
@@ -249,6 +241,22 @@ type display interface {
 	// RegionAtRow answers what is offered at a VIEWPORT row and display column,
 	// which is what a terminal reports for a click.
 	RegionAtRow(row, col int) (Region, bool)
+	// BufferLines is how many lines the record holds, read BEFORE a write so the
+	// caller knows where that write will land. A passage needs it: its marks are
+	// painted by absolute buffer line, and only a line number ties the session's
+	// spans to the screen's cells (#67).
+	BufferLines() int
+	// SetPassage tells the screen where the LIVE passage is, in buffer lines, and
+	// what is marked in it.
+	//
+	// One call for both, because they answer the same question — is the live
+	// passage reachable at this point? A screen that knew the marks but not the
+	// range would gate the paint and not the gesture, which is how a drag in a
+	// superseded passage came to mark the current one.
+	SetPassage(lo, hi int, m map[int][]cellRange)
+	// VisibleRange is the buffer lines on screen, half-open, so a caller can ask
+	// whether the live passage is still reachable.
+	VisibleRange() (int, int)
 	// FooterRowAt answers which footer entry a VIEWPORT row is showing, and which
 	// of that entry's physical rows — so a click can reach the live edge and not
 	// only the buffer (#40 D10), and so a caller that acts on a COLUMN can refuse
@@ -395,7 +403,26 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		_, cols := view.Size()
 		return languagePrompt(d.lang, opt.color && !opt.noFlags, cols)
 	}
+	// passageRows is the pinned region's CURRENT contents, rebuilt from source on
+	// every frame. Every Draw goes through it, including the two that blank the
+	// prompt: the prompt correctly disappears while the loop is working, but the
+	// passage disappearing with it would take the surface away for the whole
+	// lookup/answer window — exactly the interval it exists for.
+	//
+	// deckVocabulary rather than vocabularyFor: a word is CLICKABLE whether or
+	// not it is coloured, and vocabularyFor is nil with colour off (vocab.go).
+	// blank hides the prompt while the loop is working. The passage is buffer
+	// text now, so it stays on screen without the footer carrying it.
+	blank := func() { view.Draw("", nil) }
 	draw := func() {
+		// The marks are re-derived here, every frame, from the session's spans —
+		// one owner, one translation, so the painted cells cannot drift from what
+		// the next Enter will ask about.
+		lo, hi := sess.passageBase, sess.passageBase
+		if sess.passage != nil {
+			hi = lo + sess.passage.lineCount()
+		}
+		view.SetPassage(lo, hi, markCellRanges(sess.passage, sess.marks, sess.passageBase))
 		// completionsFor rather than candidatesFor: draw renders only the grey
 		// tail, so resolving the pair here would build a recall list per
 		// keystroke that nothing reads. Same function that fills .complete, so
@@ -503,7 +530,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			// A background job finished. What it did prints between prompts like any
 			// line the loop writes, so the frame is cleared first: a write with the
 			// prompt on screen lands inside it (TestNothingIsWrittenWhileAPromptIsShown).
-			view.Draw("", nil)
+			blank()
 			bg.received(res)
 			applyBg(bgEvent{kind: bgJobDone, result: res})
 			draw()
@@ -526,9 +553,85 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// screen exists. What it can do is act on the region under the
 				// pointer, and a click on nothing is nothing: no beep, no
 				// message. Pointing at ordinary text is not an error.
-				if hit, ok := con.pointer.resolve(k); ok && hit.hasRegion {
+				//
+				// INSIDE A PASSAGE it is: every word offers marking, so the
+				// invariant above is scoped to everywhere else (#67).
+				//
+				// Every word being clickable does mean a per-span registry carries
+				// no information — which is why the passage was a surface while it
+				// was footer chrome. Moving it into the BUFFER reversed that: the
+				// click map is how buffer content is reached, so RegionPassageWord
+				// is the mechanism and the live-range check is what keeps a
+				// superseded passage's regions from answering.
+				hit, ok := con.pointer.resolve(k)
+				if !ok {
+					continue
+				}
+				if hit.hasDrag {
+					// ONE SPAN per drag — a phrase if it covers several words —
+					// which is marksForDrag's answer and the only one. Marking
+					// each word separately produced `[sel]at[/sel]
+					// [sel]the[/sel] [sel]zenith[/sel]` and then admitted every
+					// function word to the deck (#67, C-B).
+					from, okA := sess.passageCell(hit.dragAnchor)
+					to, okB := sess.passageCell(hit.dragEnd)
+					if okA && okB {
+						for _, sp := range marksForDrag(sess.passage, from, to) {
+							sess.marks = sess.marks.toggle(sp)
+						}
+					}
+					draw()
+					continue
+				}
+				if hit.hasRegion && hit.region.Kind == RegionPassageWord {
+					// The ABSOLUTE line is what says the region belongs to the
+					// passage on screen now. A superseded passage's regions stay
+					// in the map, and a Region's own Line is relative to the
+					// render it came from, so without this a click in an old
+					// passage marked an unrelated word in the current one.
+					if sp, found := sess.passageSpanAt(hit.line, hit.region); found {
+						sess.marks = sess.marks.toggle(sp)
+						draw()
+					}
+					continue
+				}
+				if hit.hasRegion {
 					clicked(hit.region)
 				}
+				continue
+			case KeyPaste:
+				// Reading material becomes the PASSAGE; a headword-shaped paste
+				// falls through to the editor, because someone pasting
+				// `sycophantic` to look it up wants a lookup (pasteIsPassage).
+				if text := string(k.Raw); pasteIsPassage(text) {
+					// Into the BUFFER, like a definition or an answer, so it
+					// scrolls away as the session goes on. It was pinned in the
+					// footer first, which welded it to the prompt forever —
+					// operator-reported, and the right fix is that a passage is a
+					// RECORD of something you read, not chrome.
+					_, cols := view.Size()
+					sess.passage = newPassage(text, cols)
+					sess.marks = sess.marks.clear()
+					sess.passageBase = view.BufferLines()
+					blank()
+					view.WriteRegions(passageText(sess.passage, deckVocabulary(d), opt.color)+"\r\n", passageRegions(sess.passage))
+					draw()
+					continue
+				}
+			case KeyPasteRefused:
+				// The refusal is REPORTED rather than silent: a paste that
+				// simply vanished would read as a broken terminal, and the
+				// reader has no other way to learn the limit. Apply already
+				// leaves the line untouched, so nothing half-arrives.
+				//
+				// THE FRAME IS CLEARED FIRST, like every other write this loop
+				// makes between prompts. A write with the prompt on screen lands
+				// INSIDE it — the invariant
+				// TestNothingIsWrittenWhileAPromptIsShown pins — and the first
+				// version of this notice broke it (BR-17).
+				view.Draw("", nil)
+				fmt.Fprintf(stderr, "define: that paste is longer than %d characters; paste less\r\n", maxPasteRunes)
+				draw()
 				continue
 			}
 			cands := candidatesFor(e.WalkBase(), hist, commands)
@@ -543,7 +646,8 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// Bypassing it meant the interactive path quietly disagreed about
 				// what a line means — no trimming, and "hot  dog" not collapsed to
 				// the multi-word headword the dictionary actually has (ARCH-DRY).
-				cmd := parseREPLLine(e.String(), sess.hasCurrent())
+				top, bottom := view.VisibleRange()
+				cmd := parseREPLLine(e.String(), sess.lineState(sess.passageVisible(top, bottom)))
 				// Redraw the committed line with NO suggestion before advancing:
 				// the grey tail was never accepted, so leaving it in scrollback
 				// claims the user typed something they did not.
@@ -564,9 +668,18 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// (operator-reported). Blanking it is not a patch on that
 				// instance: a prompt drawn while nothing is reading keys invites
 				// typing at a line that does not exist.
-				view.Draw("", nil)
+				blank()
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
 					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color, currentPrompt()))
+				}
+				if cmd.kind == cmdAskPassage {
+					askInSession(question{
+						text:    "What does this mean?",
+						forced:  true,
+						passage: &passageAsk{Passage: sess.passage, Marks: sess.marks},
+					})
+					draw()
+					continue
 				}
 				if cmd.kind == cmdCommand {
 					// Commands print multiple lines, and the screen places every
@@ -683,6 +796,38 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			draw()
 		}
 	}
+}
+
+// regionUnderlines declares which region kinds get the clickable underline.
+//
+// The underline means "this particular span offers something the text around it
+// does not". In a passage every word is clickable, so underlining them all
+// carries no information and makes the passage hard to read — which is what the
+// first version did.
+func regionUnderlines(k RegionKind) bool { return k != RegionPassageWord }
+
+// regionPlaysAudio declares which region kinds the AUDIO registry answers for.
+//
+// A declared split rather than an implicit one, because #67 made the audio
+// registry non-total for the first time: every kind before it was a thing to hear, and
+// RegionPassageWord is a thing to MARK. Without this, "every kind is actionable"
+// could only be weakened to "every kind does something somewhere", which no
+// longer catches a kind wired into neither.
+//
+// The guards derive their enumeration from numRegionKinds and consult this, so a
+// new kind must be declared here AND given an action, or the suite reddens.
+//
+// (The registry itself is playRegion, below.)
+func regionPlaysAudio(k RegionKind) bool {
+	switch k {
+	case RegionHeadword, RegionOriginLang, RegionWord:
+		return true
+	case RegionPassageWord:
+		// A passage word is read, not heard. Clicking it marks it — the question
+		// you are about to ask — and the editor's KeyClick branch owns that.
+		return false
+	}
+	return false
 }
 
 // playRegion is what a CLICK does, and it is ONE registry for both loops.

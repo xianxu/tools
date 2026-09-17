@@ -271,6 +271,81 @@ existed to step back over the terminal's echo of Enter, and raw mode does not
 echo. That also removes `#2`'s documented limitation that typing during playback
 stranded the indicator — the arithmetic has nothing left to correct for.
 
+### Bracketed paste (`#67 M1`)
+
+Mode 2004 is on, so the terminal wraps pasted text in `ESC[200~` / `ESC[201~`.
+Without it a pasted newline is just a carriage return, and it **submitted the
+line mid-paste** — the standing bug this milestone fixes at its cause
+(`key.go`'s `'\r', '\n'` arm), not where it was observed.
+
+**A paste is ONE key.** `KeyPaste` carries the whole body in `Raw`, and that is
+load-bearing rather than tidy: `readInput` delivers into a 256-key channel that
+DROPS THE NEWEST when full, so a 1000-rune paste arriving one rune at a time
+would lose its tail behind a single "input full" notice.
+
+**The scanner accumulates nothing**, and that is the contract. `readInput`
+re-presents its whole buffer after a short read and advances only on consumption,
+so a scanner that also buffered internally sees every byte twice — an earlier
+design did, and a 900-byte paste in the real 256-byte chunks came back duplicated
+and then refused. With a 256-byte read and a 1000-rune cap, **multi-read is the
+normal path**, not an edge. The only state is `draining`, which is the one fact
+the buffer cannot carry.
+
+**The hook is not "on ESC".** While draining, the head of the buffer is ordinary
+body text, so an ESC-only hook would never consult the scanner again and the rest
+of an oversize paste would arrive as runes — the exact failure the drain exists to
+prevent. The rule: every byte while draining, `0x1b` otherwise. The drain also
+holds back `len(pasteEnd)-1` bytes so a straddling closer cannot be cut; a drain
+that cuts its own exit never ends.
+
+**The cap is 1000 RUNES, and it refuses rather than truncates.** Runes because a
+byte cap would refuse a CJK paragraph at a third of its length, on exactly the
+decks `/lang` exists for. Refuses because a silently half-taken passage would
+produce an answer about text the reader cannot see. The refusal still consumes its
+bytes — otherwise they arrive as keystrokes and the buffer grows with the input —
+and it is reported, because a paste that simply vanished reads as a broken
+terminal.
+
+**`sanitisePasteBody` is where untrusted bytes become a typed value.** The body is
+bound for the screen, which passes producer SGR through by construction, so a
+pasted escape would recolour the text and defeat any decoration layered over it.
+Stripping at the boundary makes that unrepresentable rather than checked
+downstream — the move `oneLine` already makes at the store boundary. Newlines
+survive, because a passage has lines; a TAB becomes a space, because it is the one
+character whose width depends on where it sits and `nextDisplayUnit` counts it as
+one cell — a surviving tab put every later word's column out and clicks landed on
+the wrong word.
+
+**A paste goes into the LINE, as one insertion.** `Apply` takes the whole body at
+once — atomic because it is atomic on the wire — and `pasteLineRunes` turns
+interior newlines and tabs into spaces, since the line editor holds one line.
+Spaces rather than nothing: `hot\ndog` is two words, and joining them would invent
+one. `parseREPLLine` collapses the run afterwards.
+
+**An open paste is ABANDONED on a control byte, and that is a Critical this
+milestone shipped and then fixed.** An unterminated `ESC[200~` used to deafen the
+input path permanently: under the bound the scanner consumed nothing, so
+`readInput` never advanced its buffer and later keystrokes joined the same one;
+over it the drain latched and discarded everything waiting for a closer that never
+came. Raw mode disables ISIG, so Ctrl-C exists only as a decoded `KeyInterrupt` —
+the program could not be quit from the keyboard. The fix uses the rule the file
+already had: a paste is text, `sanitisePasteBody` says what text means, so a
+control byte inside an open paste means the terminal never closed it.
+
+**The cap is TWO predicates, and collapsing them refuses legal pastes.**
+`maxPasteRunes` is semantic and can only be judged on complete text, at the
+closer. `maxPasteBytes` is the memory bound and is judged while bytes are still
+arriving — necessarily in bytes, because a buffer may end mid-rune and
+`utf8.RuneCount` counts each orphan byte as a `RuneError`. With one predicate, a
+legal 1000-rune CJK paste split at the wrong byte counted 1001 and was refused.
+
+**`TestEveryEnabledInputModeIsDecoded` was widened, and finding the hole is the
+story.** It encoded the right rule — *for every mode we enable, the decoder
+answers every encoding that mode can reply in* — but read its modes off `mouseOn`
+alone, so 2004 would have been the first mode enabled outside the one guard
+written to prevent exactly that. It now reads every enable constant; 1049 stays
+out because the alternate screen replies with nothing.
+
 ## The screen
 
 `#30` made the interactive loop a full-screen program, and the reason is
@@ -485,6 +560,11 @@ fails for a kind that draws, invites a click and does nothing.
   every entry has a headword in every language, whereas the IPA is English-only
   (`#31` measured it: Spanish writes none, Italian writes syllabification).
 - **`RegionOriginLang`** — play the word in the language its ORIGIN names.
+- **`RegionPassageWord`** — MARK this word of a pasted passage (`#67`). The first
+  kind the audio registry does not answer for: a passage is read, not heard, and a
+  click on one of its words is the question you are about to ask about it. That
+  made `regionPlaysAudio` necessary — the split is declared, and both actionability
+  guards consult it, so a kind wired into neither reddens.
 
 **`RenderOpts` is what a caller decides**, and its lookup key is not
 about how the entry looks:
@@ -644,7 +724,8 @@ the boundary if a config arrives later.
 ```
 words/<lang>/<slug>.yaml one file per word, under its language
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
-                         kinds: looked-up, asked, reviewed, flagged
+                         kinds: looked-up, asked, reviewed, flagged,
+                         marked
 usage/<slug>.yaml        the news cache — per word and FLAT, so it is shared
                          across languages (see Forget's three axes)
 audio/<slug>/<digest>.mp3  a cached recording, with a <digest>.yaml record
@@ -1424,6 +1505,109 @@ recorded as `how so` comes back from Up-arrow and re-submits as a *question* —
 the opposite of what the hatch was typed to force. So `recallLine` is the one
 canonical, re-submittable form, and all three recall sites use it. Whitespace is
 still collapsed, because that changes no meaning.
+
+## Read-along: a passage you mark (`#67`)
+
+Paste a paragraph, click or drag the words you could not follow, press return, and
+get one answer about the passage AND each marked span.
+
+**A paste is classified by shape.** One to three words on a single line is a
+headword — `hot dog` and `a priori` are entries — and goes into the line, which is
+what someone pasting `sycophantic` to look it up wants. Four or more words, or any
+newline, is reading material and becomes the passage. The four-word floor is
+`readsAsQuestion`'s, reused rather than reinvented.
+
+**The passage is a RECORD, not chrome.** It goes into the buffer and scrolls away
+like a definition or an answer. It was footer chrome first, which is redrawn every
+frame and never scrolls — so it stayed welded to the prompt under every later
+lookup, which is what the operator saw. The footer was chosen to make "the
+asked-about words turn green afterwards" possible, since `screen.lines` is
+immutable once written; when the two requirements collided, the green re-render
+was the one dropped.
+
+**It wraps at CONSTRUCTION**, with `wrapText`, so a passage line IS a buffer line
+IS a `Region` line. Keeping logical lines and projecting regions through a reflow
+would need a second coordinate space and a mapping to hold in step — which is how
+a click comes to mark the word above the one you pointed at. It does not reflow on
+resize, the same bargain every other record makes.
+
+**Deck colour is baked in at write time; the MARK is paint-time.** That split is
+the whole design: the deck a passage was read against is part of the record, and
+the mark is transient — it lives between marking a word and asking about it.
+`paintMarks` splices over finished bytes the way `markClickable` does, re-asserting
+`markOn` after every producer SGR, because ANSI does not nest.
+
+**`markOn` is an explicit foreground/background pair, not inverse video.** Inverse
+swaps the two, so a deck-green word inside it comes out green-BACKGROUND; and a
+mark persists where a drag does not, so they must differ at a glance. An explicit
+pair also composes with the row tint, which `sourceBackground` recognises for `48`
+and not for `7`.
+
+**`RegionPassageWord`, and the registry stopped being total.** Every word of a
+passage is clickable, so being a region carries no information — but the passage
+lives in the buffer, and the click map is how buffer content is reached. It is the
+first kind the AUDIO registry does not answer for, which forced two declarations:
+`regionPlaysAudio` (a passage is read, not heard) and `regionUnderlines`
+(underlining every word says nothing and makes the passage unreadable). Both
+actionability guards consult the first, so a kind wired into neither still reddens.
+
+**Marks never overlap.** A click inside a dragged phrase CLEARS the phrase rather
+than adding a second span inside it. An overlapping mark was invisible and durable
+at once: the painter drew the phrase's cells so nothing changed on screen, the
+prompt skipped a mark starting before the last one ended — and admission walked the
+set regardless, so the word entered the deck having never been shown as marked.
+
+**A drag marks instead of copying, inside a passage only.** The screen tells by the
+region kind on the row AND the live buffer range the loop hands down. The kind
+alone is not enough: `screen.regions` is never pruned, so a superseded passage's
+rows answer yes forever, and a drag up in an old passage marked words in the
+current one. Both ends snap to whole words, and a drag back over a marked run
+clears it, because a drag and a click are ONE gesture.
+
+**Enter is the ask, and it is a row in the decision table.** `parseREPLLine` takes
+one `lineState` rather than a second boolean — two bools side by side encode a
+precedence nobody declared. MARKS WIN over replay: in the common flow there is no
+current word at all, since `current` is only set by a successful lookup. A blank
+line on an unmarked passage is a LOCAL nudge through `nothingSays` — deterministic
+state, deterministic answer, no model call — phrased as an instruction, because the
+reader just pressed return and this is a gesture nobody discovers unaided.
+
+**`RegionPassageWord` scopes a stated invariant.** *"A click on ordinary text is
+NOTHING"* holds everywhere except inside a passage, where every word offers
+marking. So does the headword-click shortcut: a click on a headword is *"a shortcut
+for the bare Enter beside it"*, and with marks present Enter asks instead.
+
+**The request is the passage with its marks bracketed in place**, under its own
+task (`passage-question`), so the console question's golden and cassette are
+untouched. In place rather than a separate list of words, because position is then
+unambiguous — a word occurring twice needs no occurrence index. The passage is
+untrusted text on its way into a prompt, so its own brackets are escaped to
+`&#91;`/`&#93;` first: the rule `askSystem` already stated for the ANSWER
+direction, finally applied in the prompt direction.
+
+**NOAD's role inverts here, deliberately.** Elsewhere the entry is the output and
+the model supplements it — *"it is authoritative and you are not"*. In a passage
+the dictionary is the ADMISSION GATE and the contextual explanation is the output;
+the full entry is still one lookup away, by typing the word.
+
+**Marks clear IFF an answer reached the reader** — one predicate over `runAsk`'s
+several outcomes, not a case each. A Ctrl-C cannot silently empty them, and an
+unconfigured model cannot look like success.
+
+**Admission: the dictionary decides.** A marked word with an entry enters the deck
+through `CaptureMarked` and reaches recall by the ordinary route, since `harvest`
+authors items for deck words. A marked phrase with no entry was explained and is
+not retained — the deck is a vocabulary deck. `EventMarked` is its own kind because
+a typed lookup is ambiguous (curiosity, a spelling check) while a word marked
+because it blocked a reading is not, and `#17` folds this log.
+
+**The level default was REVERSED** (`askSystem`). It used to say *"write for a
+capable adult reader and do not guess at their level"*; it now assumes a curious
+reader going to college without the background yet. That is two settings in
+OPPOSITE directions — hold the language, drop the assumed background — and reading
+it as one means simplifying, which in a vocabulary tool means paraphrasing away the
+word being explained. A prompt line cannot defend that, so a live conformance row
+does.
 
 ## The learner model
 
@@ -2400,6 +2584,7 @@ Every seam has one, and each pins the assumption that seam rests on:
 
 | check | asserts |
 |---|---|
+| `passage_conformance_test.go` | a passage answer keeps the marked words rather than paraphrasing them away, which is the failure the reversed level default invites (#67) |
 | `bilingual_conformance_test.go` | installed Oxford records select Spanish-source `red` and enforce native record limits |
 | `bilingual_layout_conformance_test.go` | installed native `rendir` retains Oxford hierarchy and uniform complete section fill at widths 32/80 in dark/light es/en; optional actual ANSI captures |
 | `bilingual_system_conformance_test.go` | assembled Spanish dictionary preserves raw/off output and adds the correct English direction when on |
@@ -2971,7 +3156,7 @@ with no row there draws an underline that does nothing, which
   Borrowing is the whole design, and `newConsole` acquires three things a
   borrower must not: a `finish` that restores the SHARED `rawSession` and prints
   the transcript to a cooked terminal, a second `watchResize` goroutine, and a
-  second `enterMouse`. So `sittingInPlace` assembles its console by hand, borrows
+  second set of mode enables. So `sittingInPlace` assembles its console by hand, borrows
   the loop's resize channel, and writes its summary UP into the editor's buffer
   rather than out to a terminal it does not own.
 
@@ -3113,7 +3298,7 @@ because a REPL prompt belongs directly under the last output.
 
 **Adopting frames DELETED the playback dance, and that was a Critical rather than
 a tidy-up.** Every reveal used to `restore()`, play the pronunciation in cooked
-mode, and `enterRaw` again. `enterAlt` is opt-in on `rawSession` and `restore()`
+mode, and `enterRaw` again. Taking the alternate screen is opt-in on `rawSession` and `restore()`
 leaves the alternate screen, while `enterRaw` returns a session with `alt` false
 — so a frame-drawing sitting would have lost the alternate screen on its FIRST
 reveal and painted every frame after it over the user's scrollback. Playback now

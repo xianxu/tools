@@ -523,7 +523,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					// existed only because the terminal had been handed back and
 					// might not come back, and nothing is handed back any more.
 					//
-					// Keeping it would have been worse than redundant. enterAlt is
+					// Keeping it would have been worse than redundant. Taking the alt screen is
 					// opt-in on rawSession and restore() leaves the alternate
 					// screen, so a frame-drawing sitting would have lost the alt
 					// screen on its first reveal and painted every frame after it
@@ -554,6 +554,37 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		show()
 	}
 	return over()
+}
+
+// sittingKeyHandling declares, for EVERY key kind, what a sitting does with it.
+//
+// A TOTAL MAP, not a predicate with a default, and that is the whole point. The
+// first version was a switch returning false for anything unlisted — so a new
+// kind agreed with toInput by both doing nothing, and the guard passed. It FAILED
+// OPEN, which is the one thing a registry guard must not do: numPasteExits and
+// numRegionKinds both fail closed, and this was written in the same window.
+//
+// A kind absent from this map reddens TestEveryKeyKindIsDecidedForASitting, which
+// is what forces the question #67 never got asked: it added KeyPaste and turned
+// mode 2004 on for this surface in the same window, and a pasted answer vanished.
+var sittingKeyHandling = map[KeyKind]bool{
+	// Answers.
+	KeyInterrupt: true, KeyEOF: true, KeyEnter: true, KeyTab: true, KeyRune: true,
+	// Intercepted BEFORE toInput by playSession's own loop, so they act without
+	// becoming an Input.
+	KeyClick: false, KeyPageUp: false, KeyPageDown: false,
+	KeyWheelUp: false, KeyWheelDown: false,
+	// The router's, never delivered to a loop.
+	KeyPointerPress: false, KeyPointerMotion: false, KeyPointerRelease: false,
+	// Inert here on purpose: a sitting takes keystrokes and has no field for
+	// text, so a paste would answer the question with the clipboard.
+	KeyPaste: false, KeyPasteRefused: false,
+	// Editing keys: a sitting has no line to edit.
+	KeyLeft: false, KeyRight: false, KeyUp: false, KeyDown: false,
+	KeyHome: false, KeyEnd: false, KeyBackspace: false, KeyDelete: false,
+	KeyKillLine: false,
+	// An unmodelled sequence is inert everywhere.
+	KeyUnknown: false,
 }
 
 // toInput translates a decoded terminal Key into play's own Input.
@@ -590,6 +621,18 @@ func toInput(k Key) (play.Input, bool) {
 			return play.Input{Kind: play.InputDrop, Rune: k.Rune}, true
 		}
 		return play.Input{Kind: play.InputRune, Rune: k.Rune}, true
+	case KeyPaste, KeyPasteRefused:
+		// IGNORED, and decided rather than dropped by omission (#67 M1, BR-15).
+		// Mode 2004 is on for this surface too — the sitting borrows the editor's
+		// key channel — so a paste really does arrive here.
+		//
+		// A sitting takes KEYSTROKES, not text: every form grades a choice, and
+		// there is no field for prose to go into. Inserting the body as runes
+		// would answer the question with whatever was on the clipboard.
+		//
+		// #13's free-written-sentence form is the one that will want a case here,
+		// and it does not exist yet. Until it does, silence is the honest answer.
+		return play.Input{}, false
 	}
 	return play.Input{}, false
 }

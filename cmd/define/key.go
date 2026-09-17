@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"unicode/utf8"
 )
@@ -48,11 +49,36 @@ const (
 	KeyPointerPress
 	KeyPointerMotion
 	KeyPointerRelease
+	// KeyPaste carries a whole bracketed paste in Raw — TEXT, already stripped
+	// of escapes and control runes, not the unmodelled escape tail Raw holds for
+	// KeyUnknown.
+	//
+	// ONE key rather than a rune per character, and that is load-bearing:
+	// readInput delivers into a 256-key channel that DROPS THE NEWEST when full
+	// (selection_input.go:157,204), so a 1000-rune paste arriving per-rune would
+	// lose its tail behind a single "input full" notice.
+	KeyPaste
+	// KeyPasteRefused is a paste over maxPasteRunes. It carries no text: the
+	// refusal is the message, and the caller reports it.
+	KeyPasteRefused
+	// numKeyKinds is NOT a kind: it is the registry's extent, so a guard can
+	// DERIVE the set rather than restate it — the move numRegionKinds already
+	// makes for regions.
+	//
+	// It exists because #67 added KeyPaste and nothing forced the question "what
+	// does a sitting do with this?". The answer was "silently nothing", and the
+	// milestone had already turned mode 2004 on for that surface. A sentinel is
+	// what turns a new kind into a decision instead of an omission.
+	numKeyKinds
 )
 
-// Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
-// so it can be ignored rather than inserted as garbage — the failure mode of a
-// decoder that falls through to "it must be text".
+// Key is one decoded keypress.
+//
+// Raw carries BYTES, and what they mean depends on the kind. For KeyUnknown they
+// are an unmodelled escape sequence, kept so it can be ignored rather than
+// inserted as garbage — the failure mode of a decoder that falls through to "it
+// must be text". For KeyPaste they are the opposite: sanitised TEXT that Apply
+// inserts at the cursor. One field, two meanings, disambiguated by Kind.
 type Key struct {
 	Kind KeyKind
 	Rune rune
@@ -63,15 +89,49 @@ type Key struct {
 	click    *pointerClick // immutable ticket for a completed application click
 }
 
-// decodeKey converts the front of buf into a Key.
+// keyDecoder is decodeKey plus the one piece of state a byte stream needs.
+//
+// A bracketed paste spans reads, so its scanner has to survive between calls —
+// everything else here is a pure function of the buffer. The streaming caller
+// (readInput) holds one for the life of its goroutine; every other call site
+// goes through decodeKey, which allocates a fresh one.
+type keyDecoder struct{ paste pasteScanner }
+
+// decodeKey converts the front of buf into a Key, with no carried state.
+//
+// It is the stateless entry the package has always had, kept because 38 call
+// sites and both fuzz targets want exactly that: a fresh decoder cannot be
+// mid-paste, so paste state can never leak between fuzz inputs or between
+// unrelated tests.
+func decodeKey(buf []byte) (Key, int) {
+	var d keyDecoder
+	return d.decode(buf)
+}
+
+// decode converts the front of buf into a Key.
 //
 // consumed == 0 means buf holds a PREFIX of a longer sequence and the caller
 // must read more before deciding. Without that signal a lone ESC arriving in its
 // own read decodes as Escape-then-junk, and arrow keys break exactly when the
 // terminal is slow.
-func decodeKey(buf []byte) (Key, int) {
+func (d *keyDecoder) decode(buf []byte) (Key, int) {
 	if len(buf) == 0 {
 		return Key{}, 0
+	}
+	// The paste scanner goes FIRST, and its condition is not "the byte is ESC".
+	//
+	// While draining an over-cap paste the head of the buffer is ordinary body
+	// text, so an ESC-only hook would never consult the scanner again and the
+	// rest of the paste would arrive as runes — the exact failure the drain
+	// exists to prevent. The rule is: every byte while draining, 0x1b otherwise.
+	if d.paste.draining || buf[0] == 0x1b {
+		if k, used, _ := d.paste.scan(buf); used > 0 {
+			return k, used
+		} else if d.paste.draining || bytes.HasPrefix(buf, []byte(pasteStart)) {
+			// Ours, but incomplete: wait rather than letting the CSI scan below
+			// swallow a start marker as an unmodelled sequence.
+			return Key{}, 0
+		}
 	}
 	switch b := buf[0]; b {
 	case 0x03:

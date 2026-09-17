@@ -76,6 +76,9 @@ func (r *pointerRouter) route(k Key) (Key, bool) {
 		if click.screen == nil {
 			return Key{}, false
 		}
+		// A passage drag arrives as a completed gesture too: it carries words to
+		// mark rather than a region to act on, and the loop tells them apart by
+		// which field is set.
 		return Key{Kind: KeyClick, Row: k.Row, Col: k.Col, click: &click}, true
 	}
 	// Raw KeyClick input cannot invent a completed gesture.
@@ -159,6 +162,10 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 		defer close(out)
 		var buf []byte
 		chunk := make([]byte, 256)
+		// ONE decoder for the life of this goroutine: a bracketed paste spans
+		// reads, so its scanner has to survive between them. Every other caller
+		// uses the stateless decodeKey.
+		var dec keyDecoder
 		saturated := false
 		for {
 			if ctx.Err() != nil {
@@ -171,7 +178,7 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 					if ctx.Err() != nil {
 						return
 					}
-					k, used := decodeKey(buf)
+					k, used := dec.decode(buf)
 					if used == 0 {
 						break
 					}

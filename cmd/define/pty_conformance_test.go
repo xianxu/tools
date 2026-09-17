@@ -583,7 +583,7 @@ func TestPTYPlayGradeFirst(t *testing.T) {
 // THE ALTERNATE SCREEN SURVIVES A REVEAL, which is #41 D5a's Critical seen from
 // the outside.
 //
-// The design's one Critical was that `enterAlt` is opt-in on rawSession and
+// The design's one Critical was that taking the alternate screen is opt-in on rawSession and
 // `restore()` leaves the alternate screen — so the old reveal, which called
 // restore() to play the pronunciation in cooked mode and then `enterRaw` again,
 // would have dropped the alt screen on the FIRST reveal and never re-entered it.
@@ -1321,5 +1321,108 @@ func TestPTYLanguageTint(t *testing.T) {
 				t.Fatalf("terminal state round trip failed: %v", err)
 			}
 		})
+	}
+}
+
+// Bracketed paste is asked for, and given back (#67).
+//
+// The same guarantee the mouse row above makes, and for the same reason: a
+// terminal left bracketing pastes types ESC[200~ into whatever the user runs
+// next, and there is no `reset` reflex for that either.
+//
+// A live row rather than a unit test because the unit tests write to a
+// strings.Builder — they prove the sequence is composed, not that it reaches a
+// terminal.
+func TestPTYBracketedPasteIsAskedForAndGivenBack(t *testing.T) {
+	deck := t.TempDir()
+	// Writing the language makes the directory a DECK, so the session goes
+	// straight to the editor instead of asking to create one — the same setup
+	// TestPTYLanguagePrompt uses.
+	if err := store.WriteLang(deck, store.DefaultLang); err != nil {
+		t.Fatal(err)
+	}
+	cmd, f := startDefineInDir(t, deck, []string{"DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio")
+	out := watch(f)
+	// WAIT FOR THE PROMPT rather than sleeping a fixed second. The first version
+	// of this test slept, caught the deck-creation question instead of the
+	// editor, and failed for timing rather than behaviour — which is worse than
+	// having no row at all.
+	started := awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(s, pasteOn) })
+
+	if !strings.Contains(started, pasteOn) {
+		t.Errorf("the session never enabled bracketed paste, so a pasted newline submits the line: %q", started)
+	}
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	if rest := out.take(time.Second); !strings.Contains(started+rest, pasteOff) {
+		t.Errorf("bracketed paste was left ON: the next program gets ESC[200~ typed into it: %q", rest)
+	}
+}
+
+// A real paste through a real terminal: the newline inside it must not submit,
+// and a passage-shaped paste must appear on screen.
+//
+// This is the feature's whole claim, measured where it matters. The unit tests
+// assert the decoder and the renderer; this asserts that a terminal in mode 2004,
+// a pty and the editor together do what they promise.
+func TestPTYAPastedPassageAppearsAndDoesNotSubmit(t *testing.T) {
+	deck := t.TempDir()
+	// Writing the language makes the directory a DECK, so the session goes
+	// straight to the editor instead of asking to create one — the same setup
+	// TestPTYLanguagePrompt uses.
+	if err := store.WriteLang(deck, store.DefaultLang); err != nil {
+		t.Fatal(err)
+	}
+	cmd, f := startDefineInDir(t, deck, []string{"DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio")
+	out := watch(f)
+	awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(s, pasteOn) })
+
+	f.Write([]byte(pasteStart + "The slow precession of\nthe equinox" + pasteEnd))
+	shown := awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(unstyled(s), "precession") })
+
+	if strings.Contains(shown, "no dictionary entry") {
+		t.Errorf("the paste submitted mid-text — a lookup happened: %q", shown)
+	}
+	plain := unstyled(shown)
+	if !strings.Contains(plain, "The slow precession of") || !strings.Contains(plain, "the equinox") {
+		t.Errorf("the pasted passage never appeared on screen: %q", plain)
+	}
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+}
+
+// EVERY enabled mode reaches a real terminal and is given back, derived from
+// enabledModes.
+//
+// The in-process rows assert the sequence is composed; only a pty can say it
+// arrives. TestPTYMouseTrackingIsAskedForAndGivenBack was the precedent and the
+// only one for years, which is how bracketed paste came to have none (#67 BR-16).
+func TestPTYEveryEnabledModeIsAskedForAndGivenBack(t *testing.T) {
+	deck := t.TempDir()
+	if err := store.WriteLang(deck, store.DefaultLang); err != nil {
+		t.Fatal(err)
+	}
+	cmd, f := startDefineInDir(t, deck, []string{"DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio")
+	out := watch(f)
+	started := awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(s, pasteOn) })
+
+	for _, m := range enabledModes {
+		if !strings.Contains(started, m.on) {
+			t.Errorf("%s never reached the terminal: %q", m.name, started)
+		}
+	}
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	rest := started + out.take(time.Second)
+	for _, m := range enabledModes {
+		if !strings.Contains(rest, m.off) {
+			t.Errorf("%s was left ON in a real terminal: %q", m.name, rest)
+		}
 	}
 }

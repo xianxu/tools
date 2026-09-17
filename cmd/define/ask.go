@@ -20,6 +20,10 @@ import (
 type question struct {
 	text   string
 	forced bool
+	// passage is set when the question is ABOUT a passage on screen (#67). A
+	// pointer, so the six existing construction sites keep the zero value and go
+	// on meaning exactly what they meant.
+	passage *passageAsk
 }
 
 // askScoped runs one answer with the interrupt scoped to it.
@@ -158,12 +162,39 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 
 	client := foregroundClient(d.newLLM(cfg), out, opt)
 	answer := newLanguageAnswer(out, opt.width, vocabularyFor(d, opt), opt.tintFor(d.lang))
-	req := renderAskPrompt(gatherAskContext(d, sess, q, errOut))
+	// GATHERED ONCE, then the renderer is chosen. gatherAskContext is the IO step
+	// — it reads the learner model and the deck, and WARNS on failure — so
+	// computing it twice printed "could not read the deck" twice to the reader
+	// for one question.
+	askCtx := gatherAskContext(d, sess, q, errOut)
+	req := renderAskPrompt(askCtx)
+	if q.passage != nil {
+		// The passage renderer takes the SAME context and adds the passage to it
+		// — it does not fork the context blocks, which is how two prompts come to
+		// disagree about what the model is told.
+		a := *q.passage
+		a.Context = askCtx
+		req = renderPassagePrompt(a)
+	}
 	_, err = client.Stream(ctx, req, answer.decoder.Write)
 	// Finish before ANY termination branch: clean partial text belongs in
 	// history on cancellation and truncation, and never contains metadata.
 	if writeErr := answer.Finish(); writeErr != nil {
 		fmt.Fprintf(errOut, "define: the answer could not be fully written: %v\n", writeErr)
+	}
+
+	// MARKS CLEAR IFF AN ANSWER REACHED THE READER — one predicate over runAsk's
+	// several outcomes, not a case each (#67). Collapsing a failure into success
+	// would silently empty the marks on a Ctrl-C, or turn words green when no
+	// model was ever configured; collapsing the other way would make a truncated
+	// answer the reader DID read leave its marks lit and re-askable by a bare
+	// Enter.
+	//
+	// answer.plain is the text that actually reached them, which is the same
+	// thing every branch below already keys on.
+	if q.passage != nil && answer.plain.Len() > 0 {
+		admitMarkedWords(d, opt, q.passage)
+		sess.marks = sess.marks.clear()
 	}
 
 	// Asked FIRST, and asked of the CONTEXT rather than the error. A cancelled
@@ -259,4 +290,31 @@ func lastN(s []string, n int) []string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+// admitMarkedWords puts the marked words that ARE words into the deck.
+//
+// THE DICTIONARY IS THE ADMISSION GATE — the same classifier the console already
+// uses to tell a lookup from a question (#67). A marked word with an entry is
+// something to learn and enters recall by the ordinary route, because harvest
+// authors items for deck words. A marked PHRASE with no entry was explained and
+// is not retained: the deck is a vocabulary deck, not a list of spans someone
+// once dragged over.
+//
+// Free and offline, so it costs nothing to ask per word: NOAD is already on the
+// path. Admission goes through the Capturer, which owns the only Upsert.
+func admitMarkedWords(d deps, opt options, a *passageAsk) {
+	if d.capture == nil || d.dict == nil || a == nil || a.Passage == nil {
+		return
+	}
+	for _, sp := range a.Marks.ordered() {
+		word := a.Passage.text(sp)
+		if word == "" {
+			continue
+		}
+		if raw, err := d.dict.Lookup(word); err != nil || strings.TrimSpace(raw) == "" {
+			continue // explained, not retained
+		}
+		d.capture.CaptureMarked(word, opt)
+	}
 }

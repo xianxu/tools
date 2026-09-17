@@ -4679,3 +4679,78 @@ When a layout transform changes physical row geometry, enumerate every structure
 consumer: text conservation alone is insufficient. Feed click regions into the
 same transform as text; test both the production presenter-to-screen path and
 compatibility sinks. Clone caller metadata before adjusting source offsets.
+
+## A guard that reads the commit window cannot go red before you commit (define #67)
+
+`TestARemovedDeclarationIsSweptOrRetired` and `TestPlanTableStatusMatchesTheChangeWindow`
+derive their input from `git`, so a rename or a deletion is invisible to them
+until it is committed. Twice in one issue a pre-commit run was honestly green, the
+commit landed, and the suite was red — the second time after the guard's own
+message said *"a guard that depends on someone remembering has now been remembered
+late twice."*
+
+**After any commit that renames or deletes a symbol, run the suite again.** Green
+before the commit is not evidence about the commit.
+
+## A registry guard must fail CLOSED (define #67)
+
+A guard written as *"the declaration and the code agree"* passes vacuously when
+both sides default to the same answer. `keyBecomesASittingInput` returned false for
+anything unlisted and `toInput` returned false for anything unhandled, so a new
+kind agreed with itself by doing nothing — exactly the omission the guard existed
+to catch.
+
+A **total map** reddens on the missing row; a predicate with a default does not.
+`numRegionKinds` and `numPasteExits` fail closed; write the next one the same way,
+and prove it by adding a member.
+
+## A declaration nothing reads is a comment with a type (define #67)
+
+`replKindHandling` recorded which loops reach which kind, and the guard asserted
+only that a row EXISTED — so inverting every row left the suite green. A payload
+has to be checked against the thing it describes, or it is documentation wearing a
+map literal.
+
+## Three layers can each be right and the feature still broken (define #67)
+
+`marksForDrag` implemented the decided one-span-per-drag rule and had three passing
+tests. Production called something else. `markedPassageText` matched marks only
+against whole word runs, so even the tested helper, if wired, would have sent a
+request with no marks at all. Three layers, three different answers, green
+throughout.
+
+**Before reporting a behaviour done, trace the production path end to end.** A
+helper with no production caller is not an implementation; its tests are evidence
+about nothing.
+
+## Fix the class, and check the class was fixed (define #67)
+
+Seven boundary-review rounds, and the gate said *"not converging: fix rules, not
+instances"* three times. The pattern each round: the finding named a rule, the fix
+addressed the site the finding cited, and the next round found the siblings.
+
+The check that works is **mutation**: break the thing the fix protects and watch a
+test go red. Every fix claimed without it was later measured as half a fix —
+including two written specifically to answer a finding about untested seams.
+
+## Prose committed in a window may describe only that window's tree (define #67)
+
+Documentation written mid-change describes what the author is about to do, not
+what is there. Three sites described a design that had been reversed, and three
+more were introduced by the very commit that swept the first three — the sweep ran
+before the last commit.
+
+Sweep prose LAST, after the final commit, and let a guard read it: `currentTruthFiles`
+now binds `*_test.go`, and `TestPlanCitesTestsThatExist` now reads `workshop/issues/`.
+
+## An invisible state change with a durable effect (define #67)
+
+`markSet.toggle` compared spans for EQUALITY, so clicking a word inside a dragged
+phrase added a second, overlapping span. Two of its three consumers hid it — the
+painter drew the phrase's cells, so the screen did not change, and the prompt
+renderer skipped a mark that started before the last one ended. The third did not:
+deck admission walked the set, looked the word up, and kept it.
+
+**When a set has several consumers, check what each does with a member the others
+ignore.** Agreement among the ones you look at is not the invariant; the one that
+writes to disk is.
