@@ -523,7 +523,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					// existed only because the terminal had been handed back and
 					// might not come back, and nothing is handed back any more.
 					//
-					// Keeping it would have been worse than redundant. enterAlt is
+					// Keeping it would have been worse than redundant. Taking the alt screen is
 					// opt-in on rawSession and restore() leaves the alternate
 					// screen, so a frame-drawing sitting would have lost the alt
 					// screen on its first reveal and painted every frame after it

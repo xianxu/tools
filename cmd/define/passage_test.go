@@ -524,3 +524,63 @@ func TestHardBreakNeverSplitsAWideGlyph(t *testing.T) {
 		}
 	}
 }
+
+// BR-32: the gate BR-28 installed is FED by two seams, and neither was pinned —
+// reverting either restored the Critical while the suite stayed green.
+//
+// Seam one: the loop must tell the screen where the live passage actually is.
+// Handed zeros, the screen's drag gate refuses nothing and a drag in a superseded
+// passage marks the current one again.
+func TestTheLoopTellsTheScreenWhereTheLivePassageIs(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	view.bufferLines = 7 // the paste lands here
+	ks := keySeq(Key{Kind: KeyPaste, Raw: []byte("the slow precession\nof the equinox")})
+	runEditor(t.Context(), ks, nil, rig.deps, opt,
+		console{view: view, finish: finish, stdout: &out, stderr: &errb})
+
+	lo, hi := view.passageRange()
+	if lo != 7 || hi != 9 {
+		t.Errorf("the screen was told the passage is [%d,%d); want [7,9) — two lines at base 7. "+
+			"A screen handed the wrong range cannot refuse a stale drag.", lo, hi)
+	}
+}
+
+// Seam two: the loop must ask whether the passage is still on screen. Answered
+// unconditionally, "a passage was once pasted" becomes permanent authority over
+// Enter and a bare Enter never replays again.
+func TestEnterReplaysOnceThePassageIsOffScreen(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	ks := keySeq(append(runes("sycophantic"),
+		Key{Kind: KeyEnter},
+		Key{Kind: KeyPaste, Raw: []byte("the slow precession of the equinox")},
+		Key{Kind: KeyEnter},
+	)...)
+	// The viewport shows only far-away lines, so the passage is not reachable.
+	view.seeOnly(500, 524)
+	runEditor(t.Context(), ks, nil, rig.deps, opt,
+		console{view: view, finish: finish, stdout: &out, stderr: &errb})
+
+	if strings.Contains(errb.String(), noteNothingMarked) {
+		t.Errorf("the nudge fired for a passage that is off screen, and Enter never replays again: %q", errb.String())
+	}
+}
+
+// hardBreak's guard is escape-aware (visibleCells), so its walk must be too — a
+// body that counted escape bytes as cells could split a sequence mid-way, and the
+// terminal would render the remainder as text.
+func TestHardBreakNeverSplitsAnEscapeSequence(t *testing.T) {
+	line := knownOn + strings.Repeat("a", 40) + sgrOff
+	for _, got := range hardBreak(line, 10) {
+		if strings.Count(got, "\x1b") != strings.Count(got, "\x1b[") {
+			t.Errorf("an escape was cut: %q", got)
+		}
+	}
+	joined := strings.Join(hardBreak(line, 10), "")
+	if joined != line {
+		t.Errorf("hardBreak changed the bytes:\n got %q\nwant %q", joined, line)
+	}
+}

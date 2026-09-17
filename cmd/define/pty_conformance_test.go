@@ -583,7 +583,7 @@ func TestPTYPlayGradeFirst(t *testing.T) {
 // THE ALTERNATE SCREEN SURVIVES A REVEAL, which is #41 D5a's Critical seen from
 // the outside.
 //
-// The design's one Critical was that `enterAlt` is opt-in on rawSession and
+// The design's one Critical was that taking the alternate screen is opt-in on rawSession and
 // `restore()` leaves the alternate screen — so the old reveal, which called
 // restore() to play the pronunciation in cooked mode and then `enterRaw` again,
 // would have dropped the alt screen on the FIRST reveal and never re-entered it.

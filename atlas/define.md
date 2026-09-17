@@ -310,8 +310,11 @@ terminal.
 bound for the screen, which passes producer SGR through by construction, so a
 pasted escape would recolour the text and defeat any decoration layered over it.
 Stripping at the boundary makes that unrepresentable rather than checked
-downstream — the move `oneLine` already makes at the store boundary. Newlines and
-tabs survive; a passage has lines.
+downstream — the move `oneLine` already makes at the store boundary. Newlines
+survive, because a passage has lines; a TAB becomes a space, because it is the one
+character whose width depends on where it sits and `nextDisplayUnit` counts it as
+one cell — a surviving tab put every later word's column out and clicks landed on
+the wrong word.
 
 **A paste goes into the LINE, as one insertion.** `Apply` takes the whole body at
 once — atomic because it is atomic on the wire — and `pasteLineRunes` turns
@@ -1549,8 +1552,10 @@ first kind the AUDIO registry does not answer for, which forced two declarations
 actionability guards consult the first, so a kind wired into neither still reddens.
 
 **A drag marks instead of copying, inside a passage only.** The screen tells by the
-region kind on the row — there is no separate "which rows are the passage" table to
-keep in step. Both ends snap to whole words, and a drag back over a marked run
+region kind on the row AND the live buffer range the loop hands down. The kind
+alone is not enough: `screen.regions` is never pruned, so a superseded passage's
+rows answer yes forever, and a drag up in an old passage marked words in the
+current one. Both ends snap to whole words, and a drag back over a marked run
 clears it, because a drag and a click are ONE gesture.
 
 **Enter is the ask, and it is a row in the decision table.** `parseREPLLine` takes
@@ -3145,7 +3150,7 @@ with no row there draws an underline that does nothing, which
   Borrowing is the whole design, and `newConsole` acquires three things a
   borrower must not: a `finish` that restores the SHARED `rawSession` and prints
   the transcript to a cooked terminal, a second `watchResize` goroutine, and a
-  second `enterMouse`. So `sittingInPlace` assembles its console by hand, borrows
+  second set of mode enables. So `sittingInPlace` assembles its console by hand, borrows
   the loop's resize channel, and writes its summary UP into the editor's buffer
   rather than out to a terminal it does not own.
 
@@ -3287,7 +3292,7 @@ because a REPL prompt belongs directly under the last output.
 
 **Adopting frames DELETED the playback dance, and that was a Critical rather than
 a tidy-up.** Every reveal used to `restore()`, play the pronunciation in cooked
-mode, and `enterRaw` again. `enterAlt` is opt-in on `rawSession` and `restore()`
+mode, and `enterRaw` again. Taking the alternate screen is opt-in on `rawSession` and `restore()`
 leaves the alternate screen, while `enterRaw` returns a session with `alt` false
 — so a frame-drawing sitting would have lost the alternate screen on its FIRST
 reveal and painted every frame after it over the user's scrollback. Playback now

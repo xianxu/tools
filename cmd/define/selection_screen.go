@@ -74,8 +74,8 @@ func (l *liveScreen) pointerLocked(event selectionEvent, p selectionPoint) (poin
 	case selectionCopy:
 		// A DRAG ACROSS A PASSAGE MARKS rather than copies (#67). The screen can
 		// tell because the passage is buffer text with its own region kind on
-		// every word — there is no separate "which rows are the passage" table to
-		// keep in step.
+		// every word — plus the LIVE buffer range, because regions are never
+		// pruned and an old passage's rows answer yes forever.
 		//
 		// The reader is choosing what to ask about; taking the text to the
 		// clipboard instead would answer a question they did not ask, and the

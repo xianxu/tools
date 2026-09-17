@@ -612,7 +612,7 @@ func TestALegalCJKPasteIsNotRefusedAtAnySplit(t *testing.T) {
 	}
 }
 
-// BR-16: sess.enterPaste() was production wiring nothing exercised. newConsole
+// BR-16: the paste mode enable was production wiring nothing exercised. newConsole
 // is where the modes are taken; this asserts the paste enable is among them,
 // beside the alt screen and the mouse.
 func TestNewConsoleEnablesBracketedPaste(t *testing.T) {

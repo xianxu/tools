@@ -111,7 +111,7 @@ const (
 //
 // ONE list, so everything derives from it instead of hand-writing a case per
 // mode. #67 paid for not having it three times: mode 2004 was nearly enabled
-// where the decoder guard could not see it, enterPaste shipped as wiring no test
+// where the decoder guard could not see it, the paste enable shipped as wiring no test
 // exercised, and the teardown order lived only in restore()'s call sequence.
 //
 // The ORDER is the teardown order, and it is load-bearing. Mouse reporting goes
@@ -138,7 +138,7 @@ var enabledModes = []struct {
 //
 // A LOOP over the list rather than three calls, so a mode added to the list is
 // taken without anyone remembering to add a fourth call — which is the failure
-// enterPaste already had once.
+// the paste enable already had once.
 func (r *rawSession) enterModes() {
 	for i := len(enabledModes) - 1; i >= 0; i-- {
 		m := enabledModes[i]

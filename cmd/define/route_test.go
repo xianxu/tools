@@ -95,19 +95,56 @@ func routeFor(t *testing.T, line string) string {
 	return "nothing"
 }
 
-// EVERY repl kind is decided for BOTH loops, derived from numReplKinds.
+// EVERY repl kind is decided for BOTH loops, derived from numReplKinds — and the
+// declaration is CHECKED against the loops, not merely present.
 //
-// #67 added cmdAskPassage and the piped loop had no case for it. That is
-// harmless — parseREPLLine can only produce it from marks, and the piped loop has
-// no screen to mark on — but nothing said so, and the next kind might not be
-// harmless. A sentinel turns the omission into a decision.
+// The first version asserted only that a row existed, so inverting every row left
+// the suite green: a payload nothing reads is a comment with a type. #67 added
+// cmdAskPassage and the piped loop had no case for it; a map nobody consults
+// would not have caught the next one either.
 func TestEveryReplKindIsDecidedForBothLoops(t *testing.T) {
 	for kind := replKind(0); kind < numReplKinds; kind++ {
-		if _, declared := replKindHandling[kind]; !declared {
+		row, declared := replKindHandling[kind]
+		if !declared {
 			t.Errorf("replKind %d has no row in replKindHandling — a kind nobody decided about "+
 				"is how the piped loop came to silently ignore cmdAskPassage", kind)
+			continue
+		}
+		// The claim each row makes is that the loop can REACH this kind, which is
+		// checkable: parseREPLLine is the only producer, and lineState is the only
+		// thing that varies between the two loops.
+		if got := kindReachable(kind, editorStates()); got != row.editor {
+			t.Errorf("replKind %d: reachable in the editor = %v, declared %v", kind, got, row.editor)
+		}
+		if got := kindReachable(kind, pipedStates()); got != row.piped {
+			t.Errorf("replKind %d: reachable in the piped loop = %v, declared %v", kind, got, row.piped)
 		}
 	}
+}
+
+// The lines each loop can present, paired with the states it can be in. The
+// piped loop has no screen, so it passes hasPassage/hasMarks false — that is the
+// whole difference, and it is what makes cmdAskPassage unreachable there.
+func replLines2() []string {
+	return []string{"", "sycophantic", "?what is this", `\word`, "/lang es", "  "}
+}
+
+func editorStates() []lineState {
+	return []lineState{{}, {hasCurrent: true}, {hasPassage: true}, {hasPassage: true, hasMarks: true},
+		{hasCurrent: true, hasPassage: true, hasMarks: true}}
+}
+
+func pipedStates() []lineState { return []lineState{{}, {hasCurrent: true}} }
+
+func kindReachable(kind replKind, states []lineState) bool {
+	for _, st := range states {
+		for _, line := range replLines2() {
+			if parseREPLLine(line, st).kind == kind {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // And the claim that the piped loop cannot see cmdAskPassage is CHECKED, not

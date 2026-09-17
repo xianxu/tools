@@ -107,8 +107,8 @@ func TestRawSessionRestoreIsIdempotent(t *testing.T) {
 //
 // The predecessor of this test could not fail. It built a session with a nil
 // file, so every enter and every leave returned at the same nil guard and the
-// assertion checked a field nothing had set: deleting `leaveAlt()` and
-// `leaveMouse()` from restore() left the whole suite green. That is why
+// assertion checked a field nothing had set: deleting the teardown from
+// restore() left the whole suite green. That is why
 // rawSession now writes its mode sequences to an io.Writer — the seam exists so
 // this protocol is assertable without a terminal.
 func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
@@ -215,7 +215,7 @@ func TestLeaveModesIsIdempotent(t *testing.T) {
 // actually enabled — derived from enabledModes rather than hand-written per mode.
 //
 // #67's BR-16, and the distinction is the whole finding: the test that existed
-// called sess.enterPaste() itself, so it pinned the METHOD and never the call
+// called the mode enable itself, so it pinned the METHOD and never the call
 // site. Deleting the call from newConsole left the suite green while the entire
 // milestone silently reverted to a pasted newline submitting mid-paste. This
 // drives newConsole, so removing any enter reddens.

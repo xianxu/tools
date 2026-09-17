@@ -397,3 +397,264 @@ findings:
     detail: |
       passage.go:75. BR-19 named it and it survived the round: no production caller and no test caller. Delete it rather than keeping it for symmetry with lineCount/line/spans/text, all of which are used.
 ```
+
+---
+
+## Re-review — 2026-09-16T23:42:10-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 67 — define: read-along — paste a passage, click or drag what is opaque |
+| repo | tools |
+| issue file | workshop/issues/000067-read-along-passage.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 98f5c779b468ada00c087bde6bd43cca9b0892cc..da997e4f6acf88f86bc813da751dca829234af4f |
+| command | sdlc close --issue 67 |
+| reviewer | claude |
+| timestamp | 2026-09-16T23:42:10-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The feature itself is in good shape: after six rounds the read-along surface is coherent, the pure core (`passage`, `markSet`, `marksForDrag`, `paintMarks`, `renderPassagePrompt`, `pasteScanner`) is genuinely pure and well pinned, and I mutation-verified four of this round's headline fixes actually redden (BR-15's sitting registry, BR-22's style-resume, BR-29's `cmdAskPassage` branch, BR-28's `passageCell` refusal). What blocks the boundary is that **the suite is red at HEAD**: round 6's `rawterm.go` refactor deleted `enterAlt`/`leaveAlt`/`enterMouse`/`leaveMouse`/`TestLeaveAltIsIdempotent` and left six current-truth artifacts naming them, so `TestARemovedDeclarationIsSweptOrRetired` fails with ten errors — the same guard, the same family (`removed-symbol-unswept`), and the same failure mode BR-2 closed in round 1. Beyond that, two of this round's fixes are only half-reachable: the two IO-shell seams that *feed* BR-28's new gate are both mutation-green (replacing `runEditor`'s `lo, hi` with `0, 1<<20` restores the BR-28 bug with the suite still passing), and BR-29's `replKindHandling` payload has zero consumers — inverting every row leaves the suite green.
+
+### 1. Strengths
+
+- **`enabledModes` as one ordered table** (`cmd/define/rawterm.go:110-170`) is the right answer to BR-13: three near-identical enter/leave pairs and three bools collapse into a list whose *order is the teardown order*, stated where a fourth mode's author will read it. `replies` even carves out the alt screen from the decoder guard with a reason.
+- **`sittingKeyHandling` fails closed** (`cmd/define/play_loop.go:559-587`, guard at `play_loop_test.go:4450`). I added a 26th `KeyKind` in a scratch worktree and it reddens with a message naming the actual historical bug. This is the registry pattern done correctly.
+- **`passageCell` refusing rather than clamping** (`cmd/define/session.go:89-104`) is the right shape for BR-28 — "a point that is not in this passage is not a point in this passage" — and `TestPassageCellRefusesARowItDoesNotOwn` reddens on all four out-of-range rows when I restore the clamp.
+- **`markedPassageText` by position rather than by word-run matching** (`cmd/define/passageprompt.go:76-102`), with `escapeReservedBrackets` applied to every segment, is a clean ARCH-SECURE boundary: a phrase mark and a twice-occurring word both work without an occurrence index.
+- **The wrap fix holds end to end.** I probed a 63-char unbreakable URL at `cols=30` through `liveScreen.WriteRegions`: `hardBreak` produces exactly-30-cell lines, `wrapMovedRegions` moves nothing, and every region still points at its own word on its own buffer line.
+
+### 2. Critical findings
+
+**`cmd/define/rawterm.go:110` (and six artifacts) — the suite is red at HEAD; this is the 2nd finding in family `removed-symbol-unswept`.**
+
+```
+$ go test ./cmd/define/
+--- FAIL: TestARemovedDeclarationIsSweptOrRetired (1.03s)
+  atlas/define.md names "enterAlt" … "enterMouse"
+  cmd/define/play_loop.go:526 names "enterAlt"
+  cmd/define/pty_conformance_test.go:586 names "enterAlt"
+  cmd/define/play_cmd.go:68 names "enterMouse"
+  cmd/define/rawterm_test.go:110-111 names "leaveAlt", "leaveMouse"
+  workshop/plans/…-plan.md names "enterMouse", "leaveMouse", "TestLeaveAltIsIdempotent"
+```
+
+Do **not** patch the six sites. The rule is already written and already has teeth — BR-11's fix in this same round is what made `_test.go` files bind (`repo_guard_test.go:1749-1762`), which is why `rawterm_test.go` and `pty_conformance_test.go` are in this list. What failed is the *round's own verification step*: the commit that landed the refactor was made without running the guard that reads the commit window. Fix: add the five rows to `retiredSymbolNames` (`repo_guard_test.go:1144`) or sweep the mentions, and make "full suite green, unsandboxed" a precondition of the commit rather than of the close — the enumeration is mechanical because the guard prints every site.
+
+### 3. Important findings
+
+**`cmd/define/replraw.go:421-425` + `cmd/define/screen.go:1026-1031` — BR-28's gate is fed by two mutation-green seams. This is the 4th finding in family `production-seam-untested`.**
+
+Do not add two tests for these two lines — state the rule. Measured:
+
+| mutation | result |
+|---|---|
+| `view.SetPassage(lo, hi, …)` → `view.SetPassage(0, 1<<20, …)` | full suite green (only the 3 pre-existing failures) |
+| `liveScreen.VisibleRange` → `return 0, 1<<20` | `-run 'Passage\|Visible\|Screen\|Editor\|Repl\|Mark'` green |
+
+The first mutation restores BR-28's Critical exactly: every buffer row becomes "the live passage", so `passageDragLocked`'s new check passes for a superseded passage again. The rule is BR-29's, one altitude up: **a pure gate is only as trustworthy as the value the shell computes for it, so the shell's computation is what must be pinned, not the gate.** The enumeration is short and mechanical — every `display` method this window added (`SetPassage`, `VisibleRange`) plus the `runEditor` expression that fills each one. `recordDisplay` already *records* `passageLo/passageHi` (`editorloop_test.go:81`) and no test reads them; assert them after a paste, and pin `liveScreen.VisibleRange` against a buffer scrolled past the passage.
+
+**`cmd/define/repl.go:70-77` — `replKindHandling`'s payload has zero consumers. This is the 3rd finding in family `tested-entity-not-wired`.**
+
+Inverting every row — including claiming the piped loop handles `cmdAskPassage` and the editor does not — leaves `-run 'Repl|Route|Loop|Kind|Piped'` green. `TestEveryReplKindIsDecidedForBothLoops` (`route_test.go:101`) only checks the map is *total*; nothing compares `editor`/`piped` to what `replLines` and `runEditor` actually do. Compare `sittingKeyHandling`, which the same round wired correctly (`play_loop_test.go:4466` asserts `ok != want`). BR-15's own disposition named fail-open as the thing a registry guard must never do, and the same window shipped a second registry that fails open on its payload. The rule covering this and BR-30: **a declared symbol with no production consumer and no guard reading it is decoration** — the enumeration is every package-level declaration this window added with zero non-test references.
+
+**`atlas/define.md:314`, `atlas/define.md:1551-1553`, `cmd/define/passage.go:69-74` — three behavioural claims contradict the tree. This is the 3rd finding in family `doc-contradicts-type`.**
+
+All three were written by the commits that closed BR-11, which is the point: BR-11's rule has two clauses — *every identifier must be declared at HEAD*, and *every behavioural claim must have a test* — and only the identifier clause got teeth. Measured sites:
+
+- `atlas:314` "Newlines and tabs survive; a passage has lines" vs `paste.go:131-134`, where a tab becomes a space (the BR-20 fix, landed in `75985b8`); the atlas paragraph is the doc *for that function*.
+- `atlas:1551-1553` "The screen tells by the region kind on the row — there is no separate 'which rows are the passage' table to keep in step" vs `screen.go:50-54`, which added exactly that table (`passageLo`/`passageHi`) because the region kind answered yes forever.
+- `passage.go:69-74` claims escape-tolerance ("a passage that somehow carried an escape still maps clicks to the right word"), while `hardBreak` (`passage.go:358-382`), added in the same commit, walks with `nextDisplayUnit` and no `escapeLen` — it would split an escape mid-sequence. Its own guard uses the escape-aware `visibleCells`, so the two walks in one function disagree (ARCH-DRY).
+
+### 4. Minor findings
+
+- `cmd/define/selection_screen.go:89` sets `line: a.row` on the drag path; `resolvePointerLocked` (`:117-120`) then overwrites it from `click.point`, which is the zero value there — so `hit.line` carries frame row 0's buffer line. Nothing reads it on that path today, so no live bug; it is the trap BR-28 named, and the next reader gets a spuriously-valid line `ownsBufferLine` can accept. The tagged variant BR-28 recommended makes it unrepresentable.
+- `cmd/define/passageprompt.go:56-58`: the passage is spliced verbatim under `## The passage` into a prompt whose structure *is* markdown headers, and only `[`/`]` are escaped — a pasted line reading `## The question` is structurally indistinguishable from the scaffolding. Same rule as `boundary-parses-partial-class`: the class enumeration stopped at brackets and did not include the prompt format as a consumer. Bounded impact (a wrong answer; no tools in play).
+- `cmd/define/passage.go:87`: `raw()` — see BR-30 below.
+
+### 5. Test coverage notes
+
+- Mutation-verified **pinned**: `sgrOff + style.resume()` → `sgrOff` reddens `TestTheTokenAfterAMarkKeepsItsStyle`; deleting the `cmdAskPassage` branch reddens `TestABareEnterWithMarksAsksThroughTheLoop`; clamping `passageCell` reddens `TestPassageCellRefusesARowItDoesNotOwn`; a 26th `KeyKind` reddens `TestEveryKeyKindIsDecidedForASitting`.
+- Mutation-verified **unpinned**: `runEditor`'s `lo, hi`; `liveScreen.VisibleRange`; every `replKindHandling` disposition.
+- `TestADragInASupersededPassageIsNotAMark` drives `passageDragLocked` directly with a hand-built frame, not through `runEditor` as BR-28 asked. That is acceptable given the gate is at the screen — but it is precisely why the `SetPassage` wiring above went unnoticed.
+- **`pty.Open()` returns `operation not permitted` in this environment even with the Bash sandbox disabled** (I probed it directly, outside `go test`). So `TestPTYAPastedPassageAppearsAndDoesNotSubmit` and `TestPassageAnswerKeepsTheHardWordAgainstTheLiveService` — two Done-when pins, one of them the *only* pin for the level-default row — did not run here. The issue Log claims these "pass on the host"; I could not reproduce that claim from this session. Re-verify before recording `--verified`.
+- Three tests declared in the plan's fenced code — `TestHighlightRowPaintsSeveralRanges`, `TestHighlightRowReassertsAfterAForeignSGR`, `TestHighlightRowPreservesTheText` — exist in no file. `TestPlanCitesTestsThatExist` cannot see them: its regex is `` `(Test…)` `` (backticked only, `repo_guard_test.go:1453`), and a plan's code fences are where plans actually write test names.
+
+### 6. Architectural notes
+
+- **ARCH-DRY** — flag (`hardBreak`'s two disagreeing walks; the `doc-contradicts-type` finding). `enabledModes`, `storeCapturer.record` and `passageSystem`'s composition all pass.
+- **ARCH-PURE** — pass on the core; flag on the shell. Every new decision surface is a pure function tested without IO. The two defects this round are both in the thin shell and both unpinned — the shell got thinner in responsibility and no thinner in risk.
+- **ARCH-PURPOSE** — flag. The feature's purpose is delivered end to end. The lens that fires is the *finding*-answering one: three families (`removed-symbol-unswept`, `doc-contradicts-type`, `plan-artifact-stale`/`issue-row-stale`) recurred because the round swept the sites the finding named and the round's own last commit created new ones without re-running the enumeration. The sweep needs to run against the artifacts the *final* commit touched, not the ones the finding cited.
+- **ARCH-MOCK** — pass. `enabledModes` now drives both the in-process assertion and the pty row; `passage_conformance_test.go` is the live check for the reversed level default. Caveat: neither can run in this environment.
+- **ARCH-CONSTRAINTS** — pass. The 1000-rune semantic cap and the `maxPasteBytes` memory bound are two predicates for two reasons, both tested; per-draw work is O(marks), not O(words).
+- **ARCH-SECURE** — mostly pass (`sanitisePasteBody` parses at the boundary, brackets escaped into the prompt); the Minor above is the residue.
+- **ARCH-ORDER** — pass on the scanner (`numPasteExits`) and on `rawSession.modes`. Flag on `pointerClick`: `hasRegion`/`hasDrag`/`footer`/`retry`/`line` remain a five-field constellation whose legal combinations are unwritten, and the dead-write above is the first symptom.
+- **ARCH-FUNERAL** — flag (BR-27, still open). `screen.regions` gains ~170 entries per paste and `screen.go:52` now states in as many words that it is never pruned, while `plan.md:104` still says "no removal path needed … Nothing else is created."
+
+### 7. Plan revision recommendations
+
+The plan needs a `## Revisions` entry recording that **Task 3.2 was superseded, not performed** — its five steps are ticked `[x]` while `highlightRow` still has the two-point signature (`selection_frame.go:208`) and `selection_frame.go` is untouched by this window. Untick them (a struck title plus ticked steps reads as "we did this"), and drop or relocate the three test bodies it declares. The same entry should correct the issue's Plan rows: "rendered into the screen's `footer` channel (chrome, not buffer text)", "`highlightRow` widened from one range to a set", "the passage re-rendering green", and the preamble's "Five review boundaries; each `Mx` row closes with its own `sdlc milestone-close`" — all four are ticked and all four were reversed. Finally, `plan.md:104`'s ARCH-FUNERAL paragraph needs the screen's region map either bounded or given a removal path.
+
+```findings
+dispose:
+  - id: BR-8
+    disposition: addressed
+    note: |
+      key.go:74-81 now states both meanings of Raw, disambiguated by Kind; prose-only, inspected against editor.go's paste insertion.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Rule shipped: currentTruthFiles binds _test.go (repo_guard_test.go:1749-1762), TestPlanCitesTestsThatExist reads issues (:1414); all three cited sites corrected. The behavioural clause is re-raised as a new doc-contradicts-type finding.
+  - id: BR-13
+    disposition: addressed
+    note: |
+      rawterm.go:110-170 is one ordered enabledModes table with enterModes/leaveModes loops and a modes map; the three hand-written pairs and three bools are gone, and the teardown order is declared in the list.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      The two named sites are fixed (false "full suite green" corrected; a per-round boundary-review record added), but the third leg of this finding's own enumeration — the Plan checkboxes — was ticked without being corrected. Three rows now assert work that was reversed. See the plan-revision recommendation.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      numKeyKinds plus a total sittingKeyHandling map checked against toInput; mutation-verified, adding a 26th kind reddens TestEveryKeyKindIsDecidedForASitting. Fails closed.
+  - id: BR-20
+    disposition: addressed
+    note: |
+      Tab expanded at the boundary (paste.go:131-134) and hardBreak splits unbreakable tokens; I probed a 63-char URL at cols=30 through liveScreen.WriteRegions and every region still lands on its own word. Remaining admitted classes (Cf, Mn/Me, wide, ZWSP) are all handled by cellWidth.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      Done-when audit written with a pinning test per row (issue:565-615); the style-after-the-mark row is mutation-verified (bare sgrOff reddens TestTheTokenAfterAMarkKeepsItsStyle). Note the extended guard's regex sees only backticked names, so plan code fences remain unguarded.
+  - id: BR-23
+    disposition: addressed
+    note: |
+      README.md:76-121 documents pasting, shape classification, the 1000-character cap, the record behaviour, click/drag marking, the Enter ask, the nothing-marked nudge, mark clearing, deck admission and the dragged-phrase rule; checked against pasteIsPassage, maxPasteRunes, passageSpanAt's gate and CaptureMarked.
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      Four sites fixed and a Revisions entry appended, but the box-ticking was applied to a SUPERSEDED task: plan.md:708-780 Task 3.2 has all five steps [x] including "change the signature to highlightRow(row, ranges, on)", while selection_frame.go:208 is unchanged and untouched by this window; three tests its fences declare exist in no file.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      paintMarks still writes markOn unconditionally (passage.go:216,233,239); screen.go:631 applies it whenever a row has marks and runEditor calls SetPassage unconditionally (replraw.go:425) — no reference to opt.color on that path, while passageText honours it.
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      plan.md:104 still reads "no removal path needed … Nothing else is created" while screen.go:52-54 now states that regions is never pruned; no bound stated and no clear on supersession.
+  - id: BR-28
+    disposition: addressed
+    note: |
+      All three consumers route through ownsBufferLine/passageVisible; I reverted each and the matching regression reddens. The IO-shell wiring that feeds the gate is separately unpinned — raised as a new production-seam-untested finding, not as this one.
+  - id: BR-29
+    disposition: addressed
+    note: |
+      Mutation-verified: deleting the cmdAskPassage branch (replraw.go:675-683) reddens TestABareEnterWithMarksAsksThroughTheLoop. The registry half is decorative — raised separately under tested-entity-not-wired.
+  - id: BR-30
+    disposition: not-addressed
+    note: |
+      passage.go:87 raw() still has zero callers anywhere in the tree, production or test. Third round it has survived.
+findings:
+  - id: new
+    severity: Critical
+    family: removed-symbol-unswept
+    title: |
+      The suite is RED at HEAD — the round-6 rawterm refactor deleted five symbols and six artifacts still name them
+    detail: |
+      This is the 2nd finding in family `removed-symbol-unswept` (BR-2 was the 1st), so do NOT
+      patch the six sites. `go test ./cmd/define/` fails: TestARemovedDeclarationIsSweptOrRetired
+      reports ten errors for enterAlt, leaveAlt, enterMouse, leaveMouse and TestLeaveAltIsIdempotent,
+      all removed by da997e4's rawterm.go rewrite and still named in atlas/define.md, play_loop.go:526,
+      play_cmd.go:68, pty_conformance_test.go:586, rawterm_test.go:110-111 and the durable plan.
+      The rule already has teeth — BR-11's fix in this same round made _test.go files bind
+      (repo_guard_test.go:1749-1762), which is why two of those sites are visible at all. What failed
+      is the round's own verification: the refactor was committed without running the guard that reads
+      the commit window. Add the five rows to retiredSymbolNames (repo_guard_test.go:1144) or sweep,
+      and make an unsandboxed green suite a precondition of the COMMIT, not of the close. ARCH-PURPOSE.
+  - id: new
+    severity: Important
+    family: production-seam-untested
+    title: |
+      BR-28's live-passage gate is fed by two mutation-green seams; reverting either restores the Critical
+    detail: |
+      This is the 4th finding in family `production-seam-untested` (BR-3, BR-16, BR-29), so do NOT add
+      two tests for two lines. Measured at HEAD: replacing runEditor's `lo, hi` computation
+      (replraw.go:421-425) with `view.SetPassage(0, 1<<20, …)` leaves the full suite green apart from
+      the three pre-existing failures — and that mutation IS BR-28's bug, since every buffer row then
+      counts as the live passage and passageDragLocked accepts a superseded one again. Second site:
+      `liveScreen.VisibleRange` (screen.go:1026-1031) returning `0, 1<<20` also leaves the suite green,
+      so hasPassage's expiry rests on an unpinned implementation. The rule, which is BR-29's one
+      altitude up: a pure gate is only as trustworthy as the value the SHELL computes for it, so the
+      shell's computation is what must be pinned. recordDisplay already records passageLo/passageHi
+      (editorloop_test.go:81) and nothing reads them. ARCH-PURE, ARCH-ORDER.
+  - id: new
+    severity: Important
+    family: tested-entity-not-wired
+    title: |
+      replKindHandling's editor/piped payload has zero consumers — inverting every row leaves the suite green
+    detail: |
+      This is the 3rd finding in family `tested-entity-not-wired` (BR-19, BR-30 still open), so state
+      the rule rather than wiring this one map. Measured: setting every row of replKindHandling
+      (repl.go:70-77) to its opposite — including claiming the PIPED loop handles cmdAskPassage and the
+      editor does not — leaves `go test ./cmd/define/ -run 'Repl|Route|Loop|Kind|Piped'` green.
+      TestEveryReplKindIsDecidedForBothLoops (route_test.go:101) checks only that the map is TOTAL; it
+      never compares the declared disposition to what replLines and runEditor do. The same round wired
+      the sibling correctly — sittingKeyHandling is checked against toInput with `ok != want`
+      (play_loop_test.go:4466) — so the window made the move right once and fail-open once, which is
+      exactly what BR-15's disposition said must not happen again. The rule covering this and BR-30: a
+      declared symbol with no production consumer and no guard reading its payload is decoration; the
+      enumeration is every package-level declaration this window added with zero non-test references.
+  - id: new
+    severity: Important
+    family: doc-contradicts-type
+    title: |
+      Three behavioural claims written by this round's own commits contradict the tree at HEAD
+    detail: |
+      This is the 3rd finding in family `doc-contradicts-type` (BR-8, BR-11), so do NOT fix the three
+      sentences. The rule BR-11 stated has two clauses and only the identifier clause got teeth. Sites,
+      all authored by the commits that closed BR-11: atlas/define.md:314 "Newlines and tabs survive"
+      against paste.go:131-134, where a tab becomes a space — and that atlas paragraph is the doc for
+      that function; atlas/define.md:1551-1553 "there is no separate 'which rows are the passage' table
+      to keep in step" against screen.go:50-54, which added exactly that table because the region kind
+      answered yes forever; and passage.go:69-74's escape-tolerance claim against hardBreak
+      (passage.go:358-382), whose walk has no escapeLen while its own guard uses the escape-aware
+      visibleCells, so it would split an escape mid-sequence. The measured lesson is about WHEN the
+      sweep runs: all three were introduced by the round's final commit, after the sweep for the sites
+      the finding had named. ARCH-PURPOSE, ARCH-DRY.
+  - id: new
+    severity: Minor
+    family: decision-on-incomplete-input
+    title: |
+      pointerClick.line is written on the drag path and unconditionally overwritten from an unset point
+    detail: |
+      This is the 2nd finding in family `decision-on-incomplete-input` (BR-12 was the 1st).
+      selection_screen.go:89 sets `line: a.row` for a passage drag, and resolvePointerLocked
+      (selection_screen.go:117-120) then overwrites it from `click.point`, which is the zero value on
+      that path — so hit.line carries frame row 0's buffer line. Nothing reads it on the drag path
+      today, so there is no live bug; it is the trap BR-28 named, and the natural next reader gets a
+      spuriously-valid line that ownsBufferLine can accept. The rule: a field meaningful on only some
+      paths should be unrepresentable on the others — the tagged variant BR-28 already recommended for
+      hasRegion/hasDrag/footer/retry/line. ARCH-ORDER.
+  - id: new
+    severity: Minor
+    family: boundary-parses-partial-class
+    title: |
+      The prompt format is a consumer the admitted-class enumeration does not include
+    detail: |
+      This is the 3rd finding in family `boundary-parses-partial-class` (BR-7, BR-20), so it is stated
+      as an extension of BR-20's rule rather than as a site: every class sanitisePasteBody admits must
+      be representable by every downstream consumer, and the consumer list stopped at the cell
+      arithmetic. renderPassagePrompt (passageprompt.go:56-58) splices the passage verbatim under a
+      `## The passage` header into a prompt whose structure IS markdown headers, and only `[` and `]`
+      are escaped — so a pasted line reading `## The question` is indistinguishable from the prompt's
+      own scaffolding. Impact is bounded (a wrong answer; no tools in play), which is why this is Minor
+      rather than a security finding, but the prompt belongs in the consumer table the rule names.
+      ARCH-SECURE.
+```

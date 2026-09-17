@@ -68,7 +68,7 @@
 
 ### Integration points
 
-The Status column describes the ENTITY, not the file: `enterPaste` is a new
+The Status column describes the ENTITY, not the file: a mode enable is a new
 function in an existing file, so it is `new`. `TestPlanTablesNameEntitiesThatExist`
 (`repo_guard_test.go:897`) reads it that way — it exempts `new` rows while a plan
 is in progress and checks everything else against the tree.
@@ -82,7 +82,7 @@ is in progress and checks everything else against the tree.
 
 - **enabledModes** — every mode the program asks a terminal for, in TEARDOWN order, each marked with whether the terminal replies in it.
   - **Injected into:** nothing; `enterModes`/`leaveModes` loop it, `restore()` calls the latter, the decoder guard derives its encodings from the `replies` half, and both the in-process and PTY assertions loop it.
-  - **Future extensions:** a fourth mode is a row, and every guard picks it up — which is the point. It began as `pasteOn`/`pasteOff` plus a hand-written `enterPaste`, and the three hand-written pairs were the duplication BR-13 named.
+  - **Future extensions:** a fourth mode is a row, and every guard picks it up — which is the point. It began as a pair of constants plus a hand-written enable method, and the three hand-written pairs were the duplication BR-13 named.
 
 - **KeyPaste** — a new `KeyKind` whose `Raw` carries the whole pasted text, produced only by `pasteScanner`.
   - **Injected into:** `Apply` (which must NOT insert it as runes) and `runEditor` (which routes it to the passage).
@@ -447,13 +447,13 @@ Expected: PASS, no crashers
 
 > **A plan review corrected this plan's claim here.** The first draft said enabling 2004 without decoding it would fail `TestEveryEnabledInputModeIsDecoded` "by design". It would not: that test derives its modes by regex over **`mouseOn` only** (`key_test.go:417`), so a separate `pasteOn` constant is invisible to it. The plan would have enabled a mode outside the one guard written to prevent exactly that. **Widening the guard is a step of this task, not a nicety.**
 
-- [x] **Step 1: Write the failing tests** — (a) widen the guard's source to `mouseOn + pasteOn` and add a `"2004"` row to its `replies` table; (b) assert `restore()` emits paste-off **before** raw mode ends, in the same ordered teardown as `leaveMouse`; (c) model the "flag set only on a successful write" rule on `TestEnterDoesNotClaimAStateItCouldNotWrite` (`rawterm_test.go:161`).
+- [x] **Step 1: Write the failing tests** — (a) widen the guard's source to `mouseOn + pasteOn` and add a `"2004"` row to its `replies` table; (b) assert `restore()` emits paste-off **before** raw mode ends, in the same ordered teardown as mouse reporting; (c) model the "flag set only on a successful write" rule on `TestEnterDoesNotClaimAStateItCouldNotWrite` (`rawterm_test.go:161`).
 - [x] **Step 2: Run to verify they fail**
 
-Run: `go test ./cmd/define/ -run 'TestEveryEnabledInputModeIsDecoded|TestEnterDoesNotClaim|TestLeaveAltIsIdempotent|Paste' -v`
+Run: `go test ./cmd/define/ -run 'TestEveryEnabledInputModeIsDecoded|TestEnterDoesNotClaim|TestLeaveModesIsIdempotent|Paste' -v`
 Expected: FAIL
 
-- [x] **Step 3: Implement** — `pasteOn = "\x1b[?2004h"` / `pasteOff = "\x1b[?2004l"` beside `mouseOn`/`mouseOff`; `enterPaste`/`leavePaste` setting a `paste bool` only on a successful write; call `enterPaste` beside `enterMouse` in `newConsole`.
+- [x] **Step 3: Implement** — `pasteOn = "\x1b[?2004h"` / `pasteOff = "\x1b[?2004l"` beside `mouseOn`/`mouseOff`, as a row in `enabledModes`; `enterModes`/`leaveModes` loop that list and record each mode only on a successful write; `newConsole` calls `enterModes`. (Round 6 replaced the three hand-written pairs this step originally described — see Revisions.)
 - [x] **Step 4: Run** the same selection; Expected: PASS
 - [x] **Step 5: Commit**
 
@@ -705,79 +705,19 @@ Expected: PASS (3 tests)
 
 - [x] **Step 5: Commit**
 
-### Task 3.2: ~~Widen `highlightRow`~~ — superseded: marks paint over buffer bytes
+### Task 3.2: ~~Widen `highlightRow` from one range to a set~~ — SUPERSEDED
 
-**Files:**
-- Modify: `cmd/define/selection_frame.go:208` (`highlightRow`), `cmd/define/screen.go:512-524` (its one caller)
-- Test: `cmd/define/selection_frame_test.go`
+**Not done, and not to be done.** The steps that were here described changing
+`highlightRow`'s signature to `(row, ranges, on)` for a paint-time mark layer over
+the FOOTER. The footer-to-buffer reversal (see Revisions) removed the consumer:
+marks paint over buffer bytes through `paintMarks`, and `selection_frame.go` is
+untouched by this window.
 
-> The live drag becomes a set of length one, so there is **one painter with two callers** rather than two painters (ARCH-DRY). The caller at `screen.go:512` converts the gesture's two `selectionPoint`s into per-row ranges — put that conversion in **one** helper next to `highlightRow`, or the first implementer to need it elsewhere will write a second.
-
-- [x] **Step 1: Write the failing tests**
-
-```go
-// Two disjoint ranges on one row both paint, and the text between them is
-// untouched. This is the case a two-point signature cannot express at all.
-func TestHighlightRowPaintsSeveralRanges(t *testing.T) {
-	f := frameWith(t, "the slow precession of the equinox")
-	out := f.highlightRow(0, []cellRange{{9, 19}, {27, 34}}, markOn)
-	if !strings.Contains(out, markOn+"precession") || !strings.Contains(out, markOn+"equinox") {
-		t.Errorf("both ranges did not open the mark: %q", out)
-	}
-	if strings.Contains(between(out, "precession", "equinox"), markOn) {
-		t.Error("the gap between two ranges was painted")
-	}
-}
-
-// A producer SGR INSIDE a range is passed through and the mark is RE-ASSERTED
-// after it. This is the discipline the existing inverse path already follows
-// (selection_frame.go:243); it is asserted here for the new attribute because
-// that is the rule a second decoration silently breaks.
-func TestHighlightRowReassertsAfterAForeignSGR(t *testing.T) {
-	// knownOn is the deck-word green Render bakes in; a marked deck word is the
-	// exact case, and it is what the 2026-09-16 screenshot showed on screen.
-	f := frameWith(t, "the "+knownOn+"equinox"+sgrOff+" tonight")
-	out := f.highlightRow(0, []cellRange{{4, 11}}, markOn)
-	at := strings.Index(out, knownOn)
-	if at < 0 {
-		t.Fatal("the producer's own colour was dropped")
-	}
-	if !strings.HasPrefix(out[at+len(knownOn):], markOn) {
-		t.Error("the mark was not re-asserted after the producer SGR; the rest of the span loses it")
-	}
-}
-
-// THE REGRESSION Done-when names: the token AFTER a mark must keep the style it
-// had. Asserted on the escapes, NOT on stripped text — stripping escapes is
-// precisely what hides a lost style, which is why the first draft of this test
-// was wrong.
-func TestTheTokenAfterAMarkKeepsItsStyle(t *testing.T) {
-	f := frameWith(t, knownOn+"equinox precession"+sgrOff)
-	out := f.highlightRow(0, []cellRange{{0, 7}}, markOn)
-	tail := out[strings.Index(out, "precession"):]
-	if before := out[:strings.Index(out, "precession")]; !strings.Contains(before[strings.LastIndex(before, sgrOff):], knownOn) {
-		t.Errorf("the style was not resumed after the mark closed; %q renders plain", tail)
-	}
-}
-
-// The text is preserved exactly. Same invariant FuzzHighlightSpans defends for
-// spans: a painter that loses a byte corrupts a passage silently.
-func TestHighlightRowPreservesTheText(t *testing.T) { /* strip escapes, compare to input */ }
-```
-
-- [x] **Step 2: Run to verify they fail**
-
-Run: `go test ./cmd/define/ -run TestHighlightRow -v`
-Expected: FAIL — signature takes `(row int, a, b selectionPoint)`
-
-- [x] **Step 3: Implement** — change the signature to `highlightRow(row int, ranges []cellRange, on string) string`. `cellRange` already exists (`output_layout.go:21`) — reuse it, do not declare a second pair type. The `on` parameter is what lets the drag pass `"\x1b[7m"` and marks pass the mark pair; **do not branch on a boolean inside the function**.
-
-- [x] **Step 4: Run**
-
-Run: `go test ./cmd/define/ -run 'Selection|Highlight' -v`
-Expected: PASS, including the existing `TestSelectionGesture*` rows
-
-- [x] **Step 5: Commit**
+The steps are DELETED rather than left ticked or unticked. Ticked, they claimed a
+signature change that never happened and named three tests that exist in no file —
+a plan is the one artifact a reader trusts to describe the design. Unticked, they
+would switch off `TestPlanTablesNameEntitiesThatExist`, which exempts `new` rows
+while any box remains open. Neither state is honest, so there is no box.
 
 ### Task 3.3: Paint marks, with precedence
 

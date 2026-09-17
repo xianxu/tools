@@ -163,6 +163,23 @@ func (d *recordDisplay) VisibleRange() (int, int) {
 	return d.visibleLo, d.visibleHi
 }
 
+// passageRange is what the loop last told the screen the live passage is, which
+// is the seam BR-28's gate is fed by — a test that never reads it lets the gate
+// be handed zeros and still pass.
+func (d *recordDisplay) passageRange() (int, int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.passageLo, d.passageHi
+}
+
+// seeOnly narrows what VisibleRange reports, so a test can put the passage
+// off-screen without scrolling a real terminal.
+func (d *recordDisplay) seeOnly(lo, hi int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.visibleLo, d.visibleHi = lo, hi
+}
+
 func (d *recordDisplay) markedCells() map[int][]cellRange {
 	d.mu.Lock()
 	defer d.mu.Unlock()

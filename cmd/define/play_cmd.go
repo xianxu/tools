@@ -65,7 +65,7 @@ func runPlayCommand(c commandCtx, args []string) int {
 //     precondition a no-op restorer would silently break;
 //   - a second `watchResize` goroutine, so SIGWINCH would be delivered to two
 //     channels and the suspended screen would act on it;
-//   - `sess.enterMouse()`, already reported.
+//   - the session's mode enables, already reported.
 //
 // So the console is assembled here instead: a pinned screen over the same tty,
 // the caller's resize channel borrowed, and a finish that hands the summary UP

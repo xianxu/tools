@@ -363,6 +363,16 @@ func hardBreak(line string, width int) []string {
 	var b strings.Builder
 	col := 0
 	for i := 0; i < len(line); {
+		// ESCAPE-AWARE, because the guard above is: visibleCells skips escapes, so
+		// a walk that did not would count their bytes as cells and could split one
+		// mid-sequence. Passage text is sanitised today, but newPassage's own doc
+		// says it must not DEPEND on that — and a helper whose guard and body
+		// disagree about what a cell is will be wrong the first time they meet.
+		if skip := escapeLen(line[i:]); skip > 0 {
+			b.WriteString(line[i : i+skip])
+			i += skip
+			continue
+		}
 		size, w := nextDisplayUnit(line[i:])
 		if size == 0 {
 			break
