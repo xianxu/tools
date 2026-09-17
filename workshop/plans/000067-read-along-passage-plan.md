@@ -107,19 +107,22 @@ is in progress and checks everything else against the tree.
 
 ---
 
+> **These task bodies are PRE-IMPLEMENTATION intent.** Several were superseded
+> while the work ran — most of all by the footer-to-buffer reversal (see
+> Revisions) — and the illustrative Go blocks have been removed because every test
+> name in them was a planned name, not a written one: 23 of them ended up in no
+> file. The record of what SHIPPED, with the real test beside each obligation, is
+> the issue's `## Done when` audit, which `TestPlanCitesTestsThatExist` reads.
+>
+> What is still load-bearing here is the *reasoning*: the Read-firsts, the design
+> arguments, and the corrections recorded where they were made.
+
 ## Chunk 1: M1 — bracketed paste
 
 **Why first:** it is the only genuinely missing mechanism, it is testable with no UI, and it fixes a standing bug on its own — today a pasted newline submits the line mid-paste (`key.go:83` → `editor.go:96`).
 
 **Read first:** `key.go:66-107` (the `(Key, int)` protocol, where `used == 0` means "need more bytes"), `key.go:330-352` (`decodeX10Mouse` — the precedent for a sequence consumed whole or not at all), and **`selection_input.go:169-178`, which is the contract the scanner must satisfy:**
 
-```go
-buf = append(buf, chunk[:n]...)
-for len(buf) > 0 {
-    k, used := decodeKey(buf)
-    if used == 0 { break }      // <-- buf is NOT advanced
-    buf = buf[used:]
-```
 
 **The caller RE-PRESENTS the whole buffer after a short read.** It advances only when bytes are consumed. A decoder that also accumulates internally therefore sees every byte twice. A first draft of this plan got this wrong and a plan review caught it by building the code and running it: split at a read boundary it produced `"hello\x1b[200~hello world"`, and a 900-byte paste arriving in `readInput`'s real 256-byte chunks (`selection_input.go:161`) was **refused** because the internal buffer grew quadratically past the cap. With a 256-byte chunk and a 1000-rune cap, multi-read is the *normal* path, not the edge.
 
@@ -132,96 +135,6 @@ So: **the scanner accumulates nothing.** It is a function of the buffer it is sh
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-package main
-
-import (
-	"strings"
-	"testing"
-)
-
-func TestPasteScannerTakesAWholePaste(t *testing.T) {
-	var s pasteScanner
-	k, used := s.scan([]byte("\x1b[200~hello\nworld\x1b[201~rest"))
-	if k.Kind != KeyPaste || string(k.Raw) != "hello\nworld" {
-		t.Fatalf("scan = %v %q, want KeyPaste %q", k.Kind, k.Raw, "hello\nworld")
-	}
-	if used != len("\x1b[200~hello\nworld\x1b[201~") {
-		t.Errorf("used = %d, want the paste and both markers", used)
-	}
-}
-
-// THE REGRESSION THE FIRST DRAFT SHIPPED. readInput re-presents the whole buffer
-// after a short read (selection_input.go:174), so a scanner that accumulated
-// internally saw every byte twice. Driven the way the caller actually drives it:
-// same scanner, growing buffer, nothing consumed in between.
-func TestPasteScannerSurvivesAReadBoundary(t *testing.T) {
-	var s pasteScanner
-	buf := []byte("\x1b[200~hello")
-	if _, used := s.scan(buf); used != 0 {
-		t.Fatalf("an unterminated paste consumed %d bytes; it must consume none", used)
-	}
-	buf = append(buf, []byte(" world\x1b[201~")...) // the caller appends; it does NOT advance
-	k, used := s.scan(buf)
-	if string(k.Raw) != "hello world" {
-		t.Errorf("Raw = %q, want %q — the scanner double-counted the re-presented bytes", k.Raw, "hello world")
-	}
-	if used != len(buf) {
-		t.Errorf("used = %d, want %d", used, len(buf))
-	}
-}
-
-// A realistic paste in readInput's real 256-byte chunks. The first draft refused
-// this at 900 bytes, well inside the cap.
-func TestPasteScannerTakesAPasteDeliveredInChunks(t *testing.T) {
-	body := strings.Repeat("a", 900)
-	whole := []byte("\x1b[200~" + body + "\x1b[201~")
-	var s pasteScanner
-	var buf []byte
-	for i := 0; i < len(whole); i += 256 {
-		buf = append(buf, whole[i:min(i+256, len(whole))]...)
-		k, used := s.scan(buf)
-		if used == 0 {
-			continue
-		}
-		if string(k.Raw) != body {
-			t.Fatalf("Raw len = %d, want %d", len(k.Raw), len(body))
-		}
-		return
-	}
-	t.Fatal("a 900-byte paste never completed")
-}
-
-// The cap is in RUNES, not bytes: a CJK paragraph is a paragraph. Counting bytes
-// would refuse it at roughly a third of the length (this tool has /lang and
-// bilingual rendering; the refusal would land on exactly the decks that need it).
-func TestPasteScannerCapsInRunesNotBytes(t *testing.T) {
-	body := strings.Repeat("漢", maxPasteRunes-1) // 3 bytes each: over any byte cap
-	k, used := (&pasteScanner{}).scan([]byte("\x1b[200~" + body + "\x1b[201~"))
-	if k.Kind != KeyPaste {
-		t.Fatalf("a %d-rune CJK paste was refused; the cap is counting bytes", maxPasteRunes-1)
-	}
-	_ = used
-}
-
-// An oversize paste is CONSUMED, not left to arrive as keystrokes — and the
-// consuming is bounded, so readInput's buffer cannot grow with the input.
-func TestPasteScannerDiscardsAnOversizePasteBoundedly(t *testing.T) {
-	var s pasteScanner
-	huge := []byte("\x1b[200~" + strings.Repeat("x", maxPasteRunes*3))
-	k, used := s.scan(huge)
-	if used == 0 {
-		t.Fatal("an oversize paste consumed nothing; the caller's buffer grows without bound")
-	}
-	if k.Kind != KeyUnknown {
-		t.Errorf("kind = %v, want KeyUnknown while draining — it must be inert", k.Kind)
-	}
-	k, used = s.scan([]byte("more\x1b[201~"))
-	if k.Kind != KeyPasteRefused || used == 0 {
-		t.Errorf("the closer did not end the drain: %v %d", k.Kind, used)
-	}
-}
-```
 
 - [x] **Step 2: Run to verify they fail**
 
@@ -230,76 +143,6 @@ Expected: FAIL — `undefined: pasteScanner`
 
 - [x] **Step 3: Implement**
 
-```go
-package main
-
-import (
-	"bytes"
-	"unicode/utf8"
-)
-
-// maxPasteRunes bounds one passage: a sentence to a paragraph (#67). RUNES, so a
-// CJK paragraph is a paragraph.
-//
-// Refused rather than TRUNCATED — a half-taken passage would produce an answer
-// about text the reader cannot see — and the refusal CONSUMES, so the rest of a
-// pasted novel does not arrive as keystrokes.
-const maxPasteRunes = 1000
-
-const (
-	pasteStart = "\x1b[200~"
-	pasteEnd   = "\x1b[201~"
-)
-
-// pasteScanner decodes a bracketed paste.
-//
-// IT ACCUMULATES NOTHING. readInput re-presents its whole buffer after a short
-// read and advances only on consumption (selection_input.go:169-178), so an
-// internal buffer would double-count. The only state is `draining`, which is the
-// one fact the buffer cannot carry: that an oversize paste's bytes are being
-// thrown away until its closer arrives.
-type pasteScanner struct{ draining bool }
-
-// scan reports what the head of buf means, in decodeKey's own (Key, int)
-// protocol: used == 0 means "a prefix, read more", never "an empty paste".
-func (s *pasteScanner) scan(buf []byte) (Key, int) {
-	body := buf
-	opened := 0
-	if !s.draining {
-		if !bytes.HasPrefix(buf, []byte(pasteStart)) {
-			return Key{}, 0
-		}
-		opened = len(pasteStart)
-		body = buf[opened:]
-	}
-	if end := bytes.Index(body, []byte(pasteEnd)); end >= 0 {
-		used := opened + end + len(pasteEnd)
-		if s.draining {
-			s.draining = false
-			return Key{Kind: KeyPasteRefused}, used
-		}
-		text := body[:end]
-		if utf8.RuneCount(text) > maxPasteRunes {
-			return Key{Kind: KeyPasteRefused}, used
-		}
-		return Key{Kind: KeyPaste, Raw: append([]byte(nil), text...)}, used
-	}
-	// No closer yet. Under the cap, wait — the caller will re-present with more.
-	if !s.draining && utf8.RuneCount(body) <= maxPasteRunes {
-		return Key{}, 0
-	}
-	// Over the cap: start discarding, and CONSUME so the caller's buffer stops
-	// growing. Hold back the last len(pasteEnd)-1 bytes in case the closer
-	// straddles this read — the same whole-or-nothing care decodeX10Mouse takes.
-	s.draining = true
-	keep := len(pasteEnd) - 1
-	used := opened + len(body) - keep
-	if used <= 0 {
-		return Key{}, 0
-	}
-	return Key{Kind: KeyUnknown}, used
-}
-```
 
 Add `KeyPaste` and `KeyPasteRefused` to the `KeyKind` block (`key.go:9-51`).
 
@@ -322,24 +165,6 @@ Expected: PASS (5 tests)
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-// A paste is ONE key carrying text, not a rune storm. readInput delivers into a
-// 256-key channel that DROPS THE NEWEST when full (selection_input.go:157,204),
-// so a 1000-rune paste arriving per-rune would lose its tail behind a single
-// "input full" notice. The arrival shape is load-bearing.
-func TestDecodeKeyTakesAPasteAsOneKey(t *testing.T) { /* as Task 1.1, through decodeKey */ }
-
-// The standing bug this milestone fixes, asserted at its cause.
-func TestAPastedNewlineIsNotEnter(t *testing.T) {
-	k, _ := decodeKey([]byte("\x1b[200~a\nb\x1b[201~"))
-	if k.Kind == KeyEnter {
-		t.Fatal("a pasted newline decoded as Enter; the paste would submit mid-text")
-	}
-}
-
-// Paste state must not leak between fuzz inputs.
-func TestAFreshDecoderIsNotMidPaste(t *testing.T) { /* … */ }
-```
 
 - [x] **Step 2: Run to verify they fail**
 
@@ -350,35 +175,9 @@ Expected: FAIL — `undefined: KeyPaste`
 
 **The scanner takes EVERY byte while draining, and only `0x1b` otherwise.** Hooking it on `0x1b` alone makes the drain unreachable: `draining` is entered while the buffer head is ordinary text mid-paste, so `decodeKey` would never consult it again and the rest of an oversize paste would arrive as `KeyRune` — the exact failure the drain exists to prevent. Every test above starts at an ESC, which is why none of them catches it.
 
-```go
-	if d.paste.draining || buf[0] == 0x1b {
-		if k, used := d.paste.scan(buf); used > 0 {
-			return k, used
-		} else if d.paste.draining || bytes.HasPrefix(buf, []byte(pasteStart)) {
-			return Key{}, 0 // a prefix of a paste: read more, consume nothing
-		}
-	}
-```
 
 Add the test that would have caught it:
 
-```go
-// The drain must survive a read boundary that lands on ORDINARY TEXT. This is
-// the case the ESC-only hook misses: after the first over-cap scan, the head of
-// the buffer is body bytes, and a decoder that only consults the scanner on 0x1b
-// delivers the rest of a novel as keystrokes.
-func TestAnOversizePasteKeepsDrainingAcrossReads(t *testing.T) {
-	d := newKeyDecoder()
-	first := []byte("\x1b[200~" + strings.Repeat("x", maxPasteRunes+10))
-	if _, used := d.decode(first); used == 0 {
-		t.Fatal("the over-cap scan consumed nothing")
-	}
-	k, used := d.decode([]byte("still body text, no closer yet"))
-	if used == 0 || k.Kind == KeyRune {
-		t.Fatalf("draining did not continue on ordinary text: kind=%v used=%d", k.Kind, used)
-	}
-}
-```
 
 - [x] **Step 4: Run — naming the tests explicitly, because a pattern that looks right can select nothing**
 
@@ -396,35 +195,12 @@ The first draft's ARCH-SECURE note named the prompt and store boundaries and sto
 
 1. **A paste that never closes.** Under the cap, `scan` returns 0 forever, `readInput` never advances `buf` (`selection_input.go:174`), and **the editor goes deaf** — including to keys typed afterwards, which join the same buffer and are re-scanned. Bound it: the wait is bounded by the cap, so a never-closed paste blocks input until `maxPasteRunes` accumulates and the drain takes over. That is a real, bounded degradation; **state it as a known limit with a test**, rather than leaving it to be discovered.
 2. **An embedded `ESC[201~` in the payload** ends the paste early and delivers the remainder as live keys — including `\r`, which submits. Terminals are expected to strip it; the clipboard is the user's own, so the threat model is low. **Decide it explicitly** (the closer wins; the remainder is ordinary input) rather than inheriting it.
-3. **Escape sequences in the body reach the footer, which passes producer SGR through by construction** (`selection_frame.go:236-245`). A pasted `\x1b[31m` would recolour the passage and can defeat the mark painting, because the mark re-asserts over *known* producer SGR, not over arbitrary injected state.
+3. **Escape sequences in the body reach the SCREEN, which passes producer SGR through by construction** (`selection_frame.go:236-245`). A pasted `\x1b[31m` would recolour the text and can defeat any decoration layered over it, because a mark re-asserts over *known* producer SGR, not over arbitrary injected state.
 
 **So `newPassage` is the parse boundary: untrusted bytes in, a typed `passage` out.** It strips escape sequences (`escapeLen`, `render.go:582` — do not write a second escape grammar) and non-newline control runes, exactly as `oneLine` (`store/item.go:200`) does at the store boundary. Invalid state becomes unrepresentable rather than checked downstream.
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-func TestAPastedEscapeSequenceNeverReachesThePassage(t *testing.T) {
-	p := newPassage("the \x1b[31mslow\x1b[0m precession")
-	if strings.ContainsRune(p.raw(), 0x1b) {
-		t.Errorf("an escape survived the boundary: %q", p.raw())
-	}
-	if !strings.Contains(p.raw(), "the slow precession") {
-		t.Errorf("stripping removed visible text: %q", p.raw())
-	}
-}
-
-func TestAnUnterminatedPasteRecoversAtTheCap(t *testing.T) { /* known limit, pinned */ }
-func TestAnEmbeddedCloserEndsThePaste(t *testing.T)        { /* decided, not inherited */ }
-
-// ONE scanner across MANY calls — the stateful half the plan's
-// fresh-decoder-per-iteration rule leaves unfuzzed. The invariant: the scanner
-// always makes progress or is waiting on a genuine prefix, and never emits an
-// escape byte as passage text.
-func FuzzPasteScannerAcrossCalls(f *testing.F) {
-	f.Add([]byte("\x1b[200~hi\x1b[201~"), 3)
-	f.Fuzz(func(t *testing.T, in []byte, split int) { /* drive one scanner in chunks */ })
-}
-```
 
 - [x] **Step 2: Run to verify they fail**
 
@@ -490,53 +266,6 @@ Expected: FAIL
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-// The passage tokenises through wordRuns, the ONE tokeniser (highlight.go:33).
-// Asserted by cases only a shared tokeniser gets right: an apostrophe and a
-// hyphen are INSIDE a word (highlight.go:25), so these are one token each.
-func TestPassageTokenisesLikeTheRestOfTheProgram(t *testing.T) {
-	p := newPassage("don't hot-dog me, O'Brien")
-	var got []string
-	for _, r := range p.runs(0) {
-		got = append(got, p.text(r))
-	}
-	want := []string{"don't", "hot-dog", "me", "O'Brien"}
-	if !slices.Equal(got, want) {
-		t.Errorf("runs = %q, want %q — this is a second tokeniser, not wordRuns", got, want)
-	}
-}
-
-// A click carries a display COLUMN; words are byte ranges. This is the bridge the
-// survey found missing. Columns are ZERO-BASED, which the space row pins.
-func TestWordAtCellSnapsToTheWordUnderTheColumn(t *testing.T) {
-	p := newPassage("the 漢字 of precession") // 漢 occupies cols 4-5, 字 cols 6-7
-	for _, tc := range []struct {
-		name string
-		col  int
-		want string
-	}{
-		{"inside the first word", 1, "the"},
-		{"first cell of a wide glyph", 4, "漢字"},
-		{"second cell of the same wide glyph", 5, "漢字"},
-		{"first cell of the next wide glyph", 6, "漢字"},
-		{"a later word", 12, "precession"},
-	} {
-		got, ok := wordAtCell(p, 0, tc.col)
-		if !ok || p.text(got) != tc.want {
-			t.Errorf("%s: wordAtCell(col %d) = %q, want %q", tc.name, tc.col, p.text(got), tc.want)
-		}
-	}
-	if _, ok := wordAtCell(p, 0, 3); ok {
-		t.Error("a click on a space resolved to a word; whitespace is not a word")
-	}
-}
-
-// A click on a CONTINUATION row carries a column in the row's coordinate space,
-// not the entry's. FooterRowAt hands back the offset precisely so a caller can
-// correct for that (screen.go:234-239); a passage wraps on any normal terminal,
-// so this is the common case, not an edge.
-func TestWordAtCellCorrectsForAWrappedRow(t *testing.T) { /* offset > 0 resolves against col+offset*cols */ }
-```
 
 - [x] **Step 2: Run to verify they fail**
 
@@ -574,22 +303,13 @@ Expected: FAIL — `undefined: newPassage`
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-// The passage renders under the NORMAL rules — a deck word inside it is coloured,
-// which is what makes "marks clear and the words turn green" work later.
-func TestThePassageIsWrittenWithDeckColour(t *testing.T) { /* … */ }
-
-// THE REGRESSION the first draft would have shipped: the passage must survive a
-// submit. Paste, then look a word up, then assert the passage is STILL drawn.
-func TestThePassageIsWrittenToTheBufferNotTheFooter(t *testing.T) { /* … */ }
-```
 
 - [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'ThePassageRenders|ThePassageSurvives' -v`
 Expected: FAIL
 
-- [x] **Step 3: Implement** — passage lines become footer entries ahead of `menuLines`. Colour them with `deckVocabulary(d)` (**`vocab.go:266`**, not `vocabularyFor`) — `vocab.go:255` says why: *"the same set WITHOUT the colour condition"*, because a word is clickable whether or not it is coloured, and `vocabularyFor` (`vocab.go:248`) returns nil when `!opt.color`.
+- [x] **Step 3: Implement** — the passage is written to the BUFFER with one Region per word (superseded: this step said footer entries). Colour them with `deckVocabulary(d)` (**`vocab.go:266`**, not `vocabularyFor`) — `vocab.go:255` says why: *"the same set WITHOUT the colour condition"*, because a word is clickable whether or not it is coloured, and `vocabularyFor` (`vocab.go:248`) returns nil when `!opt.color`.
 - [x] **Step 4: Run** `go test ./cmd/define/ -run 'EditorLoop|Passage' -v`; Expected: PASS
 - [x] **Step 5: Commit**
 
@@ -597,7 +317,7 @@ Expected: FAIL
 
 **Files:** Modify `cmd/define/replraw.go`; test `cmd/define/editorloop_test.go`
 
-- [x] **Step 1: Write the failing tests** — on a short terminal, a passage taller than the available footer rows: the user is told, and **no click resolves to a word on a row that was not drawn**. `FooterRowAt` already refuses those rows; this pins that the passage path does not route around it.
+- [x] **Step 1: Write the failing tests** — superseded by the footer-to-buffer reversal: a passage in the buffer simply scrolls, and a click outside the live range is refused by `ownsBufferLine`.
 - [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'PassageTooTall|FooterRow' -v`
@@ -609,7 +329,7 @@ Expected: FAIL
 
 ### Task 2.4: Milestone close
 
-- [x] Atlas: a new section *The passage* — footer chrome rather than buffer text, and the append-only reason that forces it (`screen.go:74-77` already states the rule; cite it rather than re-deriving).
+- [x] Atlas: a new section *Read-along* — the passage as a RECORD in the buffer, and the reversal that got there.
 - [x] `sdlc milestone-close --issue 67 --milestone M2`
 
 ---
@@ -622,7 +342,7 @@ Expected: FAIL
 
 The first draft of this plan proposed *both* a new `RegionKind` and a third `selectionEffect` for the same job — click-to-mark — without saying which owned the gesture. A plan review caught it. Resolved as follows, and the resolution removes work rather than adding it:
 
-**No new `RegionKind`.** A `Region` exists to say *this particular span offers an action*. In a passage, **every** word offers marking, so a per-span registry carries no information. The passage is footer rows, and `FooterRowAt` (`screen.go:247`) already resolves a viewport row to `(entry, offset)` with wrapping handled; `wordAtCell` then resolves the column. That is the whole hit test.
+**No new `RegionKind`** — *and this was REVERSED.* It held while the passage was footer chrome: every word offers marking, so a per-span registry carried no information. Moving the passage into the BUFFER made the click map the only way to reach its content, so `RegionPassageWord` shipped. See Revisions.
 
 Avoiding a new kind also avoids four obligations the review enumerated, none of which buys anything here:
 
@@ -633,7 +353,7 @@ Avoiding a new kind also avoids four obligations the review enumerated, none of 
 
 It is also right visually: `markClickable` underlines regions, and underlining every word of a passage would be noise.
 
-**Click needs no new channel either.** `pointerClick` already carries `footer`, `footerEntry` and `footerOffset` (`selection.go`), filled by `resolvePointerLocked` (`selection_screen.go:91-114`). A click on a passage row already arrives with everything needed; the editor's `clicked()` (`replraw.go:422`) gains one case.
+**Click needs no new channel either** — though what it carries changed with the reversal: `pointerClick` now carries the absolute buffer `line`, because a `Region`'s own `Line` is relative to its render and cannot say which passage it belongs to.
 
 **Only the DRAG needs a new effect.** A drag currently always yields `selectionCopy` (`selection.go:72`). On passage rows it must mark instead. That is one new `selectionEffect`, keyed on whether the gesture's ANCHOR row is a passage row — decided in `pointerLocked`, where the frame is already in hand.
 
@@ -646,50 +366,6 @@ So: one new effect, no new region kind, no change to `playRegion`, no change to 
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-// Marks are a SET with a toggle, not an append-only list: clicking a marked word
-// unmarks it (#67). Ordered by POSITION rather than by insertion, because the
-// prompt renders them in place and a reader marking right-to-left must not
-// produce a differently-ordered request than one marking left-to-right.
-func TestMarkSetTogglesAndOrdersByPosition(t *testing.T) {
-	var m markSet
-	later := mark{line: 0, start: 20, end: 30}
-	earlier := mark{line: 0, start: 4, end: 9}
-	m = m.toggle(later)
-	m = m.toggle(earlier)
-	if got := m.ordered(); len(got) != 2 || got[0] != earlier || got[1] != later {
-		t.Fatalf("ordered() = %v, want position order [%v %v]", got, earlier, later)
-	}
-	m = m.toggle(earlier)
-	if got := m.ordered(); len(got) != 1 || got[0] != later {
-		t.Errorf("toggling a marked span did not remove it: %v", got)
-	}
-}
-
-// A click span and a drag span are the SAME kind of thing — a click is a
-// one-word drag (#67). If they were different types the toggle would not be able
-// to cancel a click-mark with a drag over it, and the set would grow duplicates.
-func TestAClickMarkAndADragMarkAreOneKind(t *testing.T) {
-	var m markSet
-	span := mark{line: 1, start: 0, end: 5}
-	m = m.toggle(span) // as if by click
-	m = m.toggle(span) // as if by drag over the same span
-	if len(m.ordered()) != 0 {
-		t.Error("a drag over a click-marked span did not cancel it; they are not one kind")
-	}
-}
-
-// Marks span lines. A drag from the middle of line 0 to the middle of line 1 is
-// two marks, not one — the prompt brackets them in place and a bracket cannot
-// span a line break in the passage text.
-func TestADragAcrossLinesMarksEachLine(t *testing.T) {
-	p := newPassage("the slow precession\nof the equinox")
-	got := marksForDrag(p, cell{line: 0, col: 9}, cell{line: 1, col: 6})
-	if len(got) != 2 {
-		t.Fatalf("marksForDrag across a line break = %d marks, want 2", len(got))
-	}
-}
-```
 
 - [x] **Step 2: Run to verify they fail**
 
@@ -730,25 +406,6 @@ Three rules, one test each:
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-// RULE 1 — the mark WINS over deck colour. An explicit fg/bg pair overrides what
-// it re-asserts over, so a marked deck word is white-on-blue rather than green.
-// Recorded in #67's Revisions (2026-09-16, mark precedence): the mark is the
-// salient state and it is short-lived. Note this REVERSES the issue's original
-// collision-2 wording, which asked for both treatments to compose.
-func TestAMarkedDeckWordRendersAsAMarkNotAsADeckWord(t *testing.T) { /* … */ }
-
-// RULE 2 — a LIVE gesture wins over a mark. A drag crossing a marked word shows
-// the drag, because that is what the reader is doing right now.
-func TestALiveDragOverAMarkShowsTheDrag(t *testing.T) { /* … */ }
-
-// RULE 3 — the row tint composes, and BETTER than the current selection does.
-// sourceBackground (language_style.go:110) recognises 48 but NOT 7, so a mark's
-// background sets `explicit` and paintLanguageRow correctly declines to inject
-// the row tint under it (language_row.go:26,50) — where today's inverse gets the
-// tint injected underneath.
-func TestTheRowTintIsNotInjectedUnderAMark(t *testing.T) { /* … */ }
-```
 
 - [x] **Step 2: Run to verify they fail**
 
@@ -774,30 +431,13 @@ Expected: PASS
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-// A click marks exactly the word under it — a click is a one-word drag (#67).
-func TestAClickInThePassageMarksTheWordUnderIt(t *testing.T) { /* via scriptedPointer + completedPointerClick */ }
-
-// Clicking a marked word unmarks it. The gesture is a toggle, not an append.
-func TestClickingAMarkedWordUnmarksIt(t *testing.T) { /* … */ }
-
-// A drag across the passage marks the span rather than COPYING it. This is the
-// one behaviour change to an existing gesture, and it is scoped to passage rows.
-func TestADragInThePassageMarksRatherThanCopies(t *testing.T) { /* … */ }
-
-// COLLISION 3, held to its scope. Outside the passage every click keeps the
-// meaning it has today: a headword still plays, a deck word in prose still plays
-// (RegionWord), ordinary text still does nothing, and a drag still COPIES.
-// Driven as a table so the enumeration is visible rather than sampled.
-func TestOutsideThePassageEveryClickIsUnchanged(t *testing.T) { /* headword, RegionWord, ordinary, drag-copies */ }
-```
 
 - [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'ThePassageMarks|UnmarksIt|OutsideThePassage' -v`
 Expected: FAIL
 
-- [x] **Step 3: Implement** — in `pointerLocked`, a drag whose anchor row is a passage row returns the new mark effect instead of `selectionCopy`; a click already returns a `pointerClick` carrying `footer`/`footerEntry`/`footerOffset`, and `clicked` resolves it through `FooterRowAt` + `wordAtCell`.
+- [x] **Step 3: Implement** — in `pointerLocked`, a drag whose anchor row is a passage row AND inside the live buffer range returns the mark effect instead of `selectionCopy`; a click carries the absolute buffer line and `passageSpanAt` resolves it.
 
 - [x] **Step 4: Run**
 
@@ -828,39 +468,6 @@ Expected: PASS
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-func TestRenderPassagePrompt(t *testing.T) {
-	llmtest.AssertGolden(t, "testdata", "passage-prompt", renderPassagePrompt(samplePassageAsk()))
-}
-
-// Marks are bracketed IN PLACE, which is why a word occurring twice needs no
-// occurrence index — the bracket is already at the right one.
-func TestASecondOccurrenceIsUnambiguous(t *testing.T) {
-	req := renderPassagePrompt(passageAsk{
-		passage: newPassage("precession is slow; precession is not nutation"),
-		marks:   markSetOf(mark{line: 0, start: 20, end: 30}), // the SECOND one
-	})
-	if !strings.Contains(req.Prompt, "precession is slow; [sel]precession[/sel] is not") {
-		t.Errorf("the mark did not land on the second occurrence:\n%s", req.Prompt)
-	}
-}
-
-// ARCH-SECURE: the passage is untrusted text on its way into a prompt. A literal
-// bracket must not be able to forge a [sel] or a [lang=…] marker.
-func TestALiteralBracketInThePassageCannotForgeAMarker(t *testing.T) {
-	req := renderPassagePrompt(passageAsk{passage: newPassage("see [sel]fake[/sel] and [lang=es]x[/lang]")})
-	if strings.Contains(req.Prompt, "[sel]fake") || strings.Contains(req.Prompt, "[lang=es]") {
-		t.Errorf("a pasted marker survived into the prompt:\n%s", req.Prompt)
-	}
-	if !strings.Contains(req.Prompt, escLeft+"sel"+escRight) {
-		t.Error("the bracket was not escaped to the form askSystem already names")
-	}
-}
-
-// Zero marks still renders the passage — the blank-Enter-with-no-marks case is a
-// LOCAL nudge (Task 4.2), but a typed question with no marks is a real ask.
-func TestAPassageWithNoMarksStillRenders(t *testing.T) { /* … */ }
-```
 
 - [x] **Step 2: Run to verify they fail**
 
@@ -920,43 +527,6 @@ Expected: PASS
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-// ONE request for N marks. The relations among the marked words are most of what
-// a reader is missing, and per-span glosses discard exactly that (#67).
-func TestMarkingThreeWordsSendsOneRequest(t *testing.T) { /* fake.Requests() length 1 */ }
-
-// The marks arrive POSITIONED inside the passage, read off the wire rather than
-// trusted from the code that built it — the askRig discipline.
-func TestTheRequestCarriesThePassageWithMarksInPlace(t *testing.T) { /* … */ }
-
-// Marks CLEAR after the ask (#67): the transient state converts into deck
-// membership, and a bare Enter afterwards finds nothing to re-ask.
-func TestMarksClearAfterTheAsk(t *testing.T) { /* … */ }
-
-// ONE PREDICATE over runAsk's five outcomes, not five cases (ARCH-PURPOSE):
-// marks clear and words are admitted IFF AN ANSWER REACHED THE READER.
-// Collapsing a failure into success would silently empty the marks on a Ctrl-C,
-// or turn words green when no model was ever configured.
-func TestOnlyADeliveredAnswerClearsMarksAndAdmitsWords(t *testing.T) {
-	for _, tc := range []struct {
-		name            string
-		outcome         func(*llmtest.Fake)
-		answerDelivered bool
-	}{
-		{"no model configured", noSeam, false},       // ask.go:151 — returns before sending
-		{"unavailable, nothing arrived", dead, false}, // ask.go:204
-		{"ctrl-C mid-stream, partial kept", interrupted, true}, // ask.go:184 — the reader READ it
-		{"truncated, partial kept", truncated, true},  // ask.go:205
-		{"request error", failing, false},             // ask.go:209
-		{"success", ok, true},
-	} {
-		// assert marks cleared == tc.answerDelivered, and deck admission likewise
-	}
-}
-
-// A lookup while a passage is on screen carries it as context.
-func TestALookupCarriesThePassage(t *testing.T) { /* … */ }
-```
 
 > Use a `.sse` capture (`streamCapture = "stream-sample.sse"`, `askrun_test.go:43`) — `llmtest.Fake` 400s a non-streaming `Reply` scripted onto a streaming request, by design.
 
@@ -1018,23 +588,6 @@ Expected: FAIL — the current prompt writes for "a capable adult reader"
 
 - [x] **Step 1: Write the failing tests**
 
-```go
-func TestAMarkedWordWithAnEntryEntersTheDeck(t *testing.T)        { /* deck + vocabulary set */ }
-func TestAMarkedSpanWithoutAnEntryIsNotRetained(t *testing.T)     { /* the admission rule */ }
-func TestMarkedCaptureObeysRawAndNoCapture(t *testing.T)          { /* via decideCapture, not a second check */ }
-func TestAMarkedWordIsDistinguishableFromALookup(t *testing.T)    { /* in the event log */ }
-
-// complete() requires a SUBJECT — Word or Question — and drops anything else at
-// READ time as a torn record (store/event.go:134). A new kind that satisfies
-// neither would be written and then silently vanish.
-func TestAMarkedEventSurvivesAReadBack(t *testing.T) { /* write, re-read, assert present */ }
-
-// storeHistory.Load filters on EventLookedUp only (history_store.go:65), so a new
-// kind is invisible to Up-arrow recall unless added there. DECIDE and PIN it:
-// a marked word was never typed, so it should NOT appear in the typed-line
-// history — assert the absence deliberately rather than inheriting it.
-func TestAMarkedWordIsNotInTypedLineHistory(t *testing.T) { /* … */ }
-```
 
 - [x] **Step 2: Run to verify they fail**
 
@@ -1051,21 +604,9 @@ Expected: FAIL
 
 - [x] **Step 1: Write the failing test** — the end-to-end row this issue is named for:
 
-```go
-// Paste, mark two words, Enter: the answer arrives, the marks are GONE, and both
-// words now render as deck words in the re-rendered passage. This is the
-// observable only a correct implementation produces — "the mark becomes deck
-// membership" (#67) — and it is the one test that would catch any of the five
-// milestones being individually green while the feature does not work.
-func TestPasteMarkAskLeavesTheWordsGreen(t *testing.T) { /* … */ }
-
-// And the word is SCHEDULABLE: it reaches recall by the ordinary route, because
-// harvest authors items for deck words. Done-when 5.
-func TestAMarkedWordBecomesSchedulable(t *testing.T) { /* … */ }
-```
 
 - [x] **Step 2: Run to verify they fail**
-- [x] **Step 3: Implement** — most should already work: the footer re-renders on every `Draw` and `vocab.Add` has already run.
+- [x] **Step 3: Implement** — superseded: the buffer does not re-render, which is why the green re-render was dropped. `vocab.Add` still runs, so the word is green the next time it is rendered anywhere.
 - [x] **Step 4: Run** — `go test ./cmd/define/ -run 'PasteMarkAsk|Schedulable' -v`; Expected: PASS
 - [x] **Step 5: Commit**
 

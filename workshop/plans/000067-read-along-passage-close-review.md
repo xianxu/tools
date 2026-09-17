@@ -658,3 +658,162 @@ findings:
       rather than a security finding, but the prompt belongs in the consumer table the rule names.
       ARCH-SECURE.
 ```
+
+---
+
+## Re-review — 2026-09-17T00:17:14-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 67 — define: read-along — paste a passage, click or drag what is opaque |
+| repo | tools |
+| issue file | workshop/issues/000067-read-along-passage.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 98f5c779b468ada00c087bde6bd43cca9b0892cc..afe1b241b4ad07b32092278377841be095d650b5 |
+| command | sdlc close --issue 67 |
+| reviewer | claude |
+| timestamp | 2026-09-17T00:17:14-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Round 7's Critical is genuinely gone — `TestARemovedDeclarationIsSweptOrRetired` passes and the full suite is green at `afe1b24` apart from `TestLanguagePromptStartup`/`TestLanguageTintInvocation`, which fail because `open /dev/ptmx` returns `EPERM` in this environment (verified with a standalone program, so environmental, not code). Two of the three fixes the commit message claims, however, do not survive the mutation they were written against: `liveScreen.VisibleRange` returning `0, 1<<20` still leaves the entire suite green (BR-32's second named site, unchanged), and reverting the `escapeLen` skip in `hardBreak` still leaves `TestHardBreakNeverSplitsAnEscapeSequence` green (BR-34's one behavioural site). The commit says "Both now mutation-verified through runEditor" and "One was a real defect, not prose" — measurement contradicts both. Separately, the plan-staleness class BR-24 named was fixed only at the five sites the finding listed: five ticked steps still describe the reversed footer design, and Task 5.2 declares two tests (`TestPasteMarkAskLeavesTheWordsGreen`, `TestAMarkedWordBecomesSchedulable`) that exist in no file, which `TestPlanCitesTestsThatExist` misses because its regex reads only backticked citations. Nothing here is a live bug; what blocks is that three fixes are recorded as verified and are not.
+
+**1. Strengths**
+
+- `TestTheLoopTellsTheScreenWhereTheLivePassageIs` (`cmd/define/passage_test.go:534`) is real regression evidence. Measured: replacing `runEditor`'s `lo, hi` with `view.SetPassage(0, 1<<20, …)` reddens it with the exact diagnostic it was written to print. That is BR-32's first seam properly closed.
+- `TestEveryReplKindIsDecidedForBothLoops` (`cmd/define/route_test.go:107`) is now falsifiable. Measured: setting every row of `replKindHandling` to its opposite produces 12 failures, one per (kind, loop). The `kindReachable` + `lineState` construction derives the claim from `parseREPLLine` instead of restating it.
+- BR-29 has not regressed: deleting the `cmdAskPassage` branch in `runEditor` (`replraw.go:675`) reddens `TestABareEnterWithMarksAsksThroughTheLoop`.
+- The footer→buffer reversal is recorded the right way at `workshop/plans/000067-read-along-passage-plan.md:1134` — stated as a reversal, with the two knock-on decisions (`highlightRow`, `RegionPassageWord`) named rather than quietly re-written.
+- `cmd/define/README.md:76-116` documents the whole gesture — pasting, the cap, the record, marking, asking, the clear-only-on-answer rule — at a level a reader can act on.
+- `admitMarkedWords` (`ask.go:306`) and `CaptureMarked` (`capture.go:215`) route admission through the single `Upsert` with `vocab.Add` after it, exactly as the plan required; marks clear on `answer.plain.Len() > 0` rather than per-outcome, which is the one predicate the several exits share.
+
+**2. Critical findings**
+
+None.
+
+**3. Important findings**
+
+- **BR-32 seam two is unchanged** (`cmd/define/screen.go:1027`). Measured at HEAD: replacing `liveScreen.VisibleRange`'s body with `return 0, 1<<20` leaves the full suite green (only the two pty-EPERM failures). `TestEnterReplaysOnceThePassageIsOffScreen` (`passage_test.go:553`) drives `recordDisplay.seeOnly`, so it pins that `runEditor` *consults* the range — which was never the gap — not that the production screen *computes* it. Fix: assert `liveScreen.VisibleRange` against a scrolled `screen`, or drive the off-screen case through the live screen rather than the fake.
+- **BR-34's behavioural site has no regression evidence** (`cmd/define/passage.go:366`, test at `passage_test.go:575`). The oracle is `strings.Count(got,"\x1b") != strings.Count(got,"\x1b[")`, which only detects a cut between `ESC` and `[`. Its fixture puts `knownOn` at the head of the line, where the 7 escape bytes plus 3 `a`s fill width 10 and the sequence survives intact even unfixed. With the fix reverted and the escape straddling the margin (`"aaaaaaaa"+knownOn+…`, width 10), `hardBreak` returns `"aaaaaaaa\x1b["` / `"1;32mbbbbb"` — the bug, and the shipped test passes on it. Fix: straddle the margin in the fixture and assert every chunk's escapes re-parse via `escapeLen`.
+- **The plan's stale-claim class was fixed at the five named sites only** (new finding, below).
+
+**4. Minor findings**
+
+- `replLines2()` (`route_test.go:128`) shadows the production `replLines` (`repl.go:316`) in the same package with an unrelated meaning.
+- BR-14: no `## Log` entry for boundary-review round 7 — `afe1b24` touched no issue file, while round 6's entry was written by its own fix commit `da997e4`.
+- BR-26, BR-27, BR-30, BR-35, BR-36: verified still open at HEAD (details in the dispositions).
+
+**5. Test coverage notes**
+
+Four mutations run against HEAD: seam 1 red (good), seam 2 green (gap), `replKindHandling` inversion red (good), `cmdAskPassage` branch deletion red (good), `hardBreak` escape-skip removal green (gap). The recurring shape is that the *fake* is asserted where the *shell* is the thing that was wrong — `recordDisplay.seeOnly` for `VisibleRange`, and an oracle whose fixture cannot reach the failing geometry for `hardBreak`. The guard `TestPlanCitesTestsThatExist` (`repo_guard_test.go:1453`) has the same shape: it reads `` `TestFoo` `` and not `func TestFoo(` inside a plan's own Go blocks, so two phantom tests sit in a ticked Step 1 unchallenged.
+
+**6. Architectural notes**
+
+- **ARCH-DRY** — pass. `passageSystem` composes `sharedLevel`/`sharedAuthority`/`sharedLanguageGrammar`; `renderPassagePrompt` reuses `renderAskPrompt`'s context blocks; `enabledModes` is one list. Only nit is the `replLines2` name.
+- **ARCH-PURE** — flag (BR-32). The pure gate (`passageDragLocked`, `passageVisible`) is sound; the shell value it is fed (`liveScreen.VisibleRange`) is unpinned, which is precisely the altitude BR-32 named.
+- **ARCH-PURPOSE** — flag. BR-24's five sites were fixed and the enumerable siblings were not (new finding); BR-33's own rule ("every package-level declaration this window added with zero non-test references") named `passage.raw()` and it is still at `passage.go:87` with no caller anywhere.
+- **ARCH-MOCK** — pass. `pty_conformance_test.go` for the terminal, `llmtest.Fake` for the wire, `passage_conformance_test.go` for the live level-default check, a real `store.YAML` in `t.TempDir()` for the deck.
+- **ARCH-CONSTRAINTS** — pass. 1000-rune semantic cap plus a separate byte bound while the paste is arriving; one model call per ask regardless of mark count.
+- **ARCH-SECURE** — flag (BR-36). `escapeReservedBrackets` closes the `[sel]`/`[lang=]` forge; the prompt's other structural grammar (`## The passage`, `## The question`) is unescaped, so a pasted markdown header is indistinguishable from scaffolding. Bounded impact (a wrong answer, no tools), but the consumer table the rule names should include the prompt format.
+- **ARCH-ORDER** — flag (BR-35). `pointerClick.line` is written from `a.row` on the drag path and then overwritten from an unset `click.point`; the tagged variant BR-28 recommended is still the fix. Also the `passage`/`passageBase`/`marks` trio carries the "marks non-empty ⟹ passage non-nil" invariant only by convention — `parseREPLLine` returns `cmdAskPassage` on `st.hasMarks` alone.
+- **ARCH-FUNERAL** — flag (BR-27). `screen.regions` gains ~170 entries per paste via `WriteRegions` (`replraw.go:617`) with no pruning — the atlas and `passageDragLocked` now both *state* that regions are never pruned and work around it, which makes the plan's "no removal path needed" note demonstrably incomplete.
+
+**7. Plan revision recommendations**
+
+Append one `## Revisions` entry, "the footer sweep, finished", recording that the reversal's departure was applied to the tables and to Task 3.2 but not to the remaining task prose, and then sweep the enumeration (`grep -n footer workshop/plans/000067-read-along-passage-plan.md`):
+
+- Task 2.2 Step 3 (`:592`) — "passage lines become footer entries ahead of `menuLines`", contradicting its own corrected title.
+- Task 2.4 (`:612`) — "Atlas: a new section *The passage* — footer chrome rather than buffer text"; the atlas says buffer.
+- Chunk 3's decision section (`:623-640`) — "The passage is footer rows" and "**No new `RegionKind`**", against shipped `RegionPassageWord`.
+- Task 3.4 Step 3 (`:800`) — "`clicked` resolves it through `FooterRowAt` + `wordAtCell`"; the click path is `sess.passageSpanAt(hit.line, hit.region)`.
+- Task 5.2 (`:1050-1071`) — its title and Step 3 ("the footer re-renders on every `Draw`") describe the green re-render the operator dropped, and its Step 1 declares `TestPasteMarkAskLeavesTheWordsGreen` and `TestAMarkedWordBecomesSchedulable`, neither of which exists; Step 4's `-run 'PasteMarkAsk|Schedulable'` matches zero tests and "passed" vacuously. Delete or mark superseded the way Task 3.2 was.
+
+```findings
+dispose:
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      The false "full suite green" claim is corrected and rounds 1-6 are recorded, but afe1b24 (the round-7 fix) touched no issue file, so round 7 has no Log entry — the same rule, unapplied to the round that stated it.
+  - id: BR-24
+    disposition: addressed
+    note: |
+      All five named sites verified fixed: 99 ticked / 0 unticked boxes, Architecture paragraph now says RECORD, the does-NOT-do RegionKind row struck through as shipped, the highlightRow table row removed, TestThePassageSurvivesALookup gone; Revisions entry appended at plan:1134.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      Unchanged at HEAD — replraw.go:425 calls SetPassage/markCellRanges and screen.go:632 applies paintMarks, neither referencing opt.color.
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      replraw.go:617 still appends passageRegions per paste, screen.addRegions only appends, and the plan's ARCH-FUNERAL paragraph still reads "no removal path needed".
+  - id: BR-30
+    disposition: not-addressed
+    note: |
+      passage.go:87 still declares raw(); `grep -rn '\.raw()' cmd/define/` returns no caller in production or test.
+  - id: BR-31
+    disposition: addressed
+    note: |
+      TestARemovedDeclarationIsSweptOrRetired passes; full suite green at HEAD except TestLanguagePromptStartup/TestLanguageTintInvocation, which fail at pty.Open because open /dev/ptmx is EPERM in this environment (verified standalone).
+  - id: BR-32
+    disposition: not-addressed
+    note: |
+      Seam one is pinned (mutating runEditor's lo/hi reddens passage_test.go:534). Seam two is not: replacing liveScreen.VisibleRange's body with `return 0, 1<<20` leaves the whole suite green at HEAD, because passage_test.go:553 drives recordDisplay.seeOnly rather than the production screen.
+  - id: BR-33
+    disposition: addressed
+    note: |
+      Measured — setting every replKindHandling row to its opposite produces 12 failures from route_test.go:117/120. Residual worth noting: kindReachable checks parseREPLLine reachability, not that each loop has a case, so the map's doc claim ("must handle") is broader than the guard.
+  - id: BR-34
+    disposition: not-addressed
+    note: |
+      The two prose sites are corrected (atlas:311-315 tab-to-space, atlas:1554-1558 live buffer range). The behavioural one is not pinned: reverting the escapeLen skip in hardBreak leaves TestHardBreakNeverSplitsAnEscapeSequence green, and the unfixed function then returns "aaaaaaaa\x1b[" / "1;32mbbbbb" for a margin-straddling escape.
+  - id: BR-35
+    disposition: not-addressed
+    note: |
+      selection_screen.go:89 still sets `line: a.row` and resolvePointerLocked (:117-120) still overwrites click.line from the zero-valued click.point on that path.
+  - id: BR-36
+    disposition: not-addressed
+    note: |
+      escapeReservedBrackets (passageprompt.go:101) still escapes only [ and ]; renderPassagePrompt splices the body under "## The passage" with no guard on a pasted line reading "## The question".
+findings:
+  - id: new
+    severity: Important
+    family: plan-artifact-stale
+    title: |
+      The footer-reversal sweep stopped at BR-24's five named sites; five ticked steps still describe the reversed design and Task 5.2 declares two tests that exist in no file
+    detail: |
+      This is the 3rd finding in family `plan-artifact-stale`. Do NOT fix these sites one
+      at a time — BR-24 already stated the rule and the round applied it only to the
+      instances the finding listed, which is the instance-not-class failure ARCH-PURPOSE
+      names. The enumeration is `grep -n footer workshop/plans/000067-read-along-passage-plan.md`
+      plus every `func Test` declared inside the plan's own Go blocks. Sites: Task 2.2 Step 3
+      (:592) "passage lines become footer entries ahead of menuLines", contradicting its own
+      corrected title; Task 2.4 (:612) "Atlas ... footer chrome rather than buffer text";
+      Chunk 3's decision section (:623-640) "The passage is footer rows" and "No new
+      RegionKind" against shipped RegionPassageWord; Task 3.4 Step 3 (:800) "clicked resolves
+      it through FooterRowAt + wordAtCell" where the click path is sess.passageSpanAt; Task 5.2
+      (:1050-1071), whose title, Step 3 and both declared tests describe the green re-render
+      the operator dropped. TestPasteMarkAskLeavesTheWordsGreen and
+      TestAMarkedWordBecomesSchedulable exist in no file, and Step 4's
+      `-run 'PasteMarkAsk|Schedulable'` matched zero tests while reporting PASS. The guard that
+      exists for exactly this, TestPlanCitesTestsThatExist (repo_guard_test.go:1453), reads only
+      the backticked citation form, so a test declared as `func TestFoo(` inside a plan code
+      block is invisible to it — extend the regex, which is the same fail-open shape BR-15 and
+      BR-33 already paid for.
+  - id: new
+    severity: Minor
+    family: name-collides-with-production-symbol
+    title: |
+      The test helper replLines2 shadows the production replLines in the same package
+    detail: |
+      route_test.go:128 defines replLines2() returning sample input lines, while repl.go:316
+      defines replLines(), the piped REPL loop. A reader grepping replLines in cmd/define now
+      gets two unrelated meanings one of which is named as if it were a second version of the
+      other. Rename to something like sampleSubmittedLines.
+```

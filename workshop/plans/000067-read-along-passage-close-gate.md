@@ -741,6 +741,90 @@ rounds:
           family: boundary-parses-partial-class
           round: 7
       blocked: true
+    - "n": 8
+      timestamp: "2026-09-17T00:17:14-07:00"
+      agent: claude
+      dispose:
+        - id: BR-14
+          disposition: not-addressed
+          note: The false "full suite green" claim is corrected and rounds 1-6 are recorded, but afe1b24 (the round-7 fix) touched no issue file, so round 7 has no Log entry — the same rule, unapplied to the round that stated it.
+          round: 8
+        - id: BR-24
+          disposition: addressed
+          note: 'All five named sites verified fixed: 99 ticked / 0 unticked boxes, Architecture paragraph now says RECORD, the does-NOT-do RegionKind row struck through as shipped, the highlightRow table row removed, TestThePassageSurvivesALookup gone; Revisions entry appended at plan:1134.'
+          round: 8
+        - id: BR-26
+          disposition: not-addressed
+          note: Unchanged at HEAD — replraw.go:425 calls SetPassage/markCellRanges and screen.go:632 applies paintMarks, neither referencing opt.color.
+          round: 8
+        - id: BR-27
+          disposition: not-addressed
+          note: replraw.go:617 still appends passageRegions per paste, screen.addRegions only appends, and the plan's ARCH-FUNERAL paragraph still reads "no removal path needed".
+          round: 8
+        - id: BR-30
+          disposition: not-addressed
+          note: passage.go:87 still declares raw(); `grep -rn '\.raw()' cmd/define/` returns no caller in production or test.
+          round: 8
+        - id: BR-31
+          disposition: addressed
+          note: TestARemovedDeclarationIsSweptOrRetired passes; full suite green at HEAD except TestLanguagePromptStartup/TestLanguageTintInvocation, which fail at pty.Open because open /dev/ptmx is EPERM in this environment (verified standalone).
+          round: 8
+        - id: BR-32
+          disposition: not-addressed
+          note: 'Seam one is pinned (mutating runEditor''s lo/hi reddens passage_test.go:534). Seam two is not: replacing liveScreen.VisibleRange''s body with `return 0, 1<<20` leaves the whole suite green at HEAD, because passage_test.go:553 drives recordDisplay.seeOnly rather than the production screen.'
+          round: 8
+        - id: BR-33
+          disposition: addressed
+          note: 'Measured — setting every replKindHandling row to its opposite produces 12 failures from route_test.go:117/120. Residual worth noting: kindReachable checks parseREPLLine reachability, not that each loop has a case, so the map''s doc claim ("must handle") is broader than the guard.'
+          round: 8
+        - id: BR-34
+          disposition: not-addressed
+          note: 'The two prose sites are corrected (atlas:311-315 tab-to-space, atlas:1554-1558 live buffer range). The behavioural one is not pinned: reverting the escapeLen skip in hardBreak leaves TestHardBreakNeverSplitsAnEscapeSequence green, and the unfixed function then returns "aaaaaaaa\x1b[" / "1;32mbbbbb" for a margin-straddling escape.'
+          round: 8
+        - id: BR-35
+          disposition: not-addressed
+          note: 'selection_screen.go:89 still sets `line: a.row` and resolvePointerLocked (:117-120) still overwrites click.line from the zero-valued click.point on that path.'
+          round: 8
+        - id: BR-36
+          disposition: not-addressed
+          note: escapeReservedBrackets (passageprompt.go:101) still escapes only [ and ]; renderPassagePrompt splices the body under "## The passage" with no guard on a pasted line reading "## The question".
+          round: 8
+      findings:
+        - id: BR-37
+          severity: Important
+          title: The footer-reversal sweep stopped at BR-24's five named sites; five ticked steps still describe the reversed design and Task 5.2 declares two tests that exist in no file
+          detail: |-
+            This is the 3rd finding in family `plan-artifact-stale`. Do NOT fix these sites one
+            at a time — BR-24 already stated the rule and the round applied it only to the
+            instances the finding listed, which is the instance-not-class failure ARCH-PURPOSE
+            names. The enumeration is `grep -n footer workshop/plans/000067-read-along-passage-plan.md`
+            plus every `func Test` declared inside the plan's own Go blocks. Sites: Task 2.2 Step 3
+            (:592) "passage lines become footer entries ahead of menuLines", contradicting its own
+            corrected title; Task 2.4 (:612) "Atlas ... footer chrome rather than buffer text";
+            Chunk 3's decision section (:623-640) "The passage is footer rows" and "No new
+            RegionKind" against shipped RegionPassageWord; Task 3.4 Step 3 (:800) "clicked resolves
+            it through FooterRowAt + wordAtCell" where the click path is sess.passageSpanAt; Task 5.2
+            (:1050-1071), whose title, Step 3 and both declared tests describe the green re-render
+            the operator dropped. TestPasteMarkAskLeavesTheWordsGreen and
+            TestAMarkedWordBecomesSchedulable exist in no file, and Step 4's
+            `-run 'PasteMarkAsk|Schedulable'` matched zero tests while reporting PASS. The guard that
+            exists for exactly this, TestPlanCitesTestsThatExist (repo_guard_test.go:1453), reads only
+            the backticked citation form, so a test declared as `func TestFoo(` inside a plan code
+            block is invisible to it — extend the regex, which is the same fail-open shape BR-15 and
+            BR-33 already paid for.
+          family: plan-artifact-stale
+          round: 8
+        - id: BR-38
+          severity: Minor
+          title: The test helper replLines2 shadows the production replLines in the same package
+          detail: |-
+            route_test.go:128 defines replLines2() returning sample input lines, while repl.go:316
+            defines replLines(), the piped REPL loop. A reader grepping replLines in cmd/define now
+            gets two unrelated meanings one of which is named as if it were a second version of the
+            other. Rename to something like sampleSubmittedLines.
+          family: name-collides-with-production-symbol
+          round: 8
+      blocked: false
 ---
 
 # Gate ledger — tools#67 (boundary-review)
@@ -1116,16 +1200,58 @@ enumeration is still hand-written in two places: key_test.go:436 and rawterm_tes
   rather than a security finding, but the prompt belongs in the consumer table the rule names.
   ARCH-SECURE.
 
+## Round 8 — 2026-09-17T00:17:14-07:00 (claude) — passed
+
+### Disposed
+
+- BR-14 — not-addressed — The false "full suite green" claim is corrected and rounds 1-6 are recorded, but afe1b24 (the round-7 fix) touched no issue file, so round 7 has no Log entry — the same rule, unapplied to the round that stated it.
+- BR-24 — addressed — All five named sites verified fixed: 99 ticked / 0 unticked boxes, Architecture paragraph now says RECORD, the does-NOT-do RegionKind row struck through as shipped, the highlightRow table row removed, TestThePassageSurvivesALookup gone; Revisions entry appended at plan:1134.
+- BR-26 — not-addressed — Unchanged at HEAD — replraw.go:425 calls SetPassage/markCellRanges and screen.go:632 applies paintMarks, neither referencing opt.color.
+- BR-27 — not-addressed — replraw.go:617 still appends passageRegions per paste, screen.addRegions only appends, and the plan's ARCH-FUNERAL paragraph still reads "no removal path needed".
+- BR-30 — not-addressed — passage.go:87 still declares raw(); `grep -rn '\.raw()' cmd/define/` returns no caller in production or test.
+- BR-31 — addressed — TestARemovedDeclarationIsSweptOrRetired passes; full suite green at HEAD except TestLanguagePromptStartup/TestLanguageTintInvocation, which fail at pty.Open because open /dev/ptmx is EPERM in this environment (verified standalone).
+- BR-32 — not-addressed — Seam one is pinned (mutating runEditor's lo/hi reddens passage_test.go:534). Seam two is not: replacing liveScreen.VisibleRange's body with `return 0, 1<<20` leaves the whole suite green at HEAD, because passage_test.go:553 drives recordDisplay.seeOnly rather than the production screen.
+- BR-33 — addressed — Measured — setting every replKindHandling row to its opposite produces 12 failures from route_test.go:117/120. Residual worth noting: kindReachable checks parseREPLLine reachability, not that each loop has a case, so the map's doc claim ("must handle") is broader than the guard.
+- BR-34 — not-addressed — The two prose sites are corrected (atlas:311-315 tab-to-space, atlas:1554-1558 live buffer range). The behavioural one is not pinned: reverting the escapeLen skip in hardBreak leaves TestHardBreakNeverSplitsAnEscapeSequence green, and the unfixed function then returns "aaaaaaaa\x1b[" / "1;32mbbbbb" for a margin-straddling escape.
+- BR-35 — not-addressed — selection_screen.go:89 still sets `line: a.row` and resolvePointerLocked (:117-120) still overwrites click.line from the zero-valued click.point on that path.
+- BR-36 — not-addressed — escapeReservedBrackets (passageprompt.go:101) still escapes only [ and ]; renderPassagePrompt splices the body under "## The passage" with no guard on a pasted line reading "## The question".
+
+### Raised
+
+- **BR-37** [Important] `plan-artifact-stale` The footer-reversal sweep stopped at BR-24's five named sites; five ticked steps still describe the reversed design and Task 5.2 declares two tests that exist in no file
+  This is the 3rd finding in family `plan-artifact-stale`. Do NOT fix these sites one
+  at a time — BR-24 already stated the rule and the round applied it only to the
+  instances the finding listed, which is the instance-not-class failure ARCH-PURPOSE
+  names. The enumeration is `grep -n footer workshop/plans/000067-read-along-passage-plan.md`
+  plus every `func Test` declared inside the plan's own Go blocks. Sites: Task 2.2 Step 3
+  (:592) "passage lines become footer entries ahead of menuLines", contradicting its own
+  corrected title; Task 2.4 (:612) "Atlas ... footer chrome rather than buffer text";
+  Chunk 3's decision section (:623-640) "The passage is footer rows" and "No new
+  RegionKind" against shipped RegionPassageWord; Task 3.4 Step 3 (:800) "clicked resolves
+  it through FooterRowAt + wordAtCell" where the click path is sess.passageSpanAt; Task 5.2
+  (:1050-1071), whose title, Step 3 and both declared tests describe the green re-render
+  the operator dropped. TestPasteMarkAskLeavesTheWordsGreen and
+  TestAMarkedWordBecomesSchedulable exist in no file, and Step 4's
+  `-run 'PasteMarkAsk|Schedulable'` matched zero tests while reporting PASS. The guard that
+  exists for exactly this, TestPlanCitesTestsThatExist (repo_guard_test.go:1453), reads only
+  the backticked citation form, so a test declared as `func TestFoo(` inside a plan code
+  block is invisible to it — extend the regex, which is the same fail-open shape BR-15 and
+  BR-33 already paid for.
+- **BR-38** [Minor] `name-collides-with-production-symbol` The test helper replLines2 shadows the production replLines in the same package
+  route_test.go:128 defines replLines2() returning sample input lines, while repl.go:316
+  defines replLines(), the piped REPL loop. A reader grepping replLines in cmd/define now
+  gets two unrelated meanings one of which is named as if it were a second version of the
+  other. Rename to something like sampleSubmittedLines.
+
 ## Open findings
 
 - **BR-14** [Minor] `issue-row-stale` The issue Log records no boundary-review round and its "full suite green" claim was false at the commit it describes
-- **BR-24** [Important] `plan-artifact-stale` The durable plan contradicts the tree in five places, and its unticked boxes switch off the two guards that would have caught two of them
 - **BR-26** [Minor] `decoration-ignores-color-option` paintMarks emits a 256-colour SGR pair regardless of opt.color, so marking a word under -no-color produces colour
 - **BR-27** [Minor] `artifact-family-without-removal` Each paste appends one Region per word to screen.regions with no removal path, which the plan's ARCH-FUNERAL note does not cover
 - **BR-30** [Minor] `tested-entity-not-wired` passage.raw() has zero consumers anywhere in the tree
-- **BR-31** [Critical] `removed-symbol-unswept` The suite is RED at HEAD — the round-6 rawterm refactor deleted five symbols and six artifacts still name them
 - **BR-32** [Important] `production-seam-untested` BR-28's live-passage gate is fed by two mutation-green seams; reverting either restores the Critical
-- **BR-33** [Important] `tested-entity-not-wired` replKindHandling's editor/piped payload has zero consumers — inverting every row leaves the suite green
 - **BR-34** [Important] `doc-contradicts-type` Three behavioural claims written by this round's own commits contradict the tree at HEAD
 - **BR-35** [Minor] `decision-on-incomplete-input` pointerClick.line is written on the drag path and unconditionally overwritten from an unset point
 - **BR-36** [Minor] `boundary-parses-partial-class` The prompt format is a consumer the admitted-class enumeration does not include
+- **BR-37** [Important] `plan-artifact-stale` The footer-reversal sweep stopped at BR-24's five named sites; five ticked steps still describe the reversed design and Task 5.2 declares two tests that exist in no file
+- **BR-38** [Minor] `name-collides-with-production-symbol` The test helper replLines2 shadows the production replLines in the same package
