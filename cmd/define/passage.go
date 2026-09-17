@@ -26,15 +26,42 @@ type passage struct {
 	runs  [][]wordRun
 }
 
-// newPassage takes text and derives its lines and word runs.
+// wrapPassageLines breaks each logical line to width at SPACES.
+//
+// wrapText is the shared breaker — the terminal would wrap for us, but at the
+// COLUMN, splitting words mid-syllable, which is exactly what a passage must not
+// do since the reader is going to click the words.
+func wrapPassageLines(text string, width int) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if width <= 0 {
+			out = append(out, line)
+			continue
+		}
+		out = append(out, strings.Split(wrapText(line, width, 0), "\n")...)
+	}
+	return out
+}
+
+// newPassage takes text and derives its WRAPPED lines and their word runs.
+//
+// Wrapped HERE, at construction, so a passage line IS a buffer line and IS a
+// Region line. The alternative — keeping logical lines and projecting regions
+// through a reflow — needs a second coordinate space and a mapping to keep in
+// step, which is the kind of thing that ends with a click marking the word above
+// the one you pointed at.
+//
+// It does not reflow on resize, which is the same bargain the rest of the buffer
+// makes: a record keeps the shape it was written in (`screen.lines` is immutable),
+// and a definition wrapped at 80 stays wrapped at 80.
 //
 // The text is expected to have been through sanitisePasteBody already — the wire
 // boundary strips escapes — but nothing here DEPENDS on that: the column table
 // is built with the same escape-aware walk the rest of the program uses, so a
 // passage that somehow carried an escape still maps clicks to the right word
 // rather than silently to the wrong one.
-func newPassage(text string) *passage {
-	p := &passage{src: text, lines: strings.Split(text, "\n")}
+func newPassage(text string, width int) *passage {
+	p := &passage{src: text, lines: wrapPassageLines(text, width)}
 	p.runs = make([][]wordRun, len(p.lines))
 	for i, line := range p.lines {
 		// wordRuns is THE tokeniser (highlight.go). A second one here would put

@@ -12,7 +12,7 @@ import (
 // tokeniser here would split them, and the same word would then be one thing at
 // the prompt and another in the passage.
 func TestPassageTokenisesLikeTheRestOfTheProgram(t *testing.T) {
-	p := newPassage("don't hot-dog me, O'Brien")
+	p := newPassage("don't hot-dog me, O'Brien", 0)
 	var got []string
 	for _, s := range p.spans(0) {
 		got = append(got, p.text(s))
@@ -24,7 +24,7 @@ func TestPassageTokenisesLikeTheRestOfTheProgram(t *testing.T) {
 }
 
 func TestPassageSplitsOnNewlines(t *testing.T) {
-	p := newPassage("the slow precession\nof the equinox")
+	p := newPassage("the slow precession\nof the equinox", 0)
 	if got := p.lineCount(); got != 2 {
 		t.Fatalf("lineCount = %d, want 2", got)
 	}
@@ -41,7 +41,7 @@ func TestWordAtCellSnapsToTheWordUnderTheColumn(t *testing.T) {
 	// cols:        0123456789…
 	// "the 漢字 of precession"
 	//  the=0-2  漢=4-5  字=6-7  of=9-10  precession=12-21
-	p := newPassage("the 漢字 of precession")
+	p := newPassage("the 漢字 of precession", 0)
 	for _, tc := range []struct {
 		name string
 		col  int
@@ -98,7 +98,7 @@ func TestWrappedColumnCorrectsForTheContinuationRow(t *testing.T) {
 // at the wire boundary), but it must not ASSUME that: a passage that reached a
 // column table through an escape would map every later click to the wrong word.
 func TestAPassageWithAnEscapeStillMapsColumnsCorrectly(t *testing.T) {
-	p := newPassage(sanitisePasteBody("the \x1b[31mslow\x1b[0m precession"))
+	p := newPassage(sanitisePasteBody("the \x1b[31mslow\x1b[0m precession"), 0)
 	got, ok := wordAtCell(p, 0, 4)
 	if !ok || p.text(got) != "slow" {
 		t.Errorf("wordAtCell(col 4) = %q ok=%v, want %q", p.text(got), ok, "slow")
@@ -106,10 +106,10 @@ func TestAPassageWithAnEscapeStillMapsColumnsCorrectly(t *testing.T) {
 }
 
 func TestAnEmptyPassageIsNotAPassage(t *testing.T) {
-	if p := newPassage("   \n  "); p.empty() != true {
+	if p := newPassage("   \n  ", 0); p.empty() != true {
 		t.Error("a passage of only whitespace should report itself empty")
 	}
-	if p := newPassage("word"); p.empty() {
+	if p := newPassage("word", 0); p.empty() {
 		t.Error("a passage with a word reported itself empty")
 	}
 }
@@ -146,14 +146,14 @@ func TestAPasteIsClassifiedByShapeNotByBeingAPaste(t *testing.T) {
 func TestThePassageIsWrittenWithDeckColour(t *testing.T) {
 	v := &memVocabulary{}
 	v.Add("equinox")
-	got := passageText(newPassage("the slow precession of the equinox"), v, true)
+	got := passageText(newPassage("the slow precession of the equinox", 0), v, true)
 	if !strings.Contains(got, knownOn+"equinox") {
 		t.Errorf("the deck word was not coloured:\n%q", got)
 	}
 	if strings.Contains(got, knownOn+"precession") {
 		t.Error("a word that is not in the deck was coloured")
 	}
-	if plain := passageText(newPassage("the slow equinox"), v, false); strings.Contains(plain, "\x1b") {
+	if plain := passageText(newPassage("the slow equinox", 0), v, false); strings.Contains(plain, "\x1b") {
 		t.Errorf("colour was emitted with colour off: %q", plain)
 	}
 }
@@ -161,7 +161,7 @@ func TestThePassageIsWrittenWithDeckColour(t *testing.T) {
 // Every word is clickable, and Region.Line IS the passage line — which is what
 // lets a click come back to a span without a second table to keep in step.
 func TestPassageRegionsAddressEveryWord(t *testing.T) {
-	p := newPassage("the slow precession\nof the equinox")
+	p := newPassage("the slow precession\nof the equinox", 0)
 	rs := passageRegions(p)
 	if len(rs) != 6 {
 		t.Fatalf("got %d regions, want one per word", len(rs))
@@ -201,7 +201,7 @@ func TestPaintMarksSurvivesTheDeckColourUnderIt(t *testing.T) {
 // The session owns which spans are marked; this is the one translation into the
 // screen's coordinates, so the two cannot drift.
 func TestMarkCellRangesTranslatesToBufferLines(t *testing.T) {
-	p := newPassage("the slow precession\nof the equinox")
+	p := newPassage("the slow precession\nof the equinox", 0)
 	m := markSet{}.toggle(p.spans(1)[2]) // "equinox", on the second line
 	got := markCellRanges(p, m, 40)
 	if len(got) != 1 {
@@ -219,7 +219,7 @@ func TestMarkCellRangesTranslatesToBufferLines(t *testing.T) {
 // A click marks the word under it, and clicking it again unmarks it: the gesture
 // is a toggle, and a click-mark and a drag-mark are the same kind of thing.
 func TestAClickOnAPassageWordMarksIt(t *testing.T) {
-	p := newPassage("the slow precession of the equinox")
+	p := newPassage("the slow precession of the equinox", 0)
 	sess := &session{passage: p}
 	r := passageRegions(p)[2]
 
@@ -234,5 +234,57 @@ func TestAClickOnAPassageWordMarksIt(t *testing.T) {
 	sess.marks = sess.marks.toggle(sp)
 	if !sess.marks.empty() {
 		t.Error("clicking a marked word did not unmark it")
+	}
+}
+
+// A passage WRAPS at construction, so a passage line is a buffer line is a
+// Region line. Without it a long line runs off the right edge and the words past
+// the margin cannot be clicked at all (operator-reported, with a screenshot).
+func TestAPassageWrapsToTheTerminalWidth(t *testing.T) {
+	long := "the slow precession of the equinox points westward along the ecliptic over millennia"
+	p := newPassage(long, 30)
+	if p.lineCount() < 3 {
+		t.Fatalf("a %d-cell line at width 30 became %d lines", visibleCells(long), p.lineCount())
+	}
+	for i := range p.lines {
+		if got := visibleCells(p.line(i)); got > 30 {
+			t.Errorf("line %d is %d cells wide, past the margin: %q", i, got, p.line(i))
+		}
+	}
+	// Broken at SPACES, never mid-word: the reader is going to click these.
+	var words []string
+	for i := range p.lines {
+		for _, sp := range p.spans(i) {
+			words = append(words, p.text(sp))
+		}
+	}
+	if strings.Join(words, " ") != long {
+		t.Errorf("wrapping changed the words:\n got %q\nwant %q", strings.Join(words, " "), long)
+	}
+}
+
+// Width 0 means "do not wrap", which is what a test without a terminal wants —
+// the same meaning RenderOpts.Width already carries.
+func TestAPassageAtWidthZeroIsNotWrapped(t *testing.T) {
+	p := newPassage("a fairly long line of text that would otherwise be broken up", 0)
+	if p.lineCount() != 1 {
+		t.Errorf("width 0 wrapped anyway: %d lines", p.lineCount())
+	}
+}
+
+// Every word of a passage is clickable, so underlining them all says nothing.
+// The underline is for a span that offers something its neighbours do not.
+func TestPassageWordsAreNotUnderlined(t *testing.T) {
+	if regionUnderlines(RegionPassageWord) {
+		t.Error("passage words are underlined; in a passage that marks every word and reads as noise")
+	}
+	for _, k := range []RegionKind{RegionHeadword, RegionOriginLang, RegionWord} {
+		if !regionUnderlines(k) {
+			t.Errorf("%v lost its underline, so its affordance is invisible", k)
+		}
+	}
+	line := markClickable("the slow precession", []Region{{Kind: RegionPassageWord, Text: "slow", Col: 4, Width: 4}})
+	if strings.Contains(line, "\x1b[4m") {
+		t.Errorf("markClickable underlined a passage word: %q", line)
 	}
 }

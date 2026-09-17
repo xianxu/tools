@@ -376,7 +376,20 @@ func markClickable(line string, rs []Region) string {
 	}
 	// By column, so the splices are applied left to right and the offsets stay
 	// meaningful as we walk.
-	spans := append([]Region(nil), rs...)
+	//
+	// Kinds that do not want an underline are dropped first. The mark means "this
+	// particular span offers something the text around it does not" — in a
+	// passage EVERY word is clickable, so underlining them all says nothing and
+	// only makes the passage hard to read (operator-reported, with a screenshot).
+	spans := make([]Region, 0, len(rs))
+	for _, r := range rs {
+		if regionUnderlines(r.Kind) {
+			spans = append(spans, r)
+		}
+	}
+	if len(spans) == 0 {
+		return line
+	}
 	slices.SortFunc(spans, func(a, b Region) int { return a.Col - b.Col })
 
 	var b strings.Builder

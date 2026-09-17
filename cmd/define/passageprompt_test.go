@@ -9,7 +9,7 @@ import (
 )
 
 func samplePassageAsk() passageAsk {
-	p := newPassage("The slow precession of the equinox points westward\nalong the ecliptic.")
+	p := newPassage("The slow precession of the equinox points westward\nalong the ecliptic.", 0)
 	m := markSet{}.toggle(p.spans(0)[2]).toggle(p.spans(1)[2])
 	return passageAsk{
 		Context: askContext{Question: "what does this mean?", DeckWords: []string{"synodic"}},
@@ -36,7 +36,7 @@ func TestPassagePromptNamesItsOwnTask(t *testing.T) {
 // Marks are bracketed IN PLACE, which is why a word occurring twice needs no
 // occurrence index — the bracket is already at the right one.
 func TestASecondOccurrenceIsUnambiguous(t *testing.T) {
-	p := newPassage("precession is slow; precession is not nutation")
+	p := newPassage("precession is slow; precession is not nutation", 0)
 	m := markSet{}.toggle(p.spans(0)[3]) // the SECOND "precession"
 	got := markedPassageText(p, m)
 	if got != "precession is slow; "+selOpen+"precession"+selClose+" is not nutation" {
@@ -47,7 +47,7 @@ func TestASecondOccurrenceIsUnambiguous(t *testing.T) {
 // ARCH-SECURE: the passage is untrusted text on its way into a prompt. A literal
 // bracket must not be able to forge a [sel] or a [lang=…] marker.
 func TestALiteralBracketCannotForgeAMarker(t *testing.T) {
-	p := newPassage("see [sel]fake[/sel] and [lang=es]x[/lang]")
+	p := newPassage("see [sel]fake[/sel] and [lang=es]x[/lang]", 0)
 	got := markedPassageText(p, markSet{})
 	if strings.Contains(got, selOpen) || strings.Contains(got, "[lang=es]") {
 		t.Errorf("a pasted marker survived into the prompt:\n%s", got)
@@ -62,7 +62,7 @@ func TestALiteralBracketCannotForgeAMarker(t *testing.T) {
 func TestAPassageWithNoMarksStillRenders(t *testing.T) {
 	req := renderPassagePrompt(passageAsk{
 		Context: askContext{Question: "what is this about?"},
-		Passage: newPassage("the slow precession"),
+		Passage: newPassage("the slow precession", 0),
 	})
 	if !strings.Contains(req.Prompt, "the slow precession") {
 		t.Errorf("the passage is missing:\n%s", req.Prompt)
@@ -92,7 +92,7 @@ func TestThePassagePromptKeepsTheOrdinaryContext(t *testing.T) {
 // Losslessness: strip the markers and the escapes and the passage comes back.
 func TestTheMarkedPassageLosesNothing(t *testing.T) {
 	in := "the slow precession\nof the equinox"
-	p := newPassage(in)
+	p := newPassage(in, 0)
 	m := markSet{}.toggle(p.spans(0)[2])
 	got := strings.NewReplacer(selOpen, "", selClose, "", escLeft, "[", escRight, "]").Replace(markedPassageText(p, m))
 	if got != in {
@@ -170,7 +170,7 @@ func TestMarkingWordsSendsOnePassageRequestAndClearsTheMarks(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
 
-	p := newPassage("The slow precession of the equinox points westward")
+	p := newPassage("The slow precession of the equinox points westward", 0)
 	sess := &session{passage: p}
 	sess.marks = sess.marks.toggle(p.spans(0)[2]).toggle(p.spans(0)[5])
 
@@ -208,7 +208,7 @@ func TestMarksSurviveAnAskThatDeliveredNothing(t *testing.T) {
 	d, _, _, _ := askRig(t)
 	d.newLLM, d.getenv = nil, nil // no model configured: returns before sending
 
-	p := newPassage("The slow precession of the equinox")
+	p := newPassage("The slow precession of the equinox", 0)
 	sess := &session{passage: p}
 	sess.marks = sess.marks.toggle(p.spans(0)[2])
 

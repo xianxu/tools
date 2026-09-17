@@ -585,7 +585,8 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// footer first, which welded it to the prompt forever —
 					// operator-reported, and the right fix is that a passage is a
 					// RECORD of something you read, not chrome.
-					sess.passage = newPassage(text)
+					_, cols := view.Size()
+					sess.passage = newPassage(text, cols)
 					sess.marks = sess.marks.clear()
 					sess.passageBase = view.BufferLines()
 					blank()
@@ -771,6 +772,14 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		}
 	}
 }
+
+// regionUnderlines declares which region kinds get the clickable underline.
+//
+// The underline means "this particular span offers something the text around it
+// does not". In a passage every word is clickable, so underlining them all
+// carries no information and makes the passage hard to read — which is what the
+// first version did.
+func regionUnderlines(k RegionKind) bool { return k != RegionPassageWord }
 
 // regionPlaysAudio declares which region kinds the AUDIO registry answers for.
 //

@@ -68,7 +68,7 @@ func TestMarkSetClears(t *testing.T) {
 // mark per line, snapped OUTWARD to whole words — the unit everywhere else is a
 // word, so a drag starting mid-word marks that whole word rather than half of it.
 func TestMarksForDragSnapsToWordsAndSplitsPerLine(t *testing.T) {
-	p := newPassage("the slow precession\nof the equinox")
+	p := newPassage("the slow precession\nof the equinox", 0)
 
 	// Within one line, starting and ending mid-word.
 	got := marksForDrag(p, passageCell{line: 0, col: 5}, passageCell{line: 0, col: 12})
@@ -92,7 +92,7 @@ func TestMarksForDragSnapsToWordsAndSplitsPerLine(t *testing.T) {
 // A drag over only whitespace marks nothing rather than marking a zero-width
 // span: an empty bracket in the prompt would be a question about nothing.
 func TestADragOverWhitespaceMarksNothing(t *testing.T) {
-	p := newPassage("a    b")
+	p := newPassage("a    b", 0)
 	if got := marksForDrag(p, passageCell{line: 0, col: 2}, passageCell{line: 0, col: 3}); len(got) != 0 {
 		t.Errorf("a drag over whitespace produced %v", got)
 	}
@@ -101,7 +101,7 @@ func TestADragOverWhitespaceMarksNothing(t *testing.T) {
 // A backwards drag is the same selection as a forwards one — the reader dragged
 // right-to-left, which says nothing about what they meant.
 func TestABackwardsDragIsTheSameSelection(t *testing.T) {
-	p := newPassage("the slow precession")
+	p := newPassage("the slow precession", 0)
 	fwd := marksForDrag(p, passageCell{line: 0, col: 4}, passageCell{line: 0, col: 12})
 	back := marksForDrag(p, passageCell{line: 0, col: 12}, passageCell{line: 0, col: 4})
 	if len(fwd) != 1 || len(back) != 1 || fwd[0] != back[0] {
