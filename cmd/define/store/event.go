@@ -42,6 +42,39 @@ const (
 // documentation.
 var eventKinds = []EventKind{EventLookedUp, EventAsked, EventReviewed, EventFlagged, EventMarked}
 
+// addsAWord says, for EVERY kind, whether an event of it puts a word in the deck.
+//
+// A TOTAL MAP rather than a switch with a default, because a default is what let
+// this go wrong: #67 added EventMarked and `schedule.Stats` partitioned EventKind
+// by naming kinds literally, so a learner who built their deck entirely by marking
+// passages saw Added == 0 and lost the words/day line — exactly the case that
+// field exists to distinguish ("none recorded" from "genuinely slow").
+//
+// A kind with no row reddens TestAddsAWordIsTotalOverTheExtent rather than
+// quietly meaning "no".
+var addsAWord = map[EventKind]bool{
+	// Both put the word in the deck: Capture on a found lookup, CaptureMarked on
+	// a marked word with a dictionary entry.
+	EventLookedUp: true,
+	EventMarked:   true,
+	// A question reaches no deck; a review and a flag are about a word already in
+	// it.
+	EventAsked:    false,
+	EventReviewed: false,
+	EventFlagged:  false,
+}
+
+// AddsAWord reports whether an event of this kind puts a word into the deck.
+//
+// Declared beside the extent because it is a fact about the KIND, not about any
+// one consumer — a consumer that partitions EventKind by naming kinds literally
+// goes silently wrong the next time the extent grows.
+func AddsAWord(k EventKind) bool { return addsAWord[k] }
+
+// AddsAWordDeclared reports whether the kind has a row at all, which is what the
+// totality guard asks — a bare lookup cannot tell "declared false" from "absent".
+func AddsAWordDeclared(k EventKind) bool { _, ok := addsAWord[k]; return ok }
+
 // EventKinds is the extent of EventKind, copied so a caller cannot reorder it.
 //
 // Same move Bands() and Domains() make: the enum is knowable, so no guard,

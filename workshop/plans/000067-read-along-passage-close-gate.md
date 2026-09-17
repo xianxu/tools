@@ -825,6 +825,74 @@ rounds:
           family: name-collides-with-production-symbol
           round: 8
       blocked: false
+    - "n": 9
+      timestamp: "2026-09-17T00:40:08-07:00"
+      agent: claude
+      dispose:
+        - id: BR-14
+          disposition: not-addressed
+          note: The Log's boundary-review record (issue:1038-1061) stops at "Close round 6"; neither afe1b24 nor 26ef1c7 touched the issue file, so rounds 7 and 8 have no entry — the rule the finding stated, unapplied to the two rounds that followed it.
+          round: 9
+        - id: BR-26
+          disposition: not-addressed
+          note: Unchanged at HEAD — replraw.go:425 calls SetPassage/markCellRanges and screen.go:630-632 applies paintMarks; grep for "color" in screen.go returns nothing, so markOn is emitted under -no-color.
+          round: 9
+        - id: BR-27
+          disposition: not-addressed
+          note: Unchanged — replraw.go:617 appends passageRegions per paste, screen.addRegions (screen.go:188-206) only appends, and the plan's ARCH-FUNERAL paragraph (plan:104) still reads "no removal path needed".
+          round: 9
+        - id: BR-30
+          disposition: not-addressed
+          note: passage.go:87 still declares raw(); `grep -rn "\.raw()" cmd/define/` returns no caller in production or test.
+          round: 9
+        - id: BR-32
+          disposition: not-addressed
+          note: 'Seam one is now pinned — I measured it, mutating runEditor''s lo/hi reddens passage_test.go:534. Seam two is unchanged and still mutation-green: replacing liveScreen.VisibleRange''s body with `return 0, 1<<20` leaves the entire suite green at HEAD (only the two pty-EPERM failures), because passage_test.go:553 drives recordDisplay.seeOnly rather than the production screen.'
+          round: 9
+        - id: BR-34
+          disposition: not-addressed
+          note: 'Both prose sites are corrected (atlas:318-322 tab-to-space, the "no separate table" sentence gone). The behavioural site still has no regression evidence: I removed the escapeLen skip at passage.go:371 and TestHardBreakNeverSplitsAnEscapeSequence stayed green, as did the whole package — the oracle only detects a cut between ESC and ''['', and the fixture''s escape never straddles the margin.'
+          round: 9
+        - id: BR-35
+          disposition: not-addressed
+          note: 'Unchanged — selection_screen.go:89 still returns `line: a.row` for a passage drag and resolvePointerLocked (:117-120) still overwrites click.line from the zero-valued click.point on that path.'
+          round: 9
+        - id: BR-36
+          disposition: not-addressed
+          note: Unchanged — escapeReservedBrackets (passageprompt.go:106) escapes only "[" and "]", and renderPassagePrompt (passageprompt.go:45-60) splices the body under headerPassage with no guard on a pasted line reading "## The question".
+          round: 9
+        - id: BR-37
+          disposition: not-addressed
+          note: 'The enumeration was genuinely run whole — `grep "func Test"` over the plan now returns zero. But the class MECHANISM the finding named is untouched: repo_guard_test.go:1453 still reads only the backticked form, so the fail-open shape BR-15 and BR-33 paid for survives for the next plan. Residue: plan:601''s title and plan:610''s zero-matching `-run` still describe the dropped green re-render; plan:261 and plan:278-286 still state the reversed footer design, under a banner (plan:117-118) that names Read-firsts and design arguments as load-bearing; and a 495-line deletion landed with no `## Revisions` entry, which is the second clause of BR-24''s own rule.'
+          round: 9
+        - id: BR-38
+          disposition: not-addressed
+          note: Unchanged — route_test.go:128 still declares replLines2() alongside the production replLines (repl.go:316) in the same package.
+          round: 9
+      findings:
+        - id: BR-39
+          severity: Minor
+          title: store.EventMarked was appended to the extent but no behavioural partition of EventKind was swept, so a deck word added by marking never counts as added
+          detail: |-
+            This is the 2nd finding in family `enum-grows-past-consumers`, so do NOT add an
+            EventMarked arm to one switch. The rule: a member added to a declared extent is only
+            added when every PARTITIONING consumer of that extent is total or fails closed —
+            store.EventKinds() (store/event.go:49) today feeds only doc guards, while every
+            behavioural partition names kinds literally and defaults to silence. Measured
+            enumeration, `grep "e\.Kind"` over non-test Go: three sites. schedule/progress.go:155
+            (EventReviewed only) and history_cmd.go:113 (EventLookedUp only) document their
+            exclusion; schedule/stats.go:151 does not — its switch has no EventMarked arm, so a
+            learner who builds their deck entirely by marking passages gets Added == 0 and
+            stats.go:139 hides the words/day line altogether. That is precisely the case the field's
+            own doc says it exists to distinguish ("tell 'none recorded' from 'genuinely slow'"),
+            and the marked word IS in the deck via CaptureMarked's Upsert (capture.go:216). The fix
+            is the shape this window's own lessons.md entry names ("A registry guard must fail
+            CLOSED", numRegionKinds / numPasteExits): a total per-kind decision table asserting what
+            each partition does with each kind, so the next EventKind reddens rather than
+            disappears. ARCH-PURPOSE.
+          family: enum-grows-past-consumers
+          round: 9
+      blocked: false
 ---
 
 # Gate ledger — tools#67 (boundary-review)
@@ -1243,6 +1311,41 @@ enumeration is still hand-written in two places: key_test.go:436 and rawterm_tes
   gets two unrelated meanings one of which is named as if it were a second version of the
   other. Rename to something like sampleSubmittedLines.
 
+## Round 9 — 2026-09-17T00:40:08-07:00 (claude) — passed
+
+### Disposed
+
+- BR-14 — not-addressed — The Log's boundary-review record (issue:1038-1061) stops at "Close round 6"; neither afe1b24 nor 26ef1c7 touched the issue file, so rounds 7 and 8 have no entry — the rule the finding stated, unapplied to the two rounds that followed it.
+- BR-26 — not-addressed — Unchanged at HEAD — replraw.go:425 calls SetPassage/markCellRanges and screen.go:630-632 applies paintMarks; grep for "color" in screen.go returns nothing, so markOn is emitted under -no-color.
+- BR-27 — not-addressed — Unchanged — replraw.go:617 appends passageRegions per paste, screen.addRegions (screen.go:188-206) only appends, and the plan's ARCH-FUNERAL paragraph (plan:104) still reads "no removal path needed".
+- BR-30 — not-addressed — passage.go:87 still declares raw(); `grep -rn "\.raw()" cmd/define/` returns no caller in production or test.
+- BR-32 — not-addressed — Seam one is now pinned — I measured it, mutating runEditor's lo/hi reddens passage_test.go:534. Seam two is unchanged and still mutation-green: replacing liveScreen.VisibleRange's body with `return 0, 1<<20` leaves the entire suite green at HEAD (only the two pty-EPERM failures), because passage_test.go:553 drives recordDisplay.seeOnly rather than the production screen.
+- BR-34 — not-addressed — Both prose sites are corrected (atlas:318-322 tab-to-space, the "no separate table" sentence gone). The behavioural site still has no regression evidence: I removed the escapeLen skip at passage.go:371 and TestHardBreakNeverSplitsAnEscapeSequence stayed green, as did the whole package — the oracle only detects a cut between ESC and '[', and the fixture's escape never straddles the margin.
+- BR-35 — not-addressed — Unchanged — selection_screen.go:89 still returns `line: a.row` for a passage drag and resolvePointerLocked (:117-120) still overwrites click.line from the zero-valued click.point on that path.
+- BR-36 — not-addressed — Unchanged — escapeReservedBrackets (passageprompt.go:106) escapes only "[" and "]", and renderPassagePrompt (passageprompt.go:45-60) splices the body under headerPassage with no guard on a pasted line reading "## The question".
+- BR-37 — not-addressed — The enumeration was genuinely run whole — `grep "func Test"` over the plan now returns zero. But the class MECHANISM the finding named is untouched: repo_guard_test.go:1453 still reads only the backticked form, so the fail-open shape BR-15 and BR-33 paid for survives for the next plan. Residue: plan:601's title and plan:610's zero-matching `-run` still describe the dropped green re-render; plan:261 and plan:278-286 still state the reversed footer design, under a banner (plan:117-118) that names Read-firsts and design arguments as load-bearing; and a 495-line deletion landed with no `## Revisions` entry, which is the second clause of BR-24's own rule.
+- BR-38 — not-addressed — Unchanged — route_test.go:128 still declares replLines2() alongside the production replLines (repl.go:316) in the same package.
+
+### Raised
+
+- **BR-39** [Minor] `enum-grows-past-consumers` store.EventMarked was appended to the extent but no behavioural partition of EventKind was swept, so a deck word added by marking never counts as added
+  This is the 2nd finding in family `enum-grows-past-consumers`, so do NOT add an
+  EventMarked arm to one switch. The rule: a member added to a declared extent is only
+  added when every PARTITIONING consumer of that extent is total or fails closed —
+  store.EventKinds() (store/event.go:49) today feeds only doc guards, while every
+  behavioural partition names kinds literally and defaults to silence. Measured
+  enumeration, `grep "e\.Kind"` over non-test Go: three sites. schedule/progress.go:155
+  (EventReviewed only) and history_cmd.go:113 (EventLookedUp only) document their
+  exclusion; schedule/stats.go:151 does not — its switch has no EventMarked arm, so a
+  learner who builds their deck entirely by marking passages gets Added == 0 and
+  stats.go:139 hides the words/day line altogether. That is precisely the case the field's
+  own doc says it exists to distinguish ("tell 'none recorded' from 'genuinely slow'"),
+  and the marked word IS in the deck via CaptureMarked's Upsert (capture.go:216). The fix
+  is the shape this window's own lessons.md entry names ("A registry guard must fail
+  CLOSED", numRegionKinds / numPasteExits): a total per-kind decision table asserting what
+  each partition does with each kind, so the next EventKind reddens rather than
+  disappears. ARCH-PURPOSE.
+
 ## Open findings
 
 - **BR-14** [Minor] `issue-row-stale` The issue Log records no boundary-review round and its "full suite green" claim was false at the commit it describes
@@ -1255,3 +1358,4 @@ enumeration is still hand-written in two places: key_test.go:436 and rawterm_tes
 - **BR-36** [Minor] `boundary-parses-partial-class` The prompt format is a consumer the admitted-class enumeration does not include
 - **BR-37** [Important] `plan-artifact-stale` The footer-reversal sweep stopped at BR-24's five named sites; five ticked steps still describe the reversed design and Task 5.2 declares two tests that exist in no file
 - **BR-38** [Minor] `name-collides-with-production-symbol` The test helper replLines2 shadows the production replLines in the same package
+- **BR-39** [Minor] `enum-grows-past-consumers` store.EventMarked was appended to the extent but no behavioural partition of EventKind was swept, so a deck word added by marking never counts as added

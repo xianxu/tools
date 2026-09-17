@@ -148,15 +148,20 @@ func Summarise(events []store.ReviewEvent, deck []store.Word, now time.Time) Sta
 		if atLocal.After(s.LastDay) {
 			s.LastDay = atLocal
 		}
-		switch e.Kind {
-		case store.EventLookedUp:
-			// A word is ADDED the first time it is looked up and found. Counting
-			// every lookup would make a learner who re-reads one entry look
-			// prolific.
-			if key := store.Key(e.Word); e.Found && key != "" && !seen[key] {
+		// A word is ADDED the first time an event that puts it in the deck names
+		// it. Counting every lookup would make a learner who re-reads one entry
+		// look prolific, so it is the FIRST one that counts.
+		//
+		// store.AddsAWord rather than a literal kind here: this switch named
+		// EventLookedUp alone, and when #67 added EventMarked a learner who built
+		// their deck by marking passages saw Added == 0.
+		if store.AddsAWord(e.Kind) {
+			if key := store.Key(e.Word); (e.Found || e.Kind != store.EventLookedUp) && key != "" && !seen[key] {
 				seen[key] = true
 				added++
 			}
+		}
+		switch e.Kind {
 		case store.EventReviewed:
 			a := s.Accuracy[e.Form]
 			a.Attempts++
