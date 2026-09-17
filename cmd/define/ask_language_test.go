@@ -105,3 +105,89 @@ func trimRowPadding(s string) string {
 	}
 	return strings.TrimRight(strings.Join(rows, "\n"), "\n")
 }
+
+const longPassageCapture = "stream-long-passage.sse"
+
+// countingSink records how many separate writes reached the screen, which is the
+// difference between an answer that streams and one that lands.
+//
+// The buffer is a FIELD, not embedded, and that is load-bearing rather than
+// style. Embedded, bytes.Buffer promotes WriteString — and io.WriteString, which
+// is what the wrap writer uses, prefers it. Every byte then bypassed the
+// counting Write, and this sink reported one write for a 1262-byte answer that
+// had in fact arrived in pieces: a double that hid precisely the thing it was
+// built to measure.
+type countingSink struct {
+	writes  int
+	largest int
+	buf     bytes.Buffer
+}
+
+func (c *countingSink) Write(p []byte) (int, error) {
+	c.writes++
+	if len(p) > c.largest {
+		c.largest = len(p)
+	}
+	return c.buf.Write(p)
+}
+
+func (c *countingSink) Len() int       { return c.buf.Len() }
+func (c *countingSink) String() string { return c.buf.String() }
+
+// TestALongPassageReachesTheScreenInPieces is this issue at the level the
+// operator reported it: not "is the text right" but "when does it arrive".
+//
+// Every earlier test asserts the answer's final content, and a decoder that
+// buffers a whole passage produces byte-identical final content — which is
+// exactly how a ten-second blank screen passed a green suite. Write COUNT is the
+// observable that separates them, and it needs no clock: a buffered passage
+// reaches the sink in one write whenever it arrives, a streamed one in hundreds.
+func TestALongPassageReachesTheScreenInPieces(t *testing.T) {
+	assertDominantPassage(t, longPassageCapture)
+
+	d, fake, _, _ := askRig(t)
+	d.lang = "es"
+	fake.Script("", llmtest.Reply{Capture: longPassageCapture})
+	var sink countingSink
+	var errOut bytes.Buffer
+	code := runAsk(t.Context(), d, options{color: true}, &session{}, question{text: "sicofante vs obsequioso"}, &sink, &errOut)
+
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errOut.String())
+	}
+	// THE LARGEST SINGLE WRITE, not the count. Neutral prose streamed per rune
+	// even before this issue, so a write count is dominated by the untagged parts
+	// of an answer and would have passed on the buffered implementation too —
+	// the first version of this test asserted exactly that and proved nothing.
+	// What the buffer did was hand over the PASSAGE in one piece, 818 bytes of it
+	// in this capture, so that is what has to be impossible.
+	if sink.largest > 64 {
+		t.Fatalf("a %d-byte answer arrived in %d writes, the largest %d bytes; a buffered passage lands in one",
+			sink.Len(), sink.writes, sink.largest)
+	}
+	t.Logf("%d bytes in %d writes, largest %d", sink.Len(), sink.writes, sink.largest)
+}
+
+// assertDominantPassage keeps the test above from going quietly inert.
+//
+// It is only a test of streaming while the fixture is a SINGLE LONG passage —
+// the shape stream-language.sse does not have, which is why that capture could
+// never have caught this. Re-record with the command in
+// internal/llm/llmtest/testdata/README.md.
+func assertDominantPassage(t *testing.T, name string) {
+	t.Helper()
+	full := strings.Join(captureDeltas(t, name), "")
+	longest := 0
+	for _, r := range annotatedRegions(full) {
+		if n := r[1] - r[0]; n > longest {
+			longest = n
+		}
+	}
+	// Half the RAW capture, which is a stricter bar than it looks: full still
+	// carries the marker bytes the decoder strips, so this ratio understates the
+	// share of visible text the passage covers (818 of 1261 decoded bytes, 65%,
+	// when this capture was recorded).
+	if longest*2 < len(full) {
+		t.Fatalf("%s: longest passage %d of %d raw bytes — no longer a single-passage answer, so it cannot exhibit the buffering this test exists for", name, longest, len(full))
+	}
+}
