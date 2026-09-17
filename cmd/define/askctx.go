@@ -170,10 +170,18 @@ it is authoritative and you are not. Say plainly when you are unsure.`
 
 	// sharedLanguageGrammar is the [lang=xx] contract languageDecoder parses. It
 	// is a WIRE FORMAT, so a second spelling of it is a second format.
+	//
+	// It used to end its boundary rule with "Keep passages below 4000 characters"
+	// — 16,000 bytes at UTF-8 worst case, which is the deleted languageBodyLimit
+	// restated to the model. It landed in the same commit as that constant (#65,
+	// 62c6a66) and outlived it by a diff. A PROMPT IS A SITE: a bound that no
+	// longer exists must not survive in the one consumer a grep for the constant
+	// cannot reach. Worse than inert, it pushed the model toward the fragmented
+	// passage shape TestLongPassageStreamsAgainstLiveService refuses to promote.
 	sharedLanguageGrammar = `Annotate the language of your answer using short nonnested passages:
 [lang=es]Spanish text[/lang] and [lang=en]English text[/lang]. Use a two-letter
 language code, or und when unknown. Place boundaries at actual language changes,
-including an inline phrase in another language. Keep passages below 4000 characters.
+including an inline phrase in another language.
 These annotations describe the language you write; they do not change which
 languages or proportions the question calls for. Untagged prose is neutral.
 To discuss these reserved markers literally, escape their brackets as ` + escLeft + ` and

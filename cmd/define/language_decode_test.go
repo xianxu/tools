@@ -32,13 +32,6 @@ func spanAccumulator(out *languageText) func(languageText) {
 	}
 }
 
-// The retention invariant lives in the fuzz path because that is where it can be
-// wrong: the bound is a property of the marker and entity GRAMMARS, and a
-// hand-written case only exercises the fragments its author thought of. It
-// replaced `d.body.Len() < languageBodyLimit`, which named a field — and so
-// stopped checking anything the moment #72 deleted that field, rather than
-// failing.
-//
 // decodeChunks runs a string through the decoder in two writes, calling after()
 // at every point the decoder is between events — which is where any claim about
 // what it RETAINS has to hold.

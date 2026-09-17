@@ -14,8 +14,9 @@ const languageHeaderLimit = 64
 // events, and exists because #72 deleted the segment body — the one quantity
 // anything used to assert a bound on.
 //
-// Its components: a marker candidate and an entity candidate, each stopped by
-// its own grammar at 64 bytes, plus a partial rune in each of the two control
+// Its components: a marker candidate and an entity candidate, each stopped at
+// languageHeaderLimit — CITED at both sites, not written 64 twice, because this
+// constant is now computed from it, plus a partial rune in each of the two control
 // filters (`filter` lexes, `literal` renders). `literalText` is reset by
 // `output`'s deferred flush, so it holds nothing once an event returns.
 //
@@ -242,7 +243,7 @@ func (d *languageDecoder) output(s string, lang store.Lang) {
 			d.entity = ""
 			d.literalLang = lang
 			d.literal.Write(v)
-		} else if len(d.entity) >= 64 || r == '\n' || r == ' ' {
+		} else if len(d.entity) >= languageHeaderLimit || r == '\n' || r == ' ' {
 			d.flushEntity()
 		}
 	}

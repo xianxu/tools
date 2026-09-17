@@ -13,109 +13,60 @@ import (
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
-// splitWordInCapture finds a word the committed capture delivers across TWO
-// deltas, and returns it.
+// splitWordOwnedBy finds a word the committed capture delivers across TWO
+// deltas and that the PARSER puts in `lang` ("" meaning neutral, owned by
+// nobody).
 //
 // Derived, not hardcoded. The fake cannot serve invented streamed text —
 // misapplied() rejects a scripted literal on a streaming request and serveStream
 // always replays the committed capture — so the test's seeded word has to come
 // FROM the capture. Hardcoding one would rot silently the next time the capture
 // is re-recorded; this fails loudly instead.
-func splitWordInCapture(t *testing.T, name string) string {
-	return splitWordMatching(t, name, "", func(int, int) bool { return true })
-}
-
-// splitWordInsideAPassage is the OWNED counterpart (#72). Until own-at-open, a
-// passage arrived as one buffered lump and this cell of the enumeration —
-// {neutral, owned} x {split across deltas} — was unreachable: there were no
-// deltas left to split it across by the time anything was rendered.
-// The LANGUAGE is a parameter, not an afterthought: only a region in the
-// session's own language can highlight at all, since the answer withholds the
-// deck from anything else. Without it this helper could hand back a word from a
-// foreign region and report a correct implementation as "was not highlighted" —
-// it passes today only because every split candidate in stream-language.sse
-// happens to sit in an `en` region, which a re-record can change.
-func splitWordInsideAPassage(t *testing.T, name string, lang string) string {
-	t.Helper()
-	full := strings.Join(captureDeltas(t, name), "")
-	regions := annotatedRegions(full)
-	if len(regions) == 0 {
-		t.Fatalf("%s carries no [lang=..] passage — it cannot exercise owned text", name)
-	}
-	return splitWordMatching(t, name, "inside a [lang="+lang+"] passage", func(start, end int) bool {
-		for _, r := range regions {
-			if r.lang == lang && r.start <= start && end <= r.end {
-				return true
-			}
-		}
-		return false
-	})
-}
-
-type annotatedRegion struct {
-	start, end int
-	lang       string
-}
-
-// annotatedRegions returns the byte ranges the capture's markers enclose, with
-// the language each announces.
 //
-// A region ends at its close marker OR at a NESTED open, which is not a nicety:
-// it is what language_decode.go does, where a nested open drops into recovery and
-// the text after it is no longer owned. Taking the first `[/lang]` regardless —
-// the first version of this — returns a region whose body contains marker bytes
-// for the nested `[lang=en]Sycophant[lang=es][/lang][/lang]` that this capture
-// actually contains. A test helper that models the grammar differently from the
-// parser is a second grammar.
-func annotatedRegions(s string) []annotatedRegion {
-	var out []annotatedRegion
-	for at := 0; ; {
-		open := strings.Index(s[at:], "[lang=")
-		if open < 0 {
-			return out
-		}
-		open += at
-		head := strings.Index(s[open:], "]")
-		if head < 0 {
-			return out
-		}
-		body := open + head + 1
-		lang := s[open+len("[lang=") : body-1]
-		end := len(s)
-		next := body
-		if i := strings.Index(s[body:], "[/lang]"); i >= 0 {
-			end, next = body+i, body+i+len("[/lang]")
-		}
-		if i := strings.Index(s[body:], "[lang="); i >= 0 && body+i < end {
-			end, next = body+i, body+i // recovery starts here, and rescans from it
-		}
-		out = append(out, annotatedRegion{start: body, end: end, lang: lang})
-		if next <= at {
-			return out
-		}
-		at = next
-	}
-}
-
-func splitWordMatching(t *testing.T, name, where string, ok func(start, end int) bool) string {
+// Derived from the DECODER, and that is the second lesson. An earlier version
+// scanned the raw bytes for `[lang=..]` regions itself, which made it a second
+// grammar: it had to be taught separately that a nested open ends a region, and
+// even then it disagreed with the parser about what follows one (the parser is in
+// recovery there, owning nothing). Running the capture through the real decoder
+// one delta at a time yields both facts at once — where the deltas fell, and who
+// owns each byte — and cannot disagree with production because it IS production.
+func splitWordOwnedBy(t *testing.T, name, lang string) string {
 	t.Helper()
-	deltas := captureDeltas(t, name)
 
-	// A boundary splits a word when the delta before it ends in a word rune and
-	// the one after starts with one. wordRuns decides that, so this test and
-	// production cannot disagree about where a word is.
-	full := strings.Join(deltas, "")
-	at := 0
-	for _, d := range deltas[:max(0, len(deltas)-1)] {
-		at += len(d)
-		for _, r := range wordRuns(full) {
-			if r.start < at && at < r.end && ok(r.start, r.end) {
-				return full[r.start:r.end]
+	var got languageText
+	d := newLanguageDecoder(spanAccumulator(&got))
+	var boundary []int // decoded length at each delta boundary
+	for _, delta := range captureDeltas(t, name) {
+		d.Write(delta)
+		boundary = append(boundary, len(got.text))
+	}
+	d.Finish()
+
+	// A word belongs to lang when a span CONTAINS it, and is neutral when no span
+	// touches it. Partial overlap is neither, and is skipped rather than guessed.
+	owns := func(start, end int) bool {
+		for _, sp := range got.spans {
+			switch {
+			case sp.start <= start && end <= sp.end:
+				return string(sp.lang) == lang
+			case start < sp.end && sp.start < end:
+				return false // straddles a boundary
+			}
+		}
+		return lang == ""
+	}
+	for _, r := range wordRuns(got.text) {
+		if !owns(r.start, r.end) {
+			continue
+		}
+		for _, b := range boundary {
+			if r.start < b && b < r.end {
+				return got.text[r.start:r.end]
 			}
 		}
 	}
-	t.Fatalf("no word in %s is split across deltas %s— re-record the capture or pick another; "+
-		"skipping here would let this test go quietly inert", name, where+" ")
+	t.Fatalf("no word in %s is split across deltas and owned by %q — re-record the capture or pick another; "+
+		"skipping here would let this test go quietly inert", name, lang)
 	return ""
 }
 
@@ -152,7 +103,7 @@ func captureDeltas(t *testing.T, name string) []string {
 func TestStreamedAnswerHighlightsAWordSplitAcrossDeltas(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
-	word := splitWordInCapture(t, streamCapture)
+	word := splitWordOwnedBy(t, streamCapture, "")
 	d.vocab = vocab(word)
 
 	var out, errOut bytes.Buffer
@@ -178,7 +129,7 @@ func TestOwnedPassageHighlightsAWordSplitAcrossDeltas(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	d.lang = "en"
 	fake.Script("", llmtest.Reply{Capture: "stream-language.sse"})
-	word := splitWordInsideAPassage(t, "stream-language.sse", "en")
+	word := splitWordOwnedBy(t, "stream-language.sse", "en")
 	d.vocab = vocab(word)
 
 	var out, errOut bytes.Buffer
@@ -213,7 +164,7 @@ func TestOwnedPassageHighlightsAWordSplitAcrossDeltas(t *testing.T) {
 // is four chances to forget, and a path added later gets it for free. What this
 // table does pin is that no path leaves text dangling.
 func TestEveryStreamExitPathFlushes(t *testing.T) {
-	word := splitWordInCapture(t, streamCapture)
+	word := splitWordOwnedBy(t, streamCapture, "")
 
 	for _, tc := range []struct {
 		name      string
@@ -335,7 +286,7 @@ func TestTheLastWordOfAnAnswerSurvives(t *testing.T) {
 func TestStreamedAnswerCarriesNoEscapesWithoutColour(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
-	d.vocab = vocab(splitWordInCapture(t, streamCapture))
+	d.vocab = vocab(splitWordOwnedBy(t, streamCapture, ""))
 
 	var out, errOut bytes.Buffer
 	runAsk(t.Context(), d, options{color: false}, &session{}, question{text: "q?"}, &out, &errOut)

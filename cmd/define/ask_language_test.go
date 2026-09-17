@@ -224,10 +224,10 @@ func TestALongPassageReachesTheScreenInPieces(t *testing.T) {
 // internal/llm/llmtest/testdata/README.md.
 func assertDominantPassage(t *testing.T, name string) {
 	t.Helper()
-	// The SAME rule the conformance recorder applies before promoting a capture,
-	// over the same decoded denominator (dominantPassage). Stated twice over two
-	// denominators — raw bytes here, decoded text there — the guard that replays
-	// a capture and the guard that promotes it could disagree about the same file.
+	// The SAME predicate the conformance recorder applies before promoting a
+	// capture, over the same decoded denominator: one rule, one statement, so the
+	// guard that admits a capture and the guard that depends on it cannot
+	// disagree about the same file.
 	decoded := decodedChunks(strings.Join(captureDeltas(t, name), ""), 0)
 	if !dominantPassage(decoded) {
 		longest, total := longestPassage(decoded)
