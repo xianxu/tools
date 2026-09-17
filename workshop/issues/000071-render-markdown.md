@@ -1,7 +1,7 @@
 ---
 id: 000071
 status: open
-deps: [#70]
+deps: [tools#70]
 github_issue:
 created: 2026-09-16
 updated: 2026-09-16
