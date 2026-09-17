@@ -119,8 +119,10 @@ Interaction path: streamed UI response, one answer at a time, no concurrency.
   `d.marker` ≤ 64 B (`languageHeaderLimit`), `d.entity` ≤ 64 B (`:241`),
   `d.filter.pending` and `d.literal.pending` ≤ 3 B each — **two** filters, one
   partial rune each (`answer_text.go:30-32`) — and `d.literalText` ≤ one emitted
-  rune. Total ≤ 200 B, bounded by the marker and entity grammars rather than by a
-  size check.
+  rune. Total ≤ `maxLanguageDecoderRetained` = 136 B
+  (`2*languageHeaderLimit + 2*utf8.UTFMax`), bounded by the marker and entity
+  grammars rather than by a size check. Stated as the constant, not as a rounder
+  number beside it: two statements of one bound is how the looser one survives.
 - the segment-body bound disappears; there is no longer a quantity that can exceed one
 
 ### What #64 inherits
@@ -149,8 +151,10 @@ That question belongs with #64's stage model, not here.
 - The retention bound is asserted as an invariant over every component named in
   the envelope, replacing the `d.body.Len()` guard that dies with the field.
 - Ctrl-C mid-answer still keeps what arrived, highlighted as before.
-- `atlas/define.md` states the streaming behaviour and replaces the sentence
-  "malformed/nested/incomplete segments preserve neutral prose".
+- Every document stating the replaced rule derives from the new one — the
+  ENUMERATION, not one file: `atlas/define.md`, `cmd/define/README.md`
+  ("incomplete annotations fall back to neutral text" is now false for the same
+  reason) and `stepLanguageDecode`'s own doc comment.
 - #64 records the inherited tint question.
 
 ## Plan
@@ -181,10 +185,14 @@ That question belongs with #64's stage model, not here.
       via `scripts/llm-probe.sh record`. The committed `stream-language.sse`
       closes its passages after ~6 of its 87 deltas, so it cannot exhibit this
       bug at all — `llmtest/testdata/README.md`'s own rule, a capture is evidence
-      only for the shape its recording conditions elicit. Drive it through
-      `Reply{AfterText, FinishRelease}` and assert the sink holds text while the
-      stream is still open (ARCH-MOCK: the barrier is the seam, no wall clock in
-      the assertion).
+      only for the shape its recording conditions elicit. Assert the sink
+      holds text while the stream is still open. NOT via `Reply{AfterText,
+      FinishRelease}` as this row first said — that barrier holds after the FIRST
+      text delta, which in this capture is the bare `[lang=es]` marker, so the
+      sink is legitimately empty there with or without the bug. Shipped as a
+      client-level `deltaObserver` reporting each delta after the real writers
+      handled it: same observable, still no wall clock, and the fake is still the
+      seam (ARCH-MOCK).
 - [x] re-measure the piped one-shot; record before/after in `## Log`
 - [x] atlas — the streaming behaviour, the replaced "malformed/nested/incomplete
       segments preserve neutral prose" sentence, and the retired `highlightRegion`
@@ -341,6 +349,29 @@ capture exercises (BR-6). And the method is `runVocabulary`, not a second
 `vocabularyFor` (BR-7).
 
 ## Revisions
+
+### 2026-09-17 — boundary review round 1 (plan artifact)
+
+Reason: the review found the Plan still naming a mechanism the code does not use,
+and two statements of one bound. Per AGENTS.md the plan artifact must stop
+claiming what the code does not deliver.
+
+- **Plan row 6's mechanism changed**, and PQ-5 was disposed `addressed` on the
+  mechanism rather than the property. `Reply{AfterText, FinishRelease}` holds the
+  stream after the FIRST text delta; in `stream-long-passage.sse` that delta is
+  the bare `[lang=es]` marker, so the sink is empty there whether or not the bug
+  is present and the barrier would have asserted nothing. The property — text on
+  screen while deltas are still arriving — ships via a `deltaObserver` client
+  wrapper. Row 6 now says so.
+- **The envelope's retention figure** said "Total ≤ 200 B" where the code states
+  `maxLanguageDecoderRetained` = 136. The implementation is the tighter of the
+  two, so nothing was wrong — but two statements of one bound is how the looser
+  one survives a change, which is the same failure mode as the `d.body.Len()`
+  guard this issue deleted. The Spec now cites the constant.
+- **The Done-when named one file where the rule has three consumers.**
+  `cmd/define/README.md` still said "incomplete annotations fall back to neutral
+  text", which own-at-open makes false; the line now names the enumeration
+  (atlas, README, the decoder's doc comment) rather than the atlas alone.
 
 ### 2026-09-17 — plan-quality round 1 (4 blocking findings)
 
