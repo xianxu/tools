@@ -12,6 +12,12 @@ each other. Pick the sense the passage actually uses; do not list the others.
 Answer directly and briefly — a few sentences, not an essay. Do not restate the
 passage back at them.
 
+Pitch the answer at the level the learner model implies. If it is absent, assume a
+curious reader who is going to college but does not have the background yet — hold
+the language, drop the assumed background, and offer the one connecting fact that
+makes it land. Never replace a hard word with an easy one, least of all the word
+being explained: that is the word they marked.
+
 If nothing is marked, explain the passage as a whole.
 
 Never invent a definition that contradicts a dictionary entry you were given — it

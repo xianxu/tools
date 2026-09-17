@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
@@ -220,5 +222,81 @@ func TestMarksSurviveAnAskThatDeliveredNothing(t *testing.T) {
 	}
 	if sess.marks.empty() {
 		t.Error("the marks were cleared by an answer that never arrived")
+	}
+}
+
+// --- deck admission ---------------------------------------------------------
+
+// THE DICTIONARY IS THE ADMISSION GATE (#67): a marked word with an entry enters
+// the deck and reaches recall by the ordinary route, because harvest authors
+// items for deck words. A marked phrase with no entry was explained and is not
+// retained — the deck is a vocabulary deck, not a list of spans someone dragged
+// over.
+func TestAMarkedWordWithAnEntryEntersTheDeck(t *testing.T) {
+	d, fake, st, _ := askRig(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture})
+
+	// `sycophantic` is in the captured corpus the fake dictionary serves. The
+	// fixture has to be a word the DICTIONARY has, because the dictionary is the
+	// admission gate — a test using a word it lacks would assert the gate works
+	// by watching it refuse everything.
+	p := newPassage("a wholly sycophantic remark", 0)
+	sess := &session{passage: p}
+	sess.marks = sess.marks.toggle(p.spans(0)[2])
+
+	var out, errb bytes.Buffer
+	if code := ask(t.Context(), d, options{width: 80}, sess, &out, &errb,
+		question{text: "What does this mean?", forced: true,
+			passage: &passageAsk{Passage: p, Marks: sess.marks}}); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var texts []string
+	for _, w := range deck {
+		texts = append(texts, w.Text)
+	}
+	if !slices.Contains(texts, "sycophantic") {
+		t.Errorf("the marked word did not enter the deck: %v", texts)
+	}
+}
+
+// A marked span with no dictionary entry is explained and dropped.
+func TestAMarkedSpanWithoutAnEntryIsNotRetained(t *testing.T) {
+	d, fake, st, _ := askRig(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture})
+
+	p := newPassage("the qqzzx of the equinox", 0)
+	sess := &session{passage: p}
+	sess.marks = sess.marks.toggle(p.spans(0)[1])
+
+	var out, errb bytes.Buffer
+	ask(t.Context(), d, options{width: 80}, sess, &out, &errb,
+		question{text: "What does this mean?", forced: true,
+			passage: &passageAsk{Passage: p, Marks: sess.marks}})
+
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range deck {
+		if w.Text == "qqzzx" {
+			t.Error("a span with no dictionary entry was retained; the deck is a vocabulary deck")
+		}
+	}
+}
+
+// A marked word is distinguishable from a typed lookup in the event log — #17
+// folds this log, and the two are different evidence about what someone is
+// working on.
+func TestAMarkedWordIsDistinguishableFromALookup(t *testing.T) {
+	if store.EventMarked == store.EventLookedUp {
+		t.Fatal("marked and looked-up are the same kind")
+	}
+	if !slices.Contains(store.EventKinds(), store.EventMarked) {
+		t.Error("EventMarked is not in the extent, so every doc guard that derives from it misses the kind")
 	}
 }

@@ -46,6 +46,11 @@ func decideCapture(found bool, opt options) captureDecision {
 // still prints.
 type Capturer interface {
 	Capture(word string, found bool, opt options)
+	// CaptureMarked records a word MARKED in a passage, and admits it to the
+	// deck. It goes through this interface rather than beside it for the reason
+	// stated above: a second appender is how "capture is the only thing that
+	// records" stops being true without anyone noticing.
+	CaptureMarked(word string, opt options)
 	// CaptureAsk records a question (#16). Here rather than through the store
 	// directly, so the event log keeps ONE write path: main.go's deps comment
 	// says capture is the only thing that records, and a second appender beside
@@ -106,13 +111,22 @@ func newStoreCapturer(st store.Store, clock store.Clock, warn io.Writer, vocab V
 }
 
 func (c *storeCapturer) Capture(word string, found bool, opt options) {
+	c.record(word, store.EventLookedUp, found, opt)
+}
+
+// record is the ONE write path for an event that can also admit a word.
+//
+// Extracted when #67 added a second admitting caller, rather than copied: the
+// Upsert, the vocab.Add after it, and the order between them are the part that
+// must not be restated.
+func (c *storeCapturer) record(word string, kind store.EventKind, found bool, opt options) {
 	d := decideCapture(found, opt)
 	if d == captureNothing {
 		return
 	}
 	now := c.clock.Now()
 	if err := c.st.AppendEvent(store.ReviewEvent{
-		Word: word, Kind: store.EventLookedUp, Found: found, At: now,
+		Word: word, Kind: kind, Found: found, At: now,
 	}); err != nil {
 		c.warnf("could not record %q: %v", word, err)
 		return
@@ -188,6 +202,20 @@ func (c *storeCapturer) CaptureReview(out play.Outcome, opt options) {
 	}
 }
 
+// CaptureMarked admits a marked word to the deck.
+//
+// The SAME write path as a found lookup — one AppendEvent, one Upsert, and
+// vocab.Add only after the deck accepted it — differing in the event kind alone.
+// Sharing the path is what keeps the ordering honest: the highlight set says
+// "this is in your deck", so it must not claim a word the deck rejected.
+//
+// decideCapture is asked with found=true because a marked word HAS an entry —
+// admission is gated on that before this is called — so it is deck-eligible by
+// the same rule a successful lookup is.
+func (c *storeCapturer) CaptureMarked(word string, opt options) {
+	c.record(word, store.EventMarked, true, opt)
+}
+
 func (c *storeCapturer) CaptureAsk(word, question string, opt options) {
 	// The same opt-out governs both: DEFINE_NO_CAPTURE and -raw mean "write
 	// nothing in this directory", and a question is a write. decideCapture is
@@ -221,6 +249,7 @@ func (c *storeCapturer) warnf(format string, args ...any) {
 type noopCapturer struct{}
 
 func (noopCapturer) Capture(string, bool, options)       {}
+func (noopCapturer) CaptureMarked(string, options)       {}
 func (noopCapturer) CaptureAsk(string, string, options)  {}
 func (noopCapturer) CaptureReview(play.Outcome, options) {}
 func (noopCapturer) CaptureFlag(play.Outcome, options)   {}

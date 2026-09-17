@@ -564,6 +564,18 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				if !ok {
 					continue
 				}
+				if len(hit.dragged) > 0 {
+					// A drag marks every word it covered. Toggling each is what
+					// keeps a drag and a click ONE gesture: dragging back over a
+					// marked run clears it, exactly as clicking each word would.
+					for _, r := range hit.dragged {
+						if sp, found := passageSpanOf(sess.passage, r); found {
+							sess.marks = sess.marks.toggle(sp)
+						}
+					}
+					draw()
+					continue
+				}
 				if hit.hasRegion && hit.region.Kind == RegionPassageWord {
 					if sp, found := passageSpanOf(sess.passage, hit.region); found {
 						sess.marks = sess.marks.toggle(sp)

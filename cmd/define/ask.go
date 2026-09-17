@@ -188,6 +188,7 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	// answer.plain is the text that actually reached them, which is the same
 	// thing every branch below already keys on.
 	if q.passage != nil && answer.plain.Len() > 0 {
+		admitMarkedWords(d, opt, q.passage)
 		sess.marks = sess.marks.clear()
 	}
 
@@ -284,4 +285,31 @@ func lastN(s []string, n int) []string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+// admitMarkedWords puts the marked words that ARE words into the deck.
+//
+// THE DICTIONARY IS THE ADMISSION GATE — the same classifier the console already
+// uses to tell a lookup from a question (#67). A marked word with an entry is
+// something to learn and enters recall by the ordinary route, because harvest
+// authors items for deck words. A marked PHRASE with no entry was explained and
+// is not retained: the deck is a vocabulary deck, not a list of spans someone
+// once dragged over.
+//
+// Free and offline, so it costs nothing to ask per word: NOAD is already on the
+// path. Admission goes through the Capturer, which owns the only Upsert.
+func admitMarkedWords(d deps, opt options, a *passageAsk) {
+	if d.capture == nil || d.dict == nil || a == nil || a.Passage == nil {
+		return
+	}
+	for _, sp := range a.Marks.ordered() {
+		word := a.Passage.text(sp)
+		if word == "" {
+			continue
+		}
+		if raw, err := d.dict.Lookup(word); err != nil || strings.TrimSpace(raw) == "" {
+			continue // explained, not retained
+		}
+		d.capture.CaptureMarked(word, opt)
+	}
 }

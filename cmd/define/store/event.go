@@ -22,6 +22,14 @@ const (
 	// ignored by the ladder BY CONSTRUCTION rather than by a filter someone has
 	// to maintain.
 	EventFlagged EventKind = "flagged"
+	// EventMarked is a word MARKED in a passage the learner was reading (#67).
+	//
+	// Distinct from a lookup on purpose. A typed lookup is ambiguous — curiosity,
+	// a spelling check, verification — while a word marked because it blocked a
+	// reading is unambiguous, and it carries the sentence it was met in. #17 folds
+	// this log, and the two are different evidence about what someone is working
+	// on.
+	EventMarked EventKind = "marked"
 )
 
 // eventKinds is every kind, in the order the docs list them.
@@ -32,7 +40,7 @@ const (
 // layout and the atlas's both still read "kinds: looked-up, asked" long after
 // `reviewed` and `flagged` existed, and a log a human reads has no other
 // documentation.
-var eventKinds = []EventKind{EventLookedUp, EventAsked, EventReviewed, EventFlagged}
+var eventKinds = []EventKind{EventLookedUp, EventAsked, EventReviewed, EventFlagged, EventMarked}
 
 // EventKinds is the extent of EventKind, copied so a caller cannot reorder it.
 //

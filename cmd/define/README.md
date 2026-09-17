@@ -613,7 +613,8 @@ A model that is configured but does not answer says so, and the question is kept
 words/en/sycophantic.yaml  one file per word, under its language
 words/es/madrugar.yaml     a different language, a different deck
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
-                           kinds: looked-up, asked, reviewed, flagged. A
+                           kinds: looked-up, asked, reviewed, flagged,
+                           marked. A
                            reviewed record carries correct:, and a MISS from a
                            multiple-choice form also carries missed: — which
                            kind of wrong answer it was (domain, register,

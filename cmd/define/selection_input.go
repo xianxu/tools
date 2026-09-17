@@ -76,6 +76,9 @@ func (r *pointerRouter) route(k Key) (Key, bool) {
 		if click.screen == nil {
 			return Key{}, false
 		}
+		// A passage drag arrives as a completed gesture too: it carries words to
+		// mark rather than a region to act on, and the loop tells them apart by
+		// which field is set.
 		return Key{Kind: KeyClick, Row: k.Row, Col: k.Col, click: &click}, true
 	}
 	// Raw KeyClick input cannot invent a completed gesture.

@@ -35,6 +35,10 @@ type pointerClick struct {
 	hasRegion                 bool
 	footerEntry, footerOffset int
 	footer, retry             bool
+	// dragged is the passage words a DRAG covered (#67). Non-empty turns the
+	// gesture from a copy into a mark: a drag across a passage is selecting what
+	// to ask about, not selecting text to take away.
+	dragged []Region
 }
 
 // selectionStep owns the click/drag decision. A drag cannot become a click by

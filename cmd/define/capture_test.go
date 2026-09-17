@@ -73,6 +73,7 @@ func TestStoreCapturerDegradesOnWriteFailure(t *testing.T) {
 
 // countingCapturer records every Capture call, so arity is assertable.
 type countingCapturer struct {
+	marked    []string
 	calls     []string
 	found     []bool
 	asked     []string
@@ -97,6 +98,13 @@ func (c *countingCapturer) Capture(word string, found bool, opt options) {
 	c.calls = append(c.calls, word)
 	c.found = append(c.found, found)
 	c.voices = append(c.voices, opt.voice)
+}
+
+// marked is recorded separately from calls: a marked word and a typed lookup are
+// different evidence, and a double that merged them could not tell a test which
+// happened (#67).
+func (c *countingCapturer) CaptureMarked(word string, opt options) {
+	c.marked = append(c.marked, word)
 }
 
 // asked records questions separately from lookups, so a test can assert that a

@@ -72,6 +72,19 @@ func (l *liveScreen) pointerLocked(event selectionEvent, p selectionPoint) (poin
 		}
 		return click, ""
 	case selectionCopy:
+		// A DRAG ACROSS A PASSAGE MARKS rather than copies (#67). The screen can
+		// tell because the passage is buffer text with its own region kind on
+		// every word — there is no separate "which rows are the passage" table to
+		// keep in step.
+		//
+		// The reader is choosing what to ask about; taking the text to the
+		// clipboard instead would answer a question they did not ask, and the
+		// copy gesture is still there everywhere else.
+		if dragged := l.passageWordsInLocked(l.gesture.anchor, l.gesture.end); len(dragged) > 0 {
+			l.gesture = selectionGesture{}
+			l.repaint()
+			return pointerClick{screen: l, frame: l.frameID, dragged: dragged}, ""
+		}
 		text, err := selectedText(l.frame, l.gesture.anchor, l.gesture.end)
 		if err != nil {
 			l.gesture = selectionGesture{}
@@ -142,4 +155,37 @@ func (l *liveScreen) selectionNoticeLocked(text string) {
 	l.copySeq++
 	l.selectionNotice = text
 	l.repaint()
+}
+
+// passageWordsInLocked is every passage word the gesture covers, in reading
+// order.
+//
+// Whole words: a drag that starts or ends mid-word takes that word, because the
+// unit everywhere else in this feature is a word and half of one is not a thing
+// anyone can ask about.
+func (l *liveScreen) passageWordsInLocked(a, b selectionPoint) []Region {
+	a, b = selectionOrdered(a, b)
+	var out []Region
+	for row := a.row; row <= b.row && row < len(l.frame.rows); row++ {
+		if row < 0 {
+			continue
+		}
+		lo, hi := 0, l.frame.width-1
+		if row == a.row {
+			lo = a.col
+		}
+		if row == b.row {
+			hi = b.col
+		}
+		for _, r := range l.frame.rows[row].regions {
+			if r.Kind != RegionPassageWord {
+				continue
+			}
+			// Overlap, not containment: a drag that clips a word still means it.
+			if r.Col <= hi && r.Col+r.Width > lo {
+				out = append(out, r)
+			}
+		}
+	}
+	return out
 }

@@ -721,7 +721,8 @@ the boundary if a config arrives later.
 ```
 words/<lang>/<slug>.yaml one file per word, under its language
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
-                         kinds: looked-up, asked, reviewed, flagged
+                         kinds: looked-up, asked, reviewed, flagged,
+                         marked
 usage/<slug>.yaml        the news cache — per word and FLAT, so it is shared
                          across languages (see Forget's three axes)
 audio/<slug>/<digest>.mp3  a cached recording, with a <digest>.yaml record
@@ -1501,6 +1502,101 @@ recorded as `how so` comes back from Up-arrow and re-submits as a *question* —
 the opposite of what the hatch was typed to force. So `recallLine` is the one
 canonical, re-submittable form, and all three recall sites use it. Whitespace is
 still collapsed, because that changes no meaning.
+
+## Read-along: a passage you mark (`#67`)
+
+Paste a paragraph, click or drag the words you could not follow, press return, and
+get one answer about the passage AND each marked span.
+
+**A paste is classified by shape.** One to three words on a single line is a
+headword — `hot dog` and `a priori` are entries — and goes into the line, which is
+what someone pasting `sycophantic` to look it up wants. Four or more words, or any
+newline, is reading material and becomes the passage. The four-word floor is
+`readsAsQuestion`'s, reused rather than reinvented.
+
+**The passage is a RECORD, not chrome.** It goes into the buffer and scrolls away
+like a definition or an answer. It was footer chrome first, which is redrawn every
+frame and never scrolls — so it stayed welded to the prompt under every later
+lookup, which is what the operator saw. The footer was chosen to make "the
+asked-about words turn green afterwards" possible, since `screen.lines` is
+immutable once written; when the two requirements collided, the green re-render
+was the one dropped.
+
+**It wraps at CONSTRUCTION**, with `wrapText`, so a passage line IS a buffer line
+IS a `Region` line. Keeping logical lines and projecting regions through a reflow
+would need a second coordinate space and a mapping to hold in step — which is how
+a click comes to mark the word above the one you pointed at. It does not reflow on
+resize, the same bargain every other record makes.
+
+**Deck colour is baked in at write time; the MARK is paint-time.** That split is
+the whole design: the deck a passage was read against is part of the record, and
+the mark is transient — it lives between marking a word and asking about it.
+`paintMarks` splices over finished bytes the way `markClickable` does, re-asserting
+`markOn` after every producer SGR, because ANSI does not nest.
+
+**`markOn` is an explicit foreground/background pair, not inverse video.** Inverse
+swaps the two, so a deck-green word inside it comes out green-BACKGROUND; and a
+mark persists where a drag does not, so they must differ at a glance. An explicit
+pair also composes with the row tint, which `sourceBackground` recognises for `48`
+and not for `7`.
+
+**`RegionPassageWord`, and the registry stopped being total.** Every word of a
+passage is clickable, so being a region carries no information — but the passage
+lives in the buffer, and the click map is how buffer content is reached. It is the
+first kind the AUDIO registry does not answer for, which forced two declarations:
+`regionPlaysAudio` (a passage is read, not heard) and `regionUnderlines`
+(underlining every word says nothing and makes the passage unreadable). Both
+actionability guards consult the first, so a kind wired into neither still reddens.
+
+**A drag marks instead of copying, inside a passage only.** The screen tells by the
+region kind on the row — there is no separate "which rows are the passage" table to
+keep in step. Both ends snap to whole words, and a drag back over a marked run
+clears it, because a drag and a click are ONE gesture.
+
+**Enter is the ask, and it is a row in the decision table.** `parseREPLLine` takes
+one `lineState` rather than a second boolean — two bools side by side encode a
+precedence nobody declared. MARKS WIN over replay: in the common flow there is no
+current word at all, since `current` is only set by a successful lookup. A blank
+line on an unmarked passage is a LOCAL nudge through `nothingSays` — deterministic
+state, deterministic answer, no model call — phrased as an instruction, because the
+reader just pressed return and this is a gesture nobody discovers unaided.
+
+**`RegionPassageWord` scopes a stated invariant.** *"A click on ordinary text is
+NOTHING"* holds everywhere except inside a passage, where every word offers
+marking. So does the headword-click shortcut: a click on a headword is *"a shortcut
+for the bare Enter beside it"*, and with marks present Enter asks instead.
+
+**The request is the passage with its marks bracketed in place**, under its own
+task (`passage-question`), so the console question's golden and cassette are
+untouched. In place rather than a separate list of words, because position is then
+unambiguous — a word occurring twice needs no occurrence index. The passage is
+untrusted text on its way into a prompt, so its own brackets are escaped to
+`&#91;`/`&#93;` first: the rule `askSystem` already stated for the ANSWER
+direction, finally applied in the prompt direction.
+
+**NOAD's role inverts here, deliberately.** Elsewhere the entry is the output and
+the model supplements it — *"it is authoritative and you are not"*. In a passage
+the dictionary is the ADMISSION GATE and the contextual explanation is the output;
+the full entry is still one lookup away, by typing the word.
+
+**Marks clear IFF an answer reached the reader** — one predicate over `runAsk`'s
+several outcomes, not a case each. A Ctrl-C cannot silently empty them, and an
+unconfigured model cannot look like success.
+
+**Admission: the dictionary decides.** A marked word with an entry enters the deck
+through `CaptureMarked` and reaches recall by the ordinary route, since `harvest`
+authors items for deck words. A marked phrase with no entry was explained and is
+not retained — the deck is a vocabulary deck. `EventMarked` is its own kind because
+a typed lookup is ambiguous (curiosity, a spelling check) while a word marked
+because it blocked a reading is not, and `#17` folds this log.
+
+**The level default was REVERSED** (`askSystem`). It used to say *"write for a
+capable adult reader and do not guess at their level"*; it now assumes a curious
+reader going to college without the background yet. That is two settings in
+OPPOSITE directions — hold the language, drop the assumed background — and reading
+it as one means simplifying, which in a vocabulary tool means paraphrasing away the
+word being explained. A prompt line cannot defend that, so a live conformance row
+does.
 
 ## The learner model
 
@@ -2477,6 +2573,7 @@ Every seam has one, and each pins the assumption that seam rests on:
 
 | check | asserts |
 |---|---|
+| `passage_conformance_test.go` | a passage answer keeps the marked words rather than paraphrasing them away, which is the failure the reversed level default invites (#67) |
 | `bilingual_conformance_test.go` | installed Oxford records select Spanish-source `red` and enforce native record limits |
 | `bilingual_layout_conformance_test.go` | installed native `rendir` retains Oxford hierarchy and uniform complete section fill at widths 32/80 in dark/light es/en; optional actual ANSI captures |
 | `bilingual_system_conformance_test.go` | assembled Spanish dictionary preserves raw/off output and adds the correct English direction when on |

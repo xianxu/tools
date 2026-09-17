@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"slices"
 	"strings"
 	"testing"
@@ -286,5 +287,63 @@ func TestPassageWordsAreNotUnderlined(t *testing.T) {
 	line := markClickable("the slow precession", []Region{{Kind: RegionPassageWord, Text: "slow", Col: 4, Width: 4}})
 	if strings.Contains(line, "\x1b[4m") {
 		t.Errorf("markClickable underlined a passage word: %q", line)
+	}
+}
+
+// A DRAG across a passage marks every word it covers, rather than copying the
+// text. The reader is choosing what to ask about; taking it to the clipboard
+// would answer a question they did not ask.
+func TestADragAcrossAPassageMarksItsWords(t *testing.T) {
+	p := newPassage("the slow precession of the equinox", 0)
+	live := newLiveScreen(&bytes.Buffer{}, 24, 80)
+	defer live.Stop()
+	rows := make([]selectionRow, 24)
+	rows[0] = selectionRow{selectable: true, styled: p.line(0), regions: passageRegions(p)}
+	live.frame = newSelectionFrame(80, 24, rows)
+	live.frameID, live.framePublished = 1, true
+
+	got := live.passageWordsInLocked(selectionPoint{row: 0, col: 4}, selectionPoint{row: 0, col: 12})
+	var words []string
+	for _, r := range got {
+		words = append(words, r.Text)
+	}
+	// Whole words at both ends: the drag starts inside "slow" and stops inside
+	// "precession", and half a word is not something anyone can ask about.
+	if strings.Join(words, " ") != "slow precession" {
+		t.Errorf("drag covered %q, want %q", strings.Join(words, " "), "slow precession")
+	}
+}
+
+// A drag OUTSIDE a passage still copies, which is the gesture everywhere else.
+func TestADragOutsideAPassageStillCopies(t *testing.T) {
+	live := newLiveScreen(&bytes.Buffer{}, 24, 80)
+	defer live.Stop()
+	rows := make([]selectionRow, 24)
+	rows[0] = selectionRow{selectable: true, styled: "an ordinary line of output",
+		regions: []Region{{Kind: RegionWord, Text: "ordinary", Col: 3, Width: 8}}}
+	live.frame = newSelectionFrame(80, 24, rows)
+	live.frameID, live.framePublished = 1, true
+
+	if got := live.passageWordsInLocked(selectionPoint{row: 0, col: 0}, selectionPoint{row: 0, col: 20}); len(got) != 0 {
+		t.Errorf("a drag over a deck word was taken as a passage drag: %v", got)
+	}
+}
+
+// Dragging back over a marked run clears it — a drag and a click are ONE
+// gesture, so either must be able to cancel the other.
+func TestDraggingBackOverAMarkedRunClearsIt(t *testing.T) {
+	p := newPassage("the slow precession of the equinox", 0)
+	var m markSet
+	for _, sp := range []passageSpan{p.spans(0)[1], p.spans(0)[2]} {
+		m = m.toggle(sp)
+	}
+	if len(m.ordered()) != 2 {
+		t.Fatalf("setup: marks = %v", m.ordered())
+	}
+	for _, sp := range []passageSpan{p.spans(0)[1], p.spans(0)[2]} {
+		m = m.toggle(sp)
+	}
+	if !m.empty() {
+		t.Errorf("dragging back over the run left %v", m.ordered())
 	}
 }

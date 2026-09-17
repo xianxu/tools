@@ -733,15 +733,16 @@ boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
       `footer` channel (chrome, not buffer text, because `screen.lines` is
       immutable), under the normal deck-highlighting rules.
 - [x] `markSet` and drag-to-span.
-- [ ] marks painted: `highlightRow` widened from one range to a set, the three
+- [x] marks painted: `highlightRow` widened from one range to a set, the three
       precedence rules.
-- [ ] click and drag produce marks.
-- [ ] the ask: `renderPassagePrompt` with `[sel]` + bracket escaping under its own
+- [x] click and drag produce marks.
+- [x] the ask: `renderPassagePrompt` with `[sel]` + bracket escaping under its own
       task name, `parseREPLLine` marks-aware, the local nudge, the global
       level-default reversal.
-- [ ] the words become deck words: `CaptureMarked` through the one `Upsert`, the
+- [x] the words become deck words: `CaptureMarked` through the one `Upsert`, the
       word becoming schedulable, the passage re-rendering green.
-- [ ] atlas, then `sdlc close`.
+- [x] atlas
+- [ ] `sdlc close`
 
 ## Log
 
@@ -974,3 +975,34 @@ The M1 work is already committed and has been through four review rounds
 (BR-1..BR-17, two Criticals, all disposed or fixed); its findings and the review
 sidecar stay in the record. What changes is only that its close folds into the
 issue close rather than running as a fifth round of its own.
+
+### 2026-09-16 — the passage is a record, not chrome (operator, from smoke test)
+
+Reason: the operator ran the binary and reported, with screenshots, that the
+passage stayed welded to the prompt forever, then that it did not wrap and that
+every word was underlined.
+
+Delta, and the first item REVERSES a decision recorded above:
+
+- **The passage is BUFFER text and scrolls away**, like a definition or an answer.
+  It was footer chrome, which is redrawn every frame and never scrolls. I chose
+  the footer to honour "marks clear and the asked-about words turn green", which
+  needs a region the frame rebuilds — `screen.lines` is immutable once written.
+  The two requirements were in direct conflict and I picked the wrong one to
+  honour. **The green re-render is dropped** (operator: "let's remove that
+  requirement so it's ok for it to scroll off"). Rationale recorded: finding
+  earlier content is navigation's job, not something to solve by pinning — the
+  operator points at an "outline" feature for that, and at #69's header, which
+  implies the whole screen becoming a screen program later. Out of scope here.
+- **The passage wraps at construction**, so a passage line is a buffer line is a
+  Region line. Unwrapped, long lines ran off the right edge and the words past the
+  margin could not be clicked at all.
+- **Passage words are not underlined.** `markClickable` marks a span that offers
+  something its neighbours do not; in a passage every word does, so it said nothing
+  and made the text unreadable. `regionUnderlines` declares the split beside
+  `regionPlaysAudio`.
+- **`RegionPassageWord` is back.** It was resolved away when the passage was a
+  surface; with the passage in the buffer, the click map IS how its content is
+  reached. It is the first kind the audio registry does not answer for, which is
+  what forced both declarations to be explicit rather than assumed total.
+- Smoke test passed on the operator's machine after these three fixes.
