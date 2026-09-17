@@ -21,6 +21,11 @@ type session struct {
 	// is a different signal from "what this learner has been studying", and the
 	// prompt carries both.
 	words []string
+	// passage is the text being read, pinned in the footer (#67). Session-scoped
+	// like the rest of this struct: it is transient reading material, and what
+	// deserves to persist is the residue — a marked word on the deck — not the
+	// passage. A second paste replaces it.
+	passage *passage
 	// turns is the Q&A transcript, so a follow-up ("give me three more
 	// examples") resolves against the answer it follows. Session-scoped by
 	// design: a fresh process answers just as well, with the directory rather

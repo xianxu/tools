@@ -124,6 +124,14 @@ func (d *recordDisplay) Draw(prompt string, menu []string) {
 	fmt.Fprint(d.w, prompt)
 }
 
+// footer is the live edge's CURRENT footer — what is on screen now, as opposed
+// to `menus`, which is every one the loop drew.
+func (d *recordDisplay) footer() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.menu...)
+}
+
 func (d *recordDisplay) Page(n int) {
 	d.mu.Lock()
 	d.pages = append(d.pages, n)

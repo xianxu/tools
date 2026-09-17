@@ -726,22 +726,22 @@ boundaries; each `Mx` row closes with its own `sdlc milestone-close`.
 
 - [x] brainstorm the open questions (2026-09-16, in-session; decisions recorded above)
 - [x] `sdlc start-plan`, write the plan
-- [ ] M1 — bracketed paste: mode 2004, the paste scanner, `KeyPaste` as ONE key,
-      the 1000-RUNE cap (runes, not bytes — a byte cap refuses a CJK paragraph at a third of its length). Ships a standing bugfix on its own — today a pasted
-      newline submits mid-paste.
-- [ ] M2 — the passage on screen: `passage` + `wordAtCell`, rendered into the
-      screen's `footer` channel (chrome, not buffer text, because `screen.lines`
-      is immutable), under the normal deck-highlighting rules.
-- [ ] M3 — marks: `markSet`, `highlightRow` widened from one range to a set, the
-      three precedence rules, and click/drag producing marks. NO new `RegionKind`
-      and no change to the actionability guard — the plan resolved the passage as a
-      SURFACE rather than a set of regions, so `TestEveryRegionKindIsActionable`
-      is untouched.
-- [ ] M4 — the ask: `renderPassagePrompt` with `[sel]` + bracket escaping under
-      its own task name, `parseREPLLine` marks-aware, the local nudge, and the
-      global level-default reversal.
-- [ ] M5 — the words become deck words: `CaptureMarked` through the one `Upsert`,
-      the word becoming schedulable, and the passage re-rendering green.
+- [x] paste: mode 2004, the paste scanner, `KeyPaste` as ONE key, the 1000-RUNE
+      cap (runes, not bytes — a byte cap refuses a CJK paragraph at a third of its
+      length), the abandon rule, and `scan`'s exits as an enumeration.
+- [x] the passage on screen: `passage` + `wordAtCell`, rendered into the screen's
+      `footer` channel (chrome, not buffer text, because `screen.lines` is
+      immutable), under the normal deck-highlighting rules.
+- [x] `markSet` and drag-to-span.
+- [ ] marks painted: `highlightRow` widened from one range to a set, the three
+      precedence rules.
+- [ ] click and drag produce marks.
+- [ ] the ask: `renderPassagePrompt` with `[sel]` + bracket escaping under its own
+      task name, `parseREPLLine` marks-aware, the local nudge, the global
+      level-default reversal.
+- [ ] the words become deck words: `CaptureMarked` through the one `Upsert`, the
+      word becoming schedulable, the passage re-rendering green.
+- [ ] atlas, then `sdlc close`.
 
 ## Log
 
@@ -958,3 +958,19 @@ rejected two plan rows marked `modified` for entities that are NEW in existing
 files — the status column describes the entity, not the file. Then
 `TestPlanCitesTestsThatExist` rejected the name I guessed for the first guard. The
 plan now names both correctly.
+
+### 2026-09-16 — milestones collapsed to ONE boundary (operator)
+
+Reason: the operator chose a single review over per-milestone gates, after M1
+alone took four boundary-review rounds and the feature was still not
+smoke-testable.
+
+Delta: the `Mx` tags are removed and the Plan is plain checkboxes, which is what
+AGENTS.md §3 prescribes for work closing at one boundary — *"tagging a one-shot
+task M1 forces a redundant milestone-close + issue-close double-log"*. The
+mandatory fresh-eyes review still runs, once, at `sdlc close`.
+
+The M1 work is already committed and has been through four review rounds
+(BR-1..BR-17, two Criticals, all disposed or fixed); its findings and the review
+sidecar stay in the record. What changes is only that its close folds into the
+issue close rather than running as a fifth round of its own.

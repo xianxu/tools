@@ -396,6 +396,19 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		_, cols := view.Size()
 		return languagePrompt(d.lang, opt.color && !opt.noFlags, cols)
 	}
+	// passageRows is the pinned region's CURRENT contents, rebuilt from source on
+	// every frame. Every Draw goes through it, including the two that blank the
+	// prompt: the prompt correctly disappears while the loop is working, but the
+	// passage disappearing with it would take the surface away for the whole
+	// lookup/answer window — exactly the interval it exists for.
+	//
+	// deckVocabulary rather than vocabularyFor: a word is CLICKABLE whether or
+	// not it is coloured, and vocabularyFor is nil with colour off (vocab.go).
+	passageRows := func() []string {
+		return passageFooter(sess.passage, deckVocabulary(d), opt.color)
+	}
+	// blank hides the prompt while the loop is working, and keeps the passage.
+	blank := func() { view.Draw("", passageRows()) }
 	draw := func() {
 		// completionsFor rather than candidatesFor: draw renders only the grey
 		// tail, so resolving the pair here would build a recall list per
@@ -407,7 +420,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// rewritten on every keystroke, so buffering them would file a copy of
 		// the prompt per character typed.
 		view.Draw(RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color, currentPrompt()),
-			menuLines(e.String(), commands, opt.width))
+			append(passageRows(), menuLines(e.String(), commands, opt.width)...))
 	}
 	draw()
 	applyBg(bgEvent{kind: bgSessionStart})
@@ -504,7 +517,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			// A background job finished. What it did prints between prompts like any
 			// line the loop writes, so the frame is cleared first: a write with the
 			// prompt on screen lands inside it (TestNothingIsWrittenWhileAPromptIsShown).
-			view.Draw("", nil)
+			blank()
 			bg.received(res)
 			applyBg(bgEvent{kind: bgJobDone, result: res})
 			draw()
@@ -531,6 +544,15 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					clicked(hit.region)
 				}
 				continue
+			case KeyPaste:
+				// Reading material becomes the PASSAGE; a headword-shaped paste
+				// falls through to the editor, because someone pasting
+				// `sycophantic` to look it up wants a lookup (pasteIsPassage).
+				if text := string(k.Raw); pasteIsPassage(text) {
+					sess.passage = newPassage(text)
+					draw()
+					continue
+				}
 			case KeyPasteRefused:
 				// The refusal is REPORTED rather than silent: a paste that
 				// simply vanished would read as a broken terminal, and the
@@ -580,7 +602,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// (operator-reported). Blanking it is not a patch on that
 				// instance: a prompt drawn while nothing is reading keys invites
 				// typing at a line that does not exist.
-				view.Draw("", nil)
+				blank()
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
 					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color, currentPrompt()))
 				}
