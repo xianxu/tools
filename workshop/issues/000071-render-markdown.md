@@ -170,3 +170,8 @@ chunk split.
 Filed with #70 (the light/dark theme switch), which owns the axis this scheme's
 two columns are selected by; the colour table above is the proposal, and #70's
 palette is where it lands.
+
+Cross-reference: #72 (stream the answer as it arrives) sets a bound on how long
+any stage may hold text back. An inline markdown span whose closer has not
+arrived is exactly that kind of hold, so this renderer's streaming behaviour is
+constrained by #72's rule rather than free to choose its own.
