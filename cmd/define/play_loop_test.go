@@ -2105,7 +2105,7 @@ func TestToInputSplitsEnterFromSpaceAndCarriesTab(t *testing.T) {
 }
 
 // AND THE SPLIT IS INVISIBLE TO EVERY FORM THAT HOLDS ONE WORD, which is the
-// property that let it ship without touching 2.1 or 2.3. Apply treats
+// property that let it ship without touching the cloze form. Apply treats
 // InputFinish exactly as InputReveal for them, so Enter still reveals.
 func TestEnterStillRevealsOnASingleWordForm(t *testing.T) {
 	for _, q := range []play.Question{
@@ -2174,7 +2174,7 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 		{"the first grid row", board, 7, 0, 0, true},
 		{"the second grid row", board, 8, 0, 4, true},
 		{"a gutter is not a cell", board, 7, gutter, 0, false},
-		{"the toggle row is not a cell", board, 9, 0, 0, false},
+		{"the prompt row is not a cell", board, 9, 0, 0, false},
 		{"a row the screen does not place", board, 3, 0, 0, false},
 		// The board keeps its rows fitting by relaying out, so this should never
 		// arise — which is why the loop refuses it rather than trusting that.

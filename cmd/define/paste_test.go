@@ -148,11 +148,11 @@ func TestTheDrainDoesNotCutAStraddlingCloser(t *testing.T) {
 	}
 }
 
-// ARCH-SECURE. The body is untrusted text on its way to the footer, which passes
-// producer SGR through by construction (selection_frame.go:236-245). A pasted
-// escape would recolour the passage and defeat the mark painting, which
-// re-asserts over KNOWN producer SGR rather than arbitrary injected state. The
-// scanner is where the bytes become a typed value.
+// ARCH-SECURE. The body is untrusted text on its way to the screen — today the
+// line editor, which opens its own styles around what it draws, so a pasted
+// escape would leak out of the line and repaint the frame. The scanner is where
+// the bytes become a typed value, which keeps the rule true for any later surface
+// without it having to be restated there.
 func TestAPastedEscapeNeverLeavesTheBoundary(t *testing.T) {
 	var s pasteScanner
 	k, _ := s.scan(wholePaste("the \x1b[31mslow\x1b[0m precession"))
@@ -344,13 +344,9 @@ func TestARefusedPasteLeavesTheLineAlone(t *testing.T) {
 // End to end through the loop: a HEADWORD-SHAPED paste reaches the line, and
 // the session does not submit or look anything up on the way.
 //
-// Narrowed in M2, which gave reading material a destination of its own: a paste
-// with a newline or four or more words now becomes the PASSAGE (pasteIsPassage),
-// and TestThePassageSurvivesALookup owns that half. What stays here is the case
-// this milestone was about — a paste arriving as one key, into the line, without
-// submitting. Apply's own contract is still asserted directly in
-// TestAPastedNewlineDoesNotSubmitAndBecomesASpace, which is a unit test of a pure
-// function rather than of the classification above it.
+// A paste goes into the line and does not submit. Apply's own contract — one
+// atomic insertion, interior newlines flattened — is asserted directly in
+// TestAPastedNewlineDoesNotSubmitAndBecomesASpace; this is the loop-level case.
 func TestEditorLoopTakesAPasteWithoutSubmitting(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
@@ -527,6 +523,32 @@ func TestALegalCJKPasteIsNotRefusedAtAnySplit(t *testing.T) {
 		k, _ := s.scan(whole)
 		if k.Kind != KeyPaste {
 			t.Errorf("split %d: a legal %d-rune paste decoded as %v", split, maxPasteRunes, k.Kind)
+		}
+	}
+}
+
+// BR-16: sess.enterPaste() was production wiring nothing exercised. newConsole
+// is where the modes are taken; this asserts the paste enable is among them,
+// beside the alt screen and the mouse.
+func TestNewConsoleEnablesBracketedPaste(t *testing.T) {
+	var control strings.Builder
+	sess := &rawSession{control: &control}
+	sess.enterAlt()
+	sess.enterMouse()
+	sess.enterPaste()
+	if got := control.String(); !strings.Contains(got, pasteOn) {
+		t.Errorf("bracketed paste was never enabled: %q", got)
+	}
+}
+
+// BR-15: a paste during a review sitting is IGNORED, and that is a decision.
+// Mode 2004 is on for this surface too, so a paste really does arrive; a sitting
+// takes keystrokes and has no field for prose, so inserting the body would answer
+// the question with whatever was on the clipboard.
+func TestAPasteDuringASittingIsIgnored(t *testing.T) {
+	for _, k := range []Key{{Kind: KeyPaste, Raw: []byte("some pasted prose")}, {Kind: KeyPasteRefused}} {
+		if in, ok := toInput(k); ok {
+			t.Errorf("%v produced the sitting input %v; a sitting takes keystrokes, not text", k.Kind, in.Kind)
 		}
 	}
 }

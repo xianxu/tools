@@ -142,13 +142,13 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 
 // sanitisePasteBody is where untrusted bytes become a typed value (ARCH-SECURE).
 //
-// The body is arbitrary text from the user's clipboard, and it is bound for the
-// footer, which passes producer SGR through by construction
-// (selection_frame.go:236-245). A pasted escape would recolour the passage and
-// defeat the mark painting, which re-asserts over KNOWN producer styling rather
-// than arbitrary injected state. Stripping at the boundary makes that
-// unrepresentable instead of checked downstream — the same move oneLine makes at
-// the store boundary (store/item.go:200).
+// The body is arbitrary text from the user's clipboard, and it reaches the screen:
+// today the line editor, whose RenderLine opens its own styles around what it
+// draws. A pasted escape would leak out of the line and repaint the frame around
+// it. Stripping at the boundary makes that unrepresentable instead of checked
+// downstream — the same move oneLine makes at the store boundary
+// (store/item.go:200), and it holds for any later surface without being restated
+// there.
 //
 // Newlines and tabs SURVIVE: a passage has lines, and a tab is text.
 //

@@ -1323,3 +1323,55 @@ func TestPTYLanguageTint(t *testing.T) {
 		})
 	}
 }
+
+// Bracketed paste is asked for, and given back (#67 M1).
+//
+// The same guarantee the mouse row above makes, and for the same reason: a
+// terminal left bracketing pastes types ESC[200~ into whatever the user runs
+// next, and there is no `reset` reflex for that either. It rides rawSession's
+// restore beside mouseOff.
+//
+// A live row rather than a unit test because the unit tests write to a
+// strings.Builder — they prove the sequence is composed, not that it reaches a
+// terminal. BR-16 named the gap: the mouse had this row and paste did not.
+func TestPTYBracketedPasteIsAskedForAndGivenBack(t *testing.T) {
+	cmd, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	started := out.take(time.Second)
+
+	if !strings.Contains(started, pasteOn) {
+		t.Errorf("the session never enabled bracketed paste, so a pasted newline submits the line: %q", started)
+	}
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	if rest := out.take(time.Second); !strings.Contains(started+rest, pasteOff) {
+		t.Errorf("bracketed paste was left ON: the next program gets ESC[200~ typed into it: %q", rest)
+	}
+}
+
+// A real paste through a real terminal: the newline inside it must not submit.
+//
+// This is the milestone's whole claim, measured where it actually matters. The
+// unit tests assert the decoder; this asserts that a terminal in mode 2004, a
+// pty, and the editor together do what the decoder promises.
+func TestPTYAPastedNewlineDoesNotSubmit(t *testing.T) {
+	cmd, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	out.take(time.Second)
+
+	f.Write([]byte(pasteStart + "hot\ndog" + pasteEnd))
+	shown := out.take(2 * time.Second)
+
+	if strings.Contains(shown, "no dictionary entry") {
+		t.Errorf("the paste submitted mid-text — a lookup happened: %q", shown)
+	}
+	if !strings.Contains(shown, "hot dog") {
+		t.Errorf("the pasted text never reached the line: %q", shown)
+	}
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+}

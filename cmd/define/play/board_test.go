@@ -81,7 +81,7 @@ func TestBoardGradesOnlyItsOwnKeys(t *testing.T) {
 		{'0', true},
 		{'9', true},
 		{'a', true},
-		{'A', true}, // case-insensitive, as form 2.1 is
+		{'A', true}, // case-insensitive, as the graded form was
 		{'f', true},
 		{'d', true},  // cell 13 — the session reserves `d` only where a form has
 		{'D', true},  // a current word to drop, which a grid does not
@@ -157,7 +157,7 @@ func TestAMarkLandsTheActiveMode(t *testing.T) {
 	// while every mark stayed irreversible. Paint clips the PROMPT last, so the
 	// mode now lives on the row that survives longest.
 	//
-	// STILL ONE OWNER — the toggle row is gone, not duplicated. The mode is Yes
+	// STILL ONE OWNER — the old mode row is gone, not duplicated. The mode is Yes
 	// here: the two Toggles above returned it.
 	yes := b.Keys()
 	if !strings.Contains(yes, "[yes]") || strings.Contains(yes, "[no]") {

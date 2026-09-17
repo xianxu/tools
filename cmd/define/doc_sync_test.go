@@ -460,7 +460,7 @@ func TestAtlasDescribesEveryRenderOpt(t *testing.T) {
 	}
 }
 
-// The README must name EVERY reason a word falls back to form 2.1.
+// The README must name EVERY reason a word is triaged on a board (#42).
 //
 // Derived from the code's own list rather than checked against a copy in the
 // test, because a hand-maintained enumeration is what failed: choiceFor branched

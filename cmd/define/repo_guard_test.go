@@ -1734,8 +1734,20 @@ func currentTruthFiles(t *testing.T, root string) []string {
 	self := "cmd/define/repo_guard_test.go"
 	binds := func(p string) bool {
 		switch {
-		case strings.HasSuffix(p, "_test.go"):
+		// This file names removed and stale symbols on purpose — it is the guard.
+		case p == self:
 			return false
+		// TEST FILES BIND TOO, since #67 M1.
+		//
+		// They were exempt, and the exemption hid a whole class: prose in a
+		// _test.go naming a symbol the tree does not declare, or a test renamed
+		// in one file and still cited in another, was invisible to every guard
+		// here. Three such sites shipped in one milestone before a human reviewer
+		// found them by reading. Measured when the exemption was lifted: zero
+		// pre-existing violations, so the class was genuinely unguarded rather
+		// than tolerated.
+		case strings.HasSuffix(p, "_test.go"):
+			return true
 		case strings.HasSuffix(p, ".go"):
 			return true
 		case p == "README.md", strings.HasSuffix(p, "/README.md"), strings.HasPrefix(p, "atlas/"):

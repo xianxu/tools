@@ -290,7 +290,7 @@ func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
 	// The capture answers a question about "obsequious" and says the word.
 	const inAnswer = "Obsequious"
 
-	newDeck := func(t *testing.T) Vocabulary {
+	deckVocab := func(t *testing.T) Vocabulary {
 		t.Helper()
 		st := store.NewMem()
 		if err := st.Upsert(store.Word{Text: inAnswer}); err != nil {
@@ -320,7 +320,7 @@ func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
 			d.audio = newAudioSeam(nil)
 			d.player = &fakePlayer{}
 			d.stdinIsTerminal = func() bool { return true }
-			d.vocab = newDeck(t)
+			d.vocab = deckVocab(t)
 
 			var out, errOut bytes.Buffer
 			tc.run(t, d, options{color: true, times: 1, locale: "us", tty: true, noAudio: true}, &out, &errOut)

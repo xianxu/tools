@@ -242,6 +242,69 @@ rounds:
           round: 2
       boundary: M1
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-16T16:47:28-07:00"
+      agent: claude
+      dispose:
+        - id: BR-2
+          disposition: addressed
+          note: Suite green at HEAD and the guard RUNS (--- PASS, 0.20s, not SKIP); render.go:284 now names TestEveryEnabledInputModeIsDecoded and the three test-file sites are swept — no occurrence of the old name remains anywhere under cmd/ or atlas/.
+          round: 3
+        - id: BR-4
+          disposition: not-addressed
+          note: The Revisions section and the four missing Pure-entities rows landed, but every M1 task checkbox (Tasks 1.1-1.5, plan lines 126-472) is still unticked — 0 ticked boxes in the whole file — which is exactly what round 2 named.
+          round: 3
+        - id: BR-5
+          disposition: addressed
+          note: README.md:76-92 now documents the single-insertion behaviour, newline/tab flattening, the 1000-character refusal, escape stripping and the abandon rule; atlas/define.md covers pasteLineRunes. Prose-only repair verified against the pinned diff and the behaviour's existing tests.
+          round: 3
+        - id: BR-6
+          disposition: addressed
+          note: 'Mutation-verified here: adding "&& k.Kind != KeyPaste" to route''s condition at selection_input.go:48 reddens TestAPasteCancelsALiveDrag (paste_test.go:505). The test now drives pointerRouter.route, not cancelPointerInput.'
+          round: 3
+        - id: BR-7
+          disposition: addressed
+          note: 'The decision is recorded at the site (paste.go:155-160): Cc removed because it is what a terminal acts on, Cf deliberately kept because stripping it would alter words in scripts that need it. No behaviour change, so no regression test is owed — though nothing pins that Cf survives.'
+          round: 3
+        - id: BR-8
+          disposition: not-addressed
+          note: key.go:66-68 is still byte-identical to the base; the struct doc says Raw is an unmodelled sequence to be ignored, while editor.go:63 inserts it for KeyPaste.
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: 'First half stayed fixed. Second half open: TestTheDrainDoesNotCutAStraddlingCloser (paste_test.go:136-149) still hands each scan a fresh buffer rather than the leftover readInput would re-present.'
+          round: 3
+        - id: BR-11
+          disposition: not-addressed
+          note: 'README and atlas were repaired, but 3 sites remain — paste.go:145-148 and paste_test.go:150-154 still say the body is "bound for the footer" and would "defeat the mark painting" (it goes into the LINE at HEAD), and paste_test.go:348-349 still cites pasteIsPassage and TestThePassageSurvivesALookup in the past tense. The class fix was not written: repo_guard_test.go is byte-identical across the entire window, so currentTruthFiles (:1732-1746) still exempts *_test.go and no forward-direction guard exists.'
+          round: 3
+        - id: BR-12
+          disposition: addressed
+          note: 'Mutation-verified here: restoring the single "utf8.RuneCount(body) <= maxPasteRunes" predicate reddens TestALegalCJKPasteIsNotRefusedAtAnySplit at split 3011. The split into maxPasteRunes/maxPasteBytes is the structural fix the finding asked for.'
+          round: 3
+        - id: BR-13
+          disposition: not-addressed
+          note: rawterm.go:96-198 is unchanged since c1844b3 — still three hand-written enter/leave pairs, three independent bools, and a hand-written teardown order in restore(). I-2 below approaches the same shape from the test side.
+          round: 3
+        - id: BR-14
+          disposition: not-addressed
+          note: 'The issue file changed only by b801efb (one checkbox). There is still no ## Log entry for either boundary-review round, and issue:937 still claims "full suite green" for c1844b3, where BR-2 proved it red.'
+          round: 3
+      findings:
+        - id: BR-15
+          severity: Important
+          title: A paste during a review sitting is silently dropped — toInput has no case for KeyPaste, and this window turned mode 2004 on for that surface too
+          detail: 'newConsole calls sess.enterPaste() (replraw.go:89) and BOTH sitting paths run through it: --play via runPlay (play_loop.go:116) and /play via sittingInPlace, which borrows the REPL''s keys channel (replraw.go:620). toInput (play_loop.go:565) has no case for KeyPaste or KeyPasteRefused — I confirmed it returns ok=false for both — and play_loop.go:370 continues on !ok. Before this window 2004 was off and a pasted answer arrived as KeyRunes and typed; now it vanishes with no message, and a refused paste produces no notice either because the report lives in runEditor (replraw.go:534), which is not running during a sitting. No test covers it. The durable fix is the guard, not the case: KeyKind has no sentinel (key.go:12-63), so nothing forced the question. The repo already owns the move at render.go:281 (numRegionKinds plus the guards derived from it).'
+          family: enum-grows-past-consumers
+          round: 3
+        - id: BR-16
+          severity: Important
+          title: sess.enterPaste() is production wiring no test exercises, and mode 2004 has no live conformance row while the mouse does
+          detail: 'This is the 2nd finding in family `production-seam-untested` (BR-3 was the 1st), so do not fix this site alone. Evidence: deleting replraw.go:89 leaves `go test ./cmd/define/ -run ''Paste|Raw|Editor|Console|Repl|Input''` green (ok, 15.9s) — with it gone the terminal never brackets and the whole milestone silently reverts to a pasted newline submitting mid-paste. rawterm_test.go:119-152 calls r.enterPaste() itself, so it pins the METHOD and never the call site, and it asserts into a bytes.Buffer, so it cannot show the sequence reaching a terminal. pty_conformance_test.go:664 is the exact missing precedent, and rawterm.go:163-166 states paste carries the identical no-reset-reflex hazard. The rule that covers the class - every terminal mode the program enables is asserted at the place it is ENABLED and given back on a real terminal, DERIVED from the enable-constant set rather than hand-written per mode. The enumeration is already owned by TestEveryEnabledInputModeIsDecoded: altScreenOn, mouseOn, pasteOn. Sweep it in this round - one in-process assertion per constant that newConsole writes it, one PTY row per constant that it reaches and leaves a real terminal. TestRestoreHandsBackEveryTerminalState hand-writes all three today, which is BR-13''s duplication seen from the test side. ARCH-MOCK, ARCH-DRY.'
+          family: production-seam-untested
+          round: 3
+      boundary: M1
+      blocked: true
 ---
 
 # Gate ledger — tools#67 (boundary-review)
@@ -388,16 +451,36 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   The enumeration is short — the Log's verification claims, the Plan checkboxes, and the
   Estimate block's actuals — and appending one Log entry per gate round covers it.
 
+## Round 3 — 2026-09-16T16:47:28-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-2 — addressed — Suite green at HEAD and the guard RUNS (--- PASS, 0.20s, not SKIP); render.go:284 now names TestEveryEnabledInputModeIsDecoded and the three test-file sites are swept — no occurrence of the old name remains anywhere under cmd/ or atlas/.
+- BR-4 — not-addressed — The Revisions section and the four missing Pure-entities rows landed, but every M1 task checkbox (Tasks 1.1-1.5, plan lines 126-472) is still unticked — 0 ticked boxes in the whole file — which is exactly what round 2 named.
+- BR-5 — addressed — README.md:76-92 now documents the single-insertion behaviour, newline/tab flattening, the 1000-character refusal, escape stripping and the abandon rule; atlas/define.md covers pasteLineRunes. Prose-only repair verified against the pinned diff and the behaviour's existing tests.
+- BR-6 — addressed — Mutation-verified here: adding "&& k.Kind != KeyPaste" to route's condition at selection_input.go:48 reddens TestAPasteCancelsALiveDrag (paste_test.go:505). The test now drives pointerRouter.route, not cancelPointerInput.
+- BR-7 — addressed — The decision is recorded at the site (paste.go:155-160): Cc removed because it is what a terminal acts on, Cf deliberately kept because stripping it would alter words in scripts that need it. No behaviour change, so no regression test is owed — though nothing pins that Cf survives.
+- BR-8 — not-addressed — key.go:66-68 is still byte-identical to the base; the struct doc says Raw is an unmodelled sequence to be ignored, while editor.go:63 inserts it for KeyPaste.
+- BR-9 — not-addressed — First half stayed fixed. Second half open: TestTheDrainDoesNotCutAStraddlingCloser (paste_test.go:136-149) still hands each scan a fresh buffer rather than the leftover readInput would re-present.
+- BR-11 — not-addressed — README and atlas were repaired, but 3 sites remain — paste.go:145-148 and paste_test.go:150-154 still say the body is "bound for the footer" and would "defeat the mark painting" (it goes into the LINE at HEAD), and paste_test.go:348-349 still cites pasteIsPassage and TestThePassageSurvivesALookup in the past tense. The class fix was not written: repo_guard_test.go is byte-identical across the entire window, so currentTruthFiles (:1732-1746) still exempts *_test.go and no forward-direction guard exists.
+- BR-12 — addressed — Mutation-verified here: restoring the single "utf8.RuneCount(body) <= maxPasteRunes" predicate reddens TestALegalCJKPasteIsNotRefusedAtAnySplit at split 3011. The split into maxPasteRunes/maxPasteBytes is the structural fix the finding asked for.
+- BR-13 — not-addressed — rawterm.go:96-198 is unchanged since c1844b3 — still three hand-written enter/leave pairs, three independent bools, and a hand-written teardown order in restore(). I-2 below approaches the same shape from the test side.
+- BR-14 — not-addressed — The issue file changed only by b801efb (one checkbox). There is still no ## Log entry for either boundary-review round, and issue:937 still claims "full suite green" for c1844b3, where BR-2 proved it red.
+
+### Raised
+
+- **BR-15** [Important] `enum-grows-past-consumers` A paste during a review sitting is silently dropped — toInput has no case for KeyPaste, and this window turned mode 2004 on for that surface too
+  newConsole calls sess.enterPaste() (replraw.go:89) and BOTH sitting paths run through it: --play via runPlay (play_loop.go:116) and /play via sittingInPlace, which borrows the REPL's keys channel (replraw.go:620). toInput (play_loop.go:565) has no case for KeyPaste or KeyPasteRefused — I confirmed it returns ok=false for both — and play_loop.go:370 continues on !ok. Before this window 2004 was off and a pasted answer arrived as KeyRunes and typed; now it vanishes with no message, and a refused paste produces no notice either because the report lives in runEditor (replraw.go:534), which is not running during a sitting. No test covers it. The durable fix is the guard, not the case: KeyKind has no sentinel (key.go:12-63), so nothing forced the question. The repo already owns the move at render.go:281 (numRegionKinds plus the guards derived from it).
+- **BR-16** [Important] `production-seam-untested` sess.enterPaste() is production wiring no test exercises, and mode 2004 has no live conformance row while the mouse does
+  This is the 2nd finding in family `production-seam-untested` (BR-3 was the 1st), so do not fix this site alone. Evidence: deleting replraw.go:89 leaves `go test ./cmd/define/ -run 'Paste|Raw|Editor|Console|Repl|Input'` green (ok, 15.9s) — with it gone the terminal never brackets and the whole milestone silently reverts to a pasted newline submitting mid-paste. rawterm_test.go:119-152 calls r.enterPaste() itself, so it pins the METHOD and never the call site, and it asserts into a bytes.Buffer, so it cannot show the sequence reaching a terminal. pty_conformance_test.go:664 is the exact missing precedent, and rawterm.go:163-166 states paste carries the identical no-reset-reflex hazard. The rule that covers the class - every terminal mode the program enables is asserted at the place it is ENABLED and given back on a real terminal, DERIVED from the enable-constant set rather than hand-written per mode. The enumeration is already owned by TestEveryEnabledInputModeIsDecoded: altScreenOn, mouseOn, pasteOn. Sweep it in this round - one in-process assertion per constant that newConsole writes it, one PTY row per constant that it reaches and leaves a real terminal. TestRestoreHandsBackEveryTerminalState hand-writes all three today, which is BR-13's duplication seen from the test side. ARCH-MOCK, ARCH-DRY.
+
 ## Open findings
 
-- **BR-2** [Critical] `removed-symbol-unswept` Suite is red at HEAD — render.go still names the test this window renamed
 - **BR-4** [Important] `plan-artifact-stale` The durable plan contradicts the shipped code and carries no Revisions entry
-- **BR-5** [Important] `readme-surface-undocumented` cmd/define/README.md not updated for the paste behaviour or the 1000-character refusal
-- **BR-6** [Important] `decided-behaviour-unpinned` No test for a paste arriving during a live drag, which the plan required as a decision
-- **BR-7** [Minor] `boundary-parses-partial-class` sanitisePasteBody drops Cc controls but lets bidi/format controls through
 - **BR-8** [Minor] `doc-contradicts-type` Key struct doc still says Raw is an unmodelled sequence to be ignored, not inserted
 - **BR-9** [Minor] `test-accepts-two-outcomes` TestTheBoundaryKeepsNewlinesAndDropsOtherControls accepts either outcome, pinning neither
 - **BR-11** [Important] `doc-contradicts-type` Prose committed in this window asserts M2 behaviour and names symbols the tree does not declare
-- **BR-12** [Important] `decision-on-incomplete-input` The rune cap is evaluated on a possibly-truncated buffer, so a legal 1000-rune CJK paste is refused
 - **BR-13** [Minor] `repeated-shape-not-extracted` enterPaste/leavePaste is the third copy of the same terminal-mode pair, and restore's ordering is still undeclared
 - **BR-14** [Minor] `issue-row-stale` The issue Log records no boundary-review round and its "full suite green" claim was false at the commit it describes
+- **BR-15** [Important] `enum-grows-past-consumers` A paste during a review sitting is silently dropped — toInput has no case for KeyPaste, and this window turned mode 2004 on for that surface too
+- **BR-16** [Important] `production-seam-untested` sess.enterPaste() is production wiring no test exercises, and mode 2004 has no live conformance row while the mouse does

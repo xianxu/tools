@@ -590,6 +590,18 @@ func toInput(k Key) (play.Input, bool) {
 			return play.Input{Kind: play.InputDrop, Rune: k.Rune}, true
 		}
 		return play.Input{Kind: play.InputRune, Rune: k.Rune}, true
+	case KeyPaste, KeyPasteRefused:
+		// IGNORED, and decided rather than dropped by omission (#67 M1, BR-15).
+		// Mode 2004 is on for this surface too — the sitting borrows the editor's
+		// key channel — so a paste really does arrive here.
+		//
+		// A sitting takes KEYSTROKES, not text: every form grades a choice, and
+		// there is no field for prose to go into. Inserting the body as runes
+		// would answer the question with whatever was on the clipboard.
+		//
+		// #13's free-written-sentence form is the one that will want a case here,
+		// and it does not exist yet. Until it does, silence is the honest answer.
+		return play.Input{}, false
 	}
 	return play.Input{}, false
 }

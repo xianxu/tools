@@ -123,7 +123,7 @@ So: **the scanner accumulates nothing.** It is a function of the buffer it is sh
 **Files:**
 - Create: `cmd/define/paste.go`, `cmd/define/paste_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 package main
@@ -216,12 +216,12 @@ func TestPasteScannerDiscardsAnOversizePasteBoundedly(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run TestPasteScanner -v`
 Expected: FAIL — `undefined: pasteScanner`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```go
 package main
@@ -296,12 +296,12 @@ func (s *pasteScanner) scan(buf []byte) (Key, int) {
 
 Add `KeyPaste` and `KeyPasteRefused` to the `KeyKind` block (`key.go:9-51`).
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 Run: `go test ./cmd/define/ -run TestPasteScanner -v`
 Expected: PASS (5 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 1.2: Hook the scanner into `decodeKey`, and rewrite the pinned assertion
 
@@ -313,7 +313,7 @@ Expected: PASS (5 tests)
 
 > **`decodeKey` must become stateful, and that has two costs the first draft missed.** There are **39 call sites across 6 files** (34 in `key_test.go`). Prefer keeping a package-level `decodeKey(buf)` wrapper that allocates a fresh decoder, and give `readInput` a long-lived one — that leaves 38 call sites untouched and is equally correct, because only the streaming caller needs continuity. **`FuzzDecodeKey` and `FuzzDecodeKeyNeverLeaksEscapeTails` (`key_test.go:128,147`) must build a fresh decoder per iteration** or paste state leaks between inputs; the seed corpus already contains `"\x1b[200~"`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 // A paste is ONE key carrying text, not a rune storm. readInput delivers into a
@@ -334,12 +334,12 @@ func TestAPastedNewlineIsNotEnter(t *testing.T) {
 func TestAFreshDecoderIsNotMidPaste(t *testing.T) { /* … */ }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'TestDecodeKeyTakesAPaste|TestAPastedNewline|TestAFreshDecoder' -v`
 Expected: FAIL — `undefined: KeyPaste`
 
-- [ ] **Step 3: Implement — and state the hook rule, because it is not "on ESC"**
+- [x] **Step 3: Implement — and state the hook rule, because it is not "on ESC"**
 
 **The scanner takes EVERY byte while draining, and only `0x1b` otherwise.** Hooking it on `0x1b` alone makes the drain unreachable: `draining` is entered while the buffer head is ordinary text mid-paste, so `decodeKey` would never consult it again and the rest of an oversize paste would arrive as `KeyRune` — the exact failure the drain exists to prevent. Every test above starts at an ESC, which is why none of them catches it.
 
@@ -373,13 +373,13 @@ func TestAnOversizePasteKeepsDrainingAcrossReads(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run — naming the tests explicitly, because a pattern that looks right can select nothing**
+- [x] **Step 4: Run — naming the tests explicitly, because a pattern that looks right can select nothing**
 
 Run: `go test ./cmd/define/ -run 'Key|Paste|Decode' -v` then
 `go test ./cmd/define/ -run 'TestEveryEnabledInputModeIsDecoded|FuzzDecodeKey' -v`
 Expected: PASS. (Verify the selection with `go test ./cmd/define/ -list 'Key|Paste|Decode'` — `-run 'Key|Fuzz'` does **not** match `TestEveryEnabledInputModeIsDecoded`.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 1.2b: The paste body is UNTRUSTED — name the boundary (ARCH-SECURE)
 
@@ -393,7 +393,7 @@ The first draft's ARCH-SECURE note named the prompt and store boundaries and sto
 
 **So `newPassage` is the parse boundary: untrusted bytes in, a typed `passage` out.** It strips escape sequences (`escapeLen`, `render.go:582` — do not write a second escape grammar) and non-newline control runes, exactly as `oneLine` (`store/item.go:200`) does at the store boundary. Invalid state becomes unrepresentable rather than checked downstream.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestAPastedEscapeSequenceNeverReachesThePassage(t *testing.T) {
@@ -419,18 +419,18 @@ func FuzzPasteScannerAcrossCalls(f *testing.F) {
 }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'PastedEscape|Unterminated|EmbeddedCloser' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run**
 
 Run: `go test ./cmd/define/ -run 'Paste|Passage' -v` then `go test ./cmd/define/ -fuzz FuzzPasteScannerAcrossCalls -fuzztime 30s`
 Expected: PASS, no crashers
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ### Task 1.3: Enable mode 2004 — and widen the guard that should have covered it
 
@@ -440,15 +440,15 @@ Expected: PASS, no crashers
 
 > **A plan review corrected this plan's claim here.** The first draft said enabling 2004 without decoding it would fail `TestEveryEnabledInputModeIsDecoded` "by design". It would not: that test derives its modes by regex over **`mouseOn` only** (`key_test.go:417`), so a separate `pasteOn` constant is invisible to it. The plan would have enabled a mode outside the one guard written to prevent exactly that. **Widening the guard is a step of this task, not a nicety.**
 
-- [ ] **Step 1: Write the failing tests** — (a) widen the guard's source to `mouseOn + pasteOn` and add a `"2004"` row to its `replies` table; (b) assert `restore()` emits paste-off **before** raw mode ends, in the same ordered teardown as `leaveMouse`; (c) model the "flag set only on a successful write" rule on `TestEnterDoesNotClaimAStateItCouldNotWrite` (`rawterm_test.go:161`).
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 1: Write the failing tests** — (a) widen the guard's source to `mouseOn + pasteOn` and add a `"2004"` row to its `replies` table; (b) assert `restore()` emits paste-off **before** raw mode ends, in the same ordered teardown as `leaveMouse`; (c) model the "flag set only on a successful write" rule on `TestEnterDoesNotClaimAStateItCouldNotWrite` (`rawterm_test.go:161`).
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'TestEveryEnabledInputModeIsDecoded|TestEnterDoesNotClaim|TestLeaveAltIsIdempotent|Paste' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement** — `pasteOn = "\x1b[?2004h"` / `pasteOff = "\x1b[?2004l"` beside `mouseOn`/`mouseOff`; `enterPaste`/`leavePaste` setting a `paste bool` only on a successful write; call `enterPaste` beside `enterMouse` in `newConsole`.
-- [ ] **Step 4: Run** the same selection; Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 3: Implement** — `pasteOn = "\x1b[?2004h"` / `pasteOff = "\x1b[?2004l"` beside `mouseOn`/`mouseOff`; `enterPaste`/`leavePaste` setting a `paste bool` only on a successful write; call `enterPaste` beside `enterMouse` in `newConsole`.
+- [x] **Step 4: Run** the same selection; Expected: PASS
+- [x] **Step 5: Commit**
 
 ### Task 1.4: Route `KeyPaste` through the editor
 
@@ -456,20 +456,20 @@ Expected: FAIL
 
 > **Decide explicitly:** a `KeyPaste` reaches `pointerRouter.route` (`selection_input.go:28`), which for a non-pointer, non-`KeyUnknown` key calls `cancelPointerInput(l, k, true)` — **cancelling a live drag**. That is almost certainly right (a paste replaces the passage, so a drag over the old one is meaningless), but it must be a decision with a test, not an inherited side effect.
 
-- [ ] **Step 1: Write the failing tests** — a `KeyPaste` leaves the line unchanged and does not submit; a `KeyPasteRefused` prints a message naming the limit; a paste during a live drag cancels the drag.
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 1: Write the failing tests** — a `KeyPaste` leaves the line unchanged and does not submit; a `KeyPasteRefused` prints a message naming the limit; a paste during a live drag cancels the drag.
+- [x] **Step 2: Run to verify they fail**
 
 Run: `go test ./cmd/define/ -run 'EditorLoop|Paste' -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement** — `Apply` gets explicit `case KeyPaste, KeyPasteRefused: return e, ActNone` (explicit, not fall-through, so the intent is readable); `runEditor` intercepts both **before** `Apply`, where `viewportGesture` and `KeyClick` are already intercepted.
-- [ ] **Step 4: Run** the same selection; Expected: PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 3: Implement** — `Apply` gets explicit `case KeyPaste, KeyPasteRefused: return e, ActNone` (explicit, not fall-through, so the intent is readable); `runEditor` intercepts both **before** `Apply`, where `viewportGesture` and `KeyClick` are already intercepted.
+- [x] **Step 4: Run** the same selection; Expected: PASS
+- [x] **Step 5: Commit**
 
 ### Task 1.5: Milestone close
 
-- [ ] Atlas (`atlas/define.md`, under *The line editor (raw mode)*): mode 2004 is enabled; a paste is ONE key and **why** (the 256-key drop-newest channel); the rune cap and its refusal; and that the scanner accumulates nothing because `readInput` re-presents.
-- [ ] `sdlc milestone-close --issue 67 --milestone M1`
+- [x] Atlas (`atlas/define.md`, under *The line editor (raw mode)*): mode 2004 is enabled; a paste is ONE key and **why** (the 256-key drop-newest channel); the rune cap and its refusal; and that the scanner accumulates nothing because `readInput` re-presents.
+- [x] `sdlc milestone-close --issue 67 --milestone M1`
 
 ---
 
