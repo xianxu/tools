@@ -348,6 +348,43 @@ close, which the nested `[lang=en]Sycophant[lang=es][/lang][/lang]` in this very
 capture exercises (BR-6). And the method is `runVocabulary`, not a second
 `vocabularyFor` (BR-7).
 
+### 2026-09-17 — boundary review rounds 2 and 3
+
+Round 2 disposed nothing (its review emitted no findings block) but recommended
+three plan/doc corrections, all applied and recorded under Revisions. Round 3
+disposed BR-1..BR-7 and raised three more, each stated as a RULE because its
+family had repeated.
+
+**BR-8 (Important): a prompt is a site.** My shadow-sweep enumerated the prose
+consumers of the deleted body bound — atlas, README, doc comment — and missed the
+executable one. `sharedLanguageGrammar` still told the model "Keep passages below
+4000 characters", which is 16,000 bytes at UTF-8 worst case: `languageBodyLimit`
+restated to the model, landed in the same commit as the constant (#65, 62c6a66)
+and outliving it by a diff. Worse than inert — it pushed the model toward exactly
+the fragmented passage shape `TestLongPassageStreamsAgainstLiveService` refuses
+to promote, and contradicted the atlas line this diff landed. Deleted; both
+goldens re-recorded, and the diff is exactly that clause.
+
+The same rule's second open site was mine: `maxLanguageDecoderRetained` is
+computed from `languageHeaderLimit`, but the entity cap it depends on was a bare
+literal `64`. It now cites the constant. A grep for `4000`/`16 KiB`/
+`languageBodyLimit` across the tree now returns only historical references —
+comments saying what was deleted — and no live restatement.
+
+**BR-9 (Minor): a helper that needs a parser boundary derives it from the
+parser.** `annotatedRegions` was a second grammar: taught separately that a
+nested open ends a region, and still disagreeing with the decoder about what
+follows one (the parser is in recovery there, owning nothing). Replaced by
+running the capture through the real decoder one delta at a time, which yields
+where the deltas fell AND who owns each byte from production itself — collapsing
+`annotatedRegions`, `splitWordMatching`, the raw-versus-decoded offset mismatch
+and BR-3's language parameter into one mechanism that cannot disagree with the
+code it tests.
+
+**BR-10 (Minor):** the retention rationale was duplicated verbatim onto a helper
+that asserts nothing, and `assertDominantPassage` described the bug BR-5 fixed in
+the present tense inside the fix. Both corrected.
+
 ## Revisions
 
 ### 2026-09-17 — boundary review round 1 (plan artifact)
