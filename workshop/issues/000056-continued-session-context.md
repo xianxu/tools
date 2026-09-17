@@ -1,11 +1,12 @@
 ---
 id: 000056
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-13
-updated: 2026-09-13
+updated: 2026-09-17
 estimate_hours:
+started: 2026-09-17T09:04:42-07:00
 ---
 
 # define: keep questions in a continued session conversation
