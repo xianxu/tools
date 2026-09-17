@@ -105,7 +105,7 @@ func TestNearMissWithOneRegisteredCommand(t *testing.T) {
 		t.Errorf("nearestCommands(\"hel\", one) = %v, %v; want [/help], true", got, close)
 	}
 	var out, errb bytes.Buffer
-	dispatchCommand(parseREPLLine("/hel", false), one, commandCtx{stdout: &out, stderr: &errb})
+	dispatchCommand(parseREPLLine("/hel", lineState{}), one, commandCtx{stdout: &out, stderr: &errb})
 	if !strings.Contains(errb.String(), "did you mean /help") {
 		t.Errorf("a near miss against a one-command registry did not suggest: %q", errb.String())
 	}
@@ -305,7 +305,7 @@ func TestHelpForAnUnknownNameSaysWhatDispatchSays(t *testing.T) {
 	for _, name := range []string{"histry", "qqqqqq"} {
 		var viaHelp, viaDispatch bytes.Buffer
 		c1 := runHelp(commandCtx{cmds: commands, stdout: io.Discard, stderr: &viaHelp}, []string{name})
-		c2 := dispatchCommand(parseREPLLine("/"+name, false), commands, commandCtx{stdout: io.Discard, stderr: &viaDispatch})
+		c2 := dispatchCommand(parseREPLLine("/"+name, lineState{}), commands, commandCtx{stdout: io.Discard, stderr: &viaDispatch})
 		if c1 != 2 || c2 != 2 || viaHelp.Len() == 0 || viaHelp.String() != viaDispatch.String() {
 			t.Errorf("%s: /help said %q (exit %d), dispatch said %q (exit %d)", name, viaHelp.String(), c1, viaDispatch.String(), c2)
 		}
@@ -377,7 +377,7 @@ func TestHelpRendersWithTheContextItIsGiven(t *testing.T) {
 		t.Errorf("/help pron at width 20 printed %q, want %q", viaHelp.String(), want)
 	}
 	var viaDash bytes.Buffer
-	dispatchCommand(parseREPLLine("/pron --help", false), commands, commandCtx{width: 20, stdout: &viaDash, stderr: io.Discard})
+	dispatchCommand(parseREPLLine("/pron --help", lineState{}), commands, commandCtx{width: 20, stdout: &viaDash, stderr: io.Discard})
 	if viaDash.String() != want {
 		t.Errorf("/pron --help at width 20 printed %q, want %q", viaDash.String(), want)
 	}

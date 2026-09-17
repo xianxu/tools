@@ -55,7 +55,7 @@ func TestParseREPLLine(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Compared field-wise rather than with ==: replCommand gained an
 			// args slice in #15, which makes the struct incomparable.
-			got := parseREPLLine(tc.line, tc.hasCurrent)
+			got := parseREPLLine(tc.line, lineState{hasCurrent: tc.hasCurrent})
 			if got.kind != tc.want.kind || got.word != tc.want.word ||
 				got.name != tc.want.name || !reflect.DeepEqual(got.args, tc.want.args) ||
 				got.question != tc.want.question || got.literal != tc.want.literal ||

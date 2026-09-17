@@ -405,7 +405,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// deckVocabulary rather than vocabularyFor: a word is CLICKABLE whether or
 	// not it is coloured, and vocabularyFor is nil with colour off (vocab.go).
 	passageRows := func() []string {
-		return passageFooter(sess.passage, deckVocabulary(d), opt.color)
+		return passageFooter(sess.passage, sess.marks, deckVocabulary(d), opt.color)
 	}
 	// blank hides the prompt while the loop is working, and keeps the passage.
 	blank := func() { view.Draw("", passageRows()) }
@@ -540,7 +540,22 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// screen exists. What it can do is act on the region under the
 				// pointer, and a click on nothing is nothing: no beep, no
 				// message. Pointing at ordinary text is not an error.
-				if hit, ok := con.pointer.resolve(k); ok && hit.hasRegion {
+				//
+				// INSIDE A PASSAGE it is: every word offers marking, so the
+				// invariant above is scoped to everywhere else (#67). The passage
+				// is a SURFACE rather than a set of regions — a Region says "this
+				// particular span offers an action", which carries no information
+				// when every span does — so the hit test is FooterRowAt plus
+				// wordAtCell, and no new RegionKind exists.
+				hit, ok := con.pointer.resolve(k)
+				if !ok {
+					continue
+				}
+				if markClickedWord(view, &sess, hit) {
+					draw()
+					continue
+				}
+				if hit.hasRegion {
 					clicked(hit.region)
 				}
 				continue
@@ -581,7 +596,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// Bypassing it meant the interactive path quietly disagreed about
 				// what a line means — no trimming, and "hot  dog" not collapsed to
 				// the multi-word headword the dictionary actually has (ARCH-DRY).
-				cmd := parseREPLLine(e.String(), sess.hasCurrent())
+				cmd := parseREPLLine(e.String(), sess.lineState())
 				// Redraw the committed line with NO suggestion before advancing:
 				// the grey tail was never accepted, so leaving it in scrollback
 				// claims the user typed something they did not.
@@ -605,6 +620,15 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				blank()
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
 					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color, currentPrompt()))
+				}
+				if cmd.kind == cmdAskPassage {
+					askInSession(question{
+						text:    "What does this mean?",
+						forced:  true,
+						passage: &passageAsk{Passage: sess.passage, Marks: sess.marks},
+					})
+					draw()
+					continue
 				}
 				if cmd.kind == cmdCommand {
 					// Commands print multiple lines, and the screen places every

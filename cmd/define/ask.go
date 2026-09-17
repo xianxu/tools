@@ -20,6 +20,10 @@ import (
 type question struct {
 	text   string
 	forced bool
+	// passage is set when the question is ABOUT a passage on screen (#67). A
+	// pointer, so the six existing construction sites keep the zero value and go
+	// on meaning exactly what they meant.
+	passage *passageAsk
 }
 
 // askScoped runs one answer with the interrupt scoped to it.
@@ -159,11 +163,32 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	client := foregroundClient(d.newLLM(cfg), out, opt)
 	answer := newLanguageAnswer(out, opt.width, vocabularyFor(d, opt), opt.tintFor(d.lang))
 	req := renderAskPrompt(gatherAskContext(d, sess, q, errOut))
+	if q.passage != nil {
+		// The passage renderer takes the SAME context and adds the passage to it
+		// — it does not fork the context blocks, which is how two prompts come to
+		// disagree about what the model is told.
+		a := *q.passage
+		a.Context = gatherAskContext(d, sess, q, errOut)
+		req = renderPassagePrompt(a)
+	}
 	_, err = client.Stream(ctx, req, answer.decoder.Write)
 	// Finish before ANY termination branch: clean partial text belongs in
 	// history on cancellation and truncation, and never contains metadata.
 	if writeErr := answer.Finish(); writeErr != nil {
 		fmt.Fprintf(errOut, "define: the answer could not be fully written: %v\n", writeErr)
+	}
+
+	// MARKS CLEAR IFF AN ANSWER REACHED THE READER — one predicate over runAsk's
+	// several outcomes, not a case each (#67). Collapsing a failure into success
+	// would silently empty the marks on a Ctrl-C, or turn words green when no
+	// model was ever configured; collapsing the other way would make a truncated
+	// answer the reader DID read leave its marks lit and re-askable by a bare
+	// Enter.
+	//
+	// answer.plain is the text that actually reached them, which is the same
+	// thing every branch below already keys on.
+	if q.passage != nil && answer.plain.Len() > 0 {
+		sess.marks = sess.marks.clear()
 	}
 
 	// Asked FIRST, and asked of the CONTEXT rather than the error. A cancelled

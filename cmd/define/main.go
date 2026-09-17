@@ -747,7 +747,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// `define /history 7` has to mean what `/history 7` means at the prompt.
 	// Classifying only fs.Arg(0) made the argument count reject it as "too many
 	// words" while the piped loop ran it happily (BR-20).
-	oneShot := parseREPLLine(strings.Join(fs.Args(), " "), false)
+	oneShot := parseREPLLine(strings.Join(fs.Args(), " "), lineState{})
 	switch {
 	case forgetting && *forget == "":
 		fmt.Fprintln(stderr, "define: -forget needs a word")

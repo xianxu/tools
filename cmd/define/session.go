@@ -26,6 +26,9 @@ type session struct {
 	// deserves to persist is the residue — a marked word on the deck — not the
 	// passage. A second paste replaces it.
 	passage *passage
+	// marks is what is currently marked in the passage. Cleared after an ask: the
+	// transient state converts into deck membership (#67).
+	marks markSet
 	// turns is the Q&A transcript, so a follow-up ("give me three more
 	// examples") resolves against the answer it follows. Session-scoped by
 	// design: a fresh process answers just as well, with the directory rather
@@ -35,6 +38,16 @@ type session struct {
 
 // hasCurrent is what parseREPLLine needs to know to read a blank line.
 func (s *session) hasCurrent() bool { return s.current != "" }
+
+// lineState is everything the session holds that changes what a line MEANS,
+// handed over as one value so no caller has to remember the precedence.
+func (s *session) lineState() lineState {
+	return lineState{
+		hasCurrent: s.hasCurrent(),
+		hasPassage: s.passage != nil && !s.passage.empty(),
+		hasMarks:   !s.marks.empty(),
+	}
+}
 
 // sawLookup records a successful lookup. The ask outcome deliberately does not
 // reach here — see lookupOutcome.

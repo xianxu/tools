@@ -56,7 +56,7 @@ func TestSentenceFallbackRespectsDictionaryAndRawMode(t *testing.T) {
 			}
 			d := deps{dict: dict, langDeps: langDeps{capture: noopCapturer{}}}
 			var out, errOut bytes.Buffer
-			got := lookupAndRender(d, options{raw: raw}, parseREPLLine(phrase, false), &out, &errOut)
+			got := lookupAndRender(d, options{raw: raw}, parseREPLLine(phrase, lineState{}), &out, &errOut)
 			wantAsk := !hit && !raw
 			if (got.ask != "") != wantAsk || (hit && (got.code != 0 || out.Len() == 0)) || (!hit && raw && got.code != 1) {
 				t.Fatalf("hit=%v raw=%v: outcome=%+v output=%q error=%q", hit, raw, got, out.String(), errOut.String())
@@ -75,7 +75,7 @@ func routeFor(t *testing.T, line string) string {
 		t.Fatalf("fake dictionary: %v", err)
 	}
 	d := deps{dict: dict, langDeps: langDeps{capture: noopCapturer{}}}
-	cmd := parseREPLLine(line, false)
+	cmd := parseREPLLine(line, lineState{})
 	switch cmd.kind {
 	case cmdCommand:
 		return "command"

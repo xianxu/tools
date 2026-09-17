@@ -1,6 +1,10 @@
 package main
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
+)
 
 // passageSpan is a range of one passage LINE, in bytes.
 //
@@ -169,28 +173,105 @@ func pasteIsPassage(text string) bool {
 	return len(strings.Fields(text)) >= 4
 }
 
+// markOn is how a MARK is painted: an explicit foreground/background pair.
+//
+// Not the selection's inverse video (\x1b[7m), for two reasons. Inverse swaps
+// foreground and background, so a deck-green word inside it comes out
+// green-BACKGROUND; and a mark persists while a drag does not, so the two must be
+// distinguishable at a glance. An explicit pair also composes better with the row
+// tint — sourceBackground recognises 48 and not 7, so paintLanguageRow correctly
+// declines to inject the row background underneath a mark.
+const markOn = "\x1b[48;5;24m\x1b[38;5;231m"
+
 // passageFooter renders the passage for the pinned region, one entry per LOGICAL
 // line — the screen does the wrapping, which is what makes FooterRowAt's
 // (entry, offset) answer meaningful.
 //
-// Deck colour goes on here, at render time, and the footer is rebuilt from
-// source on every frame — which is the whole reason the passage lives in the
-// footer rather than the buffer. A word that enters the deck between two frames
-// is green in the second one, with nothing to invalidate.
-func passageFooter(p *passage, v Vocabulary, colour bool) []string {
+// Marks and deck colour are both applied HERE, at render time, and that is only
+// possible because the footer is rebuilt from source on every frame. The buffer
+// could not do this: screen.lines is append-only, so a word that entered the deck
+// after its line was written could never turn green. It is the whole reason the
+// passage is chrome rather than scrollback (#67).
+//
+// ONE PASS over the word spans, which is what makes the precedence structural
+// rather than a rule someone has to remember: a span is marked, or it is a deck
+// word, or it is plain. A MARK WINS over deck colour — it is the salient,
+// short-lived state — and because each span is styled once and closed, nothing
+// nests and nothing has to be re-asserted.
+func passageFooter(p *passage, m markSet, v Vocabulary, colour bool) []string {
 	if p == nil || p.empty() {
 		return nil
 	}
+	marked := map[passageSpan]bool{}
+	for _, s := range m.ordered() {
+		marked[s] = true
+	}
 	out := make([]string, 0, p.lineCount())
 	for i := range p.lines {
-		line := p.line(i)
-		if colour {
-			// highlightRegion is the shared entry seven other callers already
-			// use; open-coding the span loop here would be a fourth copy of the
-			// ANSI re-open rule.
-			line = highlightRegion(line, v, knownOn, "")
-		}
-		out = append(out, line)
+		out = append(out, renderPassageLine(p, i, marked, v, colour))
 	}
 	return out
+}
+
+// renderPassageLine styles one line: marks, then deck words, then plain text.
+//
+// It walks the line by BYTE, emitting the gaps between word spans verbatim, so
+// concatenating what it writes reproduces the input exactly once escapes are
+// stripped — the same invariant highlightSpans holds, and for the same reason: a
+// renderer that loses a byte corrupts the passage silently.
+func renderPassageLine(p *passage, line int, marked map[passageSpan]bool, v Vocabulary, colour bool) string {
+	text := p.line(line)
+	var b strings.Builder
+	at := 0
+	for _, sp := range p.spans(line) {
+		b.WriteString(text[at:sp.start])
+		word := text[sp.start:sp.end]
+		switch {
+		case marked[sp]:
+			// The mark is drawn even with colour off: it is not decoration, it
+			// is the only thing on screen that says what the next Enter will ask
+			// about.
+			b.WriteString(markOn + word + sgrOff)
+		case colour && v != nil && v.Has(store.Key(word)):
+			b.WriteString(knownOn + word + sgrOff)
+		default:
+			b.WriteString(word)
+		}
+		at = sp.end
+	}
+	b.WriteString(text[at:])
+	return b.String()
+}
+
+// markClickedWord toggles the mark on the word a click landed on, and reports
+// whether the click was inside the passage at all.
+//
+// The three coordinate spaces meet here and nowhere else: FooterRowAt turns a
+// frame row into (entry, offset), wrappedColumn corrects the column for a
+// continuation row, and wordAtCell resolves it to a word. Each of those is tested
+// on its own; this is the one place that composes them, so a click and any later
+// gesture cannot disagree about what was pointed at.
+//
+// Returns false for a click outside the passage, which leaves every other meaning
+// a click has today exactly as it was.
+func markClickedWord(view display, sess *session, hit pointerClick) bool {
+	if sess.passage == nil || !hit.footer {
+		return false
+	}
+	// The footer holds the passage FIRST and the command menu after it, so an
+	// entry past the passage's last line is the menu, not a word.
+	if hit.footerEntry >= sess.passage.lineCount() {
+		return false
+	}
+	_, cols := view.Size()
+	col := wrappedColumn(hit.footerOffset, hit.point.col, cols)
+	word, ok := wordAtCell(sess.passage, hit.footerEntry, col)
+	if !ok {
+		// Inside the passage but on whitespace. Still "inside", so it does not
+		// fall through to the region actions: a click on a gap between two words
+		// of a passage is not a click on whatever is drawn behind it.
+		return true
+	}
+	sess.marks = sess.marks.toggle(word)
+	return true
 }
