@@ -61,6 +61,15 @@ const (
 	// KeyPasteRefused is a paste over maxPasteRunes. It carries no text: the
 	// refusal is the message, and the caller reports it.
 	KeyPasteRefused
+	// numKeyKinds is NOT a kind: it is the registry's extent, so a guard can
+	// DERIVE the set rather than restate it — the move numRegionKinds already
+	// makes for regions.
+	//
+	// It exists because #67 added KeyPaste and nothing forced the question "what
+	// does a sitting do with this?". The answer was "silently nothing", and the
+	// milestone had already turned mode 2004 on for that surface. A sentinel is
+	// what turns a new kind into a decision instead of an omission.
+	numKeyKinds
 )
 
 // Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence

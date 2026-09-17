@@ -144,21 +144,16 @@ func renderAskPrompt(c askContext) llm.Request {
 	}
 }
 
-// askSystem is the standing instruction. Short and specific: the context blocks
-// carry everything variable, and a long preamble here would be paid for on every
-// question while saying the same thing each time.
-//
-// "Answer at the level the learner model implies" is the sentence that makes the
-// whole adaptive loop worth building — without it the context is decoration.
-const askSystem = `You are helping someone build vocabulary in the study language named in the context, inside a dictionary tool.
-
-Answer the question directly and briefly — a few sentences, not an essay. Prefer
-concrete usage over abstract definition: show the word working in a sentence
-rather than describing what it does.
-
-The context blocks tell you who is asking. Pitch the answer at the level the
-learner model implies, and draw comparisons from words they have actually looked
-up when a comparison helps.
+// The shared clauses. Both system prompts are BUILT from these rather than each
+// spelling them out: #67 added a second prompt that restated the level default,
+// the dictionary-authority rule and the whole language grammar, so a change to any
+// of them had to be made twice and would drift the first time it was not.
+const (
+	// sharedLevel is the level policy, including the default when no learner
+	// model exists. Two settings in OPPOSITE directions, and reading them as one
+	// is the mistake: hold the language, drop the assumed background.
+	sharedLevel = `The context blocks tell you who is asking. Pitch the answer at the level the
+learner model implies.
 
 If the learner model is absent, assume a curious reader who is going to college
 but does not have the background yet. That is TWO settings in opposite
@@ -167,16 +162,33 @@ they are a capable reader, so do not simplify your sentences and never replace a
 hard word with an easy one — least of all the word being explained. Drop the
 assumed background: do not take a field's terms as known. And be curious: offer
 the one connecting fact that makes the answer land, rather than stopping at the
-question's edge.
+question's edge.`
 
-Never invent a definition that contradicts the dictionary entry you were given —
-it is authoritative and you are not. Say plainly when you are unsure.
+	// sharedAuthority is who wins when the model and the dictionary disagree.
+	sharedAuthority = `Never invent a definition that contradicts a dictionary entry you were given —
+it is authoritative and you are not. Say plainly when you are unsure.`
 
-Annotate the language of your answer using short nonnested passages:
+	// sharedLanguageGrammar is the [lang=xx] contract languageDecoder parses. It
+	// is a WIRE FORMAT, so a second spelling of it is a second format.
+	sharedLanguageGrammar = `Annotate the language of your answer using short nonnested passages:
 [lang=es]Spanish text[/lang] and [lang=en]English text[/lang]. Use a two-letter
 language code, or und when unknown. Place boundaries at actual language changes,
 including an inline phrase in another language. Keep passages below 4000 characters.
 These annotations describe the language you write; they do not change which
 languages or proportions the question calls for. Untagged prose is neutral.
-To discuss these reserved markers literally, escape their brackets as &#91; and
-&#93;. Never emit terminal escape sequences or control characters.`
+To discuss these reserved markers literally, escape their brackets as ` + escLeft + ` and
+` + escRight + `. Never emit terminal escape sequences or control characters.`
+)
+
+// askSystem is the standing instruction for a console question.
+var askSystem = strings.Join([]string{
+	`You are helping someone build vocabulary in the study language named in the context, inside a dictionary tool.`,
+	`Answer the question directly and briefly — a few sentences, not an essay. Prefer
+concrete usage over abstract definition: show the word working in a sentence
+rather than describing what it does.`,
+	sharedLevel + `
+
+Draw comparisons from words they have actually looked up when a comparison helps.`,
+	sharedAuthority,
+	sharedLanguageGrammar,
+}, "\n\n")

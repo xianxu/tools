@@ -175,7 +175,11 @@ func (s *pasteScanner) scan(buf []byte) (Key, int, pasteExit) {
 // (store/item.go:200), and it holds for any later surface without being restated
 // there.
 //
-// Newlines and tabs SURVIVE: a passage has lines, and a tab is text.
+// Newlines SURVIVE, because a passage has lines. TABS BECOME SPACES: a tab is
+// whitespace, not text, and it is the one character whose display width depends
+// on where it sits — nextDisplayUnit counts it as ONE cell, so a tabbed line put
+// every later word's column out and clicks landed on the wrong word. Expanding it
+// at the boundary means nothing downstream has to know about tab stops.
 //
 // The set removed is unicode.IsControl — category Cc, which is C0 and C1. That is
 // the DECISION, not an accident of which predicate came to hand: Cc is what a
@@ -195,8 +199,12 @@ func sanitisePasteBody(s string) string {
 		}
 		r, n := utf8.DecodeRuneInString(s[i:])
 		i += n
-		if r == '\n' || r == '\t' {
+		if r == '\n' {
 			b.WriteRune(r)
+			continue
+		}
+		if r == '\t' {
+			b.WriteRune(' ')
 			continue
 		}
 		if r == utf8.RuneError && n == 1 {

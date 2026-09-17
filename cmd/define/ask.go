@@ -162,13 +162,18 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 
 	client := foregroundClient(d.newLLM(cfg), out, opt)
 	answer := newLanguageAnswer(out, opt.width, vocabularyFor(d, opt), opt.tintFor(d.lang))
-	req := renderAskPrompt(gatherAskContext(d, sess, q, errOut))
+	// GATHERED ONCE, then the renderer is chosen. gatherAskContext is the IO step
+	// — it reads the learner model and the deck, and WARNS on failure — so
+	// computing it twice printed "could not read the deck" twice to the reader
+	// for one question.
+	askCtx := gatherAskContext(d, sess, q, errOut)
+	req := renderAskPrompt(askCtx)
 	if q.passage != nil {
 		// The passage renderer takes the SAME context and adds the passage to it
 		// — it does not fork the context blocks, which is how two prompts come to
 		// disagree about what the model is told.
 		a := *q.passage
-		a.Context = gatherAskContext(d, sess, q, errOut)
+		a.Context = askCtx
 		req = renderPassagePrompt(a)
 	}
 	_, err = client.Stream(ctx, req, answer.decoder.Write)

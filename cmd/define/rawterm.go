@@ -168,6 +168,24 @@ const (
 	pasteOff = "\x1b[?2004l"
 )
 
+// enabledModes is every mode the program asks a terminal for, paired with the
+// sequence that gives it back.
+//
+// ONE list, so the guards DERIVE the set instead of hand-writing a case per mode.
+// #67 found the cost of not having it twice over: mode 2004 was nearly enabled
+// where TestEveryEnabledInputModeIsDecoded could not see it (it read mouseOn
+// alone), and then enterPaste shipped as production wiring no test exercised —
+// deleting the call left the whole suite green while the milestone silently
+// reverted.
+//
+// Each entry earns two assertions: newConsole WRITES it, and a real terminal
+// gets it back (pty_conformance_test.go). Both are loops over this slice.
+var enabledModes = []struct{ name, on, off string }{
+	{"alternate screen", altScreenOn, altScreenOff},
+	{"mouse reporting", mouseOn, mouseOff},
+	{"bracketed paste", pasteOn, pasteOff},
+}
+
 // enterPaste asks the terminal to bracket pastes.
 //
 // A sibling of enterMouse in every respect, including the one that matters: the

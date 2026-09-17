@@ -4439,3 +4439,25 @@ func TestBoardPromptHighlightsOnlyActiveMode(t *testing.T) {
 		b.Toggle()
 	}
 }
+
+// EVERY key kind is DECIDED for a sitting, and the enumeration is derived from
+// numKeyKinds so a new kind cannot slip past.
+//
+// #67 is why this exists. It added KeyPaste and turned mode 2004 on for this
+// surface in the same window; toInput had no case, so a pasted answer vanished
+// with no input and no notice. Nothing forced the question because KeyKind had no
+// sentinel — the rule, not the missing case, is what this guard fixes.
+func TestEveryKeyKindIsDecidedForASitting(t *testing.T) {
+	for kind := KeyKind(0); kind < numKeyKinds; kind++ {
+		k := Key{Kind: kind}
+		if kind == KeyRune {
+			k.Rune = ' '
+		}
+		_, ok := toInput(k)
+		if want := keyBecomesASittingInput(kind); ok != want {
+			t.Errorf("KeyKind %d (%v): toInput ok=%v, declared=%v — toInput and its "+
+				"declaration disagree, which is how a key comes to do nothing with nobody noticing",
+				kind, kind, ok, want)
+		}
+	}
+}

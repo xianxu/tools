@@ -198,3 +198,44 @@ func TestLeaveAltIsIdempotent(t *testing.T) {
 		t.Errorf("two leaves wrote %q, want one %q", got, altScreenOff)
 	}
 }
+
+// EVERY mode the program enables is written by NEWCONSOLE — the place it is
+// actually enabled — derived from enabledModes rather than hand-written per mode.
+//
+// #67's BR-16, and the distinction is the whole finding: the test that existed
+// called sess.enterPaste() itself, so it pinned the METHOD and never the call
+// site. Deleting the call from newConsole left the suite green while the entire
+// milestone silently reverted to a pasted newline submitting mid-paste. This
+// drives newConsole, so removing any enter reddens.
+func TestNewConsoleEnablesEveryMode(t *testing.T) {
+	var control strings.Builder
+	sess := &rawSession{control: &control}
+	con := newConsole(t.Context(), testDeps(t), sess, io.Discard,
+		func(tty io.Writer, rows, cols int) *liveScreen { return newLiveScreen(tty, rows, cols) })
+	if con.finish != nil {
+		defer con.finish()
+	}
+	for _, m := range enabledModes {
+		if !strings.Contains(control.String(), m.on) {
+			t.Errorf("newConsole never enabled %s, so the terminal is never asked for it: %q",
+				m.name, control.String())
+		}
+	}
+}
+
+// ...and every one is given back, in the ordered teardown, before raw mode ends.
+func TestRestoreGivesBackEveryMode(t *testing.T) {
+	var control strings.Builder
+	sess := &rawSession{control: &control}
+	sess.enterAlt()
+	sess.enterMouse()
+	sess.enterPaste()
+	control.Reset()
+	sess.restore()
+	for _, m := range enabledModes {
+		if !strings.Contains(control.String(), m.off) {
+			t.Errorf("%s was left ON: the next program run in this terminal inherits it (%q)",
+				m.name, control.String())
+		}
+	}
+}

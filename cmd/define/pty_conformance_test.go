@@ -1394,3 +1394,35 @@ func TestPTYAPastedPassageAppearsAndDoesNotSubmit(t *testing.T) {
 		t.Errorf("exit: %v, want 0", err)
 	}
 }
+
+// EVERY enabled mode reaches a real terminal and is given back, derived from
+// enabledModes.
+//
+// The in-process rows assert the sequence is composed; only a pty can say it
+// arrives. TestPTYMouseTrackingIsAskedForAndGivenBack was the precedent and the
+// only one for years, which is how bracketed paste came to have none (#67 BR-16).
+func TestPTYEveryEnabledModeIsAskedForAndGivenBack(t *testing.T) {
+	deck := t.TempDir()
+	if err := store.WriteLang(deck, store.DefaultLang); err != nil {
+		t.Fatal(err)
+	}
+	cmd, f := startDefineInDir(t, deck, []string{"DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio")
+	out := watch(f)
+	started := awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(s, pasteOn) })
+
+	for _, m := range enabledModes {
+		if !strings.Contains(started, m.on) {
+			t.Errorf("%s never reached the terminal: %q", m.name, started)
+		}
+	}
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	rest := started + out.take(time.Second)
+	for _, m := range enabledModes {
+		if !strings.Contains(rest, m.off) {
+			t.Errorf("%s was left ON in a real terminal: %q", m.name, rest)
+		}
+	}
+}

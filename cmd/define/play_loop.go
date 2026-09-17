@@ -556,6 +556,30 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	return over()
 }
 
+// keyBecomesASittingInput declares which key kinds toInput turns into an answer.
+//
+// DECLARED, and checked against toInput by a guard derived from numKeyKinds, so a
+// kind added without an answer here reddens rather than vanishing. #67 added
+// KeyPaste while turning mode 2004 on for this surface in the same window, and a
+// pasted answer simply disappeared — no input, no notice, no test. Nothing forced
+// the question because KeyKind had no sentinel.
+//
+// It is narrower than "a sitting reacts to this": the VIEWPORT keys and KeyClick
+// are intercepted before toInput is reached (playSession's own loop), so they act
+// without becoming an Input. This predicate answers only for toInput, which is
+// what it is checked against — a declaration that covered two different questions
+// could not be checked against either.
+func keyBecomesASittingInput(k KeyKind) bool {
+	switch k {
+	case KeyInterrupt, KeyEOF, KeyEnter, KeyTab, KeyRune:
+		return true
+	}
+	// Everything else is inert HERE on purpose: the pointer phases are the
+	// router's, the viewport keys never reach this function, and a paste is text
+	// a sitting has no field for.
+	return false
+}
+
 // toInput translates a decoded terminal Key into play's own Input.
 //
 // THIS is where main.Key stops. play must not know that Ctrl-C is 0x03 or that

@@ -170,12 +170,18 @@ func TestTheBoundaryKeepsNewlinesAndDropsOtherControls(t *testing.T) {
 	k, _, _ := s.scan(wholePaste("a\nb\tc\x00d\x07e"))
 	// ONE outcome, not either: a test that accepts both pins neither, and NUL/BEL
 	// handling is exactly the thing a later refactor would change silently.
-	// Control bytes are DROPPED, leaving the text either side adjacent.
-	if got, want := string(k.Raw), "a\nb\tcde"; got != want {
-		t.Errorf("Raw = %q, want %q — newline and tab kept, NUL and BEL dropped", got, want)
+	//
+	// A TAB BECOMES A SPACE. It is the one character whose width depends on where
+	// it sits, and nextDisplayUnit counts it as one cell — so a surviving tab put
+	// every later word's column out and clicks landed on the wrong word.
+	if got, want := string(k.Raw), "a\nb cde"; got != want {
+		t.Errorf("Raw = %q, want %q — newline kept, tab expanded, NUL and BEL dropped", got, want)
 	}
 	if !strings.Contains(string(k.Raw), "\n") {
 		t.Error("the newline was dropped; a passage has lines")
+	}
+	if strings.ContainsRune(string(k.Raw), '\t') {
+		t.Error("a tab survived; its display width depends on the column, so every word after it lands wrong")
 	}
 }
 

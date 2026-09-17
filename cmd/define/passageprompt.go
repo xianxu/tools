@@ -109,35 +109,23 @@ func escapeReservedBrackets(s string) string {
 
 // passageSystem is askSystem's sibling for a passage question.
 //
-// It states the one thing that differs: the reader is asking about a text they
-// are reading, the marks are what they could not follow, and the answer covers
-// BOTH the passage and each mark. A passage question is not N word questions —
-// the relations among the marked words are most of what a reader is missing, and
-// per-span glosses discard exactly that (#67).
-const passageSystem = `You are helping someone read, inside a dictionary tool. They have pasted a passage they are working through.
-
-Words and phrases they could not follow are wrapped in [sel]…[/sel]. Answer BOTH:
+// COMPOSED from the shared clauses rather than restating them: the level policy,
+// the dictionary-authority rule and the language grammar are the same rules, and
+// a second spelling of a wire format is a second format. What is written out here
+// is only what actually differs — the reader is working through a text, the marks
+// are what they could not follow, and the answer covers BOTH.
+var passageSystem = strings.Join([]string{
+	`You are helping someone read, inside a dictionary tool. They have pasted a passage they are working through.`,
+	`Words and phrases they could not follow are wrapped in ` + selOpen + `…` + selClose + `. Answer BOTH:
 first what the passage as a whole is saying, then each marked span in the context
 of that passage — which sense is in play here, and how the marked words relate to
 each other. Pick the sense the passage actually uses; do not list the others.
 
+A marked span may be a PHRASE. Explain it as one thing, not word by word.
+
 Answer directly and briefly — a few sentences, not an essay. Do not restate the
-passage back at them.
-
-Pitch the answer at the level the learner model implies. If it is absent, assume a
-curious reader who is going to college but does not have the background yet — hold
-the language, drop the assumed background, and offer the one connecting fact that
-makes it land. Never replace a hard word with an easy one, least of all the word
-being explained: that is the word they marked.
-
-If nothing is marked, explain the passage as a whole.
-
-Never invent a definition that contradicts a dictionary entry you were given — it
-is authoritative and you are not. Say plainly when you are unsure.
-
-Annotate the language of your answer using short nonnested passages:
-[lang=es]Spanish text[/lang] and [lang=en]English text[/lang]. Use a two-letter
-language code, or und when unknown. Place boundaries at actual language changes,
-including an inline phrase in another language. Keep passages below 4000 characters.
-To discuss these reserved markers literally, escape their brackets as ` + escLeft + ` and
-` + escRight + `. Never emit terminal escape sequences or control characters.`
+passage back at them. If nothing is marked, explain the passage as a whole.`,
+	sharedLevel,
+	sharedAuthority,
+	sharedLanguageGrammar,
+}, "\n\n")

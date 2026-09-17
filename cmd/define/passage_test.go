@@ -353,3 +353,32 @@ func TestDraggingBackOverAMarkedRunClearsIt(t *testing.T) {
 		t.Errorf("dragging back over the run left %v", m.ordered())
 	}
 }
+
+// THE DONE-WHEN ROW: "the token AFTER the mark still carries the style it had".
+//
+// Asserted on the ESCAPES, not on stripped text — stripping escapes is precisely
+// what hides a lost style, which is why the row says so in as many words. The
+// earlier test checked only that the mark was re-asserted INSIDE the span, so
+// replacing paintMarks' `sgrOff + style.resume()` with a bare `sgrOff` left the
+// whole suite green while every word after a mark rendered plain.
+func TestTheTokenAfterAMarkKeepsItsStyle(t *testing.T) {
+	// The deck colour opens before the mark and must still be in force after it.
+	line := knownOn + "equinox precession" + sgrOff
+	got := paintMarks(line, []cellRange{{start: 0, end: 7}})
+
+	at := strings.Index(got, "precession")
+	if at < 0 {
+		t.Fatalf("the text was lost: %q", got)
+	}
+	before := got[:at]
+	closed := strings.LastIndex(before, sgrOff)
+	if closed < 0 {
+		t.Fatalf("the mark never closed: %q", got)
+	}
+	// Between closing the mark and the next token, the producer's style must be
+	// RESUMED. Without it the rest of the line renders plain.
+	if !strings.Contains(before[closed:], knownOn) {
+		t.Errorf("the style was not resumed after the mark closed, so %q renders plain:\n%q",
+			"precession", got)
+	}
+}
