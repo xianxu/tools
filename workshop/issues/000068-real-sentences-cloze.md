@@ -1,7 +1,7 @@
 ---
 id: 000068
 status: working
-deps: [tools#67]
+deps: [tools#67, tools#73]
 github_issue:
 created: 2026-09-16
 updated: 2026-09-17
@@ -24,7 +24,7 @@ user-facing consumes it yet, deliberately. #10's authoring step is the consumer.
 That consumer was never built.
 
 Meanwhile `--harvest` pays a model call to AUTHOR a sentence for every deck word
-(`renderAuthorPrompt`, `harvest_item.go:370`), then pays another to entailment-judge
+(`renderAuthorPrompt`, `harvest_item.go:351`), then pays another to entailment-judge
 it (`harvest.go:369`), for words that may already have real sentences sitting in
 `usage/`.
 
@@ -34,255 +34,251 @@ with ONE consumer rather than accumulating a second stalled producer.
 
 ## Spec
 
-Settled by the 2026-09-17 brainstorm; see `## Revisions` for what this replaced
-and why.
+Settled by the 2026-09-17 brainstorm and revised after its spec review; see
+`## Revisions` for what changed and why.
 
 ### What the evidence changed
 
 The issue was filed on the premise *"three sources, one shape"* — `Usage` tagged
-by provenance, and a consumer that need not know which it is. That is true of the
+by provenance and a consumer that need not know which it is. That is true of the
 struct and false of the material. `usagesFrom` (`usage.go:82`) sets `Usage.Text`
 to the news **headline** (`it.Title`, attribution stripped), and the committed
-capture at `testdata/news/ephemeral.rss` shows what that means: of twelve items,
-one ("Springtime is ephemeral") is a grammatical sentence usable as a stem. Two
-use the word as a proper noun — *Ephemeral Technologies*, *The Ephemeral Players*
-— which `containsWord` cannot catch, because it normalises through `store.Key` and
-so always matches. The rest are title-case noun phrases and gerund titles whose
-blanks constrain nothing.
+capture at `testdata/news/ephemeral.rss` shows what that means. It holds 13
+items, of which 10 contain the word (`usage_test.go:99` asserts exactly that). Of
+those 10, one is a grammatical sentence that tests the meaning — *"Springtime is
+ephemeral"* — and one is marginal (*"WhatsApp working on yet another ephemeral
+feature on iOS"*: headline register, but the meaning does work). Two use the word
+as a proper noun — *Ephemeral Technologies*, *The Ephemeral Players* — which
+`containsWord` can never reject, because it normalises through `store.Key`. The
+rest are title-case noun phrases and gerund titles whose blanks constrain nothing.
 
-So the core question as filed — selection or repair — was aimed at the wrong
-half. A judge cannot repair a title into a sentence, and selecting from that pool
-yields about one candidate per word. **Headlines are not stem material, and no
-amount of judging makes them so.**
+So the core question as filed — selection or repair — was aimed at the wrong half.
+A judge cannot repair a title into a sentence.
 
-They are, however, good *authoring context*. See below.
+**This is one word's fixture, so it is an operator decision rather than a measured
+property of all headlines.** The decision: news is not a stem source. If it is
+ever revisited, the measurement to make first is the same screening run across
+several words, which this issue's machinery makes cheap.
 
 ### Stems: an ordered candidate list
 
 `authoredStem.Stem` stops being one string and becomes the first survivor of an
-ordered list. `runAuthoring` (`harvest.go:293`) grows a screening loop; nothing
-else about the pipeline moves.
+ordered list. `runAuthoring` (`harvest.go:293`) grows a screening loop.
 
-Order, and the reason for each position:
+1. **A passage sentence** — prose the learner actually read, in the register they
+   read it in. **This source has no producer yet; building it is in scope here and
+   owned by M3 below.**
+2. **A NOAD example** — a real fragment, grammatical, free, offline.
+3. **An authored sentence** — the model, as today. Last, so "fall back to
+   authoring" is the final element of a list rather than a special case.
 
-1. **A passage sentence** (#67's third source) — prose the learner actually read,
-   in the register they read it in. The only source that is both authentic and
-   sentence-shaped.
-2. **A NOAD example** (`entryUsages`, `usage.go:133`) — a real fragment,
-   grammatical, free, offline.
-3. **An authored sentence** — the model, as today. Last, and therefore the
-   fallback; "fall back to authoring" becomes the final element of a list rather
-   than a special case.
+**Screening is the EXISTING judge.** `entailTask(lang, word, stem)`
+(`harvest.go:495`) is determined by its three arguments alone — it never sees the
+item or the distractors — so a candidate is screened by the call that already
+screens authored stems. `stemUsesTheWord` (`harvest_item.go:444`) runs first, free.
 
-**Screening is the EXISTING judge, not a new one.** `entailTask(lang, word, stem)`
-(`harvest.go:495`) is fully determined by the stem text — it never sees the item
-or the distractors — so a candidate is screened by the call that already screens
-authored stems. `stemUsesTheWord` (`harvest_item.go:444`) runs first, free, as it
-does today.
+**Capped at `maxCandidates` = 3**, and the cap interacts with #73's suppression,
+so the rule is stated rather than left to an implementer: screening takes the
+first `maxCandidates` **not-yet-rejected** candidates in order, so the window
+advances across runs instead of retrying the same three. A word whose every
+candidate is rejected falls through to authoring; a word whose authoring is also
+recorded as failed is skipped by #73's policy.
 
-**Capped at `maxCandidates` = 3.** Each candidate costs one entail call through
-`runWithin`, which charges the same budget the vetoes draw on — and a budget cut
-mid-veto abandons the item whole (`harvest.go:405`), because an item is cached
-forever and a short write permanently costs the third option. Unbounded screening
-would therefore starve the part of the pipeline that finishes the item. A word
-with twelve NOAD examples screens three of them.
+Each candidate costs one entail call through `runWithin`, drawn on the same budget
+as the vetoes — and a budget cut mid-veto abandons the item whole
+(`harvest.go:405`). Worst case per word rises from 5 calls to 9 (band, 3 entail,
+author, entail, 3 veto), which **stales two comments that state the arithmetic**:
+`harvestLimit`'s "a word costs between two and five calls" (`harvest.go:22`) and
+`bgBudget`'s sizing at "roughly six calls each" (`background.go:25`). Both are
+updated, and `bgBudget` is re-sized or the background harvester silently covers
+~6 of its 10 words.
+
+**Budget exhaustion mid-screening** falls through to the next candidate only if
+budget remains; with none, the word is left pending exactly as today
+(`harvest.go:373`) and, per #73, records nothing.
 
 **A known limitation, stated rather than discovered:** a NOAD example comes from
 the entry the learner just looked up, so its answer is briefly recallable from the
-lookup rather than from the meaning. Review is scheduled days later
-(`cmd/define/schedule`), not immediately, so the window is normally gone. This is
-a reason to rank NOAD below passage, not to exclude it.
+lookup rather than the meaning. Review is scheduled days later
+(`cmd/define/schedule`), so the window is normally gone. A reason to rank NOAD
+below passage, not to exclude it.
+
+**Platform:** the dictionary is macOS-only (`dict_stub.go`'s
+`unsupportedDictionary`), so NOAD candidates exist only on darwin. Off darwin the
+list degrades to passage-then-authoring. This is a platform-conditional feature,
+not a uniform one, and the tests say so.
+
+### Reaching the two real sources
+
+**NOAD needs an `Entry` the loop currently throws away.** `entryUsages(e Entry,
+word)` (`usage.go:125`) and `UsageSource.Usages(ctx, word, e Entry)`
+(`usage.go:47`) both require a parsed entry, but `runAuthoring` holds only
+`gloss, _ := wordSense(d, c.Word)` (`harvest.go:360`), and `wordSense` parses the
+entry and **discards** it, returning `(gloss, domain)` (`harvest.go:586`). So
+`wordSense` returns the `Entry` too, rather than a second `ParseEntry` walk per
+word — one parse, two consumers.
+
+**A passage sentence has no producer at all, and that is M3.** `CaptureMarked`
+records only the word — `c.record(word, store.EventMarked, true, opt)`
+(`capture.go:215`) — and `store.ReviewEvent` has no field for a sentence. #67
+deliberately deferred this. Three pieces have to exist:
+
+- **A sentence segmenter.** `passage.lines` are wrapped to terminal width
+  (`wrapPassageLines`, `passage.go:75`) and a `passageSpan` is a word range inside
+  a wrapped line, so "the sentence the word was marked in" is currently undefined
+  in this codebase. It must be defined over the passage's `src` (the unwrapped
+  text), not its wrapped lines, or the sentence breaks where the terminal did.
+- **A capture path** that records that sentence with the mark.
+- **A persisted surface** for it, which brings `store.RuntimeDirs`
+  (`store/yaml.go:57`) and its four non-compiler homes: `.gitignore`, both repo
+  guards, `perWordDirs`/`Forget`, and the store-layout blocks in
+  `cmd/define/README.md` and `atlas/define.md` (`doc_sync_test.go:667`).
+
+The sentence is untrusted pasted text reaching a model prompt and a persisted
+store, so it joins the `oneLine` class (`store/item.go:157`) like every other text
+field on that surface (ARCH-SECURE).
 
 ### `Named` is waived for real sentences
 
 The entail judge requires *"a real person, place or institution the reader can
-picture"* (`harvest_judge.go:134`). That rule exists to discipline the MODEL — the
-author prompt bans "a manager", "the company" (`harvest_item.go:407`) — and a
-sentence somebody actually wrote has no such failure mode. So `Named` is enforced
-when the candidate's provenance is `authored` and waived otherwise. `Entails` and
-`Glosses` apply to every candidate, unchanged: the appositive ban is exactly what
-wild prose most needs.
+picture"* (`harvest_judge.go:134`). That rule disciplines the MODEL — the author
+prompt bans "a manager", "the company" (`harvest_item.go:407`) — and a sentence
+somebody wrote has no such failure mode. So `Named` is enforced when the candidate
+is `authored` and waived for `noad` and `passage`. `Entails` and `Glosses` apply to
+every candidate unchanged: the appositive ban is what wild prose most needs.
+
+**The waiver is decided at SCREENING time from the candidate in hand**, never read
+back off a stored item. Nothing re-judges a stored item, so a stored provenance
+value never reaches the waiver.
 
 ### Provenance on the item
 
-`store.Item` gains one field:
+`store.Item` gains one field, three values:
 
 ```go
-Source Source `yaml:"source,omitempty"`   // authored | news | noad | passage
+Source Source `yaml:"source,omitempty"`   // authored | noad | passage
 ```
 
-A closed enum with `ParseSource` following `ParseForm` (`store/item.go:57`), and
-`sanitiseItem` degrading an unrecognised value rather than storing it. **Empty
-means legacy** — every item already on disk has no source — and the `Named` waiver
-must NOT apply to empty, or every pre-existing authored item silently loses the
-rule it was written under.
+`news` is deliberately **not** a value: no path can produce it, and a field value
+no row sets reads as coverage while being dead.
 
-No URL field. The enum answers "how should this be treated", which is what drives
-behaviour; the URL would answer "which artifact was it", and nothing yet reads
-that. Recorded as a deliberate omission: it means a bad news-sourced item cannot
-be traced to its headline, which is the cost being accepted.
+Two collisions to resolve rather than discover:
 
-This supersedes `store/item.go:73` in one direction only. That comment says a
-model-authored stem has no source to inspect, so the text is all there is — still
-true of `authored`, and now false of the other three.
+- `usage.go:16` already defines `usageNews`/`usageNOAD` as bare strings on
+  `Usage.Source string`. The new enum is the single definition and `Usage` derives
+  from it (ARCH-DRY) — two vocabularies for provenance is how they drift apart.
+- In package `store`, `NewsItem.Source` already means **the publisher**
+  (`usage.go:89` does `Publisher: it.Source`). A second `Source` with an unrelated
+  meaning in one package needs the name settled; `Origin` on `Item` is the
+  recommendation.
 
-### The news cache becomes authoring context
+**Empty is a parse failure, not a legacy marker.** `sanitiseItem` degrades an
+unrecognised `Form` to empty as a sentinel meaning *visibly unusable*
+(`store/item.go:162`), and reusing empty for "legacy" would make a corrupt value
+indistinguishable from an old one. Items already on disk predate the field and are
+read as `authored`, which is what every one of them is — a migration-free default
+that happens to be true, stated so nobody later reads empty as "unknown".
 
-This is `Usages`' production caller, and the issue's stated purpose.
+No URL field: the enum drives behaviour, and nothing yet reads which artifact it
+was. The accepted cost is that a bad item cannot be traced to its source. This
+supersedes `store/item.go:75` in one direction only — still true of `authored`,
+now false of the other two.
 
-`renderAuthorPrompt` (`harvest_item.go:351`) gains the word's cached headlines as
-context, with an instruction to draw real names from them where they fit. The
-`Named` requirement is currently aspirational — the model must supply current real
-entities from training data, which for anything recent it cannot, and `Named` is
-one of the three booleans that then rejects the stem. Headlines make it
-satisfiable.
+### Out of scope
 
-The thematic collapse that ruins headlines as teaching material (*"ten of fourteen
-`sycophantic` headlines were about AI chatbots"*, `usage.go:145`) is harmless here:
-the model is mining them for names, not for a sentence.
-
-**Explicitly NOT the `web_search` server tool.** Considered and declined: $10 per
-1,000 searches on top of tokens, new transport work in `internal/llm` (no tools
-field on `llm.Request`, and `pause_turn` needs a resume loop neither `Complete`
-nor `Stream` has), an unverified interaction with the `Task[T]` output schema, and
-nondeterminism in a suite built on captured cassettes and request-hashed goldens.
-The cache we already own delivers the same grounding for nothing.
-
-### Failures are recorded, and NOT retried by default
-
-Today a rejected word keeps no item, so the `len(existing) > 0` skip
-(`harvest.go:342`) does not fire and the next run re-asks with a byte-identical
-prompt — forever, for every word that ever failed. Nothing records the attempt, so
-"do not ask again" is not currently expressible.
-
-A new per-word record, sibling to `WordFacts` and `Items`, stored per language:
-
-```go
-type Attempt struct {
-    At       time.Time
-    Form     Form          // cloze today; #13's sentence form later
-    Source   Source        // which candidate failed
-    State    AttemptState  // closed enum, ParseAttemptState like ParseForm
-    Digest   string        // identity of a REAL candidate's text; empty for authored
-    Provider string        // llm.ModelSelection, via clientModelSelection
-    Model    string
-    PoolSize int           // banded words available at the time
-    Reason   string        // the judge's clause, currently printed and dropped
-}
-```
-
-Not folded into `WordFacts`, whose doc says its fields "are one judgement about
-the word and they expire together (never)" (`store/item.go:10`). An attempt record
-is precisely the thing that does expire.
-
-`AttemptState` is the five ways an item dies today, which do **not** share a retry
-trigger:
-
-| state | today's site | what would change the answer |
-| --- | --- | --- |
-| `malformed` — stem lacked the word | `harvest.go:362` | a different model |
-| `notEntailed` | `harvest.go:382` | a different model |
-| `glossed` | `harvest.go:382` | a different model |
-| `unnamed` | `harvest.go:382` | a different model |
-| `noDistractors` | `harvest.go:438` | **a larger banded pool** — not the model |
-
-`noDistractors` is not a stem failure at all: `pickDistractors` requires
-`Facts.Harvested()` on every candidate, so a small or partly-banded deck starves
-it and re-authoring fails identically forever. `PoolSize` is what makes its retry
-trigger measurable instead of guessed.
-
-**Budget exhaustion is NOT a failure.** `markUnfinished` (`harvest.go:274`) already
-draws this line — a rejection counts, a budget cut does not, "so the word stays
-pending for the next pass". Recording a budget cut as a failure would suppress a
-retry that must happen.
-
-**Two caching semantics, because the two kinds of candidate differ.** A real
-sentence is stable text, so its verdict is permanent: keyed by `Digest` (a
-truncated SHA-256 of the normalised text — identity, not security), it is never
-screened twice. An authored stem is a fresh sample per run, so its record is only
-ever "this model failed here, at this time", keyed by word plus `(Provider,
-Model)`.
-
-**Retry policy, default off** — the point is controlling model spend:
-
-- default — a word whose candidates are all recorded as rejected is skipped,
-  silently, and simply has no cloze item.
-- `--retry-failed=model-changed` — re-attempt authoring where `(Provider, Model)`
-  differs from the client's current selection. Real-candidate verdicts are still
-  final; their text did not change.
-- `--retry-failed=all` — re-attempt everything.
-
-"Older than N" is deliberately absent and costs nothing to add later: the record
-already carries `At`.
+- **The failure record and the retry policy are #73.** This issue depends on it:
+  screening a candidate that was already rejected is the same repeat-spend bug,
+  and the suppression rule above reads #73's record.
+- **The news half of `usage/` gets no consumer here**, so `bothSources` and
+  `cachingFeed` remain uncalled in production after this issue. Feeding headlines
+  to the author prompt as context was considered and declined: the cache is empty
+  for every word (its only writer is `cachingFeed.items`, reachable only through
+  `Usages`, which has no production caller), so reading it **fetches** — one
+  Google News request per word, serially, with a 20s timeout (`news.go:48`) — and
+  a time-varying cache in the prompt changes `llm.RequestHash`
+  (`internal/llm/render.go:61`), invalidating the author goldens and cassettes.
+  That is the same nondeterminism that ruled out the `web_search` server tool.
+  Retiring the news half (ARCH-FUNERAL) or giving it a display consumer is a
+  separate decision, and this issue's title overclaims until it is made.
+- **The `web_search` server tool**: $10 per 1,000 searches, no tools field on
+  `llm.Request`, a `pause_turn` resume loop neither `Complete` nor `Stream` has,
+  an unverified interaction with `Task[T]`'s output schema, and the
+  nondeterminism above.
+- Repairing a sentence — trimming a gloss out of real prose re-introduces a model
+  call and invents a sentence nobody wrote.
+- Headline stems.
 
 ### What does not change
 
-- **`pickDistractors` is untouched** — it does not take the stem, in signature or
-  body, so "distractor selection unchanged" holds by construction rather than by
-  test.
-- **The veto still runs** per surviving candidate, against the winning stem, which
-  is the only stem its question is meaningful against.
+- **`pickDistractors` is untouched** — it takes no stem, in signature or body
+  (`harvest_item.go:187`), so "distractor selection unchanged" holds by
+  construction.
+- **The veto still runs** per surviving candidate against the winning stem, the
+  only stem its question is meaningful against.
 - **No stem means no cloze question**, already true: `clozeFor` (`cloze.go:121`)
   picks the newest usable `FormCloze` item and a word with none is not offered in
-  that form. Nothing to build.
-
-### Non-goals
-
-Repairing a sentence (trimming a gloss out of real prose) — it re-introduces a
-model call and invents a sentence nobody wrote. Headline stems. The `web_search`
-server tool. A second producer of any kind.
+  that form.
 
 ## Done when
 
-- A passage sentence reaches a practice item with **no authoring model call**, and
-  the stored item carries `Source: passage`.
-- `Usages` has a production caller: the word's cached headlines reach
-  `renderAuthorPrompt`, asserted on the REAL request through the LLM fake, not on
-  the code that builds it.
+Each row names the test obligation that pins it, per #67's close convention.
+
+- A **NOAD example** reaches a stored item with no authoring model call, and the
+  item carries `Origin: noad` — asserted by counting calls through the LLM fake,
+  on darwin.
+- A **passage sentence** reaches a stored item the same way, carrying
+  `Origin: passage`.
+- The segmenter splits over the passage's unwrapped `src`: a sentence that spans
+  two wrapped lines comes back whole — the test wraps at a width that guarantees
+  the split.
 - A candidate that glosses its own word is rejected, with a fixture that is an
   appositive of the shape `renderAuthorPrompt` bans.
-- `Named` is waived for `passage`/`noad`/`news` and enforced for `authored` — a
-  table over all four values **plus empty**, since a legacy item must not inherit
-  the waiver.
-- Screening is capped: a word with more candidates than `maxCandidates` makes
-  exactly `maxCandidates` entail calls, counted through the fake.
-- The veto still runs against the winning stem, and `pickDistractors` is
-  unchanged — it takes no stem, so this is a compile-level property plus a test
-  that the veto saw the stem that won.
-- **A recorded failure suppresses the next attempt:** two consecutive `--harvest`
-  runs over the same deck make model calls on the first and **zero** on the
-  second, counted through the fake. This is the cost behaviour the issue exists to
-  fix, so it is asserted by call count, not by inspecting a record.
-- `--retry-failed=model-changed` re-attempts authoring when `(Provider, Model)`
-  differs and not when it matches; a real candidate's verdict stays final under
-  every policy, because its text did not change.
-- A budget cut writes **no** `Attempt` record — asserted, since recording it would
-  suppress a retry that must happen.
-- `noDistractors` records `PoolSize` and is not retried by `model-changed`.
-- The model-call accounting is **measured before and after, and reported in
-  whichever direction it goes.** Screening candidates can cost more calls than
-  authoring one stem; the issue claims a quality change, and any saving is a
-  finding rather than a premise.
-- `atlas/define.md` records the candidate order, the provenance enum, the retry
-  policy, and where the headline context enters the prompt.
+- `Named` is waived for `noad`/`passage` and enforced for `authored` — a table
+  over the three values, with the waiver read from the candidate in hand and never
+  from a stored item.
+- Screening is capped at `maxCandidates` entail calls per run, counted; and the
+  window **advances** — a word with 6 candidates and 3 recorded rejections screens
+  candidates 4–6 on the next run, not 1–3 again.
+- Off darwin the list degrades to passage-then-authoring with no NOAD candidate
+  and no dictionary call.
+- `wordSense` returns the parsed `Entry` and `runAuthoring` does **not** call
+  `ParseEntry` a second time — asserted by counting dictionary lookups per word.
+- The veto saw the stem that won, not a stem that lost.
+- `Origin` round-trips through `sanitiseItem`; an unrecognised value degrades and
+  does not store; an item written before the field reads as `authored`.
+- `RuntimeDirs` gains the passage-sentence surface and all four non-compiler homes
+  are green: `TestGitignoreCoversRuntimeDirs`, both repo guards,
+  `TestStoreLayoutDocsNameEveryRuntimeDir`; `Forget` removes it via `perWordDirs`.
+- A pasted sentence carrying an ANSI escape is stored without it.
+- `storetest` covers the new surface for both implementations.
+- `harvestLimit`'s and `bgBudget`'s call-arithmetic comments are updated to the
+  new worst case, and `bgBudget` is re-sized — asserted by a test that the
+  background harvester still covers `bgThreshold` words.
+- **The model-call accounting is measured before and after and reported in
+  whichever direction it goes.** Screening can cost more calls than authoring one
+  stem; the issue claims a quality change, and a saving is a finding rather than a
+  premise.
+- `atlas/define.md` records the candidate order, the provenance enum, the
+  segmenter, and the passage-sentence store layout.
 
 ## Plan
 
 Durable plan to be authored via `superpowers-writing-plans` into
-`workshop/plans/000068-real-sentences-cloze-plan.md`. Four review boundaries —
-the store format, the screening loop, the record + policy, and the authoring
-context — each closing with its own `sdlc milestone-close`.
+`workshop/plans/000068-real-sentences-cloze-plan.md`. Blocked on #73, whose record
+the screening suppression reads.
 
 - [x] brainstorm: selection vs repair (2026-09-17 — answered; see `## Revisions`)
+- [x] spec review (2026-09-17 — three factual errors and one missing producer;
+      see `## Revisions`)
 - [ ] `sdlc start-plan`, then the durable plan
-- [ ] M1 — the store: `Source` on `Item`, `Attempt` + `AttemptState`,
-      `ParseSource`/`ParseAttemptState`, sanitise-on-write, `storetest` coverage
-      so the fake cannot hold a state the real store cannot
-- [ ] M2 — the candidate list: ordered sources, the screening loop capped at
-      `maxCandidates`, the `Named` waiver by provenance
-- [ ] M3 — the attempt record wired into every rejection site, the digest for
-      real candidates, and `--retry-failed`
-- [ ] M4 — cached headlines into `renderAuthorPrompt`; `Usages` gets its caller
+- [ ] M1 — the store: `Origin` on `Item`, `ParseOrigin`, sanitise-on-write, the
+      `authored` default for pre-field items, `Usage` derived from the same enum,
+      `storetest` for both implementations
+- [ ] M2 — the candidate list with NOAD as its first working source: `wordSense`
+      returns the `Entry`, the screening loop, the cap and its advancing window,
+      the `Named` waiver, the two stale call-arithmetic comments
+- [ ] M3 — the passage producer: a sentence segmenter over `src`, the capture
+      path, the persisted surface + `RuntimeDirs` and its four homes
 - [ ] atlas, then `sdlc close`
 
 ## Log
@@ -345,4 +341,53 @@ never reject. Neither selection nor repair rescues that.
   paying entail per candidate. Any saving is now a finding to report, not a
   premise — which is why the retry policy, not the sentence source, is where the
   spend actually falls.
+
+### 2026-09-17 — spec review: three factual errors, and a source with no producer
+
+A fresh-context spec review checked every claim against the code. Most held;
+these did not, and two of them were load-bearing.
+
+- **The `passage` source, ranked first, has no producer.** `CaptureMarked` records
+  only the word (`capture.go:215`) and `store.ReviewEvent` has no sentence field;
+  #67 deferred this deliberately. The Spec's *"nothing else about the pipeline
+  moves"* was false — a segmenter, a capture path and a persisted surface all
+  have to move, and no milestone owned them. Now M3, with the segmenter's
+  hardest part named: it must split over the passage's unwrapped `src`, because
+  `passage.lines` are wrapped to terminal width.
+- **`allVetoed`'s retry trigger was backwards.** The draft said `len(kept) == 0`
+  means a starved pool, not a model failure. But `tierAboveBand` accepts every
+  word (`harvest_item.go:259`), so `pickDistractors` never returns empty in
+  production and an empty `kept` means the veto refused everything — a model
+  decision. The `PoolSize` field and its exclusion from `model-changed` are
+  dropped; they would have withheld retry from exactly the case a model change
+  fixes. Now #73's problem, corrected there.
+- **The fixture numbers were wrong.** The Spec said "twelve items, one usable".
+  It is 13 items, 10 containing the word (`usage_test.go:99`) — the count came
+  from grepping `<title>`, which caught the channel title. Corrected, and the
+  conclusion is now stated as an operator decision from one word's fixture rather
+  than a measured property of headlines.
+- **"The cache we already own delivers the same grounding for nothing" was
+  false.** `usage/` is empty for every word — its writer is reachable only
+  through `Usages`, which has no production caller — so reading it fetches, one
+  Google News request per word. And a time-varying cache in the author prompt
+  invalidates the goldens and cassettes, which is the same argument used to
+  decline `web_search`. Headlines-as-authoring-context is withdrawn, and the news
+  half of `usage/` is left with no consumer: the issue's title overclaims until
+  retiring it or giving it a display consumer is decided.
+
+Also corrected: `renderAuthorPrompt` is at `harvest_item.go:351`, not `:370` (the
+citation was wrong as filed); the provenance comment is `store/item.go:75`, not
+`:73`; `news` is dropped from the enum as a value no path can produce; the enum
+collides with `usage.go:16`'s strings (now derived from it) and with
+`NewsItem.Source` meaning publisher, so `Origin` is the recommended name; empty is
+a parse sentinel rather than a legacy marker, with pre-field items read as
+`authored`; NOAD needs the `Entry` that `wordSense` discards; the dictionary is
+darwin-only so NOAD candidates are platform-conditional; screening raises the
+worst case per word to 9 calls, staling the arithmetic in `harvestLimit`'s and
+`bgBudget`'s comments.
+
+**Scope.** The failure record and retry policy moved to #73 (operator decision,
+2026-09-17), which this issue now depends on. They share no code path, #73 is pure
+cost control that lands immediately, and #68 turned out to need producer work #73
+should not wait behind.
 
