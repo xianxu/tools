@@ -46,6 +46,17 @@ type screen struct {
 	// regions is what each buffer line OFFERS, keyed by line. Sparse: most lines
 	// have none, and a session's worth of empty slices would be the bulk of it.
 	regions map[int][]Region
+	// marks is the paint-time mark overlay, keyed by buffer line (#67).
+	//
+	// PAINT TIME, because the buffer's bytes are immutable once written and a
+	// mark is transient — it exists between marking a word and asking about it.
+	// The same mechanism markClickable uses for the underline, and for the same
+	// reason: decoration that changes belongs to the frame, not to the record.
+	//
+	// The session owns which SPANS are marked; this is those spans in the
+	// screen's own coordinates, handed down on every draw. One fact, one owner,
+	// two coordinate spaces.
+	marks map[int][]cellRange
 	// pinned makes the buffer region occupy its FULL height, so the footer sits
 	// at the terminal's bottom edge rather than directly under the content.
 	//
@@ -595,7 +606,11 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 	control(cursorHome + eraseDown)
 	frame, top := s.visible()
 	for i, line := range frame {
-		place(clipVisible(markClickable(line, s.regions[top+i]), s.cols), selectionRow{selectable: true, regions: s.regions[top+i], paint: s.paints[top+i]})
+		painted := markClickable(line, s.regions[top+i])
+		if m := s.marks[top+i]; len(m) > 0 {
+			painted = paintMarks(painted, m)
+		}
+		place(clipVisible(painted, s.cols), selectionRow{selectable: true, regions: s.regions[top+i], paint: s.paints[top+i]})
 		control("\r\n")
 	}
 	bufRows := len(frame)
@@ -953,6 +968,31 @@ func (l *liveScreen) WriteRegions(text string, rs []Region) {
 	l.s.addRegions(rs)
 	l.writeBuffer(text)
 	l.throttledPaint()
+}
+
+// BufferLines is how many lines the record holds right now.
+//
+// Read BEFORE a write, so a caller learns where that write will land. addRegions
+// makes the same adjustment for a partial last line, and for the same reason: a
+// render begins on the line the writer is already on.
+func (l *liveScreen) BufferLines() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := len(l.s.lines)
+	if l.s.partial {
+		n--
+	}
+	return n
+}
+
+// SetMarks replaces the paint-time mark overlay.
+//
+// Replaces rather than merges: the session's mark set is the whole truth, handed
+// down entire on every draw, so a stale line cannot survive a clear.
+func (l *liveScreen) SetMarks(m map[int][]cellRange) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.s.marks = m
 }
 
 // RegionAtRow resolves a click: a VIEWPORT row and display column to whatever is

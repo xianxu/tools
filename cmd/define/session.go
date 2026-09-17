@@ -29,6 +29,9 @@ type session struct {
 	// marks is what is currently marked in the passage. Cleared after an ask: the
 	// transient state converts into deck membership (#67).
 	marks markSet
+	// passageBase is the buffer line the passage was written at, which is what
+	// ties a mark's passage coordinates to the screen's.
+	passageBase int
 	// turns is the Q&A transcript, so a follow-up ("give me three more
 	// examples") resolves against the answer it follows. Session-scoped by
 	// design: a fresh process answers just as well, with the directory rather

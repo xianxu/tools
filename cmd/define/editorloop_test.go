@@ -75,6 +75,9 @@ type recordDisplay struct {
 	// "the live edge is not clickable here", which is the answer for every test
 	// that predates the board.
 	footerRows map[int][2]int
+	// bufferLines and marks are the passage's seams (#67).
+	bufferLines int
+	marks       map[int][]cellRange
 }
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
@@ -130,6 +133,27 @@ func (d *recordDisplay) footer() []string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return append([]string(nil), d.menu...)
+}
+
+// BufferLines and SetMarks are the passage's two seams (#67). The double records
+// what it was handed so a test can assert the marks the loop derived, rather than
+// only that it drew something.
+func (d *recordDisplay) BufferLines() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.bufferLines
+}
+
+func (d *recordDisplay) SetMarks(m map[int][]cellRange) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.marks = m
+}
+
+func (d *recordDisplay) markedCells() map[int][]cellRange {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.marks
 }
 
 func (d *recordDisplay) Page(n int) {
@@ -972,13 +996,33 @@ func TestEveryRegionKindIsActionable(t *testing.T) {
 		view.offer(2, 0, Region{Kind: kind, Text: "sycophantic", Word: "sycophantic", Lang: "fr"})
 
 		pointer := scriptedPointer(view)
-		ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, completedPointerClick(t, pointer, 2, 0))...)
+		keys := append(runes("sycophantic"), Key{Kind: KeyEnter})
+		if !regionPlaysAudio(kind) {
+			// A kind whose action is MARKING needs something to mark. Pasting a
+			// passage whose first word sits at line 0 column 0 is what makes the
+			// offered region resolve to a word — the same arrangement the real
+			// gesture has, rather than a special case for the guard.
+			keys = append(keys, Key{Kind: KeyPaste, Raw: []byte("sycophantic is a passage of several words")})
+		}
+		ks := keySeq(append(keys, completedPointerClick(t, pointer, 2, 0))...)
 		runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, pointer: pointer, finish: finish, stdout: &out, stderr: &errb})
 
-		// Every kind must DO something: the lookup plays 3, so a kind that acted
-		// plays more. A kind added with no case in `clicked` reddens here.
-		if got := rig.player.count(); got <= 3 {
-			t.Errorf("RegionKind %d played nothing when clicked — it draws, invites a click, and does nothing", kind)
+		// Every kind must DO something, and WHAT counts depends on the kind: an
+		// audio kind plays (the lookup plays 3, so a kind that acted plays more);
+		// a passage word marks. The split is declared in regionPlaysAudio, and
+		// the loop below derives its enumeration from numRegionKinds — so a kind
+		// added with no case in `clicked` and no declaration reddens here.
+		if regionPlaysAudio(kind) {
+			if got := rig.player.count(); got <= 3 {
+				t.Errorf("RegionKind %d played nothing when clicked — it draws, invites a click, and does nothing", kind)
+			}
+			continue
+		}
+		if got := rig.player.count(); got > 3 {
+			t.Errorf("RegionKind %d played audio; regionPlaysAudio says it should not", kind)
+		}
+		if view.markedCells() == nil {
+			t.Errorf("RegionKind %d neither played nor marked — it draws, invites a click, and does nothing", kind)
 		}
 	}
 }
@@ -1000,9 +1044,14 @@ func TestEveryRegionKindIsActionableThroughTheSharedRegistry(t *testing.T) {
 			Region{Kind: kind, Text: "sycophantic", Word: "sycophantic", Lang: "fr"},
 			"", &out, &errb)
 
-		if rig.player.count() == 0 {
-			t.Errorf("RegionKind %d played nothing through playRegion — a sitting draws the "+
-				"underline and a click on it does nothing", kind)
+		// The registry is no longer TOTAL, and that is the point of the split: it
+		// must play exactly what it claims, and decline the rest rather than
+		// falling back to the headword.
+		played := rig.player.count() > 0
+		if want := regionPlaysAudio(kind); played != want {
+			t.Errorf("RegionKind %d: playRegion played=%v, regionPlaysAudio=%v — the registry "+
+				"and its declaration disagree, which is how a kind comes to act in one loop and not the other",
+				kind, played, want)
 		}
 	}
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"slices"
 	"strings"
 	"testing"
@@ -139,174 +138,101 @@ func TestAPasteIsClassifiedByShapeNotByBeingAPaste(t *testing.T) {
 	}
 }
 
-// The passage renders under the NORMAL rules, which is what later makes "marks
-// clear and the words you asked about turn green" work: the footer is rebuilt
-// from source every frame, so the deck it is coloured against is today's.
-func TestThePassageRendersWithDeckColour(t *testing.T) {
+// --- the passage as a record ------------------------------------------------
+
+// Deck colour is baked in AT WRITE TIME, exactly as a definition's is: the
+// passage is a record of something read, and the deck it was read against is
+// part of that record.
+func TestThePassageIsWrittenWithDeckColour(t *testing.T) {
 	v := &memVocabulary{}
 	v.Add("equinox")
-	got := passageFooter(newPassage("the slow precession of the equinox"), markSet{}, v, true)
-	if len(got) != 1 {
-		t.Fatalf("passageFooter returned %d lines, want 1", len(got))
+	got := passageText(newPassage("the slow precession of the equinox"), v, true)
+	if !strings.Contains(got, knownOn+"equinox") {
+		t.Errorf("the deck word was not coloured:\n%q", got)
 	}
-	if !strings.Contains(got[0], knownOn+"equinox") {
-		t.Errorf("the deck word was not coloured:\n%q", got[0])
-	}
-	if strings.Contains(got[0], knownOn+"precession") {
+	if strings.Contains(got, knownOn+"precession") {
 		t.Error("a word that is not in the deck was coloured")
 	}
-}
-
-// Clicks must work with colour OFF, so the footer is built against
-// deckVocabulary rather than vocabularyFor — the distinction vocab.go draws for
-// exactly this reason. With colour off the text is plain but the words are still
-// there to point at.
-func TestThePassageRendersWithoutColour(t *testing.T) {
-	v := &memVocabulary{}
-	v.Add("equinox")
-	got := passageFooter(newPassage("the slow equinox"), markSet{}, v, false)
-	if strings.Contains(got[0], "\x1b") {
-		t.Errorf("colour was emitted with colour off: %q", got[0])
-	}
-	if got[0] != "the slow equinox" {
-		t.Errorf("line = %q, want the plain text", got[0])
+	if plain := passageText(newPassage("the slow equinox"), v, false); strings.Contains(plain, "\x1b") {
+		t.Errorf("colour was emitted with colour off: %q", plain)
 	}
 }
 
-// THE REGRESSION a first draft of the plan would have shipped. Two of the three
-// Draw sites pass a nil footer to blank the PROMPT while the loop is working —
-// correctly, since a prompt drawn while nothing reads keys invites typing at a
-// line that is not there. But blanking the passage with it would make it vanish
-// for the whole lookup/answer window: exactly the interval the feature exists
-// for.
-func TestThePassageSurvivesALookup(t *testing.T) {
-	rig, opt, finish := editorRig(t, "sycophantic", true)
-	var out, errb bytes.Buffer
-	view := paintInto(&out)
-	ks := keySeq(append([]Key{{Kind: KeyPaste, Raw: []byte("the slow precession of the equinox")}},
-		append(runes("sycophantic"), Key{Kind: KeyEnter})...)...)
-	runEditor(t.Context(), ks, nil, rig.deps, opt,
-		console{view: view, finish: finish, stdout: &out, stderr: &errb})
-
-	joined := strings.Join(view.footer(), "\n")
-	if !strings.Contains(joined, "precession") {
-		t.Errorf("the passage was gone after a lookup; last footer = %q", joined)
+// Every word is clickable, and Region.Line IS the passage line — which is what
+// lets a click come back to a span without a second table to keep in step.
+func TestPassageRegionsAddressEveryWord(t *testing.T) {
+	p := newPassage("the slow precession\nof the equinox")
+	rs := passageRegions(p)
+	if len(rs) != 6 {
+		t.Fatalf("got %d regions, want one per word", len(rs))
 	}
-}
-
-// A passage taller than the rows available is DROPPED at the bottom by
-// fitFooter, and FooterRowAt refuses a row that was not drawn — its own comment
-// says why: "inventing an entry for it would mark a word that is not on screen".
-//
-// This pins that the passage path does not route around that. The assertion is
-// on the SEAM rather than on pixels: every entry the screen reports must be one
-// the passage actually has, whatever the terminal's height.
-func TestAClickNeverResolvesToARowThatWasNotDrawn(t *testing.T) {
-	p := newPassage(strings.Repeat("a line of the passage\n", 40))
-	view := paintInto(&bytes.Buffer{})
-	// The screen drew only the first three entries; rows below are not mapped.
-	view.footerAt(0, 0)
-	view.footerAt(1, 1)
-	view.footerAt(2, 2)
-
-	for row := 0; row < 10; row++ {
-		entry, offset, ok := view.FooterRowAt(row)
-		if !ok {
-			continue // a row that was not drawn resolves to nothing, which is right
+	for _, r := range rs {
+		if r.Kind != RegionPassageWord {
+			t.Errorf("region %q has kind %v", r.Text, r.Kind)
 		}
-		if entry >= p.lineCount() {
-			t.Fatalf("row %d resolved to entry %d, which the passage does not have", row, entry)
-		}
-		if _, found := wordAtCell(p, entry, wrappedColumn(offset, 0, 20)); !found && offset == 0 {
-			t.Errorf("row %d resolved to entry %d offset %d, which holds no word", row, entry, offset)
+		sp, ok := passageSpanOf(p, r)
+		if !ok || p.text(sp) != r.Text {
+			t.Errorf("region %q did not round-trip to its span (got %q)", r.Text, p.text(sp))
 		}
 	}
-}
-
-// --- marks on screen --------------------------------------------------------
-
-// MARK WINS over deck colour. An explicit pair would override the foreground it
-// resumes over anyway; making it structural — one styled span per word, closed —
-// means nothing nests and no rule has to be remembered.
-func TestAMarkedDeckWordRendersAsAMarkNotAsADeckWord(t *testing.T) {
-	v := &memVocabulary{}
-	v.Add("equinox")
-	p := newPassage("the slow equinox")
-	m := markSet{}.toggle(p.spans(0)[2])
-
-	got := passageFooter(p, m, v, true)[0]
-	if !strings.Contains(got, markOn+"equinox") {
-		t.Errorf("the marked word is not painted as a mark:\n%q", got)
-	}
-	if strings.Contains(got, knownOn+"equinox") {
-		t.Error("the marked word kept its deck colour; the mark must win")
+	if rs[3].Line != 1 {
+		t.Errorf("the second line's first region has Line %d, want 1", rs[3].Line)
 	}
 }
 
-// A mark is drawn with colour OFF too: it is not decoration, it is the only
-// thing on screen saying what the next Enter will ask about.
-func TestAMarkIsDrawnWithColourOff(t *testing.T) {
-	p := newPassage("the slow equinox")
-	m := markSet{}.toggle(p.spans(0)[1])
-	if got := passageFooter(p, m, nil, false)[0]; !strings.Contains(got, markOn+"slow") {
-		t.Errorf("no mark with colour off: %q", got)
+// The mark is painted over FINISHED bytes and RE-ASSERTED after a producer SGR,
+// which is what lets it survive the deck colour already baked into the line.
+// ANSI does not nest; this does not rely on it.
+func TestPaintMarksSurvivesTheDeckColourUnderIt(t *testing.T) {
+	line := "the " + knownOn + "equinox" + sgrOff + " tonight"
+	got := paintMarks(line, []cellRange{{start: 4, end: 11}})
+	at := strings.Index(got, knownOn)
+	if at < 0 {
+		t.Fatalf("the producer's own colour was dropped: %q", got)
+	}
+	if !strings.HasPrefix(got[at+len(knownOn):], markOn) {
+		t.Errorf("the mark was not re-asserted after the producer SGR; the rest of the span loses it:\n%q", got)
+	}
+	if stripEscapes(got) != stripEscapes(line) {
+		t.Errorf("painting changed the text: %q", stripEscapes(got))
 	}
 }
 
-// Concatenation reproduces the line exactly once escapes are stripped — the same
-// invariant highlightSpans holds, because a renderer that loses a byte corrupts
-// the passage silently.
-func TestRenderingAPassageLineLosesNothing(t *testing.T) {
-	v := &memVocabulary{}
-	v.Add("equinox")
-	for _, line := range []string{"the slow equinox", "don't hot-dog me, O'Brien", "  leading and trailing  ", ""} {
-		p := newPassage(line)
-		if p.empty() {
-			continue // an empty passage renders nothing, which is its own row above
-		}
-		m := markSet{}
-		if sp := p.spans(0); len(sp) > 0 {
-			m = m.toggle(sp[0])
-		}
-		got := stripEscapes(passageFooter(p, m, v, true)[0])
-		if got != line {
-			t.Errorf("rendering %q produced %q", line, got)
-		}
+// The session owns which spans are marked; this is the one translation into the
+// screen's coordinates, so the two cannot drift.
+func TestMarkCellRangesTranslatesToBufferLines(t *testing.T) {
+	p := newPassage("the slow precession\nof the equinox")
+	m := markSet{}.toggle(p.spans(1)[2]) // "equinox", on the second line
+	got := markCellRanges(p, m, 40)
+	if len(got) != 1 {
+		t.Fatalf("got %v, want one line's worth", got)
+	}
+	rs, ok := got[41]
+	if !ok {
+		t.Fatalf("marks landed on %v, want buffer line 41 (base 40 + passage line 1)", got)
+	}
+	if len(rs) != 1 || rs[0].start != 7 || rs[0].end != 14 {
+		t.Errorf("cell range = %v, want the cells of %q", rs, "equinox")
 	}
 }
 
-// The three coordinate spaces compose only in markClickedWord, and this is the
-// case that would catch an off-by-one: a click on a CONTINUATION row.
-func TestAClickInThePassageMarksTheWordUnderIt(t *testing.T) {
-	view := paintInto(&bytes.Buffer{})
-	view.footerAt(0, 0)
-	sess := &session{passage: newPassage("the slow precession of the equinox")}
+// A click marks the word under it, and clicking it again unmarks it: the gesture
+// is a toggle, and a click-mark and a drag-mark are the same kind of thing.
+func TestAClickOnAPassageWordMarksIt(t *testing.T) {
+	p := newPassage("the slow precession of the equinox")
+	sess := &session{passage: p}
+	r := passageRegions(p)[2]
 
-	if !markClickedWord(view, sess, pointerClick{footer: true, footerEntry: 0, point: selectionPoint{col: 9}}) {
-		t.Fatal("a click inside the passage was not taken as one")
+	sp, ok := passageSpanOf(p, r)
+	if !ok || p.text(sp) != "precession" {
+		t.Fatalf("the region did not resolve to precession: %q", p.text(sp))
 	}
-	if got := sess.marks.ordered(); len(got) != 1 || sess.passage.text(got[0]) != "precession" {
-		t.Fatalf("marks = %v, want precession", got)
+	sess.marks = sess.marks.toggle(sp)
+	if got := sess.marks.ordered(); len(got) != 1 {
+		t.Fatalf("marks = %v", got)
 	}
-	// Clicking it again unmarks it: the gesture is a toggle.
-	markClickedWord(view, sess, pointerClick{footer: true, footerEntry: 0, point: selectionPoint{col: 9}})
+	sess.marks = sess.marks.toggle(sp)
 	if !sess.marks.empty() {
 		t.Error("clicking a marked word did not unmark it")
-	}
-}
-
-// COLLISION 3, held to its scope: outside the passage every click keeps the
-// meaning it has today, so markClickedWord must decline it.
-func TestAClickOutsideThePassageIsNotAMark(t *testing.T) {
-	view := paintInto(&bytes.Buffer{})
-	sess := &session{passage: newPassage("the slow precession")}
-	if markClickedWord(view, sess, pointerClick{footer: false, point: selectionPoint{col: 1}}) {
-		t.Error("a click on the buffer was taken as a mark")
-	}
-	if markClickedWord(view, sess, pointerClick{footer: true, footerEntry: 7, point: selectionPoint{col: 1}}) {
-		t.Error("a click on the command menu was taken as a mark")
-	}
-	if markClickedWord(&recordDisplay{w: &bytes.Buffer{}}, &session{}, pointerClick{footer: true}) {
-		t.Error("a click with no passage was taken as a mark")
 	}
 }

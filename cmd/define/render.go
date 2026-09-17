@@ -276,6 +276,16 @@ const (
 	// carries escapes — which is why deckSpans is escape-aware and why #12's
 	// BR-14 guard now runs over coloured text.
 	RegionWord
+	// RegionPassageWord is a word of a pasted passage (#67). Clicking it MARKS
+	// it rather than playing it — the passage is something you are reading, and a
+	// mark is the question you are about to ask about it.
+	//
+	// Every word of a passage gets one, which is the difference from RegionWord:
+	// that kind marks the deck words in prose, where being a region carries
+	// information. Here it carries none, and the registry is used anyway because
+	// the passage lives in the BUFFER, and the buffer's click map is how anything
+	// in it is reached.
+	RegionPassageWord
 	// numRegionKinds is NOT a kind: it is the registry's extent, so every guard
 	// DERIVES the set rather than restating it. A test that loops to
 	// RegionOriginLang by name is a second copy of "these are all the kinds",
@@ -298,6 +308,8 @@ func (k RegionKind) String() string {
 		return "ORIGIN language"
 	case RegionWord:
 		return "deck word"
+	case RegionPassageWord:
+		return "passage word"
 	}
 	return fmt.Sprintf("RegionKind(%d)", int(k))
 }
@@ -317,6 +329,8 @@ func (k RegionKind) identifier() string {
 		return "RegionOriginLang"
 	case RegionWord:
 		return "RegionWord"
+	case RegionPassageWord:
+		return "RegionPassageWord"
 	}
 	return fmt.Sprintf("RegionKind(%d)", int(k))
 }

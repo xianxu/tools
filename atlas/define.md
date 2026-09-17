@@ -557,6 +557,11 @@ fails for a kind that draws, invites a click and does nothing.
   every entry has a headword in every language, whereas the IPA is English-only
   (`#31` measured it: Spanish writes none, Italian writes syllabification).
 - **`RegionOriginLang`** — play the word in the language its ORIGIN names.
+- **`RegionPassageWord`** — MARK this word of a pasted passage (`#67`). The first
+  kind the audio registry does not answer for: a passage is read, not heard, and a
+  click on one of its words is the question you are about to ask about it. That
+  made `regionPlaysAudio` necessary — the split is declared, and both actionability
+  guards consult it, so a kind wired into neither reddens.
 
 **`RenderOpts` is what a caller decides**, and its lookup key is not
 about how the entry looks:
