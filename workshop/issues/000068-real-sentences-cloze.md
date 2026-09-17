@@ -1,11 +1,12 @@
 ---
 id: 000068
-status: open
+status: working
 deps: [tools#67]
 github_issue:
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-17
 estimate_hours:
+started: 2026-09-17T10:56:31-07:00
 ---
 
 # define: use real sentences as cloze material — finish the `usage/` thread
