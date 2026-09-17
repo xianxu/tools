@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-16
 updated: 2026-09-17
-estimate_hours:
+estimate_hours: 2.47
 started: 2026-09-17T14:26:02-07:00
 ---
 
@@ -189,6 +189,47 @@ That question belongs with #64's stage model, not here.
 - [ ] atlas — the streaming behaviour, the replaced "malformed/nested/incomplete
       segments preserve neutral prose" sentence, and the retired `highlightRegion`
       exception — plus the #64 note, then `sdlc close`
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec             design=1.0  impl=0.1
+item: smaller-go-module      design=0.2  impl=0.15
+item: smaller-go-module      design=0.2  impl=0.2
+item: real-api-discovery     design=0.0  impl=0.15
+item: atlas-docs             design=0.05 impl=0.05
+item: milestone-review       design=0.0  impl=0.15
+design-buffer: 0.15
+total: 2.47
+```
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derivation notes, so the numbers can be argued with rather than just checked:
+
+- **issue-spec design=1.0** is the top of the 0.5–1.5 band and earns it: the
+  brainstorm required a wire probe, a piped measurement, an isolated decoder
+  test and a delta-replay cadence measurement, plus two reversals of direction
+  (drop-the-annotation proposed, accepted, then withdrawn on blast radius) and a
+  plan-quality round. This is the primitive the hours actually went into.
+- **two `smaller-go-module` rows, not one.** The decoder change and the
+  `answer_language.go` highlighter are separate concerns with separate failure
+  modes — the second is the one the gate caught, so collapsing them into one row
+  would hide exactly the risk PQ-1 surfaced. Both are "extend, well-specced"
+  (design 0–0.3), which is what a gate-cleared plan buys.
+- **real-api-discovery impl=0.15** is the long-passage capture: a live recording
+  through `scripts/llm-probe.sh record`, stage-verify-promote, against a service
+  whose passage shapes are not ours to choose.
+- **design-buffer 0.15**, not 0.30: the plan is thorough and itemized to the
+  function level and cleared plan-quality, which is the condition the buffer rule
+  is about — though it lives in the issue rather than a separate
+  `workshop/plans/` doc, so this is the judgment call most open to challenge.
+- **familiarity 1.0**, the default. The subsystem is now read closely, which
+  would argue for less, but a multiplier claimed on one session's reading is not
+  calibration.
 
 ## Log
 
