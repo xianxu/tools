@@ -155,29 +155,29 @@ That question belongs with #64's stage model, not here.
 
 ## Plan
 
-- [ ] failing test first, pure and deterministic (ARCH-PURE): `languageDecoder`
+- [x] failing test first, pure and deterministic (ARCH-PURE): `languageDecoder`
       emits owned text BEFORE the close marker — the observable no existing test
       had. No clock, no socket.
-- [ ] own-at-open in `stepLanguageDecode`: `decodeEmitOwned`, drop the two flush
+- [x] own-at-open in `stepLanguageDecode`: `decodeEmitOwned`, drop the two flush
       effects and the `decodeLimit` event, one `d.lang` clearing rule. Update
       `TestLanguageDecodeTransitions`' independent matrices to the table above —
       it stays independently stated, not read off the implementation.
-- [ ] `languageDecoder.lex` is the rune scanner over untrusted model output
+- [x] `languageDecoder.lex` is the rune scanner over untrusted model output
       (ARCH-SECURE): extend `FuzzLanguageDecoderChunks` to assert the retention
       invariant after **every** chunk, seeded with own-at-open forms. Replace
       `TestAnswerControlPayloadAndAnnotationMemoryAreBounded`'s `d.body.Len()`
       check with that invariant over `marker`/`entity`/both filters/`literalText`.
-- [ ] `languageAnswer.accept`: the persistent per-ownership-run highlighter.
+- [x] `languageAnswer.accept`: the persistent per-ownership-run highlighter.
       Tests — the homograph row unchanged (it is the boundary invariant), plus a
       new row for a deck word split across deltas inside an owned passage,
       mirroring `TestStreamedAnswerHighlightsAWordSplitAcrossDeltas` on the
       neutral path. The enumeration is {neutral, owned} × {split across deltas}.
-- [ ] fixture rows whose expectations change with ownership-at-open:
+- [x] fixture rows whose expectations change with ownership-at-open:
       `TestLanguageDecoderRecoveryAndSplits` nested (`red` becomes owned),
       unterminated (`unfinished` becomes owned) and the 16385-byte row (no longer
       an over-limit case). Each is a behaviour change stated in the Spec, not a
       test bent to fit.
-- [ ] end-to-end, the level the operator saw it at: record a LONG-PASSAGE capture
+- [x] end-to-end, the level the operator saw it at: record a LONG-PASSAGE capture
       via `scripts/llm-probe.sh record`. The committed `stream-language.sse`
       closes its passages after ~6 of its 87 deltas, so it cannot exhibit this
       bug at all — `llmtest/testdata/README.md`'s own rule, a capture is evidence
@@ -185,8 +185,8 @@ That question belongs with #64's stage model, not here.
       `Reply{AfterText, FinishRelease}` and assert the sink holds text while the
       stream is still open (ARCH-MOCK: the barrier is the seam, no wall clock in
       the assertion).
-- [ ] re-measure the piped one-shot; record before/after in `## Log`
-- [ ] atlas — the streaming behaviour, the replaced "malformed/nested/incomplete
+- [x] re-measure the piped one-shot; record before/after in `## Log`
+- [x] atlas — the streaming behaviour, the replaced "malformed/nested/incomplete
       segments preserve neutral prose" sentence, and the retired `highlightRegion`
       exception — plus the #64 note, then `sdlc close`
 
@@ -248,6 +248,62 @@ to reach four cassette-replaying test files and, transitively, the whole answer-
 side ownership pipeline — most of #65/#66. Measuring the row cadence is what
 dissolved the dilemma: at ~0.5 s per row the annotation costs nothing visible
 once the passage buffer is gone, so streaming needed no prompt change at all.
+
+### 2026-09-17 — implementation
+
+**The measurement this issue exists for**, same command before and after
+(`define "?What is the difference between sycophantic and obsequious? Answer in
+three short paragraphs."`, piped, timestamped per chunk):
+
+| | chunks | first byte | last byte |
+|---|---|---|---|
+| before | 2 | 9.426 s | 9.487 s |
+| after | 264 | **0.917 s** | 9.952 s |
+
+The answer now starts arriving before the model is a tenth of the way through
+writing it, and keeps arriving. The wire was unchanged throughout: first text
+delta at 1.25 s, 126 deltas ~60 ms apart.
+
+**The Critical the plan gate caught was real.** `highlightRegion` builds a fresh
+writer per call, so per-rune owned emission matched nothing —
+`TestLanguageAnswerForeignHomographDoesNotUseTargetVocabulary` dropped from 1
+highlight to 0 the moment own-at-open landed. Verified against the tree before
+acting on it, then fixed by DELETING a mechanism rather than adding one: owned
+text now shares the neutral path's streaming highlighter, flushed and
+re-vocabularied per ownership run.
+
+**Three things measured that changed the work:**
+
+- **The hold was stochastic in English.** With English selected the model often
+  leaves its English prose untagged and annotates only a foreign fragment — one
+  recording produced a longest span of 3 bytes. So the defect was reliable only
+  where the prose is itself the annotated language, which is why the new capture
+  is recorded in the study language, and why it read as "sometimes".
+- **The committed capture could not exhibit the bug.** `stream-language.sse`
+  closes its passages after ~6 of its 87 deltas. Every existing test replayed it,
+  so none of them could have failed. `stream-long-passage.sse` is recorded
+  beside it, and its recorder refuses to promote a non-dominant passage.
+- **A write COUNT is the wrong oracle.** Against the buffer restored, this
+  capture arrives in 11 writes — a count threshold would have caught it by
+  accident of how much untagged prose the answer carries. The largest single
+  write is the defect stated directly: 818 bytes buffered, 3 bytes streamed.
+
+**Two of my own errors, kept because they cost real time.** A `countingSink`
+embedding `bytes.Buffer` promoted `WriteString`, which `io.WriteString` prefers,
+so every byte bypassed the counting `Write` and the sink reported ONE write for
+an answer that arrived in 1,232 — twenty minutes spent hunting a regression that
+was in the instrument. And the conformance recorder's first version measured
+unmerged spans, which since own-at-open are one rune each, and declared a
+perfectly good Spanish answer fragmented. Both are in `workshop/lessons.md`.
+
+**Verification.** `go test ./cmd/define` green (134 s, outside the sandbox — the
+pty rows need a terminal the sandbox denies). Both new guards mutation-tested
+against the restored buffer: `TestALongPassageReachesTheScreenInPieces` fails
+with "largest 818 bytes", `TestOwnedTextIsEmittedBeforeItsCloseMarker` with
+"nothing reached the sink while the passage was still open". The owned-highlight
+guard was mutation-tested against the restored `highlightRegion` call. Fuzz:
+~600k executions of `FuzzLanguageDecoderChunks` with the retention invariant
+asserted after every chunk, no failures.
 
 ## Revisions
 
