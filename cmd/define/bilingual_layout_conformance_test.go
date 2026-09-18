@@ -52,16 +52,19 @@ func TestBilingualNativeRendirLayout(t *testing.T) {
 	if set.err != nil || len(set.sections) != 2 || set.sections[1].err != nil || set.sections[1].formatErr != nil {
 		t.Fatalf("native composition failed: %+v", set)
 	}
-	for _, profile := range []struct{ name, background string }{{"dark", languageDark}, {"light", languageLight}} {
+	for _, profile := range []struct {
+		name string
+		sc   store.Scheme
+	}{{"dark", store.SchemeDark}, {"light", store.SchemeLight}} {
 		for _, lang := range []store.Lang{"es", "en"} {
 			for _, width := range []int{32, 80} {
 				// Shared independent cell oracle checks every cell, including indentation,
 				// headings, blank rows, wrapped example translations, and right-side fill.
-				assertDefinitionSectionCells(t, set, lang, profile.background, width)
-				output := renderDefinitionOutput(set, RenderOpts{Word: "rendir", Color: true, Width: width, Tint: tintPolicy{lang: lang, background: profile.background}})
+				assertDefinitionSectionCells(t, set, lang, profile.sc, width)
+				output := renderDefinitionOutput(set, RenderOpts{Word: "rendir", Color: true, Width: width, Tint: tintPolicy{lang: lang, on: true, scheme: holderFor(profile.sc)}})
 				if prefix := os.Getenv("DEFINE_LAYOUT_CAPTURE_PREFIX"); prefix != "" {
 					base := fmt.Sprintf("%s-%s-%s-%d", prefix, profile.name, lang, width)
-					for suffix, content := range map[string]string{".ansi": serializeOutput(output, width), ".txt": stripEscapes(output.text)} {
+					for suffix, content := range map[string]string{".ansi": serializeOutput(output, width, profile.sc), ".txt": stripEscapes(output.text)} {
 						if err := os.WriteFile(base+suffix, []byte(content), 0600); err != nil {
 							t.Fatal(err)
 						}

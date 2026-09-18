@@ -1,13 +1,14 @@
 ---
 id: 000070
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-16
-updated: 2026-09-17
+updated: 2026-09-18
 estimate_hours: 6.1
 started: 2026-09-17T17:20:31-07:00
 flow: {kind: full, provenance: inferred}
+actual_hours: 10.05
 ---
 
 # define: switch between a light and a dark colour scheme
@@ -362,23 +363,29 @@ Derivation, row by row (v2 ranges; `impl=` written at 40% of them per v3.1):
 Durable plan: `workshop/plans/000070-light-dark-colour-scheme-plan.md` (tasks,
 code, tests, mutation checks). Three review boundaries:
 
-- [ ] M1 — the tint is a role, the scheme is state: `store.Scheme`,
+- [x] M1 — the tint is a role, the scheme is state: `store.Scheme`,
   `schemeState` + atomic `schemeHolder`, `rowPaint.tinted` resolved at paint,
   dead tint paths deleted (renderers moved to test helpers), `-scheme` and
   `-language-tint on|off` (plan Tasks 1–6)
-- [ ] M2 — `/scheme` and the saved choice: `store.Read/Write/ClearScheme`, the
+- [x] M2 — `/scheme` and the saved choice: `store.Read/Write/ClearScheme`, the
   `deps.configDir` seam, `applyScheme` (persist-then-switch) and
   `describeScheme`, the command in editor/piped/one-shot, pty harness
   isolation, docs (Tasks 7–12)
-- [ ] M3 — detection: `parseBackgroundColour`, the bounded OSC decoder and
+- [x] M3 — detection: `parseBackgroundColour`, the bounded OSC decoder and
   `KeyBackground`, the query at raw-mode entry, every consumer of the key kind,
   conformance terminals, manual check in three terminals (Tasks 13–18)
 
 ## Log
 
+
+
+- 2026-09-18: closed — Light/dark colour scheme for define, 3 milestones each SHIP/FIX-THEN-SHIP and closed. Tint is a role resolved at paint from one atomic scheme holder (so /scheme recolours history and the exit transcript); tinted rows carry a paired ink; -scheme and -language-tint on|off; /scheme saves to $XDG_CONFIG_HOME/define/scheme (persist-then-switch; symlink-safe clear); OSC 11 detection read as a KeyBackground by a bounded decoder, applied by editor and sitting. go test ./... green; vet both builds; linux build; strict pty conformance green on the built binary; full tagged suite and -race fail only the pre-existing set (reproduced on the branch point). Live: a real terminal reported "dark (detected)"; light live check owed as #77. Follow-ups #76, #77.; review verdict: SHIP
+- 2026-09-18: closed M3 — M3: OSC 11 asked once per raw session where a tint can appear; reply decoded by a bounded two-step swallow/parse as KeyBackground; one terminalReport rule in editor and sitting, each pinned by the frame it paints; inert to router and full-queue drop; tinted rows carry a paired ink, reset pinned. Live: a real terminal, after /scheme auto, reported "dark (detected)"; light detection evidenced by the pty terminal and in-process reply, real-light check recorded as owed. go test ./... green; vet both builds; linux build; strict pty 5/5 ran+passed; full tagged suite and -race fail only the pre-existing set; fuzz 3x30s PASS; 23 mutations named in the Log, each red.; review verdict: SHIP
 ### 2026-09-16
 
 ### 2026-09-17
+- 2026-09-17: closed M2 — M2: /scheme (report | light|dark saves+repaints | auto forgets) in raw editor, piped loop and one-shot; saved file under $XDG_CONFIG_HOME/define via one schemePersister seam (load/save/clear; capped, enum-parsed; ClearScheme never removes a symlinked dir); persist-then-switch per /bilingual. Review round 1 fixed: M2 Log entry (BR-6), schemeArg one field, loopKind replaces session+fullScreen, pure initialSchemeState. go test ./... green outside sandbox; pty conformance incl. TestPTYSavedSchemeSurvivesARestart green on built binary; full tagged suite and -race fail only the pre-existing set. 19 mutations each applied, compiled, reddened.; review verdict: FIX-THEN-SHIP
+- 2026-09-17: closed M1 — M1: tint is a role (rowPaint.tinted), shade resolves at paint from one atomic schemeHolder attached in newConsole+sittingInPlace; -scheme dark|light|auto, -language-tint on|off. go test ./... green (pty tests outside sandbox); -race and tagged conformance: only failures reproduce on branch point 75370a2 (13 pty + live-LLM + a -race timing test) — logged; TestPTYLanguageTint/TestPTYNativeRendirSectionLayout green on the built binary. 27 mutations each applied, compiled and reddened their pin.; review verdict: SHIP
 
 Brainstorm. The only fixed colour a light terminal cannot remap is the language
 tint (236/254); foregrounds are the terminal theme's job, so the scheme swaps the
@@ -455,3 +462,236 @@ because an issue cannot carry both `## Revisions` and `## Log`:
   rather than deleted here — separable, and it touches the parser.
 - Deletion runs BEFORE the role change; the flags move into the role commit
   (every commit green); docs describe only what each milestone ships.
+
+`sdlc change-code`: plan-quality cleared in 2 rounds (PQ-1 Important — a
+symlinked config dir unlinked by `ClearScheme` — fixed and probed in a scratch
+worktree; PQ-4 "plan restates code" carried to the close review as a Minor).
+Estimate 6.1h (v3.1, Method A). The estimate-quality judge passed it (INFO) but
+forecast ~9–11h measured: `sdlc actual` already read 4.01h of DESIGN before any
+code, against 1.85h the table priced, and several build rows hold more than one
+commit. Kept as derived rather than re-fitted after the gate; when the ledger
+row lands, read the gap as the design half first. Branch created in place.
+
+M1 Task 3 — the dead tint paths. EVIDENCE (simulated deletion: the tint
+painter's first statement made `return t.text`, run through `go test` only):
+exactly five default-suite failures — `TestDictionaryCapturedMixedOwnership`,
+`TestDictionarySourceProvenanceCorpus`, `TestDictionaryMonolingualOriginAndDisabledTint`,
+and the painter's own two unit tests — plus the tagged `TestBilingualNativeLanguageOwnership`
+(ran; failed under simulation, passed on the baseline). The two pty-backed
+tests passed under simulation outside the sandbox. Nothing live. Then:
+deleted the fragment-tint painter, its two helpers, `Render`'s four calls into
+it (each replaced by the rendered text it returned under a zero tint) and the
+`headAt` bookkeeping that fed only the first; moved the five test-only string
+renderers into `render_helpers_test.go` unchanged; deleted the one with no
+callers. Tests: the painter's unit tests go, but their LIVE halves were ported —
+the producer-background cases into `TestSourceBackgroundTracksTheProducersBackground`
+(nothing tested `sourceBackground` directly) and copy/highlight over a tinted
+row into `TestSelectionCopiesATintedRowsText`, both on the live painter. Two
+dictionary tests deleted: one held only fragment-tint assertions, and the
+inline-pronunciation one asserted only an ABSENCE that can no longer occur (a
+test that cannot fail). Three kept their live halves (provenance corpus,
+no-colour, projection fallback); the tagged Oxford test keeps its provenance
+check. Section tint stays pinned by `TestDefinitionOutputUniformSections`.
+
+RESIDUE (raised at the M1 boundary, not deleted here): #66's source-provenance
+chain now has no production reader — `RenderOpts.Language`, `Entry.source`,
+`sourceAt`/`sourceKnown`, `definitionSection.source`, `bilingualDocument.native`,
+`projectDictionaryText`, `bilingualLanguageText`. Tests that will then check
+only the residue, to go with it: `TestDictionaryParserSourceOffsets`,
+`TestDictionarySourceProvenanceCorpus`, the kept half of
+`TestDictionaryProjectionExactOccurrenceAndFallback`, and the provenance check
+left in `TestBilingualNativeLanguageOwnership`.
+
+M1 Task 4 — the tint is a role. `rowPaint.background` (an escape string) became
+`rowPaint.tinted` (a bit); the shade resolves in `paintLanguageRow` from the
+scheme, read ONCE per frame from the holder the screen was given
+(`attachScheme`, in `newConsole` and `sittingInPlace`). `-scheme` and
+`-language-tint on|off` landed in the same commit. The test migration (136
+compile errors, ~20 files + tagged pty/layout tests) was delegated to a
+subagent under the plan's rules and reviewed. Two cases fed a foreign
+background STRING to check it was dropped; the new type makes that input
+unrepresentable, so those two list items are gone rather than rewritten.
+`TestOutputScreenImmutablePolicyAndCurrentWidthTranscript` asserted each row
+kept its own SHADE — the opposite of #70 — and now asserts each row keeps its
+own tint BIT and that a producer mutating its slice after writing does not
+reach the screen. pty conformance (`TestPTYLanguageTint`, `TestPTYNativeRendirSectionLayout`)
+ran against the built binary with `-scheme dark|light` and `-language-tint off`: green.
+
+M1 boundary. Operator decision on the residue: file a follow-up — #76
+("delete or re-use #66's orphaned source-provenance chain"), carrying the member
+list and the four tests that go with it. Pre-existing failures found while
+verifying, all reproduced on the branch point 75370a2 (so not #70's): 13 pty
+conformance tests fail in this environment (`TestPTYSuggestionAndAcceptance`,
+`TestPTYCommandMenuAppearsAndClears`, `TestPTYTranscriptIsPrintedOnExit`,
+`TestPTYWithoutMouseBehavesAsBefore`, `TestPTYMouseTrackingIsAskedForAndGivenBack`,
+`TestPTYCtrlCMidAnswerKeepsTheSession` and seven `TestPTYPlay*`), and
+`TestPlayClickOnThePromptWordPlaysIt` fails under `-race` only (3/3 on the base:
+its 5 s wait is too short for the race detector). `TestLongPassageStreamsAgainstLiveService`
+asks a live model and failed on answer shape, not code.
+
+M1 review (SHIP, 4 Minor) — all four fixed in the close commit: the choice got
+its own source type (a choice can no longer claim to be detected or default);
+the board-footer tests go through the production path and the test-only copy is
+deleted; the atlas paragraph now says what M1 does NOT ship yet. And the spec
+reconciliation it asked for: the Spec's "dead code is deleted … tint assertions
+PORTED" and the matching Done-when bullet describe more than happened. The
+test-only renderers were MOVED to `render_helpers_test.go` as test helpers (not
+deleted — tests still use them), and the per-fragment tint assertions were
+DROPPED, not ported: they described behaviour production never had (it tints
+whole sections, pinned by `TestDefinitionOutputUniformSections`); their live
+halves (producer backgrounds, copy over tint) were ported.
+
+M2 — `/scheme` and the saved choice. What the ticked plan steps rest on:
+- **Symlinked FILE (Task 7 Step 6):** `WriteScheme`'s atomic rename REPLACES a
+  symlinked `scheme` file with a regular file, so a dotfile manager that links
+  the file itself (not its directory) loses the link on `/scheme light`. That is
+  the store's behaviour for every setting (`bilingual.txt` too), not changed in
+  #70; `ClearScheme` removing the file is intended (it IS the saved choice). A
+  symlinked config DIRECTORY is kept — `TestClearSchemeRemovesOnlyWhatIsOurs`.
+- **pty (Task 11 Step 4), precisely:** at the step I ran only the three affected
+  tests on the built binary — `TestPTYLanguageTint` (default/dark/light/off),
+  `TestPTYNativeRendirSectionLayout` (6 subtests), `TestPTYSavedSchemeSurvivesARestart`
+  — all passed. The FULL tagged suite ran at the boundary: 1338 passed, 1 skipped
+  (`TestPlanNamedTestsExist`), 14 failed, all 14 the pre-existing set logged at
+  M1 and reproduced on the branch point 75370a2. `-race`: only the pre-existing
+  `TestPlayClickOnThePromptWordPlaysIt`.
+- **Mutations**, each applied, compiled, run with `-count=1`, red, restored:
+  Task 7 — the size cap, the empty-dir removal, the `Lstat` guard, the path in
+  the error; Task 8 — flag and saved swapped, the garbled-file warning dropped,
+  `realDeps` without `configDir`; Task 9 — `choose` before `save`, the one-shot
+  refusal removed; Task 10 — the editor's `session`, the editor's `fullScreen`,
+  the piped loop's `session`, `applyScheme` skipping `choose`; Task 11 — the
+  harness's `XDG_CONFIG_HOME` dropped under a fake config holding `light`.
+
+M2 review: FIX-THEN-SHIP; the ledger blocked the close on BR-6 (this entry was
+missing). Also fixed, the family rule rather than the instances (the
+state-shape family's 2nd finding): `schemeArg` is ONE field (empty = auto — the
+zero value forgets instead of saving a blank line); `commandCtx`'s `session` +
+`fullScreen` became one `loopKind` {one-shot, piped, editor}; and the startup
+read goes through the same `schemePersister` seam as save and clear, as a pure
+`initialSchemeState` pinned by `TestInitialSchemeState` with no pty.
+
+M2 closed on review round 2 (FIX-THEN-SHIP, BR-6 and BR-8 disposed). Its two
+advisories fixed in the close commit: BR-7 — the state-shape family's third
+instance, `schemeState.detected` + `heard`, is now one field (empty = nothing
+heard); the #70 structs are enumerated (`schemeState`, `schemeChoice`,
+`schemeArg`, `commandCtx`, `tintPolicy`) and this was the last pair. And the
+atlas's `loopKind` sentence carries "(from M3)" again — a sweep of M2's doc diff
+for detect/ask/report/query/OSC/KeyBackground finds nothing else untagged.
+
+2026-09-18 — M3 manual check, first result, and a design change. The operator's
+screenshot: light tint (254) with the terminal's DEFAULT text colour white — body
+text and the dimmed syllables almost invisible, coloured text fine. Cause: a saved
+`light` (their own `/scheme light` at 07:25, not yet `/scheme auto`'d) over a
+terminal whose default foreground is white. Root cause, not the setting: the tint
+is a FIXED background drawn under the terminal's DEFAULT foreground, which is
+chosen for the terminal's background, not ours — so any scheme/terminal mismatch
+is unreadable. Operator decision: pair it like the mark. Spec revision (approach A
+said foregrounds belong to the terminal's theme): text with NO colour of its own on
+a tinted row now takes `schemeInk` — 235 on the light tint, 252 on the dark;
+producer colours (headword, IPA, examples, deck words) keep theirs.
+`sourceColours` replaces `sourceBackground`'s parse with one that tracks both, so
+the ink steps aside for a producer's foreground as the tint does for its
+background. Pinned by `TestATintedRowCarriesItsOwnTextColour` and
+`TestSourceColoursTracksTheProducersForeground`.
+
+2026-09-18 — M3 manual live check: the operator verified the rebuilt binary
+"working" (after the paired-ink change; their earlier light-profile screenshot is
+what found it). Per-terminal reply strings were not reported, and the atlas says
+so rather than inventing a matrix; it names the re-check triggers.
+
+Done-when, each with its evidence:
+- Light terminal → 254, dark → 236, no flag, no saved file: in process via
+  `TestRawEditorBackgroundReplyRepaints` (reply bytes through `readInput` into
+  `runEditor`); pty `TestPTYBackgroundDetection` light/dark/silent; operator check.
+- A late reply repaints; a choice in force outranks it: `TestRawEditorBackgroundReplyRepaints`
+  (flag-choice case), `TestPTYBackgroundDetection/late`, `TestSchemeStateSequences`.
+- `/scheme light` repaints the screen AND the exit transcript: `TestRawEditorSchemeRepaintsWhatIsOnScreen`;
+  piped: `TestPipedSchemeSaves`, `TestPipedSchemeWithNowhereToSave`; sitting:
+  `TestASittingIgnoresABackgroundReply`, `TestAReplyDuringPlayReachesTheEditor`.
+- Persistence: `TestPTYSavedSchemeSurvivesARestart`; session-only / one-shot refusal /
+  write error / garbled file: `TestRawEditorSchemeWithNowhereToSave`, `TestOneShotScheme`,
+  `TestRawEditorSchemeWriteErrorChangesNothing`, `TestInitialSchemeState`, `TestSavedSchemeGovernsALookup`.
+- A dropped reply is silent and keeps the next notice: `TestADroppedReplyIsSilent`.
+- No leak for rgb, rgba or #hex; mid-drag; Alt-] then typing / Ctrl-C in separate
+  writes: `TestDecodeBackgroundReply`, `TestDecodeBackgroundReplyOtherFormats`,
+  `TestDecodeOSCAbortsAsToday`, `TestReadInputBackgroundAcrossWrites`,
+  `TestAReplyMidDragKeepsTheSelection`, and through both loops above.
+- A /play reply reaches the editor; a sitting starts in the editor's scheme:
+  `TestAReplyDuringPlayReachesTheEditor`, `TestASittingPaintsInTheEditorsScheme`.
+- No query under `-language-tint off`, `-raw`, `TERM=dumb`; the tint-flag refusal;
+  `-scheme light` then `/scheme dark` → `dark (saved)`; transition sequences:
+  `TestPTYNoQueryWithoutATint`, `TestWantsBackground`, `TestLanguageTintInvalidFlagBeforeStore`,
+  `TestOneShotScheme`, `TestSchemeStateSequences`, `TestSchemeHolder`.
+- Dead paths deleted, live halves ported (the spec's "ported" reconciled in the
+  M1 review entry above): M1 Task 3 entry.
+- Every new test seen failing with its fix removed: the mutation lists in the M1,
+  M2 and M3 entries (M3: colour parse ×2, decoder ×3, query ×2, consumers ×4,
+  caller wiring ×3, paired ink ×3).
+- README, `-h`, atlas updated; doc-sync tests green.
+
+M3 review round 1 (FIX-THEN-SHIP; BR-10 and BR-11 blocking). The M3 evidence the
+ticked steps name, written out (the rule, now in lessons.md: a tick is a claim
+its evidence exists where the step says it goes):
+- **Mutations**, each applied, compiled, `-count=1`, red, restored — Task 13:
+  linear luminance for Rec. 601; 5-digit components accepted. Task 14: the
+  non-printable abort dropped; the ESC-case cap check dropped; any payload
+  treated as a report. Task 15: the ask loop dropped; `wantsBackground` ignoring
+  `tintOn`. Task 16: each consumer's guard removed (editor intercept, sitting
+  intercept, `cancelPointerInput` clause, length-check drop). Task 17: `replRaw`
+  passing false; `runPlay` passing false; `runPlay` passing true. Paired ink: no
+  ink; ink over a producer colour; foreground codes ignored in `sourceColours`.
+  Round-1 fixes: the sitting's `show()` removed; `inkOff` removed (below).
+- **Fuzz (Task 14 Step 4):** `FuzzDecodeKey`, `FuzzDecodeKeyNeverLeaksEscapeTails`,
+  `FuzzDecodeMouseIsBounded`, 30 s each, anchored `-fuzz '^Name$'` — all PASS,
+  no new corpus entries.
+- **Strict conformance (Task 17 Step 3):** `CONFORMANCE_STRICT=1` over
+  `TestPTYBackgroundDetection`, `TestPTYNoQueryWithoutATint`,
+  `TestPTYSavedSchemeSurvivesARestart`, `TestPTYLanguageTint`,
+  `TestPTYNativeRendirSectionLayout` — all five RAN (the installed Oxford
+  dictionary satisfied `bilingualNativeProbe`) and passed; none skipped.
+- **Boundary (Task 18 step 1):** `go test ./...` ok; `go vet ./...` and
+  `go vet -tags conformance ./cmd/define` clean; `GOOS=linux go build ./...` ok;
+  `-race`: only the pre-existing `TestPlayClickOnThePromptWordPlaysIt`; full
+  tagged suite: 1359 passed, 1 skipped (`TestPlanNamedTestsExist`), 13 failed —
+  the pre-existing pty set logged at M1.
+- **Manual matrix (Task 18 step 2) — REVISION.** Done-when bullet 1's "checked by
+  hand in Terminal.app, iTerm2 and Ghostty, both appearances" is narrowed to what
+  happened: the operator verified the binary working after the paired-ink fix,
+  without itemising terminals or replies. The atlas records exactly that plus
+  the re-check triggers, and the README no longer names terminals as answering.
+- **Bullet 6** now holds as written: `#rrggbb` and Alt-] reach both loop shells
+  (`TestRawEditorBackgroundReplyRepaints`, `TestASittingIgnoresABackgroundReply`).
+
+Fixes: BR-10 — `TestASittingRepaintsOnABackgroundReply` checks the frame the
+sitting PAINTS, and `TestAReplyDuringPlayReachesTheEditor` the editor's painted
+frame on resume (both used shared state or `PaintedTranscript`, which re-reads
+the holder and so cannot show a repaint). The paired ink's reset is pinned by
+`TestTheInkStepsAsideWithTheTint`; the two loops' report intercept is one
+helper, `terminalReport`, on `viewportGesture`'s precedent.
+
+M3 review round 2 (BR-14, blocking): the "operator check" cited for Done-when
+bullet 1 could not tell detection from a saved choice — the saved file then held
+`dark` (written 09:16), so the "working" sessions ran on a saved choice. Resolved
+with evidence only detection can produce: the operator ran `/scheme auto`, then
+`/scheme`, which printed `scheme dark (detected)`; `~/.config/define/scheme` and
+its emptied directory were gone afterwards. REVISION of bullet 1's live half: a
+real terminal's DARK detection is observed; LIGHT detection's evidence is the
+modelled pty terminal (`TestPTYBackgroundDetection/light`) and the in-process reply
+(`TestRawEditorBackgroundReplyRepaints`), and a real light-terminal
+`light (detected)` is recorded in the atlas as owed. The atlas's "a light profile"
+wording, which contradicted a terminal with white default text, is corrected.
+
+M3 closed on review round 3: SHIP. Its three advisories fixed in the close
+commit — the row painter's `inking` is derived (`filled && !coloured`), not
+stored; the README's scheme section no longer calls dark the default or says a
+session asks only "with nothing chosen"; and the owed real light-terminal check
+has an owner, #77 (follow-up, published to the trunk). Lessons record both repeat
+families.
+
+Issue close: SHIP (round 7, converging; 9 prior findings disposed). Its one
+advisory, BR-16, fixed in the close commit: the README's "every full-screen
+session asks" was broader than `wantsBackground`, which asks only where a tint can
+appear; it now names the exceptions, and the docs lesson says "the code's
+condition exactly, neither narrower nor broader". Follow-ups: #76, #77.
+

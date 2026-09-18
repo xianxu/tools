@@ -211,6 +211,7 @@ Inside the session, everything besides looking a word up is a `/` command:
 | `/sound` | how many times to play a pronunciation |
 | `/lang` | the language this deck is in |
 | `/pron` | replay this word in its source language, once |
+| `/scheme` | light or dark terminal background |
 <!-- /command-list -->
 
 `/play` runs today's review without leaving the prompt. Answer the questions, or
@@ -228,6 +229,7 @@ To check additional help for commands, type `/help [command]`.
 - `/sound [N]` — With nothing, how many times each pronunciation plays. With N, play it N times for the rest of this session; 0 turns playback off, and 20 is the most.
 - `/lang [language]` — With nothing, the language in effect and the dictionary answering it. With a two-letter tag like es, switch to that language: saved when this directory is a deck, for this session otherwise.
 - `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
+- `/scheme [light|dark|auto]` — With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice, so define follows what the terminal reports. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one.
 <!-- /command-usage -->
 
 > NOTE: while other languages are available, only English dictionary is well tested.
@@ -338,12 +340,31 @@ until its ownership is settled, so an answer arrives a line at a time as it is
 written rather than all at once when it finishes. Changing `/lang` affects new output; previously
 printed text keeps its original style. Resizing clips history without reflowing it.
 
-The default suits dark terminals. Choose a profile when starting `define`:
+The tint's shade follows your terminal's background: a full-screen session asks
+the terminal (below). To say it yourself when starting `define`:
 
 ```sh
-define -language-tint=light   # light terminal background
-define -language-tint=off     # disable language backgrounds
+define -scheme light          # light terminal background
+define -language-tint off     # disable language backgrounds
 ```
+
+Or say it once: `/scheme light` (or `dark`) switches the running session —
+everything already on screen is repainted — and saves the choice for every
+later run, in `$XDG_CONFIG_HOME/define/scheme` (else `~/.config/define/scheme`).
+The scheme belongs to your terminal, not to a deck, so it is not stored in the
+deck directory. `/scheme auto` forgets the saved choice; `/scheme` alone says
+which scheme is in use and where it came from. The `-scheme` flag beats a saved
+choice for one run.
+
+A full-screen session asks the terminal for its background colour (the standard
+OSC 11 query) whenever something could be tinted — not under
+`-language-tint off`, `-raw`, `-no-color` or `TERM=dumb`. With no choice in force
+it follows the answer,
+repainting if the answer arrives after something is already on screen, and
+`/scheme` then reports it as `(detected)`. A terminal that does not answer leaves
+the dark default until you choose. A one-shot lookup (`define word`) never asks: it uses `-scheme`, then the
+saved choice, then dark. If you quit within a moment of starting over a slow link,
+the terminal's answer can land in your shell as stray characters.
 
 `-no-color`, redirected output and `TERM=dumb` also disable the background.
 Vocabulary foreground colors remain visible, and answer markings take precedence.

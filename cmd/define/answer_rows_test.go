@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 	"io"
@@ -14,7 +15,7 @@ func TestLanguageAnswerPhysicalRowsAreFinal(t *testing.T) {
 	raw := "[lang=es]primero segundo tercero cuarto quinto sexto [/lang][lang=en]last[/lang]"
 	for split := 0; split <= len(raw); split++ {
 		var out bytes.Buffer
-		a := newLanguageAnswer(&out, 20, nil, tintPolicy{lang: "es", background: languageDark})
+		a := newLanguageAnswer(&out, 20, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 		a.decoder.Write(raw[:split])
 		a.decoder.Write(raw[split:])
 		if err := a.Finish(); err != nil {
@@ -40,7 +41,7 @@ func TestLanguageAnswerPhysicalRowsAreFinal(t *testing.T) {
 
 func TestLanguageAnswerBuffersPendingRow(t *testing.T) {
 	var out bytes.Buffer
-	a := newLanguageAnswer(&out, 20, nil, tintPolicy{lang: "es", background: languageDark})
+	a := newLanguageAnswer(&out, 20, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 	a.decoder.Write("[lang=es]hola [/lang]")
 	if out.Len() != 0 {
 		t.Fatalf("unfinished row escaped: %q", out.String())
@@ -90,7 +91,7 @@ func (s *answerRowsSink) WriteOutput(o renderedOutput) error {
 }
 func TestLanguageAnswerPendingResizeAndAtomicSinks(t *testing.T) {
 	sink := &answerRowsSink{width: 30}
-	a := newLanguageAnswer(sink, 30, nil, tintPolicy{lang: "es", background: languageDark})
+	a := newLanguageAnswer(sink, 30, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 	a.decoder.Write("[lang=es]primero segundo tercero cuarto [/lang]")
 	if len(sink.rows) != 0 {
 		t.Fatalf("provisional rows %+v", sink.rows)
@@ -103,10 +104,10 @@ func TestLanguageAnswerPendingResizeAndAtomicSinks(t *testing.T) {
 	if len(sink.rows) != 2 {
 		t.Fatalf("rows %+v", sink.rows)
 	}
-	if sink.rows[0].text != "primero segundo\n" || sink.rows[0].rows[0].background != languageDark {
+	if sink.rows[0].text != "primero segundo\n" || !sink.rows[0].rows[0].tinted {
 		t.Fatalf("first row %+v", sink.rows[0])
 	}
-	if sink.rows[1].text != "tercero cuarto last" || sink.rows[1].rows[0].background != "" {
+	if sink.rows[1].text != "tercero cuarto last" || sink.rows[1].rows[0].tinted {
 		t.Fatalf("mixed row %+v", sink.rows[1])
 	}
 	if a.plain.String() != "primero segundo tercero cuarto last" {
@@ -116,7 +117,7 @@ func TestLanguageAnswerPendingResizeAndAtomicSinks(t *testing.T) {
 func TestLanguageAnswerRowLimitAndFailureKeepHistory(t *testing.T) {
 	for _, input := range []string{strings.Repeat(" ", maxAnswerWrapPending+1), strings.Repeat("x", maxAnswerWrapPending+1)} {
 		var out bytes.Buffer
-		a := newLanguageAnswer(&out, 20, nil, tintPolicy{lang: "es", background: languageDark})
+		a := newLanguageAnswer(&out, 20, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 		a.decoder.Write(input)
 		if err := a.Finish(); err == nil {
 			t.Fatal("missing pending limit")
@@ -129,7 +130,7 @@ func TestLanguageAnswerRowLimitAndFailureKeepHistory(t *testing.T) {
 		}
 	}
 	w := &languageFailWriter{}
-	a := newLanguageAnswer(w, 20, nil, tintPolicy{lang: "es", background: languageDark})
+	a := newLanguageAnswer(w, 20, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 	a.decoder.Write("[lang=es]primero segundo tercero cuarto quinto sexto [/lang]tail")
 	if err := a.Finish(); err == nil {
 		t.Fatal("missing write failure")
@@ -146,15 +147,16 @@ func TestLanguageAnswerCapturedRowsAllChunkBoundaries(t *testing.T) {
 	fake.Script("", llmtest.Reply{Capture: "stream-language.sse"})
 	var captured strings.Builder
 	d.newLLM = func(cfg llm.Config) llm.Client { return captureAnswerDeltas{Client: llm.New(cfg), raw: &captured} }
+	d.scheme = holderFor(store.SchemeDark) // the shade both renderings are compared in
 	var ordinary, stderr bytes.Buffer
 	sess := &session{}
-	if code := runAsk(t.Context(), d, options{color: true, width: 20, tintBackground: languageDark}, sess, question{text: "Explain buenos días"}, &ordinary, &stderr); code != 0 {
+	if code := runAsk(t.Context(), d, options{color: true, width: 20, tintOn: true}, sess, question{text: "Explain buenos días"}, &ordinary, &stderr); code != 0 {
 		t.Fatalf("capture replay: %d %s", code, &stderr)
 	}
 	raw := captured.String()
 	for split := 0; split <= len(raw); split++ {
 		sink := &answerRowsSink{width: 20}
-		a := newLanguageAnswer(sink, 20, nil, tintPolicy{lang: "en", background: languageDark})
+		a := newLanguageAnswer(sink, 20, nil, tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)})
 		a.decoder.Write(raw[:split])
 		a.decoder.Write(raw[split:])
 		if err := a.Finish(); err != nil {
@@ -162,7 +164,7 @@ func TestLanguageAnswerCapturedRowsAllChunkBoundaries(t *testing.T) {
 		}
 		var rendered strings.Builder
 		for _, row := range sink.rows {
-			rendered.WriteString(serializeOutput(row, 20))
+			rendered.WriteString(serializeOutput(row, 20, store.SchemeDark))
 		}
 		if rendered.String()+"\n" != ordinary.String() {
 			t.Fatalf("split %d live/append differ\nlive %q\nappend %q", split, rendered.String(), ordinary.String())
@@ -185,13 +187,13 @@ func (c captureAnswerDeltas) Stream(ctx context.Context, r llm.Request, delta fu
 func TestLanguageAnswerLiveScreenRowsMatchAppendSink(t *testing.T) {
 	raw := "[lang=es]primero segundo tercero cuarto quinto sexto [/lang][lang=en]last[/lang]"
 	var ordinary bytes.Buffer
-	a := newLanguageAnswer(&ordinary, 20, nil, tintPolicy{lang: "es", background: languageDark})
+	a := newLanguageAnswer(&ordinary, 20, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 	a.decoder.Write(raw)
 	if err := a.Finish(); err != nil {
 		t.Fatal(err)
 	}
 	live := newLiveScreen(io.Discard, 10, 20)
-	b := newLanguageAnswer(live, 20, nil, tintPolicy{lang: "es", background: languageDark})
+	b := newLanguageAnswer(live, 20, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 	for _, r := range raw {
 		b.decoder.Write(string(r))
 	}
@@ -210,7 +212,7 @@ func TestLanguageAnswerLiveScreenRowsMatchAppendSink(t *testing.T) {
 
 func TestLanguageAnswerTrailingSpacesRemainPhysicalRows(t *testing.T) {
 	sink := &answerRowsSink{width: 20}
-	a := newLanguageAnswer(sink, 20, nil, tintPolicy{lang: "es", background: languageDark})
+	a := newLanguageAnswer(sink, 20, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 	a.decoder.Write("[lang=es]hola" + strings.Repeat(" ", 38) + "\n[/lang]")
 	if err := a.Finish(); err != nil {
 		t.Fatal(err)
@@ -258,12 +260,12 @@ func TestLanguageAnswerUnknownDecorationsDoNotDisqualifyOwnedRows(t *testing.T) 
 		"[lang=es]hola[/lang] / [lang=es]mundo[/lang]",
 	} {
 		sink := &answerRowsSink{width: 40}
-		a := newLanguageAnswer(sink, 40, nil, tintPolicy{lang: "es", background: languageDark})
+		a := newLanguageAnswer(sink, 40, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 		a.decoder.Write(raw)
 		if err := a.Finish(); err != nil {
 			t.Fatal(err)
 		}
-		if len(sink.rows) != 1 || sink.rows[0].rows[0].background != languageDark {
+		if len(sink.rows) != 1 || !sink.rows[0].rows[0].tinted {
 			t.Fatalf("decorations disqualified %q: %+v", raw, sink.rows)
 		}
 	}

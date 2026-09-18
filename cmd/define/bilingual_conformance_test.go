@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/conformance"
 )
 
@@ -125,13 +124,9 @@ func TestBilingualNativeLanguageOwnership(t *testing.T) {
 		if len(entry.source.spans) == 0 {
 			t.Fatal("installed Oxford record has no proven language ranges")
 		}
-		for _, lang := range []store.Lang{"es", "en"} {
-			rendered, _ := Render(entry, RenderOpts{Color: true, Tint: tintPolicy{lang: lang, background: languageDark}})
-			assertDictionaryTint(t, rendered, "subir a la red", lang == "es")
-			assertDictionaryTint(t, rendered, "to go up to", lang == "en")
-			assertDictionaryTint(t, rendered, "caer en las redes de alguien", lang == "es")
-			assertDictionaryTint(t, rendered, "to fall into somebody's clutches", lang == "en")
-		}
+		// The per-fragment tint this also rendered is gone (#70): production
+		// tints whole sections (TestBilingualNativeRendirLayout pins that on the
+		// installed source). What remains is the provenance the parser proves.
 		t.Logf("native red: %d source bytes, %d validated language ranges", len(record.Text), len(entry.source.spans))
 	}
 }

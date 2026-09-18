@@ -419,6 +419,7 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 				cc := newCommandCtx(d, opt, stdout, stderr)
 				cc.setTimes = func(n int) { opt.times = n }
 				cc.setBilingual = sessionSetBilingual(&d, d.persistBilingual)
+				cc.loop = loopPiped
 				cc.entry = sess.entry
 				cc.setLang = sessionSetLang(&d, &opt, cc.setLang, nil, stderr)
 				// /pron records a request rather than playing, so the language

@@ -52,6 +52,7 @@ var commands = []command{
 	{name: "sound", summary: "how many times to play a pronunciation", args: "[N]", usage: soundUsage, run: runSound},
 	{name: "lang", summary: "the language this deck is in", args: "[language]", usage: langUsage, run: runLang},
 	{name: "pron", summary: "replay this word in its source language, once", args: "[language]", usage: pronUsage, run: runPron},
+	{name: "scheme", summary: "light or dark terminal background", args: "[light|dark|auto]", usage: schemeUsage, run: runScheme},
 }
 
 // helpUsage is /help's own row. Its argument is a command's NAME, with or
@@ -244,7 +245,26 @@ type commandCtx struct {
 	// have a command play in place. nil where there is no current word to
 	// replay, which is what lets /pron say so instead of playing silence.
 	replay func(store.Lang)
+	// scheme is the process's scheme holder and schemePersister its durable half
+	// (nil: nowhere to save), for /scheme (#70). A holder, not a setter: the
+	// transition lives in applyScheme, and every screen reads the same holder.
+	scheme          *schemeHolder
+	schemePersister schemePersister
+	// loop is which loop dispatched the command. /scheme derives both facts it
+	// needs from it — is there a session to keep a session-only choice in, and
+	// does this loop ask the terminal for its background (the raw editor) — so
+	// they cannot disagree. The zero value is the one-shot.
+	loop loopKind
 }
+
+// loopKind names the loop that dispatched a command.
+type loopKind int
+
+const (
+	loopOneShot loopKind = iota
+	loopPiped
+	loopEditor
+)
 
 // newCommandCtx is the single construction point. Built at two call sites (both
 // loops) and M2 adds a deck and a clock, so a literal in each loop is two places
@@ -265,6 +285,9 @@ func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 		// also re-derives the session; a one-shot keeps this one, which is why
 		// `define /lang es` still sets the directory's language.
 		setLang: d.persistLang,
+		// loop stays loopOneShot here; both loops set their own.
+		scheme:          d.scheme,
+		schemePersister: d.schemePersister(),
 	}
 }
 

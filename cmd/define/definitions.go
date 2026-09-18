@@ -49,14 +49,6 @@ func definitionsFor(dict Dictionary, word, primary string, primaryErr error, on 
 	return set
 }
 
-// renderDefinitions preserves per-section language ownership of word actions.
-// Regions are complete here, so callers must not run an unscoped vocabulary
-// pass over the composed bilingual string afterward.
-func renderDefinitions(set definitionSet, opt RenderOpts) (string, []Region) {
-	o := renderDefinitionOutput(set, opt)
-	return renderOutputText(o), o.regions
-}
-
 func renderDefinitionOutput(set definitionSet, opt RenderOpts) renderedOutput {
 	var out strings.Builder
 	var regions []Region
@@ -122,7 +114,7 @@ func renderDefinitionOutput(set definitionSet, opt RenderOpts) renderedOutput {
 		}
 		if opt.Color && role != "" && normalizedLang(role) == normalizedLang(opt.Tint.lang) {
 			for i := startLine; i < endLine; i++ {
-				paints[i].background = opt.Tint.background
+				paints[i].tinted = opt.Tint.on
 			}
 		}
 	}

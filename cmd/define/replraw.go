@@ -30,7 +30,7 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	}
 	defer sess.restore()
 
-	con := newConsole(ctx, d, sess, stdout, newLiveScreen)
+	con := newConsole(ctx, d, sess, stdout, newLiveScreen, wantsBackground(opt))
 	keys := readInput(ctx, f, interrupts, con.pointer)
 	return runEditor(ctx, keys, interrupts, d, opt, con)
 }
@@ -71,14 +71,24 @@ func applyShape(opt *options, view display, sz winSize) {
 // the editor's footer follows its content, and a sitting's status bar sits on
 // the terminal's bottom row (`#41` D3a).
 func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
-	newScreen func(tty io.Writer, rows, cols int) *liveScreen) console {
+	newScreen func(tty io.Writer, rows, cols int) *liveScreen, askTerminal bool) console {
 	// The alternate screen, and with it the END of the cooked/raw dance (#30 D4).
 	// `cooked()` existed so a definition's bare "\n"s translated while it was
 	// printed; here the screen places every line itself, so nothing depends on
 	// the line discipline and raw mode is continuous — which is what "render
 	// cooked, play raw" wanted all along.
 	sess.enterModes()
+	// The terminal's background, asked once per raw session, after the modes
+	// (#70). The reply is a KeyBackground whenever it comes; nothing waits.
+	// askTerminal, not ask: that name is the package's ask().
+	if askTerminal {
+		for _, q := range terminalQueries {
+			sess.ask(q.query)
+		}
+	}
 	live := newScreen(stdout, terminalRows(stdout), terminalCols(stdout))
+	// Before the router and the resize watcher can see it (#70).
+	live.attachScheme(d.scheme)
 	var clipboard clipboardWriter
 	var clipboardErr error
 	if d.newClipboard != nil {
@@ -129,6 +139,17 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 		return sittingInPlace(ctx, d, opt, keys, interrupts, live, resizes, stdout, stderr, pointer)
 	}
 	return con
+}
+
+// terminalReport applies k if it is a terminal REPORT rather than a keystroke
+// (#70), and says whether it was one and whether what is painted changed. ONE
+// rule for both loops — the move viewportGesture makes for the view keys — so
+// the editor and a sitting cannot disagree about what a report is.
+func terminalReport(d deps, k Key) (report, changed bool) {
+	if k.Kind != KeyBackground {
+		return false, false
+	}
+	return true, d.scheme.detect(k.Background)
 }
 
 // viewportGesture moves the VIEW rather than the state, and reports whether it
@@ -540,6 +561,14 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				finish()
 				return 0
 			}
+			// A terminal REPORT, not a keystroke (#70): applied, repainted only if
+			// the shade changed. Never Apply, never history, never a viewport key.
+			if report, changed := terminalReport(d, k); report {
+				if changed {
+					draw()
+				}
+				continue
+			}
 			// A VIEWPORT gesture never reaches Apply — shared with `--play`, so
 			// the two loops cannot disagree about which keys move the view or
 			// which direction a page goes.
@@ -693,6 +722,9 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// the session by writing through here.
 					cc.setTimes = func(n int) { opt.times = n }
 					cc.setBilingual = sessionSetBilingual(&d, d.persistBilingual)
+					// /scheme's repaint is the draw() after dispatch: every screen
+					// reads the one holder at paint (#70).
+					cc.loop = loopEditor
 					// And &voc, because THIS loop caches the highlight set in
 					// a local before the loop starts (see above). Reassigning
 					// d alone would leave the editor highlighting from the

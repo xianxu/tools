@@ -11,7 +11,7 @@ func TestDefinitionUnknownSourceDoesNotInheritStudyLanguage(t *testing.T) {
 	raw := "word noun an English definition"
 	dict := &fakeDictionary{}
 	set := definitionsFor(dict, "word", raw, nil, false)
-	out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "it", Tint: tintPolicy{lang: "it", background: languageDark}})
+	out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "it", Tint: tintPolicy{lang: "it", on: true, scheme: holderFor(store.SchemeDark)}})
 	if strings.Contains(out, languageDark) {
 		t.Fatal("unknown dictionary source inherited study language")
 	}
@@ -63,7 +63,7 @@ func TestDictionaryAssemblyOwnsVerifiedPrimaryLanguage(t *testing.T) {
 			}
 			set := definitionsFor(locked, "word", text, nil, false)
 			for _, target := range []store.Lang{"it", "en"} {
-				out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: target, Tint: tintPolicy{lang: target, background: languageDark}})
+				out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: target, Tint: tintPolicy{lang: target, on: true, scheme: holderFor(store.SchemeDark)}})
 				assertDictionaryTint(t, out, "source prose", tc.want != "" && tc.want == target)
 			}
 		})

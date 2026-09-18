@@ -38,6 +38,21 @@
 | `parseBackgroundColour` (M3) | `cmd/define/scheme_detect.go` | new |
 | `decodeOSC` (M3) | `cmd/define/key.go` | new |
 | `KeyBackground` (M3) | `cmd/define/key.go` | new |
+| `styleLanguageText` | `cmd/define/language_style.go` | deleted |
+| `lineInkBounds` | `cmd/define/language_style.go` | deleted |
+| `validateLanguageText` | `cmd/define/language_text.go` | deleted |
+| `dictionaryFragment` | `cmd/define/dictionary_language.go` | deleted |
+| `dictionaryText` | `cmd/define/dictionary_language.go` | deleted |
+| `styledBoardPrompt` | `cmd/define/practice_language.go` | deleted |
+| `TestLanguageTintStyle` | `cmd/define/language_style_test.go` | deleted |
+| `TestLanguageTintMixedAndSelection` | `cmd/define/language_style_test.go` | deleted |
+| `TestLanguageTextValidation` | `cmd/define/language_style_test.go` | deleted |
+| `TestDictionaryCapturedMixedOwnership` | `cmd/define/dictionary_language_test.go` | deleted |
+| `TestDictionaryInlinePronunciationRemainsNeutral` | `cmd/define/dictionary_language_test.go` | deleted |
+| `tintProfile` | `cmd/define/language_style.go` | deleted |
+| `TestLanguageTintProfile` | `cmd/define/language_style_test.go` | deleted |
+| `boardFooter` | `cmd/define/render_helpers_test.go` | deleted |
+| `practiceChrome` | `cmd/define/render_helpers_test.go` | deleted |
 
 Rows for DELETED symbols are added by the task that deletes them, in the same commit (Task 3): a `| deleted |` row asserts the symbol is already gone (`TestPlanTablesNameEntitiesThatExist`), and it is also what exempts this plan's prose from `TestARemovedDeclarationIsSweptOrRetired`.
 
@@ -83,7 +98,7 @@ Behaviour after M1: identical to today except the flags — `-scheme dark|light|
 
 **Files:** Create `cmd/define/store/scheme.go`; test `cmd/define/store/scheme_test.go`.
 
-- [ ] **Step 1: Write the failing test** **TestParseScheme**:
+- [x] **Step 1: Write the failing test** **TestParseScheme**:
 
 ```go
 package store
@@ -108,8 +123,8 @@ func TestParseScheme(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (`undefined: ParseScheme`): `go test ./cmd/define/store -run TestParseScheme -count=1`
-- [ ] **Step 3: Implement**
+- [x] **Step 2: Run — expect FAIL** (`undefined: ParseScheme`): `go test ./cmd/define/store -run TestParseScheme -count=1`
+- [x] **Step 3: Implement**
 
 ```go
 package store
@@ -139,14 +154,14 @@ func ParseScheme(s string) (Scheme, error) {
 }
 ```
 
-- [ ] **Step 4: Run — PASS.** **Step 5: Commit** `#70 M1: store: a Scheme enum for the terminal background`
-- [ ] **Step 6: Mutations** (after the commit): drop `strings.ToLower` → the `DARK`/` Light` rows redden; drop `TrimSpace` → ` Light\n` reddens. Restore each.
+- [x] **Step 4: Run — PASS.** **Step 5: Commit** `#70 M1: store: a Scheme enum for the terminal background`
+- [x] **Step 6: Mutations** (after the commit): drop `strings.ToLower` → the `DARK`/` Light` rows redden; drop `TrimSpace` → ` Light\n` reddens. Restore each.
 
 ### Task 2: `schemeState`, `schemeHolder`, the two flag parsers
 
 **Files:** Create `cmd/define/scheme.go`; test `cmd/define/scheme_test.go`.
 
-- [ ] **Step 1: Write the failing tests** — **TestSchemeStateSequences** (event sequences, ARCH-ORDER), **TestSchemeHolder**, **TestSchemeHolderConcurrentReaders**, **TestParseSchemeArg**, **TestParseTintFlag**:
+- [x] **Step 1: Write the failing tests** — **TestSchemeStateSequences** (event sequences, ARCH-ORDER), **TestSchemeHolder**, **TestSchemeHolderConcurrentReaders**, **TestParseSchemeArg**, **TestParseTintFlag**:
 
 ```go
 package main
@@ -303,8 +318,8 @@ func TestParseTintFlag(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (undefined): `go test ./cmd/define -run 'TestSchemeState|TestSchemeHolder|TestParseSchemeArg|TestParseTintFlag' -count=1`
-- [ ] **Step 3: Implement `cmd/define/scheme.go`**
+- [x] **Step 2: Run — expect FAIL** (undefined): `go test ./cmd/define -run 'TestSchemeState|TestSchemeHolder|TestParseSchemeArg|TestParseTintFlag' -count=1`
+- [x] **Step 3: Implement `cmd/define/scheme.go`**
 
 ```go
 package main
@@ -467,9 +482,9 @@ func parseTintFlag(s string) (bool, error) {
 }
 ```
 
-- [ ] **Step 4: Run — PASS**, including `go test ./cmd/define -race -run TestSchemeHolderConcurrentReaders -count=1`; then `go vet ./cmd/define`.
-- [ ] **Step 5: Commit** `#70 M1: scheme state as an immutable value behind one atomic holder`
-- [ ] **Step 6: Mutations**, one at a time: (a) `effective()` checks `heard` before `chosenBy` → the "choice outranks" and holder cases redden; (b) `withoutChoice` leaves `chosenBy` → "clearing reveals" reddens; (c) `detect` returns `true` unconditionally → the "same reply twice" case reddens; (d) change the holder to a plain `*schemeState` field (no atomic) → `-race` on **TestSchemeHolderConcurrentReaders** reports a race; (f) `choose` returns `true` unconditionally → the holder test's "changes nothing visible" case reddens (add that assertion on `choose`'s result); (e) `parseTintFlag` drops the `dark, light` case → the named-refusal assertion reddens. Restore each.
+- [x] **Step 4: Run — PASS**, including `go test ./cmd/define -race -run TestSchemeHolderConcurrentReaders -count=1`; then `go vet ./cmd/define`.
+- [x] **Step 5: Commit** `#70 M1: scheme state as an immutable value behind one atomic holder`
+- [x] **Step 6: Mutations**, one at a time: (a) `effective()` checks `heard` before `chosenBy` → the "choice outranks" and holder cases redden; (b) `withoutChoice` leaves `chosenBy` → "clearing reveals" reddens; (c) `detect` returns `true` unconditionally → the "same reply twice" case reddens; (d) change the holder to a plain `*schemeState` field (no atomic) → `-race` on **TestSchemeHolderConcurrentReaders** reports a race; (f) `choose` returns `true` unconditionally → the holder test's "changes nothing visible" case reddens (add that assertion on `choose`'s result); (e) `parseTintFlag` drops the `dark, light` case → the named-refusal assertion reddens. Restore each.
 
 ### Task 3: Delete the tint paths production never reached
 
@@ -477,16 +492,16 @@ Do this BEFORE the role change (Task 4), so nothing is migrated only to be delet
 
 **Files:** `cmd/define/language_style.go`, `cmd/define/dictionary_language.go`, `cmd/define/render.go`, `cmd/define/output_screen.go`, `cmd/define/definitions.go`, `cmd/define/practice_language.go`, `cmd/define/play_loop.go`; create `cmd/define/render_helpers_test.go`; tests `language_style_test.go`, `dictionary_language_test.go`, `bilingual_conformance_test.go` (tagged). NOT `dict_test.go` or `dictionary_source_test.go`: they go through `renderDefinitions` → `renderDefinitionOutput`, where the tint returns as section row paint — the LIVE path.
 
-- [ ] **Step 1: Evidence, by SIMULATING the deletion** (lessons "Deleting a test needs the same evidence as writing one"; a `panic` would trip the zero-tint calls production DOES make and abort the test binary). On the committed baseline, make `styleLanguageText` return `t.text` as its first statement. Run through `go test` ONLY — `go vet` would report the now-unreachable body, which is the simulation, not a finding: `go test ./cmd/define/... -count=1` and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (say whether it ran or skipped). Every failure must be a test that calls `Render` or `styleLanguageText` directly with a NON-ZERO tint; a reviewer measured exactly five in the default suite, on a run WITHOUT the pty-backed tests (`TestLanguageTintInvocation`, `TestLanguagePromptStartup` — expected to pass, since they render with a zero tint; a sixth failure in a full environment is investigated, not accepted) — `TestDictionaryCapturedMixedOwnership`, `TestDictionarySourceProvenanceCorpus`, `TestDictionaryMonolingualOriginAndDisabledTint`, `TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`. Record the list in the issue Log. Any OTHER failure means a live path — STOP and re-plan. Restore with `git checkout HEAD -- cmd/define/language_style.go`.
-- [ ] **Step 2: Remove the tint from `Render`** (`render.go`). Each `opt.dictionaryText(e, <original>, <rendered>, …)` returned `<rendered>` whenever the tint is zero (`projectLanguageText` returns `text: rendered`), so replace each call with its `<rendered>` argument — at ~203 `opt.prose(wrapText(body, opt.Width, lead), "")`, at ~221 `opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex)`. At ~147-154 the call sat in an `if … { text = … }` block that becomes a no-op: delete the block and `headAt`, which loses its only reader. At ~243-245 delete the statement and the `if` left empty around it.
-- [ ] **Step 3: Delete** `RenderOpts.dictionaryText`, `dictionaryFragment`, `styleLanguageText`, and each helper left with no reader — check `lineInkBounds` and `validateLanguageText` with `grep -rnw <name> cmd/define --include='*.go'`. KEEP `sourceBackground` (read by `paintLanguageRow` and `answerwrap.go:129`). Delete `styledBoardPrompt` (no callers at all).
-- [ ] **Step 4: Record the residue, don't widen the task.** Also name, in the Log, the tests that will then check ONLY the residue — the `entry.source.spans` check in `TestBilingualNativeLanguageOwnership`, `TestDictionaryParserSourceOffsets`, the `projectDictionaryText` half kept in Step 6, and whatever remains of the three `TestDictionary*` tests — so they go with the chain when it goes. After Step 3 a provenance chain loses its last reader: `RenderOpts.Language` (read only at the deleted `dictionary_language.go:141`), `definitions.go:88-89`, `Entry.source` (`parse.go:46`, `definitions.go:94-95`), `sourceAt`/`sourceKnown` (`parse.go:187-202,760,813`), `definitionSection.source` (`definitions.go:150,152`), `bilingualDocument.native` and `projectDictionaryText` (`bilingual_layout.go:105`). Go does not report unused struct fields, so nothing forces this. Verify each member's readers by grep, list the chain in the issue Log, and raise the follow-up (delete #66's source-provenance data, or give it a consumer) with the operator at the M1 boundary. It is separable from #70 (ARCH-PURPOSE: it is not the purpose), and deleting it touches the parser.
-- [ ] **Step 5: Move the test-only renderers into `render_helpers_test.go`** with their names and signatures unchanged — `renderOutputText`, `renderDefinitions`, `renderPracticePresentation`, `practiceChrome`, `boardFooter` (their only callers are tests; still declared, so no removed-name sweep). Delete them from production.
-- [ ] **Step 6: Tests.** `language_style_test.go`: delete the direct `styleLanguageText` unit tests (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and whatever of `TestLanguageTextValidation` exercised a deleted helper); `TestLanguageTintProfile` stays until Task 4. Step 1's list is authoritative for the rest: the per-fragment tint assertions that went through `Render` with a non-zero tint (the three `TestDictionary*` tests it names, and the tagged `TestBilingualNativeLanguageOwnership` at `bilingual_conformance_test.go:129`) describe behaviour production never had — it tints whole SECTIONS (`definitions.go:123-127`), pinned by `TestDefinitionOutputUniformSections`. Remove the tint half of each; keep what they assert about text and regions. `TestDictionaryProjectionExactOccurrenceAndFallback` calls `dictionaryFragment` directly: delete that half, keep its `projectDictionaryText` half. A test left with nothing to assert is deleted and gets a `| deleted |` row (Step 7). Name each in the Log.
-- [ ] **Step 7: Add one `| deleted |` row per removed citable symbol** to this plan's Pure-entities table, each alone in its first cell with a repo-relative path — e.g. `` | `styleLanguageText` | `cmd/define/language_style.go` | deleted | `` — for `styleLanguageText`, `dictionaryFragment`, `dictionaryText` (`cmd/define/dictionary_language.go`), `styledBoardPrompt` (`cmd/define/practice_language.go`), `lineInkBounds` / `validateLanguageText` if removed, AND every deleted test function this plan names (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and `TestLanguageTextValidation` if it goes — path `cmd/define/language_style_test.go`). A removed `Test*` name the plan still mentions fails both `TestPlanCitesTestsThatExist` and `TestARemovedDeclarationIsSweptOrRetired`; the row is what exempts it.
-- [ ] **Step 8: Verify.** `go build ./cmd/define/...` (only a build catches production still calling a helper that moved into a `_test.go`), `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (ran or skipped — say which) — PASS. Sweep: `grep -rnw 'styleLanguageText\|dictionaryFragment\|dictionaryText\|lineInkBounds\|validateLanguageText\|styledBoardPrompt\|headAt' cmd/define atlas README.md` — expected output: EMPTY.
-- [ ] **Step 9: Commit** `#70 M1: delete the tint paths production never reached`
-- [ ] **Step 10: After the commit, run the whole package again** — `TestARemovedDeclarationIsSweptOrRetired` and `TestPlanTableStatusMatchesTheChangeWindow` read `base..HEAD`, so before the commit they cannot see the deletion (lessons #53: "After a commit, run the whole package"). A failure here is fixed in a follow-up commit, not by amending history that has been read.
+- [x] **Step 1: Evidence, by SIMULATING the deletion** (lessons "Deleting a test needs the same evidence as writing one"; a `panic` would trip the zero-tint calls production DOES make and abort the test binary). On the committed baseline, make `styleLanguageText` return `t.text` as its first statement. Run through `go test` ONLY — `go vet` would report the now-unreachable body, which is the simulation, not a finding: `go test ./cmd/define/... -count=1` and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (say whether it ran or skipped). Every failure must be a test that calls `Render` or `styleLanguageText` directly with a NON-ZERO tint; a reviewer measured exactly five in the default suite, on a run WITHOUT the pty-backed tests (`TestLanguageTintInvocation`, `TestLanguagePromptStartup` — expected to pass, since they render with a zero tint; a sixth failure in a full environment is investigated, not accepted) — `TestDictionaryCapturedMixedOwnership`, `TestDictionarySourceProvenanceCorpus`, `TestDictionaryMonolingualOriginAndDisabledTint`, `TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`. Record the list in the issue Log. Any OTHER failure means a live path — STOP and re-plan. Restore with `git checkout HEAD -- cmd/define/language_style.go`.
+- [x] **Step 2: Remove the tint from `Render`** (`render.go`). Each `opt.dictionaryText(e, <original>, <rendered>, …)` returned `<rendered>` whenever the tint is zero (`projectLanguageText` returns `text: rendered`), so replace each call with its `<rendered>` argument — at ~203 `opt.prose(wrapText(body, opt.Width, lead), "")`, at ~221 `opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex)`. At ~147-154 the call sat in an `if … { text = … }` block that becomes a no-op: delete the block and `headAt`, which loses its only reader. At ~243-245 delete the statement and the `if` left empty around it.
+- [x] **Step 3: Delete** `RenderOpts.dictionaryText`, `dictionaryFragment`, `styleLanguageText`, and each helper left with no reader — check `lineInkBounds` and `validateLanguageText` with `grep -rnw <name> cmd/define --include='*.go'`. KEEP `sourceBackground` (read by `paintLanguageRow` and `answerwrap.go:129`). Delete `styledBoardPrompt` (no callers at all).
+- [x] **Step 4: Record the residue, don't widen the task.** Also name, in the Log, the tests that will then check ONLY the residue — the `entry.source.spans` check in `TestBilingualNativeLanguageOwnership`, `TestDictionaryParserSourceOffsets`, the `projectDictionaryText` half kept in Step 6, and whatever remains of the three `TestDictionary*` tests — so they go with the chain when it goes. After Step 3 a provenance chain loses its last reader: `RenderOpts.Language` (read only at the deleted `dictionary_language.go:141`), `definitions.go:88-89`, `Entry.source` (`parse.go:46`, `definitions.go:94-95`), `sourceAt`/`sourceKnown` (`parse.go:187-202,760,813`), `definitionSection.source` (`definitions.go:150,152`), `bilingualDocument.native` and `projectDictionaryText` (`bilingual_layout.go:105`). Go does not report unused struct fields, so nothing forces this. Verify each member's readers by grep, list the chain in the issue Log, and raise the follow-up (delete #66's source-provenance data, or give it a consumer) with the operator at the M1 boundary. It is separable from #70 (ARCH-PURPOSE: it is not the purpose), and deleting it touches the parser.
+- [x] **Step 5: Move the test-only renderers into `render_helpers_test.go`** with their names and signatures unchanged — `renderOutputText`, `renderDefinitions`, `renderPracticePresentation`, `practiceChrome`, `boardFooter` (their only callers are tests; still declared, so no removed-name sweep). Delete them from production.
+- [x] **Step 6: Tests.** `language_style_test.go`: delete the direct `styleLanguageText` unit tests (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and whatever of `TestLanguageTextValidation` exercised a deleted helper); `TestLanguageTintProfile` stays until Task 4. Step 1's list is authoritative for the rest: the per-fragment tint assertions that went through `Render` with a non-zero tint (the three `TestDictionary*` tests it names, and the tagged `TestBilingualNativeLanguageOwnership` at `bilingual_conformance_test.go:129`) describe behaviour production never had — it tints whole SECTIONS (`definitions.go:123-127`), pinned by `TestDefinitionOutputUniformSections`. Remove the tint half of each; keep what they assert about text and regions. `TestDictionaryProjectionExactOccurrenceAndFallback` calls `dictionaryFragment` directly: delete that half, keep its `projectDictionaryText` half. A test left with nothing to assert is deleted and gets a `| deleted |` row (Step 7). Name each in the Log.
+- [x] **Step 7: Add one `| deleted |` row per removed citable symbol** to this plan's Pure-entities table, each alone in its first cell with a repo-relative path — e.g. `` | `styleLanguageText` | `cmd/define/language_style.go` | deleted | `` — for `styleLanguageText`, `dictionaryFragment`, `dictionaryText` (`cmd/define/dictionary_language.go`), `styledBoardPrompt` (`cmd/define/practice_language.go`), `lineInkBounds` / `validateLanguageText` if removed, AND every deleted test function this plan names (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and `TestLanguageTextValidation` if it goes — path `cmd/define/language_style_test.go`). A removed `Test*` name the plan still mentions fails both `TestPlanCitesTestsThatExist` and `TestARemovedDeclarationIsSweptOrRetired`; the row is what exempts it.
+- [x] **Step 8: Verify.** `go build ./cmd/define/...` (only a build catches production still calling a helper that moved into a `_test.go`), `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (ran or skipped — say which) — PASS. Sweep: `grep -rnw 'styleLanguageText\|dictionaryFragment\|dictionaryText\|lineInkBounds\|validateLanguageText\|styledBoardPrompt\|headAt' cmd/define atlas README.md` — expected output: EMPTY.
+- [x] **Step 9: Commit** `#70 M1: delete the tint paths production never reached`
+- [x] **Step 10: After the commit, run the whole package again** — `TestARemovedDeclarationIsSweptOrRetired` and `TestPlanTableStatusMatchesTheChangeWindow` read `base..HEAD`, so before the commit they cannot see the deletion (lessons #53: "After a commit, run the whole package"). A failure here is fixed in a follow-up commit, not by amending history that has been read.
 
 ### Task 4: The tint becomes a role; the flags choose the shade
 
@@ -549,7 +564,7 @@ if d.scheme == nil {
   `-h` prose: one sentence — *"-scheme light or dark picks the shade of the language tint to suit the terminal's background; -language-tint off turns the tint off."* (M2 and M3 extend it; no mention of detection yet.)
 - `cmd/define/README.md:344-345` — `-scheme light` and `-language-tint off` replace `-language-tint=light|off`.
 
-- [ ] **Step 1: Write the failing tests** (they will not compile until the type exists — that is the RED):
+- [x] **Step 1: Write the failing tests** (they will not compile until the type exists — that is the RED):
 
 ```go
 // language_row_test.go — the role is frozen at production; the shade resolves at paint.
@@ -588,8 +603,8 @@ func TestAScreenRepaintsHistoryInTheCurrentScheme(t *testing.T) {
 }
 ```
   And rewrite `TestLanguageTintInvocation` / `TestLanguageTintInvalidFlagBeforeStore` (`language_style_paths_test.go`) as the flag table (args → exit, shade): none → 0, `languageDark`; `-scheme dark` → dark; `-scheme light` → `languageLight`; `-scheme auto` → dark; `-language-tint off` → no tint escape; `-language-tint light` → exit 2, stderr contains `-scheme light`, NO store directory created; `-language-tint bogus` → exit 2, `invalid -language-tint`; `-scheme sepia` → exit 2, `not a colour scheme`; `TERM=dumb` → no tint; and KEEP today's `plain` (`-no-color`) and `redirect` rows (`language_style_paths_test.go:21,23`). They cannot pin `tintFor`'s colour gate, though: the lookup path has its own (`definitions.go:123`, `opt.Color && …`). The gate matters where there is no second check — practice output (`practice_output.go:96`) and the answer writer use `policy.on` alone, so `define --play -no-color` would print tint escapes without it. So add **TestTintForGatesOnColour**: `tintFor(deps{lang: "es"}, options{color: false, tintOn: true}).on` is false, and with `color: true` it is true — the direct pin `TestLanguageTintProfile`'s second half used to be.
-- [ ] **Step 2: Make every production change listed above.** `go build ./cmd/define/...` until clean.
-- [ ] **Step 3: Migrate every test the compiler rejects — default AND tagged** (`go vet -tags conformance ./cmd/define` finds the tagged ones: `bilingual_layout_conformance_test.go:55-61` and the `assertDefinitionSectionCells` helper it calls in `definitions_output_test.go:22`). Rules, so each test asserts what it asserted before:
+- [x] **Step 2: Make every production change listed above.** `go build ./cmd/define/...` until clean.
+- [x] **Step 3: Migrate every test the compiler rejects — default AND tagged** (`go vet -tags conformance ./cmd/define` finds the tagged ones: `bilingual_layout_conformance_test.go:55-61` and the `assertDefinitionSectionCells` helper it calls in `definitions_output_test.go:22`). Rules, so each test asserts what it asserted before:
   1. `rowPaint{background: languageDark|languageLight}` → `rowPaint{tinted: true}`; the paint call that follows receives the matching `store.SchemeDark` / `store.SchemeLight`; `rowPaint{background: ""}` → `rowPaint{}`.
   2. `tintPolicy{lang, languageX}` → `tintPolicy{lang: lang, on: true, scheme: holderFor(store.SchemeX)}`; `tintPolicy{lang, ""}` → `tintPolicy{lang: lang}`.
   3. `options{tintBackground: languageX}` → `options{tintOn: true}` plus `d.scheme = holderFor(store.SchemeX)` where the shade matters; `opt.tintFor(x)` → `tintFor(d, opt)` with `d.lang = x`.
@@ -607,9 +622,9 @@ func holderFor(s store.Scheme) *schemeHolder {
 	return newSchemeHolder(schemeState{}.withChoice(s, sourceFlag))
 }
 ```
-- [ ] **Step 4: Verify.** `go build ./cmd/define/...`, `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define` — PASS. Conformance: `go test -tags conformance ./cmd/define -run 'TestPTYLanguageTint|TestPTYNativeRendir|TestBilingualNativeRendirLayout' -count=1` — PASS; say which ran and which skipped (they need the Oxford ES dictionary, `bilingualNativeProbe`). Grep: `grep -rn 'tintBackground\|tintProfile\|paint\.background\|p\.background\b' cmd/define --include='*.go'` — expected: EMPTY (`answerwrap.go`'s `w.background` is a different field and does not match; a pty test's `profile.background` field should be renamed by rule 9 anyway).
-- [ ] **Step 5: Commit** `#70 M1: a row records whether it is tinted; -scheme picks the shade at paint`, then run the whole package again (the window guards read `base..HEAD`).
-- [ ] **Step 6: Mutations**, one at a time: `paintLanguageRow` always writes `languageDark` → both new tests redden; `paintedTranscript` reads nothing (uses `store.SchemeDark`) → the transcript assertion reddens; skip `withChoice` for the flag → the `-scheme light` row reddens; `tintFor` ignores `opt.tintOn` → the `-language-tint off` row reddens; `tintFor` ignores `opt.color` → **TestTintForGatesOnColour** reddens; drop the `TERM=dumb` line → its row reddens. Restore each.
+- [x] **Step 4: Verify.** `go build ./cmd/define/...`, `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define` — PASS. Conformance: `go test -tags conformance ./cmd/define -run 'TestPTYLanguageTint|TestPTYNativeRendir|TestBilingualNativeRendirLayout' -count=1` — PASS; say which ran and which skipped (they need the Oxford ES dictionary, `bilingualNativeProbe`). Grep: `grep -rn 'tintBackground\|tintProfile\|paint\.background\|p\.background\b' cmd/define --include='*.go'` — expected: EMPTY (`answerwrap.go`'s `w.background` is a different field and does not match; a pty test's `profile.background` field should be renamed by rule 9 anyway).
+- [x] **Step 5: Commit** `#70 M1: a row records whether it is tinted; -scheme picks the shade at paint`, then run the whole package again (the window guards read `base..HEAD`).
+- [x] **Step 6: Mutations**, one at a time: `paintLanguageRow` always writes `languageDark` → both new tests redden; `paintedTranscript` reads nothing (uses `store.SchemeDark`) → the transcript assertion reddens; skip `withChoice` for the flag → the `-scheme light` row reddens; `tintFor` ignores `opt.tintOn` → the `-language-tint off` row reddens; `tintFor` ignores `opt.color` → **TestTintForGatesOnColour** reddens; drop the `TERM=dumb` line → its row reddens. Restore each.
 
 ### Task 5: Pin the holder's wiring in the loop shells
 
@@ -617,17 +632,17 @@ func holderFor(s store.Scheme) *schemeHolder {
 
 **Files:** test `cmd/define/rawterm_test.go`, `cmd/define/selection_nested_test.go` (or a new `scheme_wiring_test.go`).
 
-- [ ] **Step 1: Write** **TestNewConsoleAttachesTheSchemeHolder**: build a console through `newConsole` exactly as `TestNewConsoleEnablesEveryMode` does, with `d := testDeps(t); d.scheme = holderFor(store.SchemeLight)` and a capturing `newScreen` closure that keeps the `*liveScreen`; write a tinted row through the console's `stdout` (`writeOutput(con.stdout, renderedOutput{text: "hola\n", rows: []rowPaint{{tinted: true}}}, 20, store.SchemeDark)` — the scheme argument is ignored by a screen) and assert the captured screen's `PaintedTranscript()` carries `languageLight` (read through the screen's lock, not a plain `bytes.Buffer` a throttled flush may be writing — Task 6 runs `-race`).
-- [ ] **Step 2: Write** **TestASittingPaintsInTheEditorsScheme**: on the `selection_nested_test.go:56` pattern (a parent `*liveScreen`, the real `sittingInPlace` on a goroutine, `playRig` for a due word), with `d.scheme = holderFor(store.SchemeLight)`, wait for the nested screen (`router.active != parent`) and assert a tinted row painted there carries `languageLight`. If the sitting's first question has no tinted row, write one through the nested screen's `WriteOutput`.
-- [ ] **Step 3: Run — PASS. Commit** `#70 M1: pin the scheme holder where production attaches it`, then run the whole package again.
-- [ ] **Step 4: Mutations:** delete `live.attachScheme(d.scheme)` in `newConsole` → Step 1's test reddens; delete `sitting.attachScheme(d.scheme)` → Step 2's reddens. Restore each.
+- [x] **Step 1: Write** **TestNewConsoleAttachesTheSchemeHolder**: build a console through `newConsole` exactly as `TestNewConsoleEnablesEveryMode` does, with `d := testDeps(t); d.scheme = holderFor(store.SchemeLight)` and a capturing `newScreen` closure that keeps the `*liveScreen`; write a tinted row through the console's `stdout` (`writeOutput(con.stdout, renderedOutput{text: "hola\n", rows: []rowPaint{{tinted: true}}}, 20, store.SchemeDark)` — the scheme argument is ignored by a screen) and assert the captured screen's `PaintedTranscript()` carries `languageLight` (read through the screen's lock, not a plain `bytes.Buffer` a throttled flush may be writing — Task 6 runs `-race`).
+- [x] **Step 2: Write** **TestASittingPaintsInTheEditorsScheme**: on the `selection_nested_test.go:56` pattern (a parent `*liveScreen`, the real `sittingInPlace` on a goroutine, `playRig` for a due word), with `d.scheme = holderFor(store.SchemeLight)`, wait for the nested screen (`router.active != parent`) and assert a tinted row painted there carries `languageLight`. If the sitting's first question has no tinted row, write one through the nested screen's `WriteOutput`.
+- [x] **Step 3: Run — PASS. Commit** `#70 M1: pin the scheme holder where production attaches it`, then run the whole package again.
+- [x] **Step 4: Mutations:** delete `live.attachScheme(d.scheme)` in `newConsole` → Step 1's test reddens; delete `sitting.attachScheme(d.scheme)` → Step 2's reddens. Restore each.
 
 ### Task 6: M1 boundary
 
-- [ ] `go test ./... -count=1`, `go test ./cmd/define -race -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `go test -tags conformance ./cmd/define -count=1` (report which tests skipped), `GOOS=linux go build ./...` — all green; quote the counts.
-- [ ] `atlas/define.md`: rewrite the `-language-tint` line (~2270) and the `RenderOpts.Tint` row (~578) for the role/shade split; the `RenderOpts.Language` row (~577, "explicit mixed-source ranges take precedence") is false after Task 3 but `TestAtlasDescribesEveryRenderOpt` keeps the row mandatory — reword it "unread since #70 (residue; see the issue Log)"; `renderDefinitions` (~2256) is now a TEST helper — say so or drop it; add a short "The shade is a paint-time decision (#70)" paragraph under **The screen**: the holder, `attachScheme` before sharing, the once-per-frame read.
-- [ ] Raise Task 3 Step 4's residue chain with the operator; on their yes, file it with `sdlc issue new` so it outlives the session (the Log names the tests that go with it).
-- [ ] `sdlc milestone-close --issue 70 --milestone M1` — read the verdict before ticking `M1`; fix Critical/Important first.
+- [x] `go test ./... -count=1`, `go test ./cmd/define -race -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `go test -tags conformance ./cmd/define -count=1` (report which tests skipped), `GOOS=linux go build ./...` — all green; quote the counts.
+- [x] `atlas/define.md`: rewrite the `-language-tint` line (~2270) and the `RenderOpts.Tint` row (~578) for the role/shade split; the `RenderOpts.Language` row (~577, "explicit mixed-source ranges take precedence") is false after Task 3 but `TestAtlasDescribesEveryRenderOpt` keeps the row mandatory — reword it "unread since #70 (residue; see the issue Log)"; `renderDefinitions` (~2256) is now a TEST helper — say so or drop it; add a short "The shade is a paint-time decision (#70)" paragraph under **The screen**: the holder, `attachScheme` before sharing, the once-per-frame read.
+- [x] Raise Task 3 Step 4's residue chain with the operator; on their yes, file it with `sdlc issue new` so it outlives the session (the Log names the tests that go with it).
+- [x] `sdlc milestone-close --issue 70 --milestone M1` — read the verdict before ticking `M1`; fix Critical/Important first.
 
 ---
 
@@ -639,7 +654,7 @@ Docs in this chunk describe what M2 ships — flag, saved, dark — and do not m
 
 **Files:** Modify `cmd/define/store/scheme.go`; test `cmd/define/store/scheme_test.go`.
 
-- [ ] **Step 1: Failing tests** against `t.TempDir()`:
+- [x] **Step 1: Failing tests** against `t.TempDir()`:
   - missing file → `("", false, nil)`;
   - `WriteScheme(dir, SchemeLight)` into a `dir` that does not exist yet → `ReadScheme` gives `(SchemeLight, true, nil)`; the file is exactly `light\n`; `dir` holds exactly ONE entry afterwards (no `.tmp-*` left, the `bilingual_test.go:35-41` precedent);
   - `"  DARK \n"` → `SchemeDark`;
@@ -647,8 +662,8 @@ Docs in this chunk describe what M2 ships — flag, saved, dark — and do not m
   - THE CAP, with a valid word so only the cap can refuse it: `"light"` + 59 spaces (64 bytes) → `SchemeLight`; `"light"` + 60 spaces (65 bytes) → error (the `store/bilingual_test.go:45` pattern);
   - `ClearScheme` removes the file AND the now-empty `dir`; a second `ClearScheme` → nil; with a foreign file also in `dir`, only `scheme` goes and `dir` stays;
   - **a SYMLINKED `dir`** (a dotfile manager's `~/.config/define` → elsewhere, the target holding a foreign file): after `ClearScheme` the LINK still exists and the foreign file survives. `os.Remove` unlinks a symlink even when its target is full, so a bare `os.Remove(dir)` fails this.
-- [ ] **Step 2: Run — FAIL.** `go test ./cmd/define/store -run Scheme -count=1`
-- [ ] **Step 3: Implement** (imports: `errors`, `fmt`, `io`, `io/fs`, `os`, `path/filepath`, `strings`):
+- [x] **Step 2: Run — FAIL.** `go test ./cmd/define/store -run Scheme -count=1`
+- [x] **Step 3: Implement** (imports: `errors`, `fmt`, `io`, `io/fs`, `os`, `path/filepath`, `strings`):
 
 ```go
 const schemeFileName = "scheme"
@@ -706,14 +721,14 @@ func ClearScheme(dir string) error {
 	return nil
 }
 ```
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M2: store: the saved scheme, one word in the user's config directory`
-- [ ] **Step 6: Mutations:** drop the `len(b) >` check → the 65-byte case reddens; drop `os.Remove(dir)` → the empty-dir case reddens; drop the `Lstat`/`IsDir` guard → the symlinked-dir case reddens; drop the path wrap → the names-the-file case reddens. Restore each. The class (cleanup removes only owned residue) has no other instance in #70: the only other removals are `t.TempDir()`s the tests own. `WriteScheme`'s atomic rename replaces a symlinked `scheme` FILE with a regular one — the store's behaviour for every setting (`bilingual.txt` too), noted in the Log rather than changed here.
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M2: store: the saved scheme, one word in the user's config directory`
+- [x] **Step 6: Mutations:** drop the `len(b) >` check → the 65-byte case reddens; drop `os.Remove(dir)` → the empty-dir case reddens; drop the `Lstat`/`IsDir` guard → the symlinked-dir case reddens; drop the path wrap → the names-the-file case reddens. Restore each. The class (cleanup removes only owned residue) has no other instance in #70: the only other removals are `t.TempDir()`s the tests own. `WriteScheme`'s atomic rename replaces a symlinked `scheme` FILE with a regular one — the store's behaviour for every setting (`bilingual.txt` too), noted in the Log rather than changed here.
 
 ### Task 8: The config-directory seam and the startup read
 
 **Files:** Modify `cmd/define/scheme.go`, `cmd/define/main.go`; tests `cmd/define/scheme_test.go`, `cmd/define/language_style_paths_test.go`.
 
-- [ ] **Step 1: Failing tests.** **TestConfigDirFrom** (pure; `configDirFrom` needs `path/filepath` in `scheme.go`):
+- [x] **Step 1: Failing tests.** **TestConfigDirFrom** (pure; `configDirFrom` needs `path/filepath` in `scheme.go`):
 
 ```go
 func TestConfigDirFrom(t *testing.T) {
@@ -738,7 +753,7 @@ func TestConfigDirFrom(t *testing.T) {
 ```
   **TestRealDepsConfigDirReadsXDG**: `t.Setenv("XDG_CONFIG_HOME", dir)` → `realDeps().configDir()` returns `dir/define`, true (the production wiring, in process — lessons "Adding a field is not wiring it").
   Through `run()` (with `d.configDir` → a temp dir): a saved `light`, no flag → `languageLight` in a lookup; `-scheme dark` beats a saved `light`; a garbled file → exactly one `define: ignoring saved scheme:` line on stderr and the dark shade; `d.configDir == nil` → dark, no stderr.
-- [ ] **Step 2: Run — FAIL. Step 3: Implement.**
+- [x] **Step 2: Run — FAIL. Step 3: Implement.**
 
 ```go
 // configDirFrom resolves define's user config directory. Only ABSOLUTE bases
@@ -762,13 +777,13 @@ if d.scheme == nil {
 	var st schemeState
 	switch {
 	case !schemeChoice.auto:
-		st = st.withChoice(schemeChoice.value, sourceFlag)
+		st = st.withChoice(schemeChoice.value, choiceFlag)
 	case d.configDir != nil:
 		if dir, ok := d.configDir(); ok {
 			if v, found, err := store.ReadScheme(dir); err != nil {
 				fmt.Fprintf(stderr, "define: ignoring saved scheme: %v\n", err)
 			} else if found {
-				st = st.withChoice(v, sourceSaved)
+				st = st.withChoice(v, choiceSaved)
 			}
 		}
 	}
@@ -776,14 +791,14 @@ if d.scheme == nil {
 }
 ```
   It stays after the `--llm-check` return, so `--version` never reads the user's config (`version_conformance_test.go:73-81` runs with the inherited environment).
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M2: a saved scheme is read at startup, from its own seam`
-- [ ] **Step 6: Mutations:** swap the flag and saved cases → "flag beats saved" reddens; drop the warning → the garbled case reddens; `realDeps` without `configDir` → **TestRealDepsConfigDirReadsXDG** reddens (it asserts `realDeps().configDir != nil` first, so the failure is a message, not a nil-call panic). Restore each.
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M2: a saved scheme is read at startup, from its own seam`
+- [x] **Step 6: Mutations:** swap the flag and saved cases → "flag beats saved" reddens; drop the warning → the garbled case reddens; `realDeps` without `configDir` → **TestRealDepsConfigDirReadsXDG** reddens (it asserts `realDeps().configDir != nil` first, so the failure is a message, not a nil-call panic). Restore each.
 
 ### Task 9: `describeScheme` and `applyScheme`
 
 **Files:** Modify `cmd/define/scheme.go` (add `errors`); test `cmd/define/scheme_test.go`.
 
-- [ ] **Step 1: Failing tests.** A stateful fake:
+- [x] **Step 1: Failing tests.** A stateful fake:
 
 ```go
 type fakePersister struct {
@@ -817,7 +832,7 @@ func (f *fakePersister) clear() error {
   - saved light → `auto`, failing fake, session → error, holder unchanged (the same failure rule for clearing);
   - nil holder → `errNoScheme`.
   **TestDescribeScheme**, each string exact: `light (saved)`, `dark (detected)`, `light (-scheme flag)`, `light (session only; not saved)`, `dark (default: the terminal has not reported its background)` (full-screen), `dark (default: detected only in a full-screen session)` (otherwise — the spec's "interactive session" wording is revised to this in the issue Log: the piped loop is a session and never detects).
-- [ ] **Step 2: Run — FAIL. Step 3: Implement.**
+- [x] **Step 2: Run — FAIL. Step 3: Implement.**
 
 ```go
 var (
@@ -862,7 +877,7 @@ func applyScheme(h *schemeHolder, arg schemeArg, p schemePersister, session bool
 	case p == nil && arg.auto:
 		h.forget()
 	case p == nil:
-		h.choose(arg.value, sourceSession)
+		h.choose(arg.value, choiceSession)
 	case arg.auto:
 		if err := p.clear(); err != nil {
 			return h.Load(), err
@@ -872,7 +887,7 @@ func applyScheme(h *schemeHolder, arg schemeArg, p schemePersister, session bool
 		if err := p.save(arg.value); err != nil {
 			return h.Load(), err
 		}
-		h.choose(arg.value, sourceSaved)
+		h.choose(arg.value, choiceSaved)
 	}
 	return h.Load(), nil
 }
@@ -898,14 +913,14 @@ func describeScheme(s schemeState, fullScreen bool) string {
 	return string(v) + " (default: detected only in a full-screen session)"
 }
 ```
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M2: /scheme's transition persists first, and its report is always true`
-- [ ] **Step 6: Mutations:** `h.choose` moved before `p.save` → the failing-fake rows redden; the `p == nil && !session` case removed → the one-shot row reddens. Restore each.
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M2: /scheme's transition persists first, and its report is always true`
+- [x] **Step 6: Mutations:** `h.choose` moved before `p.save` → the failing-fake rows redden; the `p == nil && !session` case removed → the one-shot row reddens. Restore each.
 
 ### Task 10: The `/scheme` command in all three contexts, with its docs
 
 **Files:** Create `cmd/define/scheme_cmd.go` (imports `fmt`, `strings`); modify `cmd/define/command.go` (registry, `commandCtx`, `newCommandCtx`), `cmd/define/replraw.go` (~691), `cmd/define/repl.go` (~419), `cmd/define/README.md` and `atlas/define.md` (the command-list and command-usage spans), `cmd/define/main.go` (`-h` prose); tests `cmd/define/scheme_cmd_test.go`.
 
-- [ ] **Step 1: Failing tests — every wiring gets a test driving the shell that supplies it** (lessons "Pin a loop shell's wiring…"). Editor tests use a console whose `view`/`stdout`/`stderr` is a real `newLiveScreen(&tty, 20, 60)` with `interval = -1`, as `bilingual_paths_test.go:34` does, and read frames with `lastFrame` (`screen_test.go:552`); the rig sets `d.scheme = newSchemeHolder(schemeState{})` and `attachScheme`s it; lookups need `opt.color`, `opt.tintOn` and a `tintSourceFixture` (`language_style_paths_test.go:28`) so rows are tinted at all.
+- [x] **Step 1: Failing tests — every wiring gets a test driving the shell that supplies it** (lessons "Pin a loop shell's wiring…"). Editor tests use a console whose `view`/`stdout`/`stderr` is a real `newLiveScreen(&tty, 20, 60)` with `interval = -1`, as `bilingual_paths_test.go:34` does, and read frames with `lastFrame` (`screen_test.go:552`); the rig sets `d.scheme = newSchemeHolder(schemeState{})` and `attachScheme`s it; lookups need `opt.color`, `opt.tintOn` and a `tintSourceFixture` (`language_style_paths_test.go:28`) so rows are tinted at all.
   1. **TestRawEditorSchemeRepaintsWhatIsOnScreen** — `d.configDir` → a temp dir; pre-write a tinted row (`l.WriteOutput(renderedOutput{text: "hola\n", rows: []rowPaint{{tinted: true}}})`); drive `runEditor` with `/scheme light⏎` then Ctrl-C. The last frame's `hola` row carries `languageLight` and no `languageDark`; `l.PaintedTranscript()` carries `languageLight`; `<tmp>/scheme` reads `light`; the output contains `scheme light (saved)`.
   2. **TestRawEditorSchemeWithNowhereToSave** — `configDir` nil → `light (session only; not saved)`; the repaint is light. (Pins `cc.session` in the editor.)
   3. **TestRawEditorSchemeWriteErrorChangesNothing** — `configDir` → a path under a regular FILE, so `MkdirAll` fails → stderr `define: /scheme:`, the shade stays dark, nothing says saved.
@@ -914,7 +929,7 @@ func describeScheme(s schemeState, fullScreen bool) string {
   5. **TestPipedSchemeSaves** — `replLines`: `/scheme light` → `scheme light (saved)`; a following lookup's tinted rows carry `languageLight`.
   6. **TestPipedSchemeWithNowhereToSave** — `replLines`, `configDir` nil → `light (session only; not saved)`, and a following lookup is light. (Pins the piped loop's `cc.session`.)
   7. **TestOneShotScheme** — `run([]string{"/scheme", "light"}, …)`: file written, exit 0; `run([]string{"/scheme"})` with the file → `light (saved)`; `configDir` nil → exit 2, stderr names `$XDG_CONFIG_HOME`; `run([]string{"-scheme", "light", "/scheme", "dark"})` → `dark (saved)`.
-- [ ] **Step 2: Run — FAIL. Step 3: Implement.**
+- [x] **Step 2: Run — FAIL. Step 3: Implement.**
 
 ```go
 // M2's wording. M3 adds "so define follows what the terminal reports" to auto.
@@ -946,25 +961,25 @@ func runScheme(c commandCtx, args []string) int {
 ```
   Registry: append `{name: "scheme", summary: "light or dark terminal background", args: "[light|dark|auto]", usage: schemeUsage, run: runScheme}` at the END of `commands` (the table has no order; `/help` and the docs list it in table order, the menu sorts). `commandCtx` fields, documented in the file's style: `scheme *schemeHolder`; `schemePersister schemePersister`; `session bool` ("a loop exists for a session-only choice to live in; false for the one-shot"); `fullScreen bool` ("the raw editor: the loop that asks the terminal for its background, from M3"). `newCommandCtx`: `scheme: d.scheme, schemePersister: d.schemePersister()`. Editor (`replraw.go`, beside `cc.setTimes`): `cc.session = true` and `cc.fullScreen = true` on SEPARATE lines — the existing `draw()` after dispatch repaints from the holder, which is the whole recolour. Piped loop (`repl.go`, beside `cc.setTimes`): `cc.session = true`.
   Docs, in this commit so it stays green: run `go test ./cmd/define -run 'TestDocs' -count=1` — `TestDocsQuoteTheCommandList` and `TestDocsQuoteTheCommandUsage` name the README and atlas spans to update; update them. Add a README "Light or dark" paragraph for M2 (the shade follows `-scheme`, then the saved `/scheme`, then dark; the file's location; `/scheme auto`), and one `-h` sentence naming `/scheme`.
-- [ ] **Step 4: PASS**, full package. **Step 5: Commit** `#70 M2: /scheme switches, saves, and repaints what is already on screen`
-- [ ] **Step 6: Mutations**, one at a time: delete the editor's `cc.session = true` → test 2 reddens; delete `cc.fullScreen = true` → test 4 reddens; delete the piped loop's `cc.session = true` → test 6 reddens; make `applyScheme` skip its `h.choose` → test 1 reddens (no repaint, no transcript change). Restore each.
+- [x] **Step 4: PASS**, full package. **Step 5: Commit** `#70 M2: /scheme switches, saves, and repaints what is already on screen`
+- [x] **Step 6: Mutations**, one at a time: delete the editor's `cc.session = true` → test 2 reddens; delete `cc.fullScreen = true` → test 4 reddens; delete the piped loop's `cc.session = true` → test 6 reddens; make `applyScheme` skip its `h.choose` → test 1 reddens (no repaint, no transcript change). Restore each.
 
 ### Task 11: Harness isolation
 
 **Files:** Modify `cmd/define/pty_conformance_test.go` (`startDefineBinary`), `cmd/define/pty_layout_conformance_test.go` (its own `exec.Command`).
 
-- [ ] **Step 1:** `startDefineBinary` ALWAYS sets `cmd.Env = append(append(os.Environ(), "XDG_CONFIG_HOME="+t.TempDir()), env...)` — the caller's `env` comes last, so a test can override it (`os/exec` keeps the LAST duplicate key). The layout test does the same. The comment says why: a developer's saved scheme would otherwise flip every "default" expectation.
-- [ ] **Step 2: A pty case that depends on the harness DEFAULT** — without one, nothing notices if the harness line goes (every shade-checking pty test passes a flag, which beats a saved choice). Add a `default` subtest to `TestPTYLanguageTint` with NO scheme flag, expecting `languageDark` and a bare `/scheme` reporting `dark (default: the terminal has not reported its background)`.
-- [ ] **Step 3:** **TestPTYSavedSchemeSurvivesARestart** (tag `darwin && conformance`; skip via `bilingualNativeProbe` like `TestPTYLanguageTint`), all three runs passing ONE shared `XDG_CONFIG_HOME=<dir>` in `env` and one Spanish deck: run 1 `/scheme light`, wait for `scheme light (saved)`, quit; run 2 looks up `red` → the Spanish section carries `languageLight`; `/scheme auto`, wait for its report, quit; run 3 → `languageDark`.
-- [ ] **Step 4:** `go test ./cmd/define/... -count=1`; `go test -tags conformance ./cmd/define -run 'TestPTY' -count=1` — PASS; name what ran vs skipped.
-- [ ] **Step 5: Commit** `#70 M2: the pty harness gets its own config directory`
-- [ ] **Step 6: Mutation — never touching the real config:** drop the harness's `XDG_CONFIG_HOME` line, then run `XDG_CONFIG_HOME=$(mktemp -d) sh -c 'mkdir -p "$XDG_CONFIG_HOME/define" && echo light > "$XDG_CONFIG_HOME/define/scheme" && go test -tags conformance ./cmd/define -run TestPTYLanguageTint/default -count=1'` (the harness appends `os.Environ()`, so the binary inherits it) → the `default` subtest reddens. Restore.
+- [x] **Step 1:** `startDefineBinary` ALWAYS sets `cmd.Env = append(append(os.Environ(), "XDG_CONFIG_HOME="+t.TempDir()), env...)` — the caller's `env` comes last, so a test can override it (`os/exec` keeps the LAST duplicate key). The layout test does the same. The comment says why: a developer's saved scheme would otherwise flip every "default" expectation.
+- [x] **Step 2: A pty case that depends on the harness DEFAULT** — without one, nothing notices if the harness line goes (every shade-checking pty test passes a flag, which beats a saved choice). Add a `default` subtest to `TestPTYLanguageTint` with NO scheme flag, expecting `languageDark` and a bare `/scheme` reporting `dark (default: the terminal has not reported its background)`.
+- [x] **Step 3:** **TestPTYSavedSchemeSurvivesARestart** (tag `darwin && conformance`; skip via `bilingualNativeProbe` like `TestPTYLanguageTint`), all three runs passing ONE shared `XDG_CONFIG_HOME=<dir>` in `env` and one Spanish deck: run 1 `/scheme light`, wait for `scheme light (saved)`, quit; run 2 looks up `red` → the Spanish section carries `languageLight`; `/scheme auto`, wait for its report, quit; run 3 → `languageDark`.
+- [x] **Step 4:** `go test ./cmd/define/... -count=1`; `go test -tags conformance ./cmd/define -run 'TestPTY' -count=1` — PASS; name what ran vs skipped.
+- [x] **Step 5: Commit** `#70 M2: the pty harness gets its own config directory`
+- [x] **Step 6: Mutation — never touching the real config:** drop the harness's `XDG_CONFIG_HOME` line, then run `XDG_CONFIG_HOME=$(mktemp -d) sh -c 'mkdir -p "$XDG_CONFIG_HOME/define" && echo light > "$XDG_CONFIG_HOME/define/scheme" && go test -tags conformance ./cmd/define -run TestPTYLanguageTint/default -count=1'` (the harness appends `os.Environ()`, so the binary inherits it) → the `default` subtest reddens. Restore.
 
 ### Task 12: M2 boundary
 
-- [ ] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`.
-- [ ] Atlas: `/scheme` under **Command mode**; the saved file under **The store** ("not the deck — the user's config directory", precedence flag → saved → dark).
-- [ ] `sdlc milestone-close --issue 70 --milestone M2` — read the verdict before ticking.
+- [x] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`.
+- [x] Atlas: `/scheme` under **Command mode**; the saved file under **The store** ("not the deck — the user's config directory", precedence flag → saved → dark).
+- [x] `sdlc milestone-close --issue 70 --milestone M2` — read the verdict before ticking.
 
 ---
 
@@ -974,8 +989,8 @@ func runScheme(c commandCtx, args []string) int {
 
 **Files:** Create `cmd/define/scheme_detect.go` (imports `strconv`, `strings`, `store`); test `cmd/define/scheme_detect_test.go`.
 
-- [ ] **Step 1: Failing test** **TestParseBackgroundColour** (table): `rgb:ffff/ffff/ffff` → light; `rgb:0000/0000/0000` → dark; `rgb:1e1e/1e1e/1e1e` → dark; `rgb:fdf6/e3e3/e3e3` → light; `rgb:f/f/f` → light; `rgb:80/80/80` → light (0.502) and `rgb:7f/7f/7f` → dark (0.498) — the boundary that separates Rec. 601 on encoded values from linear luminance; rejects: `rgba:ffff/ffff/ffff/ffff`, `#ffffff`, `rgb:fffff/0/0`, `rgb:ff/ff`, `rgb:gg/00/00`, `rgb:`, empty.
-- [ ] **Step 2: FAIL. Step 3: Implement.**
+- [x] **Step 1: Failing test** **TestParseBackgroundColour** (table): `rgb:ffff/ffff/ffff` → light; `rgb:0000/0000/0000` → dark; `rgb:1e1e/1e1e/1e1e` → dark; `rgb:fdf6/e3e3/e3e3` → light; `rgb:f/f/f` → light; `rgb:80/80/80` → light (0.502) and `rgb:7f/7f/7f` → dark (0.498) — the boundary that separates Rec. 601 on encoded values from linear luminance; rejects: `rgba:ffff/ffff/ffff/ffff`, `#ffffff`, `rgb:fffff/0/0`, `rgb:ff/ff`, `rgb:gg/00/00`, `rgb:`, empty.
+- [x] **Step 2: FAIL. Step 3: Implement.**
 
 ```go
 // parseBackgroundColour reads an OSC 11 reply's payload (#70). Only the rgb:
@@ -1011,14 +1026,14 @@ func parseBackgroundColour(payload string) (store.Scheme, bool) {
 	return store.SchemeLight, true
 }
 ```
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M3: read a terminal's background colour as light or dark`
-- [ ] **Step 6: Mutations:** replace the Rec. 601 sum with linear luminance (square each component, weights 0.2126/0.7152/0.0722) → the `80`/`7f` pair reddens; accept 5 digits → the 5-digit reject reddens. Restore each.
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M3: read a terminal's background colour as light or dark`
+- [x] **Step 6: Mutations:** replace the Rec. 601 sum with linear luminance (square each component, weights 0.2126/0.7152/0.0722) → the `80`/`7f` pair reddens; accept 5 digits → the 5-digit reject reddens. Restore each.
 
 ### Task 14: The decoder swallows the reply, then parses it
 
 **Files:** Modify `cmd/define/key.go` (`KeyBackground` before the `numKeyKinds` sentinel; `Key.Background store.Scheme`; `case ']'` in `decodeEscape`), `cmd/define/play_loop.go` (`sittingKeyHandling` row only); tests `cmd/define/key_test.go`, the `readInput` tests.
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - **TestDecodeBackgroundReply**: `"\x1b]11;rgb:ffff/ffff/ffff\x07"` → `KeyBackground`/light, consumed = len; the same with ST `"\x1b\\"` and with the 8-bit ST `"\x9c"`; EVERY strict prefix of each → `used == 0`.
   - **TestDecodeBackgroundReplyOtherFormats**: `rgba:…` and `#ffffff` payloads → ONE `KeyUnknown` consuming the whole reply.
   - **TestDecodeOSCAbortsAsToday**: `"\x1b]x"` → `KeyUnknown` (2 bytes), then `KeyRune 'x'`; `"\x1b]11;rgb\x03"` → `KeyUnknown` (2) and, decoding on, `KeyInterrupt` with nothing waiting; DEL (`0x7f`) and `0x80` in the payload abort; `ESC` then anything but `\` aborts.
@@ -1026,7 +1041,7 @@ func parseBackgroundColour(payload string) (store.Scheme, bool) {
   - **TestReadInputBackgroundAcrossWrites** (`io.Pipe`, separate writes): `"\x1b]"` then `"\x03"` → `KeyUnknown`, `KeyInterrupt`; `"\x1b]"` then `"a"` → `KeyUnknown`, `KeyRune 'a'`; a reply split in three writes → one `KeyBackground`.
   - `TestEveryKeyKindIsDecidedForASitting` reddens as soon as `KeyBackground` exists — watch it fail, then add the row.
   - Fuzz: add seeds `"\x1b]"`, `"\x1b]11;"`, `"\x1b]11;rgb:ffff/ffff/ffff\x07"`, `"\x1b]11;rgba:0/0/0/0\x1b\\"` to all three targets (`FuzzDecodeKeyNeverLeaksEscapeTails`, `FuzzDecodeKey`, `FuzzDecodeMouseIsBounded`), and to `FuzzDecodeKey` the invariant: a `KeyBackground` only when the consumed bytes start with `"\x1b]11;rgb:"` and end in BEL or ST.
-- [ ] **Step 2: FAIL. Step 3: Implement** in `key.go`:
+- [x] **Step 2: FAIL. Step 3: Implement** in `key.go`:
 
 ```go
 // oscBackgroundReply is the front of the terminal's answer to backgroundQuery.
@@ -1101,20 +1116,20 @@ func backgroundKey(payload, raw []byte) Key {
 }
 ```
   `decodeEscape`: add `case ']': return decodeOSC(buf)` (after the `len(buf) < 2` guard). `KeyKind`: `KeyBackground` with the doc "a terminal REPORT, not a keystroke: the answer to backgroundQuery. Never typing, never an answer, never cancels a gesture." `sittingKeyHandling`: `KeyBackground: false` under "a terminal report, intercepted before toInput (Task 16) — never an answer".
-- [ ] **Step 4: PASS**: `go test ./cmd/define -run 'Key|Decode|Fuzz|Sitting|ReadInput' -count=1`; then fuzz each target 30 s, anchored so only one matches: `go test ./cmd/define -run '^$' -fuzz '^FuzzDecodeKey$' -fuzztime 30s`, likewise `'^FuzzDecodeKeyNeverLeaksEscapeTails$'` and `'^FuzzDecodeMouseIsBounded$'`.
-- [ ] **Step 5: Commit** `#70 M3: the key decoder reads a background report, bounded byte by byte`
-- [ ] **Step 6: Mutations:** drop the `c < 0x20 || c > 0x7e` abort → the DEL/Ctrl-C cases redden; drop the ESC-case cap check → the 65-byte ST case reddens; make `backgroundKey` return `KeyBackground` for any payload → the `rgba` case reddens. Restore each.
+- [x] **Step 4: PASS**: `go test ./cmd/define -run 'Key|Decode|Fuzz|Sitting|ReadInput' -count=1`; then fuzz each target 30 s, anchored so only one matches: `go test ./cmd/define -run '^$' -fuzz '^FuzzDecodeKey$' -fuzztime 30s`, likewise `'^FuzzDecodeKeyNeverLeaksEscapeTails$'` and `'^FuzzDecodeMouseIsBounded$'`.
+- [x] **Step 5: Commit** `#70 M3: the key decoder reads a background report, bounded byte by byte`
+- [x] **Step 6: Mutations:** drop the `c < 0x20 || c > 0x7e` abort → the DEL/Ctrl-C cases redden; drop the ESC-case cap check → the 65-byte ST case reddens; make `backgroundKey` return `KeyBackground` for any payload → the `rgba` case reddens. Restore each.
 
 ### Task 15: Ask the question at raw-mode entry
 
 **Files:** Modify `cmd/define/rawterm.go`, `cmd/define/replraw.go` (`newConsole`, `replRaw`), `cmd/define/play_loop.go:115`, and every test caller of `newConsole(` (`grep -n 'newConsole(' cmd/define/*_test.go`); tests `cmd/define/rawterm_test.go`, `cmd/define/key_test.go`.
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - **TestNewConsoleAsksEveryQuery**: one recorder for BOTH `control` and the console's stdout (production writes both to the tty); with `askTerminal=true`, everything `newConsole` writes to control after the mode enables is exactly the concatenation of `terminalQueries` (so the sends and the list cannot drift); with `false`, none of it.
   - **TestWantsBackground**: true for `{tty: true, color: true, tintOn: true}`; false with `tintOn` false, with `raw` true, with `tty` false.
   - **TestASittingDoesNotAskAgain**: `/play` from an editor built through `newConsole` with `askTerminal=true` (Task 5's pattern) → exactly ONE `backgroundQuery` in the shared recorder.
   - Extend `TestEveryEnabledInputModeIsDecoded` with a SEPARATE loop over `terminalQueries` keyed by name (its regex reads `?NNNNh` modes and cannot match an OSC query): the reply table gains `"background colour": {{"rgb with BEL", "\x1b]11;rgb:ffff/ffff/ffff\x07"}, {"rgb with ST", "\x1b]11;rgb:0/0/0\x1b\\"}, {"rgba", "\x1b]11;rgba:ffff/ffff/ffff/ffff\x1b\\"}}`; a query with no row FAILS (closed); every sample decodes with no `KeyRune`.
-- [ ] **Step 2: FAIL. Step 3: Implement.**
+- [x] **Step 2: FAIL. Step 3: Implement.**
 
 ```go
 // backgroundQuery asks the terminal for its background colour (OSC 11, #70).
@@ -1145,20 +1160,20 @@ func (r *rawSession) ask(query string) {
 func wantsBackground(opt options) bool { return opt.tty && opt.color && opt.tintOn && !opt.raw }
 ```
   `newConsole(ctx, d, sess, stdout, newScreen, askTerminal bool)` (not `ask`, which would shadow the package's `ask` function): after `sess.enterModes()`, `if askTerminal { for _, q := range terminalQueries { sess.ask(q.query) } }`. Callers: `replRaw` and `runPlay` pass `wantsBackground(opt)`; test callers pass `false` unless testing the query. `sittingInPlace` has no `sess`, so it cannot ask.
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M3: a full-screen session asks the terminal for its background, once`
-- [ ] **Step 6: Mutations:** drop the `askTerminal` loop → **TestNewConsoleAsksEveryQuery** reddens; `wantsBackground` ignores `tintOn` → **TestWantsBackground** reddens. (The callers' `wantsBackground(opt)` arguments — `replRaw` AND `runPlay` — are pinned by Task 17's **TestPTYNoQueryWithoutATint**.) Restore each.
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M3: a full-screen session asks the terminal for its background, once`
+- [x] **Step 6: Mutations:** drop the `askTerminal` loop → **TestNewConsoleAsksEveryQuery** reddens; `wantsBackground` ignores `tintOn` → **TestWantsBackground** reddens. (The callers' `wantsBackground(opt)` arguments — `replRaw` AND `runPlay` — are pinned by Task 17's **TestPTYNoQueryWithoutATint**.) Restore each.
 
 ### Task 16: Every consumer of the new key kind
 
 **Files:** Modify `cmd/define/replraw.go` (`runEditor`), `cmd/define/play_loop.go` (`playSession` intercept), `cmd/define/selection_input.go` (`cancelPointerInput`, the length-check drop site); tests beside the existing loop, sitting and saturation tests.
 
-- [ ] **Step 1: Failing tests** — the loops take a key channel built by **`readInput` over reply BYTES**, not a hand-built `Key`, so the decoder, the loop and the consumer are one path (Done-when: "driving `runEditor` with the reply as input").
+- [x] **Step 1: Failing tests** — the loops take a key channel built by **`readInput` over reply BYTES**, not a hand-built `Key`, so the decoder, the loop and the consumer are one path (Done-when: "driving `runEditor` with the reply as input").
   1. **TestRawEditorBackgroundReplyRepaints**: a live-screen console (Task 10's pattern) with a tinted row on screen; input bytes = `"\x1b]11;rgb:ffff/ffff/ffff\x1b\\" + "parrot\r"` then EOF (`parrot` has a fixture, so the lookup hits) → the row repaints in `languageLight`, and the word looked up is exactly `parrot` — wrap `d.dict` in the existing `countingDict` (`optionpool_test.go:17-27`, which records `words`) and assert `words == ["parrot"]`: no reply byte reached the line. Keep background preparation OFF in this rig (it can call `d.dict.Lookup`, `harvest.go:590`, and `countingDict` is not goroutine-safe). Repeat with BEL, and with an `rgba:` reply (→ looked up `parrot`, shade stays dark). With the holder chosen by flag dark, the rgb light reply → the row stays `languageDark`.
   2. **TestASittingIgnoresABackgroundReply**: `playSession` over `readInput` of `reply + "1"` (or the rig's first valid answer key) → exactly one answer recorded, the intended one; the sitting's screen repaints light. Repeat with `rgba:` → one answer, and the shade stays dark (no `languageLight` — the answer key itself repaints, so "no repaint" is not the observable).
   3. **TestAReplyDuringPlayReachesTheEditor**: through `newConsole` with `playRig` and the real `sittingInPlace` (`selection_nested_test.go:56` pattern), keys from a scripted channel (`scriptKeys`/`keySeq`) so the order is explicit: `/play⏎`, the decoded `KeyBackground` light, then Ctrl-C to end the sitting; after it ends, `/scheme` in the editor reports `light (detected)` and the editor's frame paints light.
   4. **TestAReplyMidDragKeepsTheSelection**: press + motion, then a `KeyBackground` through `route`, then release → the gesture still completes to a copy.
   5. **TestADroppedReplyIsSilent**, deterministic on an `io.Pipe`: write 256 × `x`; write the reply; then a ZERO-LENGTH write as the barrier — `io.Pipe` delivers it as a `Read`, so its return proves `readInput` finished the reply chunk and came back for more; assert `selectionNotice == ""` (no notice for the reply); THEN write `y` and `waitFor` the "input full" notice (the dropped `y` posts it, so the reply did not set `saturated`); close. (Asserting after `y`'s write instead races `y`'s own drop notice.)
-- [ ] **Step 2: FAIL. Step 3: Implement.**
+- [x] **Step 2: FAIL. Step 3: Implement.**
   - `runEditor`, first in `case k, open := <-keys:` after the `!open` check:
 
 ```go
@@ -1173,25 +1188,36 @@ if k.Kind == KeyBackground {
 ```
   - `playSession`: the same intercept where it intercepts `KeyClick` and paging before `toInput`, calling its `show()`.
   - `selection_input.go` — ONE guard, in `cancelPointerInput` (both `route` and `cancelInput` reach it; a second guard in `route` would hide a mutation of this one): `if k.Kind == KeyUnknown || k.Kind == KeyBackground { return }`. At the length-check drop site (`if !isPointerKey(k.Kind) && len(out) == cap(out) {`), first statement: `if k.Kind == KeyBackground { continue } // a report, not typing: no notice, and saturated untouched`. The `select`'s `default:` arm is NOT guarded: `readInput`'s goroutine is `out`'s only sender and the length check diverts every non-pointer key first, so only a router-made `KeyClick` reaches it — a guard there could never be exercised (lessons "An untestable branch is an unreachable knob"). Say so in a comment there, and record in the issue Log that this revises the spec's "both drop sites".
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M3: a background report reaches every consumer as a report, never as typing`
-- [ ] **Step 6: Mutations**, one at a time: remove the `runEditor` intercept → test 1 reddens (the lookup is not `parrot`, or no repaint); remove the `playSession` intercept → test 2 reddens; remove the `cancelPointerInput` clause → test 4 reddens; remove the length-check clause → test 5 reddens. Restore each.
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M3: a background report reaches every consumer as a report, never as typing`
+- [x] **Step 6: Mutations**, one at a time: remove the `runEditor` intercept → test 1 reddens (the lookup is not `parrot`, or no repaint); remove the `playSession` intercept → test 2 reddens; remove the `cancelPointerInput` clause → test 4 reddens; remove the length-check clause → test 5 reddens. Restore each.
 
 ### Task 17: Conformance and docs
 
 **Files:** `cmd/define/pty_conformance_test.go`; the test terminal readers; `cmd/define/README.md`; `atlas/define.md`; `cmd/define/main.go` (`-h`, flag help); `cmd/define/scheme_cmd.go` (usage).
 
-- [ ] **Step 1: Test readers.** No current reader sees the query today (in-process tests use a separate `control`; the pty readers go through `lastFrame`, and the query precedes the first frame), so **TestReadersSkipOSC** is the proof: a captured stream beginning with `backgroundQuery` reads the same frame and the same `unstyled` text as without it. Make `lastFrame`/`readFrame`/`rowTestCells` skip `ESC ] … BEL|ST` as a terminal does, and add OSC stripping to `unstyled` (`screen_test.go:532,544` — an SGR-only regex today; its doc protects cursor and erase sequences, which this leaves alone). (`scanEscape`/`stripANSI` treat `ESC ]` as 2 bytes — do not assert on a raw stream through them.)
-- [ ] **Step 2: pty tests** (tag `darwin && conformance`, `bilingualNativeProbe` skip, a Spanish deck as `TestPTYLanguageTint` sets up). `awaitActivityPTY` drains what it reads, so wait for the query AND the prompt in ONE predicate.
+- [x] **Step 1: Test readers.** No current reader sees the query today (in-process tests use a separate `control`; the pty readers go through `lastFrame`, and the query precedes the first frame), so **TestReadersSkipOSC** is the proof: a captured stream beginning with `backgroundQuery` reads the same frame and the same `unstyled` text as without it. Make `lastFrame`/`readFrame`/`rowTestCells` skip `ESC ] … BEL|ST` as a terminal does, and add OSC stripping to `unstyled` (`screen_test.go:532,544` — an SGR-only regex today; its doc protects cursor and erase sequences, which this leaves alone). (`scanEscape`/`stripANSI` treat `ESC ]` as 2 bytes — do not assert on a raw stream through them.)
+- [x] **Step 2: pty tests** (tag `darwin && conformance`, `bilingualNativeProbe` skip, a Spanish deck as `TestPTYLanguageTint` sets up). `awaitActivityPTY` drains what it reads, so wait for the query AND the prompt in ONE predicate.
   - **TestPTYBackgroundDetection**: subtests light (`"\x1b]11;rgb:ffff/ffff/ffff\x1b\\"`), dark (`"\x1b]11;rgb:0000/0000/0000\x07"`), silent (no reply): look up `red` → the Spanish section carries `languageLight` / `languageDark` / `languageDark`; `/scheme` → `light (detected)` / `dark (detected)` / `dark (default: the terminal has not reported its background)`. And a late reply: light AFTER the entry is on screen → it repaints light.
   - **TestPTYNoQueryWithoutATint** (no `bilingualNativeProbe` gate — it needs no Oxford dictionary; every case except the dumb one sets `TERM=xterm-256color` explicitly, as `TestPTYLanguageTint` does, so an inherited `TERM` cannot flip a default case): for the EDITOR, the query IS sent by default and is NOT sent with `-language-tint=off`, with `TERM=dumb`, or with `-raw` (wait for the prompt, then assert the stream so far has no `"\x1b]11;?"`); for `--play` (seed a due word as the existing `--play` pty tests do), sent by default and not with `-language-tint=off`.
-- [ ] **Step 3:** `go test -tags conformance ./cmd/define -run 'TestPTY' -count=1`, then with `CONFORMANCE_STRICT=1` — PASS; name what ran.
-- [ ] **Step 4: Mutations:** `replRaw` passes `false` → **TestPTYNoQueryWithoutATint**'s editor default case reddens (and **TestPTYBackgroundDetection** times out where it runs); `runPlay` passes `false` → its `--play` default case reddens; `runPlay` passes `true` → its `-language-tint=off` case reddens. Restore each.
-- [ ] **Step 5: Docs.** `schemeUsage`: auto "forgets the saved choice, so define follows what the terminal reports". `-scheme` flag help: "auto (ask the terminal), dark, or light". README "Light or dark": detection in full-screen sessions, one-shot uses flag → saved → dark, the late-reply-after-a-fast-quit limit. Atlas: **The screen** gains detection (the query at mode entry via `rawSession.control`, the reply as `KeyBackground`, its consumers); **The line editor** gets the bounded OSC swallow. `go test ./cmd/define -run TestDocs -count=1` — PASS.
-- [ ] **Step 6: Commit** `#70 M3: conformance plays light, dark and silent terminals; docs for detection`
+- [x] **Step 3:** `go test -tags conformance ./cmd/define -run 'TestPTY' -count=1`, then with `CONFORMANCE_STRICT=1` — PASS; name what ran.
+- [x] **Step 4: Mutations:** `replRaw` passes `false` → **TestPTYNoQueryWithoutATint**'s editor default case reddens (and **TestPTYBackgroundDetection** times out where it runs); `runPlay` passes `false` → its `--play` default case reddens; `runPlay` passes `true` → its `-language-tint=off` case reddens. Restore each.
+- [x] **Step 5: Docs.** `schemeUsage`: auto "forgets the saved choice, so define follows what the terminal reports". `-scheme` flag help: "auto (ask the terminal), dark, or light". README "Light or dark": detection in full-screen sessions, one-shot uses flag → saved → dark, the late-reply-after-a-fast-quit limit. Atlas: **The screen** gains detection (the query at mode entry via `rawSession.control`, the reply as `KeyBackground`, its consumers); **The line editor** gets the bounded OSC swallow. `go test ./cmd/define -run TestDocs -count=1` — PASS.
+- [x] **Step 6: Commit** `#70 M3: conformance plays light, dark and silent terminals; docs for detection`
 
 ### Task 18: M3 boundary and close
 
-- [ ] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`, conformance with `CONFORMANCE_STRICT=1`.
-- [ ] **Manual live conformance** (the real external dependency): in Terminal.app, iTerm2 and Ghostty, each in a light and a dark profile — `define`, `/lang es`, look up `red`; check the tint's shade and `/scheme`'s report; `/scheme light|dark|auto` and watch the repaint; quit and check the transcript's shade. Note any terminal that answers `rgba:` or nothing. RECORD the terminal × appearance matrix with the date in `atlas/define.md` (a short "Terminals checked" table beside the detection paragraph), and state there when it is re-run: when a terminal is added to the matrix, when a detection bug is reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
-- [ ] Walk every `## Done when` bullet and name the test (or manual check) that proves it.
-- [ ] `sdlc milestone-close --issue 70 --milestone M3`, read the verdict; then `sdlc close --issue 70 --verified '<evidence>'`.
+- [x] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`, conformance with `CONFORMANCE_STRICT=1`.
+- [x] **Manual live conformance** (the real external dependency): in Terminal.app, iTerm2 and Ghostty, each in a light and a dark profile — `define`, `/lang es`, look up `red`; check the tint's shade and `/scheme`'s report; `/scheme light|dark|auto` and watch the repaint; quit and check the transcript's shade. Note any terminal that answers `rgba:` or nothing. RECORD the terminal × appearance matrix with the date in `atlas/define.md` (a short "Terminals checked" table beside the detection paragraph), and state there when it is re-run: when a terminal is added to the matrix, when a detection bug is reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
+- [x] Walk every `## Done when` bullet and name the test (or manual check) that proves it.
+- [x] `sdlc milestone-close --issue 70 --milestone M3`, read the verdict; then `sdlc close --issue 70 --verified '<evidence>'`.
+
+## Revisions
+
+- **2026-09-17, M1 boundary review (Minor, ARCH-ORDER).** `schemeState` shipped as `choice store.Scheme` + `chosenBy schemeSource`, which let a choice claim to be detected or default. It is now `choice *schemeChoice{value, by choiceSource}`, with `choiceSource` ∈ {`choiceFlag`, `choiceSaved`, `choiceSession`} mapping to the report's `schemeSource`. `withChoice` and `choose` take a `choiceSource`. Chunk 1's code above shows the shape as first written; Chunk 2's code is updated to the new names.
+- **2026-09-17, M1 boundary review (Minor, ARCH-DRY).** The test-only `boardFooter` duplicated production's `boardFooterOutput` and held the only copy of its rationale; the two tests that used it now go through `paintedBoardFooterForTest` (the production path), the rationale moved onto `boardFooterOutput`, and `boardFooter` and `practiceChrome` are deleted.
+- **2026-09-18, M2 boundary review (FIX-THEN-SHIP).** BR-6 (Important): the M2 evidence the ticked steps cite is now in the issue Log. The state-shape family's 2nd finding: `schemeArg` is `struct{ value store.Scheme }` with `auto()` (empty = auto) instead of `auto bool` + `value`; `commandCtx.session`/`fullScreen` are one `loop loopKind` {`loopOneShot`, `loopPiped`, `loopEditor`}, set by each loop (`cc.loop = loopEditor` / `loopPiped`). `schemePersister` gains `load()`, and the startup read is `initialSchemeState(flag, persister, warn)` — pure, pinned by `TestInitialSchemeState` — replacing the inline read in `run()`. Chunk 2's code above shows the first shapes.
+- **2026-09-18, M2 close.** `schemeState` drops `heard`: `detected store.Scheme` is empty for nothing heard, so the reply and whether one arrived cannot disagree (the state-shape family's last instance in #70). M3's `detect` and `withDetected(v)` are unchanged in signature.
+- **2026-09-18, M3 manual check (operator decision).** A tinted row now carries its own ink: text with no colour of its own takes `schemeInk` (235 on the light tint, 252 on the dark) — a fixed background paired with a fixed foreground, as the mark is. `sourceColours(seq, bg, fg)` is the one SGR parse for both (`sourceBackground` wraps it). Found from the operator's screenshot: light tint under a terminal's white default text.
+- **2026-09-18, M3 boundary review.** Task 18 step 2 was done differently: the operator verified the binary working without itemising the terminal × appearance matrix, so Done-when bullet 1's per-terminal claim is narrowed (issue Log) and the atlas records the unitemised check with its re-check triggers. BR-10 added `TestASittingRepaintsOnABackgroundReply`; the report intercept became `terminalReport`; `TestTheInkStepsAsideWithTheTint` pins the ink reset.
+- **2026-09-18, M3 review round 2 (BR-14).** Live detection evidence: one real terminal, after `/scheme auto`, reported `dark (detected)`. A real light-terminal detection is owed and recorded as such in the atlas; Done-when bullet 1's live half narrowed accordingly (issue Log).
+

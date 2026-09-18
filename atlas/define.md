@@ -198,6 +198,15 @@ It guarantees **fidelity, not completeness** — see Limits.
 
 ## The line editor (raw mode)
 
+**A terminal's REPLY is swallowed, bounded byte by byte** (#70). `decodeOSC` takes
+`ESC ] 11 ;` and then printable bytes up to BEL, ST or the 8-bit ST, at most 64 bytes in
+all; any other byte — Ctrl-C, Enter, DEL, 0x80+, an ESC not followed by `\` — aborts,
+and the input decodes exactly as before #70 (`ESC ]` a 2-byte unknown, then the rest),
+so Alt-] then typing or Ctrl-C is unchanged. Swallow and parse are two steps: only an
+`rgb:` payload becomes a `KeyBackground`; `rgba:`, `#hex` and garbage are swallowed with
+nothing detected — a leaked byte would be typing here and an ANSWER in a sitting. The
+colour is Rec. 601 luma on the encoded components, below 0.5 dark (`parseBackgroundColour`).
+
 `languagePrompt` supplies the effective session-language prefix at each render:
 English 🇺🇸, Spanish 🇪🇸, Italian 🇮🇹, plus the explicit fr/de/pt/zh/ja/ko
 mapping. Unknown valid tags use `[xx]`; malformed tags use `[??]`. The prefix
@@ -500,6 +509,55 @@ is the RECORD rather than the live edge and is correctly left undimmed.
 The board’s bracketed active marking option is highlighted in cyan by
 `boardPrompt`; it clears dim for that span and restores dim for the instructions.
 
+**The shade is a paint-time decision** (#70). A row keeps only WHETHER it is tinted
+(`rowPaint.tinted`); `paintLanguageRow` takes the shade from the scheme — xterm 236 on a
+dark background, 254 on a light one, the one background the terminal's own theme cannot
+remap. **A fixed background carries a fixed ink**: text on a tinted row with no colour of
+its own takes `schemeInk` — 252 on the dark tint, 235 on the light — exactly as the mark
+pairs 24 with 231, because the terminal's default foreground is chosen for the
+terminal's background, not for ours (a light tint in a dark theme was white on light
+grey). A producer's own colour still wins: `sourceColours` tracks the producer's
+background and foreground from one parse, and the ink steps aside for either. ONE `schemeHolder` per process (`deps.scheme`,
+an `atomic.Pointer` to an immutable `schemeState`: an explicit choice — flag, saved or
+session — over what the terminal reported, over dark) is shared by the editor and every
+sitting it starts. `attachScheme` hands it to a screen in `newConsole` and
+`sittingInPlace`, BEFORE the router, the resize watcher or the throttle timer can see the
+screen. `layoutSelectionFrame` reads it ONCE per frame and `paintedTranscript` once, so a
+switch recolours history and the exit transcript, and no frame carries two shades. Its
+only writers are its transitions — `choose`, `forget`, `detect` — each reporting whether
+the painted shade changed. Writers with no screen (`serializeOutput`: one-shot, piped,
+answers) take the scheme at write time. The choices are `-scheme dark|light|auto` and
+`/scheme` (see Command mode); `auto` means the saved choice, else what the terminal
+reported, else dark.
+
+**The terminal is ASKED, and nothing waits for the answer** (#70). Every raw session —
+the editor and `--play` — writes `backgroundQuery` (OSC 11) once, to
+`rawSession.control` beside the mode enables, never through a screen (whose escape
+scanner would paint the rest of an OSC as text), and only where a tint can appear
+(`wantsBackground`: colour on, `-language-tint on`, not `-raw`; `TERM=dumb` already
+turned the tint off). A `/play` sitting borrows the editor's session and does not ask
+again. The reply is input: `decodeOSC` turns it into a `KeyBackground` whenever it
+arrives, and every consumer of keys treats it as a report — the editor and the sitting
+apply it to the holder with `detect` and repaint only if the shade changed; the pointer
+router lets it pass a drag; a full input channel drops it silently. The first frame
+paints with the scheme as it stands, and a later answer is just a repaint. The one
+accepted limit: a session that ends within one round trip of starting (a fast quit over
+a slow link) leaves the answer to the shell, echoed, because the terminal is cooked
+again. `terminalQueries` lists every question, and `TestEveryEnabledInputModeIsDecoded`
+derives from it as it does from the modes.
+
+*Terminals checked by hand* (the real dependency; the pty suite plays a modelled
+terminal). 2026-09-18, the operator's terminal (app not named): with nothing saved
+(`/scheme auto` first), `/scheme` read **`dark (detected)`** — a real terminal answered
+the query and a dark background was classified dark; `/scheme auto` also removed the
+saved file and its emptied directory. Earlier runs were under a SAVED choice, so they
+evidence the tint and its ink, not detection: the first, a saved `light` over a terminal
+whose default text is white, is what surfaced the paired-ink fix above. **Owed** (#77): a
+real LIGHT terminal reading `light (detected)` — light detection is evidenced so far
+only by the modelled pty terminal and the in-process reply. **Re-check** — and record the terminal, appearance and reply —
+when a terminal is added to what we claim to support, when a detection bug is
+reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
+
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —
 including the deferred wrap that lets a line clipped to exactly the width still
@@ -574,8 +632,8 @@ about how the entry looks:
 | `RenderOpts.Color` | whether the palette is emitted at all — `-no-color` makes the output a RECORD, and a record carries no escapes |
 | `RenderOpts.Width` | where prose wraps, in display cells. `0` means "do not wrap", which a pipe wants and a terminal under 20 columns also gets |
 | `RenderOpts.Vocab` | the deck words to highlight, resolved by `vocabularyFor` so no path can render against an empty set by forgetting to ask |
-| `RenderOpts.Language` | source language of primary dictionary prose; explicit mixed-source ranges take precedence |
-| `RenderOpts.Tint` | effective target language and invocation background profile, passed as data; zero policy disables tint |
+| `RenderOpts.Language` | unread since #70: it fed the per-fragment tint, which production never reached and #70 deleted — residue with #66's source-provenance chain, recorded in #70's Log |
+| `RenderOpts.Tint` | the target language and whether its sections are tinted (`on`), passed as data; the SHADE is not here — it resolves at paint (#70) |
 | `RenderOpts.Word` | the LOOKUP KEY — identity, not presentation. See "a shortcut must not re-derive its target" below; empty means "no click map wanted" |
 
 **A region is read out of the FINISHED output.** A position recorded while
@@ -716,8 +774,12 @@ ephemeral by construction and the transcript is the record.
 
 ## The store
 
-Persistence is YAML files under the **working directory** — no config, no brain
-resolution, no home-directory search. `NewYAML(dir, lang, warn)` takes both the
+Persistence is YAML files under the **working directory** — no brain resolution,
+no home-directory search. The ONE exception is not the deck's at all: the saved
+colour scheme (#70) is the TERMINAL's property, so it lives in the user's config
+directory — `$XDG_CONFIG_HOME/define/scheme`, else `$HOME/.config/define/scheme`,
+absolute bases only — through `store.ReadScheme`/`WriteScheme`/`ClearScheme`. See
+`/scheme` under Command mode. `NewYAML(dir, lang, warn)` takes both the
 directory and the language as parameters, so *who chooses them* stays one line at
 the boundary if a config arrives later.
 
@@ -973,6 +1035,33 @@ literal is `\word`. `matchesFor` unwraps both — the `?` especially, because
 requiring the user to type one to complete a question they asked without one
 would make past questions uncompletable. `/` is deliberately not unwrapped:
 commands are a real separate namespace, not a marker on a word.
+
+### `/scheme`: the one setting that is not the deck's (#70)
+
+`/scheme` reports the colour scheme in use and where it came from; `/scheme
+light|dark` switches and saves it; `/scheme auto` forgets the saved choice. The
+precedence is `-scheme` flag, then the saved file, then dark — and a `/scheme`
+choice REPLACES a flag's for the session. The transition is `applyScheme`,
+**persist then switch** — `/bilingual`'s rule, reused: a failed write changes
+nothing, so no report claims a switch that did not persist. With nowhere to save
+(no absolute `$XDG_CONFIG_HOME` or `$HOME`) a session switches for itself and says
+`(session only; not saved)`; the one-shot `define /scheme light` has no session to
+keep it in, so it refuses. Every report is true of its state — `describeScheme`
+names the source (`saved`, `-scheme flag`, `session only`, or the default).
+
+The recolour needs no command-specific code: every screen reads the one
+`schemeHolder` at paint, so the editor's ordinary draw after dispatch repaints
+history in the new shade. `commandCtx` carries the holder and its
+`schemePersister` (`nil` = nowhere to save; `load`, `save`, `clear` — the startup
+read goes through it too, as the pure `initialSchemeState`) plus the `loopKind`
+that dispatched it — one-shot, piped or editor — from which `/scheme` derives both
+facts it needs: is there a session to keep a session-only choice in, and does this
+loop ask the terminal. One value, so the two cannot disagree; each loop's setting
+is pinned by a test that drives that loop. The file is untrusted input: capped at
+64 bytes, parsed into the closed enum, anything else one warning at startup and
+ignored.
+`ClearScheme` removes only what is ours — the directory only if it is a real,
+now-empty directory, never a dotfile manager's symlink.
 
 ### `/lang` and the one thing a `deps` swap cannot reach
 
@@ -1263,6 +1352,7 @@ until both pages catch up.
 | `/sound` | how many times to play a pronunciation |
 | `/lang` | the language this deck is in |
 | `/pron` | replay this word in its source language, once |
+| `/scheme` | light or dark terminal background |
 <!-- /command-list -->
 
 Argument forms stay out of the summary, because the summary is what a bare
@@ -1282,6 +1372,7 @@ list above is and pinned the same way:
 - `/sound [N]` — With nothing, how many times each pronunciation plays. With N, play it N times for the rest of this session; 0 turns playback off, and 20 is the most.
 - `/lang [language]` — With nothing, the language in effect and the dictionary answering it. With a two-letter tag like es, switch to that language: saved when this directory is a deck, for this session otherwise.
 - `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
+- `/scheme [light|dark|auto]` — With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice, so define follows what the terminal reports. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one.
 <!-- /command-usage -->
 
 The usage flags are one list, `usageFlags`, answered once in `dispatchCommand`
@@ -2253,7 +2344,7 @@ ambiguous spelling such as Spanish `red` from selecting English `red` → `rojo`
 non-darwin sibling reports the unavailable capability. The stateful record fake
 and captured Oxford records exercise direction, malformed data and failures.
 
-`renderDefinitions` retains section language ownership through rendering and
+`renderDefinitionOutput` retains section language ownership through rendering and
 region offsets: English prose does not acquire Spanish deck-word actions.
 Ordinary lookup and the full post-answer `play.Choice` and `play.Cloze` reveals
 share this composition through `play_loop.go` and `cloze.go`.
@@ -2267,8 +2358,10 @@ answer exclusions through wrapping; `paintLanguageRow` fills every terminal cell
 including indentation, trailing cells and producer-owned blank rows. Screen history
 clips on resize and paints at the current width; selection uses the same composer
 but copies only original source cells. Foreground/emphasis and answer exclusions
-survive fill. `-language-tint=dark|light|off` uses xterm 236/254 (dark default), disabled
-by `-no-color`, redirected stdout or `TERM=dumb`. Completed output keeps its policy.
+survive fill. `-language-tint on|off` says WHETHER the target language is tinted; the
+SHADE is the colour scheme (see *The shade is a paint-time decision* under The screen).
+Disabled by `-no-color`, redirected stdout or `TERM=dumb`. Completed output keeps
+whether it is tinted; its shade follows the scheme in force when it is painted.
 
 Each dictionary section has one presentation role, distinct from source provenance.
 Verified primary sections use source language; Oxford explicitly supplies English

@@ -34,15 +34,17 @@ func TestPTYNativeRendirSectionLayout(t *testing.T) {
 		conformance.SkipOrFail(t, "verified Spanish primary unavailable", ErrBilingualUnavailable)
 		return
 	}
+	// -scheme picks the tint's shade; -language-tint off removes it (#70).
 	for _, profile := range []struct {
-		name string
-		bg   int
-	}{{"dark", 236}, {"light", 254}, {"off", -1}} {
+		name, flag string
+		bg         int
+	}{{"dark", "--scheme=dark", 236}, {"light", "--scheme=light", 254}, {"off", "--language-tint=off", -1}} {
 		for _, width := range []int{32, 80} {
 			t.Run(fmt.Sprintf("%s-%d", profile.name, width), func(t *testing.T) {
-				cmd := exec.Command(builtBinary(t), "--lang=es", "--no-audio", "--no-flags", "--language-tint="+profile.name, "rendir")
+				cmd := exec.Command(builtBinary(t), "--lang=es", "--no-audio", "--no-flags", profile.flag, "rendir")
 				cmd.Dir = t.TempDir()
-				cmd.Env = append(os.Environ(), "TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE=1", "NO_COLOR=")
+				// Its own config directory, as startDefineBinary gives every launch (#70).
+				cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+t.TempDir(), "TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE=1", "NO_COLOR=")
 				f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 160, Cols: uint16(width)})
 				if err != nil {
 					conformance.SkipOrFail(t, "no pty available", err)

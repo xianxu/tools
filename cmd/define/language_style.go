@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"github.com/xianxu/tools/cmd/define/store"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 )
 
 const (
@@ -15,101 +12,59 @@ const (
 	languageOff   = "\x1b[49m"
 )
 
+// tintPolicy says whether a producer marks the target language's rows as
+// tinted (#70): on is the -language-tint setting with colour on. The shade is
+// not here — it resolves at paint — but scheme travels with the policy so a
+// writer holding only the policy (the answer writer) can paint in it.
 type tintPolicy struct {
-	lang       store.Lang
-	background string
+	lang   store.Lang
+	on     bool
+	scheme *schemeHolder
 }
 
-// styleLanguageText changes background only. Trusted source styles pass through;
-// explicit backgrounds take precedence until their own reset. Unknown regions
-// pass through unchanged, including already-rendered bilingual definitions.
-func styleLanguageText(t languageText, p tintPolicy) string {
-	if p.background != languageDark && p.background != languageLight || !validateLanguageText(t) {
-		return t.text
+// schemeTint is the shade a tinted row takes in a scheme: the background the
+// terminal's theme cannot remap, so the one colour the scheme decides.
+func schemeTint(s store.Scheme) string {
+	if s == store.SchemeLight {
+		return languageLight
 	}
-	if p.lang == "" {
-		p.lang = store.DefaultLang
-	}
-	target, err := store.ParseLang(string(p.lang))
-	if err != nil {
-		return t.text
-	}
-	spans := make([]languageSpan, 0, len(t.spans))
-	for _, sp := range t.spans {
-		lang, err := store.ParseLang(string(sp.lang))
-		if err == nil && lang == target && sp.start < sp.end {
-			spans = append(spans, sp)
-		}
-	}
-	if len(spans) == 0 {
-		return t.text
-	}
-	var out strings.Builder
-	open, explicit := false, false
-	closeTint := func() {
-		if open {
-			out.WriteString(languageOff)
-			open = false
-		}
-	}
-	first, last := lineInkBounds(t.text, 0)
-	at := 0
-	for i := 0; i < len(t.text); {
-		if n := escapeLen(t.text[i:]); n > 0 {
-			seq := t.text[i : i+n]
-			closeTint()
-			out.WriteString(seq)
-			explicit = sourceBackground(seq, explicit)
-			i += n
-			continue
-		}
-		n, _ := nextDisplayUnit(t.text[i:])
-		for at < len(spans) && spans[at].end <= i {
-			at++
-		}
-		wanted := !explicit && i >= first && i < last && at < len(spans) && spans[at].start <= i && spans[at].end >= i+n
-		if wanted && !open {
-			out.WriteString(p.background)
-			open = true
-		}
-		if !wanted {
-			closeTint()
-		}
-		out.WriteString(t.text[i : i+n])
-		if t.text[i] == '\n' {
-			first, last = lineInkBounds(t.text, i+n)
-		}
-		i += n
-	}
-	closeTint()
-	return out.String()
+	return languageDark
 }
 
-// Ink bounds exclude line indentation and padding, even when ANSI surrounds it.
-func lineInkBounds(text string, start int) (first, last int) {
-	first, last = len(text), start
-	for i := start; i < len(text) && text[i] != '\n'; {
-		if n := escapeLen(text[i:]); n > 0 {
-			i += n
-			continue
-		}
-		r, n := utf8.DecodeRuneInString(text[i:])
-		if !unicode.IsSpace(r) {
-			if first == len(text) {
-				first = i
-			}
-			last = i + n
-		}
-		i += n
+// The ink paired with each tint, and its reset. A FIXED background needs a
+// FIXED text colour: the terminal's default foreground is chosen for the
+// terminal's own background, not for our tint, so on a mismatch (a light tint
+// in a dark theme) default text was white on light grey. The mark pairs 24
+// with 231 for the same reason.
+const (
+	inkOnLight = "\x1b[38;5;235m"
+	inkOnDark  = "\x1b[38;5;252m"
+	inkOff     = "\x1b[39m"
+)
+
+// schemeInk is the text colour for text with no colour of its own on a tinted
+// row in scheme s: near-black on the light tint, near-white on the dark one.
+func schemeInk(s store.Scheme) string {
+	if s == store.SchemeLight {
+		return inkOnLight
 	}
-	return
+	return inkOnDark
 }
 
-// Background state of the producer, excluding the tint we inject. Skip extended
-// foreground payloads so an RGB zero is never mistaken for an SGR reset.
+// Background state of the producer, excluding the tint we inject.
 func sourceBackground(seq string, active bool) bool {
+	bg, _ := sourceColours(seq, active, false)
+	return bg
+}
+
+// sourceColours is the producer's colour state after seq — whether it has set a
+// background, and whether it has set a foreground — excluding what we inject.
+// ONE parse for both (#70), so they cannot disagree about what a sequence
+// means. Extended colour payloads are skipped, so an RGB zero is never mistaken
+// for a reset and the 36 inside 48;5;36 is never a foreground.
+func sourceColours(seq string, bg, fg bool) (bool, bool) {
 	if !isSGR(seq) {
-		return active
+		return bg, fg
 	}
 	params := strings.Split(seq[2:len(seq)-1], ";")
 	for i := 0; i < len(params); i++ {
@@ -123,10 +78,16 @@ func sourceBackground(seq string, active bool) bool {
 			}
 		}
 		switch {
-		case code == 0 || code == 49:
-			active = false
+		case code == 0:
+			bg, fg = false, false
+		case code == 49:
+			bg = false
+		case code == 39:
+			fg = false
 		case code == 48 || code >= 40 && code <= 47 || code >= 100 && code <= 107:
-			active = true
+			bg = true
+		case code == 38 || code >= 30 && code <= 37 || code >= 90 && code <= 97:
+			fg = true
 		}
 		if len(part) == 1 && (code == 38 || code == 48 || code == 58) && i+1 < len(params) {
 			switch params[i+1] {
@@ -137,25 +98,10 @@ func sourceBackground(seq string, active bool) bool {
 			}
 		}
 	}
-	return active
+	return bg, fg
 }
 
-func tintProfile(name string) (string, error) {
-	switch name {
-	case "dark":
-		return languageDark, nil
-	case "light":
-		return languageLight, nil
-	case "off":
-		return "", nil
-	default:
-		return "", fmt.Errorf("invalid language tint %q: use dark, light, or off", name)
-	}
-}
-func (o options) tintFor(lang store.Lang) tintPolicy {
-	background := o.tintBackground
-	if !o.color {
-		background = ""
-	}
-	return tintPolicy{lang, background}
+// tintFor is the tint policy for this session's language.
+func tintFor(d deps, opt options) tintPolicy {
+	return tintPolicy{lang: d.lang, on: opt.color && opt.tintOn, scheme: d.scheme}
 }

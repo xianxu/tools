@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 func TestLanguageAnswerFlushesOwnedAndPartialText(t *testing.T) {
@@ -14,7 +16,7 @@ func TestLanguageAnswerFlushesOwnedAndPartialText(t *testing.T) {
 		{"[lang=es]red[/lang] [lang=en]red[/lang]", "red red", "red"},
 	} {
 		var out bytes.Buffer
-		a := newLanguageAnswer(&out, 0, nil, tintPolicy{lang: "es", background: languageDark})
+		a := newLanguageAnswer(&out, 0, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 		for _, r := range tt.raw {
 			a.decoder.Write(string(r))
 		}
@@ -53,7 +55,7 @@ func TestLanguageAnswerWriteFailureStillFinishesCleanTranscript(t *testing.T) {
 
 func TestLanguageAnswerWrapClosesBackgroundBeforePhysicalNewline(t *testing.T) {
 	var out bytes.Buffer
-	a := newLanguageAnswer(&out, 20, nil, tintPolicy{lang: "es", background: languageDark})
+	a := newLanguageAnswer(&out, 20, nil, tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 	a.decoder.Write("[lang=es]primero segundo tercero cuarto quinto sexto[/lang]")
 	if err := a.Finish(); err != nil {
 		t.Fatal(err)
@@ -70,7 +72,7 @@ func TestLanguageAnswerWrapClosesBackgroundBeforePhysicalNewline(t *testing.T) {
 
 func TestLanguageAnswerForeignHomographDoesNotUseTargetVocabulary(t *testing.T) {
 	var out bytes.Buffer
-	a := newLanguageAnswer(&out, 0, vocab("red"), tintPolicy{lang: "es", background: languageDark})
+	a := newLanguageAnswer(&out, 0, vocab("red"), tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)})
 	a.decoder.Write("[lang=en]red[/lang] [lang=es]red[/lang]")
 	if err := a.Finish(); err != nil {
 		t.Fatal(err)

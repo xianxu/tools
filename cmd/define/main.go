@@ -25,7 +25,18 @@ type deps struct {
 	// practiceHelp is the deck's cache of English help for practice (#61). A
 	// pointer, so a nested sitting and the next one share what was translated.
 	practiceHelp *practiceHelpCache
-	dict         Dictionary
+	// scheme is the process's colour-scheme holder (#70). A pointer on
+	// practiceHelp's precedent — a nested sitting and the editor share it — and
+	// NOT bilingual's, whose setter replaces the pointer in a by-value copy of
+	// deps and so could never carry a sitting's change back to the editor.
+	scheme *schemeHolder
+	// configDir is where the USER's settings live — the saved scheme (#70) —
+	// as opposed to the deck's, which is the current directory. Its own seam,
+	// not getenv: getenv is the model seam, and some tests make it panic to
+	// prove no model call is made. nil (test deps) means "no config", so no
+	// test can reach a real one.
+	configDir func() (string, bool)
+	dict      Dictionary
 	// audio is the seam AND its memo. A *audioSeam rather than an AudioSource so
 	// there is no unwrapped source to hold: the type is what guarantees a caller
 	// cannot reach the network twice for one key, however it obtained its deps.
@@ -117,6 +128,7 @@ func realDeps() deps {
 		getenv:          os.Getenv,
 		newLLM:          llm.New,
 		newClipboard:    newProcessClipboardWriter,
+		configDir:       func() (string, bool) { return configDirFrom(os.Getenv) },
 	}
 }
 
@@ -455,13 +467,16 @@ func main() {
 // options are the session settings: parsed once, applied to every word, whether
 // that is one word from argv or many from the loop.
 type options struct {
-	raw            bool
-	color          bool
-	noAudio        bool
-	noFlags        bool
-	tintBackground string
-	times          int
-	locale         string
+	raw     bool
+	color   bool
+	noAudio bool
+	noFlags bool
+	// tintOn is -language-tint: whether the target language's rows are tinted
+	// at all. False under TERM=dumb. The SHADE is not an option — it is the
+	// scheme, which can change mid-session (#70).
+	tintOn bool
+	times  int
+	locale string
 	// count bounds a review session (#6). A flag rather than a constant because
 	// twenty is a guess about one learner's attention span — exactly the kind of
 	// guess that should be changeable without a rebuild. 0 means "no budget" and
@@ -521,7 +536,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	raw := fs.Bool("raw", false, "print the unparsed dictionary entry")
 	noColor := fs.Bool("no-color", false, "disable ANSI colour")
 	noFlags := fs.Bool("no-flags", false, "show language codes instead of flags in the prompt")
-	languageTint := fs.String("language-tint", "dark", "target-language background: dark, light, or off")
+	schemeFlag := fs.String("scheme", "auto", "terminal background: auto (ask the terminal), dark, or light")
+	languageTint := fs.String("language-tint", "on", "tint the target language's rows: on or off")
 	noAudio := fs.Bool("no-audio", false, "do not fetch or play the pronunciation")
 	sound := fs.Int("sound", 3, "how many times to play the pronunciation")
 	// The older name for -sound. Kept working rather than removed: it is
@@ -592,6 +608,9 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"session-only, because the event log is what persists it.\n"+
 			"In a session define prepares practice questions in the background, at\n"+
 			"start and every 10 lookups; DEFINE_NO_BACKGROUND=1 turns that off.\n\n"+
+			"-scheme light or dark picks the shade of the language tint to suit the\n"+
+			"terminal's background; /scheme light saves it for every run, and\n"+
+			"-language-tint off turns the tint off.\n\n"+
 			"--version names the build; --llm-check reports whether the model seam is configured and reachable.\n"+
 			"Model features degrade silently by design, so this is where they are loud.\n\nFlags:\n")
 		fs.PrintDefaults()
@@ -602,13 +621,18 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		}
 		return 2
 	}
-	background, tintErr := tintProfile(*languageTint)
-	if tintErr != nil {
-		fmt.Fprintf(stderr, "define: %v\n", tintErr)
+	tintOn, err := parseTintFlag(*languageTint)
+	if err != nil {
+		fmt.Fprintf(stderr, "define: %v\n", err)
+		return 2
+	}
+	schemeChoice, err := parseSchemeArg(*schemeFlag)
+	if err != nil {
+		fmt.Fprintf(stderr, "define: -scheme: %v\n", err)
 		return 2
 	}
 	if os.Getenv("TERM") == "dumb" {
-		background = ""
+		tintOn = false // a dumb terminal prints escapes as text
 	}
 	if isSet(fs, "sound") && isSet(fs, "times") {
 		fmt.Fprintln(stderr, "define: -sound and -times are the same setting; pass one")
@@ -667,10 +691,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		pron = parsed
 	}
 	opt := options{
-		raw:            *raw,
-		noFlags:        *noFlags,
-		tintBackground: background,
-		color:          !*noColor && isTerminal(stdout),
+		raw:     *raw,
+		noFlags: *noFlags,
+		tintOn:  tintOn,
+		color:   !*noColor && isTerminal(stdout),
 		// -no-color means "emit no ANSI", so it disables cursor control too — the
 		// flag exists for terminals that mangle escapes, and splitting its meaning
 		// would leave those users with erase sequences they cannot render.
@@ -837,6 +861,14 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	}
 	if *llmCheck {
 		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr, opt)
+	}
+
+	// THE SCHEME HOLDER, built after the two modes that never paint a tint and
+	// before anything that does (#70). An injected holder wins, like every other
+	// member of deps — which also means a test that injects one has -scheme
+	// ignored.
+	if d.scheme == nil {
+		d.scheme = newSchemeHolder(initialSchemeState(schemeChoice, d.schemePersister(), stderr))
 	}
 
 	// The flag rides on the LINE, beside `literal`, because that is what it is:
@@ -1073,7 +1105,7 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	// recording by construction.
 	output := renderDefinitionOutput(set, RenderOpts{
 		Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d), Word: word,
-		Tint: opt.tintFor(d.lang),
+		Tint: tintFor(d, opt),
 	})
 	// EVERY DECK WORD IN THE DEFINITION IS CLICKABLE TOO. Render already coloured
 	// them — with its own per-region base styles, which is why `already` is the
@@ -1147,7 +1179,7 @@ func writeWords(w io.Writer, text string, rs []Region, d deps, opt options, sf s
 		o := structured[0]
 		o.text = text
 		o.regions = rs
-		writeOutput(w, o, opt.width)
+		writeOutput(w, o, opt.width, d.scheme.Scheme())
 		return
 	}
 	writeRendered(w, text, rs)

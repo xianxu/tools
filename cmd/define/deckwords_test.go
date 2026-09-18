@@ -317,7 +317,7 @@ func TestChoiceOptionGlossesAreColoured(t *testing.T) {
 
 // A BOARD'S CELLS CARRY NO DECK COLOUR even though every one is a deck word.
 //
-// NOT A VACUOUS PIN. A board renders through boardFooter into the FOOTER and
+// NOT A VACUOUS PIN. A board renders through boardFooterOutput into the FOOTER and
 // never reaches the write door, so "the board is not coloured" is true today for
 // a reason that has nothing to do with the rule. This asserts the reachable
 // thing instead — that routing a board's cells through the door still produces

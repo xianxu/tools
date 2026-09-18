@@ -233,7 +233,7 @@ func clozeAsk(d deps, opt options, key string, entry Entry, marks map[string]cli
 	output := renderDefinitionOutput(definitionsFor(d.dict, key, entry.Raw, nil, d.bilingualEnabled()), RenderOpts{
 		Word:  key,
 		Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
-		Tint: opt.tintFor(d.lang),
+		Tint: tintFor(d, opt),
 	})
 	rendered, rs := output.text, output.regions
 	marks[key] = clickable{text: rendered, regions: rs}

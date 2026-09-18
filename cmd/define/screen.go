@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // screen is the interactive loop's line buffer and viewport (#30).
@@ -31,8 +33,13 @@ type screen struct {
 	// lines is everything the session has shown, oldest first. The LAST line may
 	// be partial: deltas arrive chunked and a reply split as "one" then " two\n"
 	// is one line, not two.
-	lines       []string
-	paints      map[int]rowPaint
+	lines  []string
+	paints map[int]rowPaint
+	// scheme is the process's scheme holder (#70), read ONCE per frame at
+	// paint: a row keeps only WHETHER it is tinted, so a /scheme switch
+	// recolours everything already here. Nil paints dark. Set by attachScheme,
+	// before the screen is shared.
+	scheme      *schemeHolder
 	promptPaint []rowPaint
 	footerPaint []rowPaint
 	// partial reports whether the final element is still being written to, so a
@@ -533,6 +540,9 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, foote
 type selectionLayout struct {
 	frame  selectionFrame
 	chunks []selectionPaintChunk
+	// scheme is read once when the frame is laid out, so a transition landing
+	// mid-frame cannot paint two shades in one frame.
+	scheme store.Scheme
 }
 
 type selectionPaintChunk struct {
@@ -546,10 +556,10 @@ func (layout selectionLayout) paint(w io.Writer, gesture selectionGesture) {
 	for _, chunk := range layout.chunks {
 		if (gesture.selected || gesture.active && gesture.dragging) && gesture.frame != 0 && layout.frame.err == nil && chunk.count > 0 {
 			for row := chunk.first; row < chunk.first+chunk.count; row++ {
-				b.WriteString(paintLanguageRow(layout.frame.highlightRow(row, gesture.anchor, gesture.end), layout.frame.rows[row].paint, layout.frame.width))
+				b.WriteString(paintLanguageRow(layout.frame.highlightRow(row, gesture.anchor, gesture.end), layout.frame.rows[row].paint, layout.frame.width, layout.scheme))
 			}
 		} else {
-			b.WriteString(paintOutputChunk(chunk.text, chunk.paint, layout.frame.width))
+			b.WriteString(paintOutputChunk(chunk.text, chunk.paint, layout.frame.width, layout.scheme))
 		}
 	}
 	fmt.Fprint(w, b.String())
@@ -587,7 +597,7 @@ func (s *screen) layoutSelectionFrame(termRows, termCols int, prompt string, foo
 	footer, footerRows := fitFooter(footer, termRows-promptRows-activityRows, s.cols)
 	gap := grantedGap(s.gap, termRows, promptRows+activityRows, footerRows)
 	s.rows = max(0, termRows-promptRows-activityRows-footerRows-gap)
-	layout := selectionLayout{}
+	layout := selectionLayout{scheme: s.scheme.Scheme()}
 	var rows []selectionRow
 	snapshotBytes, snapshotRefused := 0, false
 	// Refuse oversized selection snapshots before allocating rows/cells. The
@@ -871,6 +881,12 @@ func newPinnedScreen(tty io.Writer, rows, cols int) *liveScreen {
 	l.s.gap = chromeGap
 	return l
 }
+
+// attachScheme gives the screen the process's scheme holder (#70). Call it
+// BEFORE the screen is shared with another goroutine — the pointer router, the
+// resize watcher, the throttle timer — because this field is not atomic; the
+// holder it points at is.
+func (l *liveScreen) attachScheme(h *schemeHolder) { l.s.scheme = h }
 
 // window is the throttle's gap. Zero means the default; NEGATIVE means none at
 // all, which is how a test asks for the unthrottled behaviour rather than

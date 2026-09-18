@@ -21,9 +21,11 @@ type LanguageSpan struct {
 	Role         LanguageRole
 	AnswerStyled bool
 }
+// PresentationRegion marks a byte range and whether its rows are tinted. A
+// role, not a colour: the shade is main's business, resolved at paint (#70).
 type PresentationRegion struct {
 	Start, End int
-	Background string
+	Tinted     bool
 }
 
 type Presentation struct {

@@ -187,7 +187,7 @@ func (f selectionFrame) same(other selectionFrame) bool {
 	}
 	for i, r := range f.rows {
 		s := other.rows[i]
-		if r.paint.background != s.paint.background || !slices.Equal(r.paint.exclusions, s.paint.exclusions) || r.selectable != s.selectable || r.footer != s.footer || r.retry != s.retry || r.footerEntry != s.footerEntry || r.footerOffset != s.footerOffset || !slices.Equal(r.regions, s.regions) {
+		if r.paint.tinted != s.paint.tinted || !slices.Equal(r.paint.exclusions, s.paint.exclusions) || r.selectable != s.selectable || r.footer != s.footer || r.retry != s.retry || r.footerEntry != s.footerEntry || r.footerOffset != s.footerOffset || !slices.Equal(r.regions, s.regions) {
 			return false
 		}
 		if !r.selectable {

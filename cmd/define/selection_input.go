@@ -190,6 +190,9 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 						continue
 					}
 					if !isPointerKey(k.Kind) && len(out) == cap(out) {
+						if k.Kind == KeyBackground {
+							continue // a report, not typing: no notice, and saturated untouched (#70)
+						}
 						if router != nil {
 							router.cancelInput(k, false)
 						}
@@ -214,6 +217,10 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 					case <-ctx.Done():
 						return
 					default:
+						// No report guard here (#70): this goroutine is out's only
+						// sender and the length check above diverts every
+						// non-pointer key first, so only a router-made KeyClick
+						// reaches this arm — a guard could never be exercised.
 						if !saturated && router != nil {
 							router.notice("input full — newest key ignored")
 						}
@@ -233,7 +240,10 @@ func readInput(ctx context.Context, in io.Reader, interrupts *interrupter, route
 // input, including rejected type-ahead. Rejected input retains its overflow
 // notice, but can never retain an unfinished gesture or a stale viewport ticket.
 func cancelPointerInput(l *liveScreen, k Key, dismiss bool) {
-	if k.Kind == KeyUnknown {
+	// Neither an unmodelled sequence nor a terminal report (#70) is input the
+	// user made, so neither cancels a gesture. ONE guard, here: route and
+	// cancelInput both reach it.
+	if k.Kind == KeyUnknown || k.Kind == KeyBackground {
 		return
 	}
 	l.cancelSelectionLocked(dismiss)

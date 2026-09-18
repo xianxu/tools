@@ -126,7 +126,6 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 	// a whole parenthetical — so emitting fields in a guessed order reorders the
 	// entry. Nothing is hidden here, including a syllabification equal to the
 	// headword: suppression is how content goes missing.
-	headAt := 0
 	for i, t := range e.Head {
 		sep := " "
 		switch {
@@ -144,14 +143,7 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 		case HeadPOS:
 			color = p.pos
 		}
-		headAt += len(e.Raw[headAt:]) - len(strings.TrimLeftFunc(e.Raw[headAt:], unicode.IsSpace))
 		text := t.Text
-		if t.Kind == HeadWord || t.Kind == HeadSyllables {
-			text = opt.dictionaryText(e, t.Text, t.Text, headAt, strings.HasPrefix(e.Raw[headAt:], t.Text))
-		}
-		if strings.HasPrefix(e.Raw[headAt:], t.Text) {
-			headAt += len(t.Text)
-		}
 		if color != "" {
 			fmt.Fprintf(&b, "%s%s%s%s", sep, color, text, p.off)
 		} else {
@@ -200,7 +192,7 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 				// text it measures. Wrapping first also means a phrase cannot span
 				// a line break, which is the writer's rule 2 falling out rather
 				// than being enforced twice.
-				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, opt.dictionaryText(e, s.Gloss, opt.prose(wrapText(body, opt.Width, lead), ""), s.sourceAt, s.sourceKnown))
+				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, opt.prose(wrapText(body, opt.Width, lead), ""))
 			} else if marker != "" {
 				fmt.Fprintf(&b, "%s%s\n", indent, strings.TrimSpace(marker))
 			}
@@ -218,7 +210,7 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 				// stays readable: “"This blows," she sighs” rather than
 				// ""This blows," she sighs".
 				fmt.Fprintf(&b, "%s\u201c%s\u201d%s\n", p.ex,
-					opt.dictionaryText(e, ex.Text, opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex), ex.sourceAt, ex.sourceKnown), p.off)
+					opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex), p.off)
 			}
 		}
 	}
@@ -240,9 +232,6 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 					indent = "      "
 				}
 				text := opt.prose(wrapText(seg, opt.Width, len(indent)), "")
-				if sec.Name != "ORIGIN" && sectionText == sec.Text {
-					text = opt.dictionaryText(e, seg, text, 0, false)
-				}
 				fmt.Fprintf(&b, "%s%s\n", indent, text)
 			}
 		}

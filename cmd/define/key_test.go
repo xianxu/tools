@@ -128,7 +128,8 @@ func TestDecodeKeyModifiedDeleteIsNotDelete(t *testing.T) {
 // The fuzz target's real obligation: no byte of an escape sequence may ever
 // surface as a rune, or it lands in the word the user is typing.
 func FuzzDecodeKeyNeverLeaksEscapeTails(f *testing.F) {
-	for _, s := range []string{"\x1b[3;5~", "\x1b[1;3D", "\x1b[200~", "\x1bO", "\x1b["} {
+	for _, s := range []string{"\x1b[3;5~", "\x1b[1;3D", "\x1b[200~", "\x1bO", "\x1b[",
+		"\x1b]", "\x1b]11;", "\x1b]11;rgb:ffff/ffff/ffff\x07", "\x1b]11;rgba:0/0/0/0\x1b\\"} {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, buf []byte) {
@@ -147,7 +148,8 @@ func FuzzDecodeKeyNeverLeaksEscapeTails(f *testing.F) {
 
 // decodeKey is the one function fed arbitrary bytes from outside the program.
 func FuzzDecodeKey(f *testing.F) {
-	for _, s := range []string{"a", "\x1b[A", "\x1b[3~", "\x1bO", "é", "\x1b[1;5C", "\x00"} {
+	for _, s := range []string{"a", "\x1b[A", "\x1b[3~", "\x1bO", "é", "\x1b[1;5C", "\x00",
+		"\x1b]", "\x1b]11;", "\x1b]11;rgb:ffff/ffff/ffff\x07", "\x1b]11;rgba:0/0/0/0\x1b\\"} {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, buf []byte) {
@@ -157,6 +159,16 @@ func FuzzDecodeKey(f *testing.F) {
 		}
 		if n == 0 && k.Kind != KeyUnknown && k.Kind != 0 {
 			t.Fatalf("consumed 0 but returned kind %v", k.Kind)
+		}
+		// A background REPORT comes only from a real reply: the prefix we asked
+		// for, ended by a terminator (#70). Anything else is the decoder
+		// inventing a report out of typed bytes.
+		if k.Kind == KeyBackground {
+			seq := string(buf[:n])
+			ended := strings.HasSuffix(seq, "\x07") || strings.HasSuffix(seq, "\x1b\\") || strings.HasSuffix(seq, "\x9c")
+			if !strings.HasPrefix(seq, "\x1b]11;rgb:") || !ended {
+				t.Fatalf("%q decoded as a background report", seq)
+			}
 		}
 	})
 }
@@ -236,6 +248,7 @@ func FuzzDecodeMouseIsBounded(f *testing.F) {
 	for _, seed := range []string{
 		"\x1b[<64;10;5M", "\x1b[<0;1;1m", "\x1b[<0;1;1M", "\x1b[<999999999;0;0M",
 		"\x1b[<", "\x1b[<;;;;M", "\x1b[M \x21\x21", "\x1b[M", "\x1b[<0;1x;5M",
+		"\x1b]", "\x1b]11;", "\x1b]11;rgb:ffff/ffff/ffff\x07",
 	} {
 		f.Add(seed)
 	}
@@ -464,6 +477,39 @@ func TestEveryEnabledInputModeIsDecoded(t *testing.T) {
 				if k.Kind == KeyRune {
 					t.Errorf("decodeKey(%q) produced the rune %q — the report was typed rather than read",
 						r.sample, k.Rune)
+				}
+			})
+		}
+	}
+
+	// And every QUESTION the program asks (#70). Not modes — no ?NNNNh to read
+	// off, so a separate loop keyed by name — but the same obligation: a
+	// terminal that answers owes the decoder a case. FAILS CLOSED on a query
+	// with no row.
+	queryReplies := map[string][]struct{ encoding, sample string }{
+		"background colour": {
+			{"rgb with BEL", "\x1b]11;rgb:ffff/ffff/ffff\x07"},
+			{"rgb with ST", "\x1b]11;rgb:0/0/0\x1b\\"},
+			{"rgba", "\x1b]11;rgba:ffff/ffff/ffff/ffff\x1b\\"},
+		},
+	}
+	if len(terminalQueries) == 0 {
+		t.Fatal("no terminal queries found; this half of the guard would be vacuous")
+	}
+	for _, q := range terminalQueries {
+		rows, listed := queryReplies[q.name]
+		if !listed {
+			t.Errorf("the program asks the terminal %q and no row here says how the answer decodes", q.name)
+			continue
+		}
+		for _, r := range rows {
+			t.Run(q.name+" — "+r.encoding, func(t *testing.T) {
+				k, n := decodeKey([]byte(r.sample))
+				if n != len(r.sample) {
+					t.Errorf("decodeKey(%q) consumed %d of %d — the tail reaches the line as text", r.sample, n, len(r.sample))
+				}
+				if k.Kind == KeyRune {
+					t.Errorf("decodeKey(%q) produced the rune %q — the answer was typed rather than read", r.sample, k.Rune)
 				}
 			})
 		}

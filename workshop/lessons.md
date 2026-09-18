@@ -4805,3 +4805,81 @@ capture of the OTHER shape.
 **When a fixture cannot exhibit the defect, adding assertions to it is wasted
 work.** Record the shape that can, and have the recorder refuse to promote one
 that does not.
+
+## Fields whose legal combinations are a subset are ONE value (#70)
+
+Three times in one issue, the same shape: a choice beside a `chosenBy` source
+that could say "detected" (M1), an `auto` flag beside a `value` (M2), and two
+booleans `session` + `fullScreen` where full-screen without a session means
+nothing (M2). Each was fine at every call site that existed and wrong as a
+TYPE: it could hold a state no code meant, and the next caller would find it.
+The review escalated on the second instance with "fix rules, not instances".
+
+The rule: when N fields depend on each other, collapse them into one value
+whose members are exactly the legal combinations — an enum (`loopKind`), a
+nil-able pointer (`*schemeChoice`), or a single field whose zero value is the
+harmless case (`schemeArg{}` is auto, so it forgets rather than saving a blank).
+Check new structs for it at write time: for each pair of fields, ask whether
+every combination means something. The third finding added the corollary for
+LOCAL state too: store only independent facts, and compute a flag that follows
+from others where it is read — the row painter's `inking` was always
+`filled && !coloured`, and a stored copy is a second truth waiting to drift.
+
+## A step that cites the Log is ticked after the Log line exists (#70)
+
+M2's plan steps said "noted in the Log" and "name what ran vs skipped", were
+ticked, and the Log had no M2 entry at all — the boundary review blocked the
+milestone on it. One step also claimed a clean PASS where only the affected
+subset had run and the full suite had pre-existing failures. A tick is a claim
+that its evidence exists; when the evidence is prose in another file, write
+that prose first, and state the scope of any run exactly (which tests, which
+passed, which failed and why).
+
+## A consumer's test checks what THAT consumer outputs (#70)
+
+Twice in one issue a test for a consumer asserted the shared state it writes
+instead of what it produces: a sitting's reply handler was "pinned" by reading
+the scheme holder, and a repaint by `PaintedTranscript` — which re-reads the
+holder when called, so it passes with no repaint at all. Removing the sitting's
+`show()` left the suite green. The rule: for every consumer of an event, assert
+the consumer's OWN output — the frame it paints (`lastFrame` of its tty), the
+answer it records, the notice it posts. A value any other path also computes is
+not evidence that this path did its part.
+
+**The same holds for MANUAL evidence** (#70, third finding in the family): an
+operator's "working" in a session that ran under a saved choice showed the tint,
+not detection — a saved choice paints the same shade. Ask for the one observation
+only the path under test can produce (`/scheme` reading `(detected)` after
+`/scheme auto`), and record what was NOT established as owed rather than letting a
+general "verified" stand for it.
+
+## The tick rule, second finding: name the evidence, narrow the claim (#70)
+
+M3 repeated M2's miss one layer out: mutation steps logged COUNTS, not names;
+fuzz and strict runs were done but not recorded; and a Done-when bullet kept
+claiming a per-terminal manual matrix the operator had verified only as a whole.
+Name each mutation, record each run's scope and result, and when a step is done
+differently than planned, write the Revision that narrows the claim — the tick
+must describe what happened, not what was planned.
+
+## A plan names functions and one strategy line each, not their code (#70)
+
+#70's plan carried full implementations. The review flagged it at the plan gate
+and at every boundary: the code drifted from the plan within a milestone (two
+shape changes were Revisions), so the plan was both long and wrong. Name the
+function, its signature, and one line on the risky decision; the code belongs in
+the diff.
+
+## When a behaviour changes, re-read every sentence that describes it (#70)
+
+Three doc findings in one issue, one shape: M1's atlas described sources M2 and
+M3 had not shipped; M2 dropped a "(from M3)" tag; M3's README kept "suits a dark
+terminal by default" after detection shipped, and said a session asks "with
+nothing chosen" when it asks every time. Each milestone checked the paragraph it
+wrote and not the sentences it made false. When a milestone changes a behaviour,
+grep the docs for that behaviour's words and check each sentence against the
+code's actual condition — no future features, no stale defaults, and the code's
+condition EXACTLY, neither narrower nor broader (the fix for "asks only with
+nothing chosen" overshot to "every session asks", and the code asks only where a
+tint can appear).
+

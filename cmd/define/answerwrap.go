@@ -225,7 +225,7 @@ func newOwnedAnswerWrapWriter(out io.Writer, width int, p tintPolicy) *ownedAnsw
 	if lang, err := store.ParseLang(string(p.lang)); err == nil {
 		p.lang = lang
 	} else {
-		p.background = ""
+		p.on = false
 	}
 	return &ownedAnswerWrapWriter{out: out, width: width, policy: p}
 }
@@ -346,16 +346,12 @@ func (w *ownedAnswerWrapWriter) finalize(newline bool) {
 		r, _ := utf8.DecodeRuneInString(u.text)
 		owner = advanceRowOwnership(owner, rowOwnershipEvent{lang: u.lang, substantive: u.cells > 0 && isLanguageProse(r, u.lang != "")})
 	}
-	bg := ""
 	target := string(w.policy.lang)
-
-	if !owner.mixed && owner.lang == target && (w.policy.background == languageDark || w.policy.background == languageLight) {
-		bg = w.policy.background
-	}
+	tinted := !owner.mixed && owner.lang == target && w.policy.on
 	if newline {
 		text.WriteByte('\n')
 	}
-	w.err = writeOutput(w.out, renderedOutput{text: text.String(), rows: []rowPaint{{background: bg}}}, w.width)
+	w.err = writeOutput(w.out, renderedOutput{text: text.String(), rows: []rowPaint{{tinted: tinted}}}, w.width, w.policy.scheme.Scheme())
 	w.pending -= unitBytes(w.row)
 	w.row = nil
 	w.col = 0

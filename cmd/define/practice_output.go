@@ -93,7 +93,7 @@ func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy t
 			col += w
 		}
 		if !state.mixed && state.lang != "" && normalizedLang(store.Lang(state.lang)) == normalizedLang(policy.lang) {
-			paint.background = policy.background
+			paint.tinted = policy.on
 		}
 		o.rows = append(o.rows, paint)
 		pos += len(line) + 1
@@ -113,7 +113,7 @@ func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy t
 			last--
 		}
 		for row := first; row <= last && row < len(sectionBase.rows); row++ {
-			sectionBase.rows[row].background = region.Background
+			sectionBase.rows[row].tinted = region.Tinted
 			sectionLines[row] = true
 		}
 	}
@@ -139,7 +139,7 @@ func definitionPresentationRegions(o renderedOutput) []play.PresentationRegion {
 	at := 0
 	for i, line := range strings.SplitAfter(o.text, "\n") {
 		if line != "" {
-			rs = append(rs, play.PresentationRegion{Start: at, End: at + len(line), Background: paintAt(o.rows, i).background})
+			rs = append(rs, play.PresentationRegion{Start: at, End: at + len(line), Tinted: paintAt(o.rows, i).tinted})
 		}
 		at += len(line)
 	}
@@ -147,14 +147,49 @@ func definitionPresentationRegions(o renderedOutput) []play.PresentationRegion {
 }
 
 func practiceChromeOutput(p play.Presentation, d deps, opt options, pal palette) renderedOutput {
-	o := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "", 0)
+	o := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), tintFor(d, opt), nil, surfaceProse, "", 0)
 	o.text = asChrome(o.text, pal)
 	return o
 }
+
+// boardFooterOutput is the live edge for a board: everything the FORM draws, then the
+// bar.
+//
+// One line of assembly, and that is the point. The grid and the panel are the
+// board's own rendering — a form owns how it looks, and a loop composing it out
+// of accessors would make the board's appearance a thing two files agree about,
+// on the surface where disagreeing marks the wrong word. All this adds is the
+// bar, which belongs to the sitting rather than to the question.
+//
+// THE FORM IS FIRST, which is load-bearing rather than aesthetic: formCell reads
+// a footer entry index straight back as a grid row, so anything above it would
+// silently shift every cell. It is also the order of value that fitFooter drops
+// from: the bar goes first, then the panel, then grid rows.
+//
+// A BOARD CAN END UP IN A FOOTER THAT DROPS ROWS, and D15's "never" was measured
+// wrong (R11). It holds at SELECTION — `packBoards` refuses a board the terminal
+// cannot draw whole — and a resize afterwards is a shape nobody chose.
+//
+// What the order buys is that the losses are SURVIVABLE in sequence: the bar (a
+// figure), the panel (cosmetic), then grid rows. An earlier version of this
+// comment called them "harmless", which was checked against the CLICK map —
+// FooterRowAt answers nothing for a row that was never painted — and was false
+// of the SWEEP, which does not go through that map at all: Enter took every
+// unmarked word including ones the window never drew. That is why Enter is now
+// held while the board is not whole (R17), and why a safety word has to name the
+// path it was checked on.
+//
+// The one thing that must not go is the statement of what a click will MEAN, and
+// that is why the mode moved to the prompt row, which Paint clips last.
+//
+// THE PALETTE is threaded in rather than reached for, on the same seam
+// `boardPalette` sits on: `main` owns the terminal's colours and the form takes
+// finished sequences. It styles only the BAR — the grid above it is the board's
+// own rendering, already painted through `play.Palette` (#44).
 func boardFooterOutput(q play.Question, fig sittingFigures, pal palette, d deps, opt options) renderedOutput {
 	o := renderedOutput{text: q.Prompt()}
 	if p, ok := q.(practicePresenter); ok {
-		o = renderPracticeOutput(p.PromptPresentation(), d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceOf(q.Form()), q.Word(), 0)
+		o = renderPracticeOutput(p.PromptPresentation(), d.lang, dictionarySourceLanguage(d.dict), tintFor(d, opt), nil, surfaceOf(q.Form()), q.Word(), 0)
 	}
 	rows := strings.Count(o.text, "\n") + 1
 	for len(o.rows) < rows {

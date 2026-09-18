@@ -36,7 +36,7 @@ func TestLanguageTintSourceAcrossLookupAndReveals(t *testing.T) {
 					d.lang = target
 					off := false
 					d.bilingual = &off
-					opt.tintBackground = languageDark
+					opt.tintOn = true
 					want := source != "" && source == target
 					assert := func(text string) {
 						t.Helper()
@@ -78,8 +78,8 @@ func TestLanguageTintSourceAcrossLookupAndReveals(t *testing.T) {
 						if !ok {
 							t.Fatalf("question %T lacks presentation", q)
 						}
-						output := renderPracticeOutput(p.RevealPresentation(), target, source, opt.tintFor(target), nil, surfaceProse, q.Word(), 80)
-						assert(serializeOutput(output, 80))
+						output := renderPracticeOutput(p.RevealPresentation(), target, source, tintFor(d, opt), nil, surfaceProse, q.Word(), 80)
+						assert(serializeOutput(output, 80, d.scheme.Scheme()))
 						return
 					}
 					t.Fatal("sycophantic question not built")
