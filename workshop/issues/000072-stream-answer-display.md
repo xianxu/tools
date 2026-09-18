@@ -1,12 +1,13 @@
 ---
 id: 000072
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-16
 updated: 2026-09-17
 estimate_hours: 2.47
 started: 2026-09-17T14:26:02-07:00
+actual_hours: 1.92
 ---
 
 # define: stream the model's answer to the screen as it arrives
@@ -113,8 +114,17 @@ the owned span was the exception to it.
 
 Interaction path: streamed UI response, one answer at a time, no concurrency.
 
-- first text visible ≤ 0.5 s after the model's first text delta — measured basis 0.3 s at width 100
-- display cadence ~0.5 s per row at width 100 with ~60 ms deltas — measured
+Every budget names the guard that enforces it or the measurement that is its
+evidence after the change; one with neither is an assumption, not a bound.
+
+- first text visible ≤ 0.5 s after the model's first text delta — *evidence:* the
+  delta-replay measurement above (first row at 0.3 s, width 100). *Guard:* the
+  ordering assertion in `TestALongPassageReachesTheScreenInPieces`, which is the
+  deterministic stand-in a wall-clock assertion cannot be: it bounds WHERE IN THE
+  STREAM text first appears, not how many seconds, and claims nothing more.
+- piped first byte — *evidence:* 0.917 s after, 9.426 s before (`## Log`)
+- display cadence ~0.5 s per row at width 100 with ~60 ms deltas — *evidence:* the
+  same delta replay. Unguarded by design: the wrapper is untouched by this issue.
 - decoder retention, every component of it, once `d.body` is gone:
   `d.marker` ≤ 64 B (`languageHeaderLimit`), `d.entity` ≤ 64 B (`:241`),
   `d.filter.pending` and `d.literal.pending` ≤ 3 B each — **two** filters, one
@@ -123,6 +133,7 @@ Interaction path: streamed UI response, one answer at a time, no concurrency.
   (`2*languageHeaderLimit + 2*utf8.UTFMax`), bounded by the marker and entity
   grammars rather than by a size check. Stated as the constant, not as a rounder
   number beside it: two statements of one bound is how the looser one survives.
+  *Guard:* `FuzzLanguageDecoderChunks`, asserting it after every chunk.
 - the segment-body bound disappears; there is no longer a quantity that can exceed one
 
 ### What #64 inherits
@@ -242,6 +253,7 @@ Derivation notes, so the numbers can be argued with rather than just checked:
 ## Log
 
 ### 2026-09-17
+- 2026-09-17: closed — Streaming fixed and verified: same piped one-shot went from 2 chunks with first byte at 9.426s to 264 chunks with first at 0.917s; operator smoke-tested interactively and confirms. Wire unchanged throughout (first delta 1.25s, 126 deltas ~60ms apart). go test ./cmd/define green outside the sandbox (pty rows need a real terminal). Ordering asserted through the production chain at width 0 and 100 (first visible at delta 2 and 13 of 161), mutation-verified against three variants of the defect: buffer-then-release-whole (largest write 818 bytes), buffer-then-dribble-at-close (nothing until delta 102 of 161 — the variant BR-1 named), and the restored one-shot highlightRegion (deck word inside a passage unhighlighted). ~600k FuzzLanguageDecoderChunks executions with the retention invariant asserted after every chunk. BR-1..BR-7 disposed in round 3. BR-8 fixed as a rule not a site: the deleted body bound was still restated to the model in sharedLanguageGrammar ("Keep passages below 4000 characters" = 16,000 bytes UTF-8 worst case), now deleted with both goldens re-recorded, and the entity cap now cites languageHeaderLimit rather than a bare 64 — a tree-wide grep for 4000/16 KiB/languageBodyLimit returns only historical references. BR-9: annotatedRegions and three sibling helpers replaced by deriving delta boundaries and ownership from the real decoder. BR-10: duplicated rationale and a present-tense description of a fixed bug both removed.; review verdict: SHIP
 
 Claimed before brainstorming (#113). The title's literal ask looked already
 shipped — `runAsk` calls `client.Stream` and four tests defend streaming — so the

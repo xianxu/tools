@@ -29,7 +29,13 @@ type languageAnswer struct {
 
 func newLanguageAnswer(out io.Writer, width int, v Vocabulary, policy tintPolicy) *languageAnswer {
 	a := &languageAnswer{wrap: newOwnedAnswerWrapWriter(out, width, policy), policy: policy, vocab: v}
-	a.highlight = newHighlightWriter(a, v, knownOn)
+	// runVocabulary(""), not the raw v: own() is the sole place the (ownership,
+	// highlighter) pair is decided, and a constructor that restates the answer
+	// bypasses it. They agree today only because the neutral run happens to keep
+	// the whole vocabulary — change that rule (#64 plausibly will) and an answer
+	// opening in neutral prose would silently keep the old one while an answer
+	// opening inside a passage would not.
+	a.highlight = newHighlightWriter(a, a.runVocabulary(""), knownOn)
 	a.decoder = newLanguageDecoder(a.accept)
 	return a
 }

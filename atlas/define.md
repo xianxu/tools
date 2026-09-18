@@ -2314,8 +2314,9 @@ neutral. Painted text cannot be un-painted, so that revocation was only ever
 purchasable by withholding every well-formed answer too. Recovery still denies
 ownership to text arriving after the malformed event. Three things left with the
 buffer — the body, its 16 KiB bound, and the limit event that bound produced — so
-the only bounds now are the 64-byte header candidate and a stated total retention
-(`maxLanguageDecoderRetained`), asserted per chunk by the decoder's fuzz target
+the only bounds now are the header candidate (`languageHeaderLimit`, which the
+entity candidate shares) and a stated total retention
+(`maxLanguageDecoderRetained`, computed from it), asserted per chunk by the fuzz target
 rather than by a check on a field that can stop existing. Entities are decoded
 after grammar and filtered again.
 

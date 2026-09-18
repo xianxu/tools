@@ -65,8 +65,25 @@ func splitWordOwnedBy(t *testing.T, name, lang string) string {
 			}
 		}
 	}
-	t.Fatalf("no word in %s is split across deltas and owned by %q — re-record the capture or pick another; "+
-		"skipping here would let this test go quietly inert", name, lang)
+	// TWO different failures, and since this helper started deriving both facts
+	// from production they share one derivation — so they must not share one
+	// message. With the segment buffer restored, every word arrives whole and
+	// this fires; reading "re-record the capture" there sends the next reader to
+	// the fixture for a regression that is in the decoder.
+	owned := 0
+	for _, sp := range got.spans {
+		if string(sp.lang) == lang {
+			owned += sp.end - sp.start
+		}
+	}
+	if lang != "" && owned == 0 {
+		t.Fatalf("the decoder produced no %q-owned text from %s: either it stopped owning annotated "+
+			"passages (a production regression) or the capture no longer contains one", lang, name)
+	}
+	t.Fatalf("every %q word in %s arrived whole: either the decoder stopped emitting as deltas arrive "+
+		"(a streaming regression — check TestOwnedTextIsEmittedBeforeItsCloseMarker first) or this "+
+		"capture no longer splits one, in which case re-record it; skipping would let this test go "+
+		"quietly inert", lang, name)
 	return ""
 }
 
