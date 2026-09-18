@@ -51,6 +51,8 @@
 | `TestDictionaryInlinePronunciationRemainsNeutral` | `cmd/define/dictionary_language_test.go` | deleted |
 | `tintProfile` | `cmd/define/language_style.go` | deleted |
 | `TestLanguageTintProfile` | `cmd/define/language_style_test.go` | deleted |
+| `boardFooter` | `cmd/define/render_helpers_test.go` | deleted |
+| `practiceChrome` | `cmd/define/render_helpers_test.go` | deleted |
 
 Rows for DELETED symbols are added by the task that deletes them, in the same commit (Task 3): a `| deleted |` row asserts the symbol is already gone (`TestPlanTablesNameEntitiesThatExist`), and it is also what exempts this plan's prose from `TestARemovedDeclarationIsSweptOrRetired`.
 
@@ -775,13 +777,13 @@ if d.scheme == nil {
 	var st schemeState
 	switch {
 	case !schemeChoice.auto:
-		st = st.withChoice(schemeChoice.value, sourceFlag)
+		st = st.withChoice(schemeChoice.value, choiceFlag)
 	case d.configDir != nil:
 		if dir, ok := d.configDir(); ok {
 			if v, found, err := store.ReadScheme(dir); err != nil {
 				fmt.Fprintf(stderr, "define: ignoring saved scheme: %v\n", err)
 			} else if found {
-				st = st.withChoice(v, sourceSaved)
+				st = st.withChoice(v, choiceSaved)
 			}
 		}
 	}
@@ -875,7 +877,7 @@ func applyScheme(h *schemeHolder, arg schemeArg, p schemePersister, session bool
 	case p == nil && arg.auto:
 		h.forget()
 	case p == nil:
-		h.choose(arg.value, sourceSession)
+		h.choose(arg.value, choiceSession)
 	case arg.auto:
 		if err := p.clear(); err != nil {
 			return h.Load(), err
@@ -885,7 +887,7 @@ func applyScheme(h *schemeHolder, arg schemeArg, p schemePersister, session bool
 		if err := p.save(arg.value); err != nil {
 			return h.Load(), err
 		}
-		h.choose(arg.value, sourceSaved)
+		h.choose(arg.value, choiceSaved)
 	}
 	return h.Load(), nil
 }
@@ -1208,3 +1210,8 @@ if k.Kind == KeyBackground {
 - [ ] **Manual live conformance** (the real external dependency): in Terminal.app, iTerm2 and Ghostty, each in a light and a dark profile — `define`, `/lang es`, look up `red`; check the tint's shade and `/scheme`'s report; `/scheme light|dark|auto` and watch the repaint; quit and check the transcript's shade. Note any terminal that answers `rgba:` or nothing. RECORD the terminal × appearance matrix with the date in `atlas/define.md` (a short "Terminals checked" table beside the detection paragraph), and state there when it is re-run: when a terminal is added to the matrix, when a detection bug is reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
 - [ ] Walk every `## Done when` bullet and name the test (or manual check) that proves it.
 - [ ] `sdlc milestone-close --issue 70 --milestone M3`, read the verdict; then `sdlc close --issue 70 --verified '<evidence>'`.
+
+## Revisions
+
+- **2026-09-17, M1 boundary review (Minor, ARCH-ORDER).** `schemeState` shipped as `choice store.Scheme` + `chosenBy schemeSource`, which let a choice claim to be detected or default. It is now `choice *schemeChoice{value, by choiceSource}`, with `choiceSource` ∈ {`choiceFlag`, `choiceSaved`, `choiceSession`} mapping to the report's `schemeSource`. `withChoice` and `choose` take a `choiceSource`. Chunk 1's code above shows the shape as first written; Chunk 2's code is updated to the new names.
+- **2026-09-17, M1 boundary review (Minor, ARCH-DRY).** The test-only `boardFooter` duplicated production's `boardFooterOutput` and held the only copy of its rationale; the two tests that used it now go through `paintedBoardFooterForTest` (the production path), the rationale moved onto `boardFooterOutput`, and `boardFooter` and `practiceChrome` are deleted.

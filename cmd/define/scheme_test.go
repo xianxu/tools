@@ -26,15 +26,15 @@ func TestSchemeStateSequences(t *testing.T) {
 			{func(s schemeState) schemeState { return s.withDetected(light) }, light, sourceDetected},
 			{func(s schemeState) schemeState { return s.withDetected(dark) }, dark, sourceDetected}}},
 		{"a choice outranks a reply that arrives after it", []step{
-			{func(s schemeState) schemeState { return s.withChoice(dark, sourceFlag) }, dark, sourceFlag},
+			{func(s schemeState) schemeState { return s.withChoice(dark, choiceFlag) }, dark, sourceFlag},
 			{func(s schemeState) schemeState { return s.withDetected(light) }, dark, sourceFlag}}},
 		{"clearing the choice reveals the reply kept underneath", []step{
 			{func(s schemeState) schemeState { return s.withDetected(light) }, light, sourceDetected},
-			{func(s schemeState) schemeState { return s.withChoice(dark, sourceSaved) }, dark, sourceSaved},
+			{func(s schemeState) schemeState { return s.withChoice(dark, choiceSaved) }, dark, sourceSaved},
 			{func(s schemeState) schemeState { return s.withoutChoice() }, light, sourceDetected}}},
 		{"a session choice replaces a flag", []step{
-			{func(s schemeState) schemeState { return s.withChoice(dark, sourceFlag) }, dark, sourceFlag},
-			{func(s schemeState) schemeState { return s.withChoice(light, sourceSession) }, light, sourceSession}}},
+			{func(s schemeState) schemeState { return s.withChoice(dark, choiceFlag) }, dark, sourceFlag},
+			{func(s schemeState) schemeState { return s.withChoice(light, choiceSession) }, light, sourceSession}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var s schemeState
@@ -69,13 +69,13 @@ func TestSchemeHolder(t *testing.T) {
 	// A reply that DIFFERS from the one heard before, under a choice: nothing
 	// visible changes. (Repeating the earlier reply could not tell a choice that
 	// outranks a reply from one that does not.)
-	if !h.choose(store.SchemeDark, sourceSaved) {
+	if !h.choose(store.SchemeDark, choiceSaved) {
 		t.Error("choosing dark over a detected light changes what is painted")
 	}
 	if h.detect(store.SchemeDark) || h.Scheme() != store.SchemeDark {
 		t.Error("with a choice in force a reply changes nothing visible")
 	}
-	if h.choose(store.SchemeDark, sourceFlag) {
+	if h.choose(store.SchemeDark, choiceFlag) {
 		t.Error("re-choosing the shade already in force changes nothing visible")
 	}
 	// The last reply was dark, so forgetting a dark choice paints nothing new...
@@ -83,7 +83,7 @@ func TestSchemeHolder(t *testing.T) {
 		t.Error("forgetting a dark choice over a dark reply changes nothing painted")
 	}
 	// ...while forgetting a light choice reveals that dark reply.
-	h.choose(store.SchemeLight, sourceSession)
+	h.choose(store.SchemeLight, choiceSession)
 	if !h.forget() || h.Scheme() != store.SchemeDark {
 		t.Error("forgetting a light choice must reveal the dark reply underneath")
 	}

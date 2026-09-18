@@ -85,7 +85,7 @@ func TestAScreenRepaintsHistoryInTheCurrentScheme(t *testing.T) {
 	if err := l.WriteOutput(renderedOutput{text: "hola\n", rows: []rowPaint{{tinted: true}}}); err != nil {
 		t.Fatal(err)
 	}
-	h.choose(store.SchemeLight, sourceSession)
+	h.choose(store.SchemeLight, choiceSession)
 	tty.Reset()
 	l.Draw("› ", nil)
 	if !strings.Contains(tty.String(), languageLight) || strings.Contains(tty.String(), languageDark) {

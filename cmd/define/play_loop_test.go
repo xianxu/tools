@@ -2411,12 +2411,12 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 				tc.termRows, tc.boardRows, tc.promptRows, got, tc.want)
 		}
 	}
-	// The rows it counts below the board are the rows boardFooter actually
+	// The rows it counts below the board are the rows boardFooterOutput actually
 	// DRAWS. Two owners of that number would put half a board on screen.
 	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80, play.Palette{})
-	footer := boardFooter(board, sittingFigures{}, palette{}, deps{}, options{})
+	footer := paintedBoardFooterForTest(board, sittingFigures{}, palette{}, deps{}, options{})
 	if got, want := len(footer)-board.Rows(), barRows; got != want {
-		t.Errorf("boardFooter adds %d rows below the board's own, but fitsABoard budgets %d", got, want)
+		t.Errorf("boardFooterOutput adds %d rows below the board's own, but fitsABoard budgets %d", got, want)
 	}
 	// AND THE MEASUREMENT REACHES boardFits: at a width where the keys line
 	// wraps, a board that would fit a one-row prompt must be refused.
@@ -3042,11 +3042,11 @@ func TestCtrlCOnABoardStillLeavesItsRelearnList(t *testing.T) {
 // footer entry index straight back as a grid row — so anything inserted above
 // the grid silently shifts every cell.
 //
-// `boardFooter`'s comment calls that load-bearing and nothing tested it. A second
+// `boardFooterOutput`'s comment calls that load-bearing and nothing tested it. A second
 // live-edge form, or anything wanting a row above the grid, is where it breaks.
 func TestBoardFooterPutsTheFormsOwnRowsFirst(t *testing.T) {
 	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank", "set"), 80, play.Palette{})
-	footer := boardFooter(board, sittingFigures{}, palette{}, deps{}, options{})
+	footer := paintedBoardFooterForTest(board, sittingFigures{}, palette{}, deps{}, options{})
 	own := strings.Split(board.Prompt(), "\n")
 	if len(footer) < len(own) {
 		t.Fatalf("the footer is %d rows and the board draws %d", len(footer), len(own))
@@ -3716,7 +3716,7 @@ func TestTheChromeBandIsDimmedTogether(t *testing.T) {
 		{"a coloured sitting", true, false},
 		{"no palette at all", false, false},
 		// THE BOARD'S BAR IS A SECOND SITE. It reaches the frame through
-		// `boardFooter` rather than the inline `[]string{sittingBar(fig)}`, and
+		// `boardFooterOutput` rather than the inline `[]string{sittingBar(fig)}`, and
 		// an earlier draft of this work styled one and not the other (PQ-6) — so
 		// covering only the common sitting would leave exactly the half that was
 		// missed before.

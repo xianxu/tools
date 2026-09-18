@@ -20,23 +20,49 @@ const (
 	sourceSession
 )
 
+// choiceSource is WHO made an explicit choice: a strict subset of
+// schemeSource, as its own type so a choice cannot claim to be detected or
+// default — /scheme prints the source, and the report must be true.
+type choiceSource int
+
+const (
+	choiceFlag choiceSource = iota
+	choiceSaved
+	choiceSession
+)
+
+func (c choiceSource) source() schemeSource {
+	switch c {
+	case choiceSaved:
+		return sourceSaved
+	case choiceSession:
+		return sourceSession
+	}
+	return sourceFlag
+}
+
+// schemeChoice is an explicit choice. Never mutated once made.
+type schemeChoice struct {
+	value store.Scheme
+	by    choiceSource
+}
+
 // schemeState is the whole of what the process knows about its scheme (#70).
 //
 // IMMUTABLE: every transition returns a new value, and schemeHolder swaps it in.
 // Two independent facts, so their product is the legal state space: an explicit
-// choice (chosenBy is flag, saved or session; sourceDefault means none), and
-// what the terminal last reported (heard). The choice outranks the report; the
-// report is kept underneath, so clearing the choice reveals it.
+// choice (nil for none), and what the terminal last reported (heard). The
+// choice outranks the report; the report is kept underneath, so clearing the
+// choice reveals it.
 type schemeState struct {
-	choice   store.Scheme
-	chosenBy schemeSource
+	choice   *schemeChoice
 	detected store.Scheme
 	heard    bool
 }
 
 func (s schemeState) effective() (store.Scheme, schemeSource) {
-	if s.chosenBy != sourceDefault {
-		return s.choice, s.chosenBy
+	if s.choice != nil {
+		return s.choice.value, s.choice.by.source()
 	}
 	if s.heard {
 		return s.detected, sourceDetected
@@ -44,15 +70,15 @@ func (s schemeState) effective() (store.Scheme, schemeSource) {
 	return store.SchemeDark, sourceDefault
 }
 
-// withChoice records an explicit choice. by is sourceFlag, sourceSaved or
-// sourceSession; it replaces any earlier choice whatever its source.
-func (s schemeState) withChoice(v store.Scheme, by schemeSource) schemeState {
-	s.choice, s.chosenBy = v, by
+// withChoice records an explicit choice, replacing any earlier one whatever
+// its source.
+func (s schemeState) withChoice(v store.Scheme, by choiceSource) schemeState {
+	s.choice = &schemeChoice{value: v, by: by}
 	return s
 }
 
 func (s schemeState) withoutChoice() schemeState {
-	s.choice, s.chosenBy = "", sourceDefault
+	s.choice = nil
 	return s
 }
 
@@ -104,7 +130,7 @@ func (h *schemeHolder) set(next schemeState) bool {
 	return a != b
 }
 
-func (h *schemeHolder) choose(v store.Scheme, by schemeSource) bool {
+func (h *schemeHolder) choose(v store.Scheme, by choiceSource) bool {
 	return h != nil && h.set(h.Load().withChoice(v, by))
 }
 

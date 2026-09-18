@@ -862,7 +862,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	if d.scheme == nil {
 		var st schemeState
 		if !schemeChoice.auto {
-			st = st.withChoice(schemeChoice.value, sourceFlag)
+			st = st.withChoice(schemeChoice.value, choiceFlag)
 		}
 		d.scheme = newSchemeHolder(st)
 	}

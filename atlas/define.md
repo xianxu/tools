@@ -512,7 +512,9 @@ screen. `layoutSelectionFrame` reads it ONCE per frame and `paintedTranscript` o
 switch recolours history and the exit transcript, and no frame carries two shades. Its
 only writers are its transitions — `choose`, `forget`, `detect` — each reporting whether
 the painted shade changed. Writers with no screen (`serializeOutput`: one-shot, piped,
-answers) take the scheme at write time. The flag is `-scheme dark|light|auto`.
+answers) take the scheme at write time. The flag is `-scheme dark|light|auto`; in M1 the
+flag is the only choice there is — the saved and session sources arrive with `/scheme`
+(M2), and a report from the terminal with detection (M3), so `auto` means dark until then.
 
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —

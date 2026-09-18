@@ -362,7 +362,7 @@ Derivation, row by row (v2 ranges; `impl=` written at 40% of them per v3.1):
 Durable plan: `workshop/plans/000070-light-dark-colour-scheme-plan.md` (tasks,
 code, tests, mutation checks). Three review boundaries:
 
-- [ ] M1 — the tint is a role, the scheme is state: `store.Scheme`,
+- [x] M1 — the tint is a role, the scheme is state: `store.Scheme`,
   `schemeState` + atomic `schemeHolder`, `rowPaint.tinted` resolved at paint,
   dead tint paths deleted (renderers moved to test helpers), `-scheme` and
   `-language-tint on|off` (plan Tasks 1–6)
@@ -379,6 +379,7 @@ code, tests, mutation checks). Three review boundaries:
 ### 2026-09-16
 
 ### 2026-09-17
+- 2026-09-17: closed M1 — M1: tint is a role (rowPaint.tinted), shade resolves at paint from one atomic schemeHolder attached in newConsole+sittingInPlace; -scheme dark|light|auto, -language-tint on|off. go test ./... green (pty tests outside sandbox); -race and tagged conformance: only failures reproduce on branch point 75370a2 (13 pty + live-LLM + a -race timing test) — logged; TestPTYLanguageTint/TestPTYNativeRendirSectionLayout green on the built binary. 27 mutations each applied, compiled and reddened their pin.; review verdict: SHIP
 
 Brainstorm. The only fixed colour a light terminal cannot remap is the language
 tint (236/254); foregrounds are the terminal theme's job, so the scheme swaps the
@@ -521,3 +522,15 @@ conformance tests fail in this environment (`TestPTYSuggestionAndAcceptance`,
 `TestPlayClickOnThePromptWordPlaysIt` fails under `-race` only (3/3 on the base:
 its 5 s wait is too short for the race detector). `TestLongPassageStreamsAgainstLiveService`
 asks a live model and failed on answer shape, not code.
+
+M1 review (SHIP, 4 Minor) — all four fixed in the close commit: the choice got
+its own source type (a choice can no longer claim to be detected or default);
+the board-footer tests go through the production path and the test-only copy is
+deleted; the atlas paragraph now says what M1 does NOT ship yet. And the spec
+reconciliation it asked for: the Spec's "dead code is deleted … tint assertions
+PORTED" and the matching Done-when bullet describe more than happened. The
+test-only renderers were MOVED to `render_helpers_test.go` as test helpers (not
+deleted — tests still use them), and the per-fragment tint assertions were
+DROPPED, not ported: they described behaviour production never had (it tints
+whole sections, pinned by `TestDefinitionOutputUniformSections`); their live
+halves (producer backgrounds, copy over tint) were ported.
