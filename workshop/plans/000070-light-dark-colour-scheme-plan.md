@@ -977,8 +977,8 @@ func runScheme(c commandCtx, args []string) int {
 
 ### Task 12: M2 boundary
 
-- [ ] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`.
-- [ ] Atlas: `/scheme` under **Command mode**; the saved file under **The store** ("not the deck — the user's config directory", precedence flag → saved → dark).
+- [x] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`.
+- [x] Atlas: `/scheme` under **Command mode**; the saved file under **The store** ("not the deck — the user's config directory", precedence flag → saved → dark).
 - [x] `sdlc milestone-close --issue 70 --milestone M2` — read the verdict before ticking.
 
 ---
