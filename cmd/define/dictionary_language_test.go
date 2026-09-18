@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -43,33 +42,6 @@ func assertDictionaryTint(t *testing.T, out, needle string, want bool) {
 	}
 }
 
-func TestDictionarySourceProvenanceCorpus(t *testing.T) {
-	paths, err := filepath.Glob("testdata/bilingual/*.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range paths {
-		name := strings.TrimSuffix(filepath.Base(path), ".json")
-		if name == "manifest" {
-			continue
-		}
-		for _, record := range bilingualFixture(t, name) {
-			id, err := bilingualRecordIdentity(record.HTML)
-			if err != nil || !id.spanish {
-				continue
-			}
-			source := bilingualLanguageText(record)
-			if source.text != record.Text || len(source.spans) == 0 {
-				t.Errorf("%s %s lost all provenance", name, id.id)
-			}
-			record.Text = "unrelated " + record.Text
-			if got := bilingualLanguageText(record); len(got.spans) != 0 {
-				t.Errorf("%s trusted misaligned text", name)
-			}
-		}
-	}
-}
-
 func TestDictionaryMonolingualOriginAndDisabledTint(t *testing.T) {
 	// The per-fragment tint this test also asserted is gone (#70): production
 	// tints whole sections, pinned by TestDefinitionOutputUniformSections.
@@ -77,13 +49,6 @@ func TestDictionaryMonolingualOriginAndDisabledTint(t *testing.T) {
 	out, _ := Render(entry, RenderOpts{Color: false})
 	if strings.Contains(out, "\x1b") {
 		t.Fatal("no-color emitted ANSI")
-	}
-}
-
-func TestDictionaryProjectionExactOccurrenceAndFallback(t *testing.T) {
-	source := languageText{text: "red red", spans: []languageSpan{{start: 0, end: 3, lang: "es"}, {start: 4, end: 7, lang: "en"}}}
-	if got := projectDictionaryText(source, "red green"); len(got.spans) != 0 || got.text != "red green" {
-		t.Fatal("transformed text should stay intact and neutral")
 	}
 }
 
@@ -109,15 +74,6 @@ func TestDictionaryDefinitionsSectionTintKeepsRegions(t *testing.T) {
 	for _, region := range regions {
 		if region.Kind == RegionWord && region.Text == "net" {
 			t.Fatal("supplement acquired a target-deck action")
-		}
-	}
-}
-
-func TestDictionaryProjectionDoesNotJoinWords(t *testing.T) {
-	for _, pair := range [][2]string{{"an other", "another"}, {"another", "an other"}} {
-		source := languageText{text: pair[0], spans: []languageSpan{{start: 0, end: len(pair[0]), lang: "es"}}}
-		if got := projectDictionaryText(source, pair[1]); len(got.spans) > 0 {
-			t.Fatalf("trusted changed word boundaries: %q → %q", pair[0], pair[1])
 		}
 	}
 }

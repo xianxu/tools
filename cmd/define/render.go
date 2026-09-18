@@ -11,8 +11,7 @@ import (
 // RenderOpts controls presentation only. Render is pure: it never probes the
 // terminal — the caller decides Color.
 type RenderOpts struct {
-	Language store.Lang // primary monolingual source language
-	Tint     tintPolicy
+	Tint tintPolicy
 	// Word is the KEY this entry was looked up by, and it is identity rather
 	// than presentation — the one field here that is not about how the entry
 	// looks. Regions address a word, and which word that is belongs to the

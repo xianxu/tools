@@ -175,19 +175,19 @@ Run `CHECK` after the commit, because two guards read the commit window.
   - `TestDictionaryUnprovenSectionAlignmentStaysNeutral`, which builds a `definitionSection{source: …}`;
   - `TestBilingualNativeLanguageOwnership`, conformance-tagged, which writes `entry.source`.
 - [x] `git diff 62c6a66^ -- cmd/define/parse.go` is empty.
-- [ ] Commit (`#76: stop writing source provenance — parse.go is its pre-#65 self`), then run `CHECK`.
+- [x] Commit (`#76: stop writing source provenance — parse.go is its pre-#65 self`), then run `CHECK`.
 
 ### Task 3: Delete the declarations and producers
 
 **Files:** `render.go`, `bilingual_layout.go`, `language_text.go`; `dictionary_language.go` is deleted. Tests in `dictionary_language_test.go` and `bilingual_layout_test.go`.
 
-- [ ] `render.go`: remove `RenderOpts.Language`.
-- [ ] `bilingual_layout.go`:
+- [x] `render.go`: remove `RenderOpts.Language`.
+- [x] `bilingual_layout.go`:
   - remove `bilingualNode.lang` with its class→language switch and span append, and `bilingualDocument.native` with its `projectDictionaryText` call;
   - change `bilingualDocument.source` to `string`, and `renderBilingualDocument` reads `doc.source[n.start:n.end]`;
   - rewrite the `parseBilingualDocument` and `bilingualNode` comments to say what remains (structure, bounds, identity, Text correspondence).
-- [ ] `language_text.go`: `projectDisplayText(source languageText, rendered string) languageText` takes `projectLanguageText`'s body without the `displayWhitespace` parameter and its refusal. The risk is dropping any other neutral fallback. Then delete `dictionary_language.go`.
-- [ ] Tests:
+- [x] `language_text.go`: `projectDisplayText(source languageText, rendered string) languageText` takes `projectLanguageText`'s body without the `displayWhitespace` parameter and its refusal. The risk is dropping any other neutral fallback. Then delete `dictionary_language.go`.
+- [x] Tests:
   - delete `TestDictionarySourceProvenanceCorpus`, `TestDictionaryProjectionExactOccurrenceAndFallback` and `TestDictionaryProjectionDoesNotJoinWords`;
   - drop the `bilingualLanguageText` half of `TestOxfordRejectsUnprovenRecords` and `FuzzOxfordDocument`'s `doc.native` loop;
   - change `doc.source.text` to `doc.source` in `TestOxfordNativeTreeAndLeafConservation` and `FuzzOxfordDocument`.

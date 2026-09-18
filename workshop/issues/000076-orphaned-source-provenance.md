@@ -121,7 +121,7 @@ Single pass, one `sdlc close`. Task detail lives in the durable plan.
   pinning `projectDisplayText` in both directions, renaming the two tests whose
   names describe the deleted concept, and dropping the unread `Language:` from
   test literals.
-- [ ] Task 2: remove every writer and reader. Restore `parse.go` to `62c6a66^`
+- [x] Task 2: remove every writer and reader. Restore `parse.go` to `62c6a66^`
   (an empty diff proves it), strip `definitions.go`, and delete the tests of
   what was removed.
 - [ ] Task 3: delete the declarations and producers. Then run mutation checks

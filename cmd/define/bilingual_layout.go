@@ -6,29 +6,29 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // Nodes retain ordered children, including text leaves, so unknown wrappers
-// cannot hide or reorder source content. Leaf offsets address source.text.
+// cannot hide or reorder source content. Leaf offsets address the document's
+// source, the concatenation of every leaf in order.
 type bilingualNode struct {
 	class      string
 	tag        string
-	lang       store.Lang
 	start, end int
 	children   []*bilingualNode
 }
 type bilingualDocument struct {
 	root   *bilingualNode
-	source languageText
-	native languageText
+	source string
 	title  string
 }
 
-// parseBilingualDocument shares a single class walk with provenance extraction.
-// Identity validation bounds depth and rejects malformed or duplicate entries;
-// encoding/xml never fetches the source's external DTD.
+// parseBilingualDocument parses a native record's structure: the classed node
+// tree the layout styles by, and the source text its leaves address. Before
+// the layout trusts it, the record is bounded in size, its identity is
+// validated (depth, malformed or duplicate entries), and its source must
+// correspond to Text up to whitespace. encoding/xml never fetches the source's
+// external DTD.
 func parseBilingualDocument(record bilingualRecord) (bilingualDocument, error) {
 	var doc bilingualDocument
 	if len(record.HTML) > bilingualMaxBytes || len(record.Text) > bilingualMaxBytes {
@@ -57,7 +57,6 @@ func parseBilingualDocument(record bilingualRecord) (bilingualDocument, error) {
 			}
 			node := &bilingualNode{tag: token.Name.Local}
 			if len(stack) > 0 {
-				node.lang = stack[len(stack)-1].lang
 				stack[len(stack)-1].children = append(stack[len(stack)-1].children, node)
 			} else {
 				doc.root = node
@@ -65,16 +64,6 @@ func parseBilingualDocument(record bilingualRecord) (bilingualDocument, error) {
 			for _, attr := range token.Attr {
 				if attr.Name.Local == "class" {
 					node.class = attr.Value
-				}
-			}
-			for _, class := range strings.Fields(node.class) {
-				switch class {
-				case "hw", "ex", "idm", "ind":
-					node.lang = "es"
-				case "trans":
-					node.lang = "en"
-				case "gp", "ph", "prx", "lg", "reg", "lev", "fld", "tgr", "ps", "sn", "underline":
-					node.lang = ""
 				}
 			}
 			stack = append(stack, node)
@@ -87,22 +76,18 @@ func parseBilingualDocument(record bilingualRecord) (bilingualDocument, error) {
 				continue
 			}
 			parent := stack[len(stack)-1]
-			leaf := &bilingualNode{lang: parent.lang, start: source.Len()}
+			leaf := &bilingualNode{start: source.Len()}
 			source.Write(token)
 			leaf.end = source.Len()
 			parent.children = append(parent.children, leaf)
-			if leaf.lang != "" {
-				doc.source.spans = append(doc.source.spans, languageSpan{start: leaf.start, end: leaf.end, lang: leaf.lang})
-			}
 		}
 	}
-	doc.source.text = source.String()
+	doc.source = source.String()
 	// Only whitespace normalization is allowed; removing an interior word boundary
 	// or matching a later repeated spelling cannot establish correspondence.
-	if strings.Join(strings.Fields(doc.source.text), " ") != strings.Join(strings.Fields(record.Text), " ") {
+	if strings.Join(strings.Fields(doc.source), " ") != strings.Join(strings.Fields(record.Text), " ") {
 		return bilingualDocument{}, ErrBilingualMalformed
 	}
-	doc.native = projectDictionaryText(doc.source, record.Text)
 	return doc, nil
 }
 
@@ -170,7 +155,7 @@ func renderBilingualDocument(doc bilingualDocument, opt RenderOpts) (string, []R
 	var walk func(*bilingualNode, int, string, bool)
 	walk = func(n *bilingualNode, depth int, style string, prose bool) {
 		if n.tag == "" {
-			row = append(row, run{doc.source.text[n.start:n.end], style, prose})
+			row = append(row, run{doc.source[n.start:n.end], style, prose})
 			return
 		}
 		block := n.has("gramb") || n.has("semb") || n.has("exg") || n.has("idmb") || n.has("idmsec")
