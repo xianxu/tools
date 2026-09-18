@@ -547,10 +547,14 @@ again. `terminalQueries` lists every question, and `TestEveryEnabledInputModeIsD
 derives from it as it does from the modes.
 
 *Terminals checked by hand* (the real dependency; the pty suite plays a modelled
-terminal). 2026-09-18: the operator ran the #70 binary and reported it **working**.
-Their first run, a light profile, surfaced the paired-ink fix above (white default text
-on the light tint); the re-check after it passed. Terminal-by-terminal reply strings
-were not itemised. **Re-check** — and record the terminal, appearance and reply —
+terminal). 2026-09-18, the operator's terminal (app not named): with nothing saved
+(`/scheme auto` first), `/scheme` read **`dark (detected)`** — a real terminal answered
+the query and a dark background was classified dark; `/scheme auto` also removed the
+saved file and its emptied directory. Earlier runs were under a SAVED choice, so they
+evidence the tint and its ink, not detection: the first, a saved `light` over a terminal
+whose default text is white, is what surfaced the paired-ink fix above. **Owed:** a
+real LIGHT terminal reading `light (detected)` — light detection is evidenced so far
+only by the modelled pty terminal and the in-process reply. **Re-check** — and record the terminal, appearance and reply —
 when a terminal is added to what we claim to support, when a detection bug is
 reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
 

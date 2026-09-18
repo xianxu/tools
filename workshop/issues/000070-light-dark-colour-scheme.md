@@ -665,3 +665,15 @@ the holder and so cannot show a repaint). The paired ink's reset is pinned by
 `TestTheInkStepsAsideWithTheTint`; the two loops' report intercept is one
 helper, `terminalReport`, on `viewportGesture`'s precedent.
 
+M3 review round 2 (BR-14, blocking): the "operator check" cited for Done-when
+bullet 1 could not tell detection from a saved choice — the saved file then held
+`dark` (written 09:16), so the "working" sessions ran on a saved choice. Resolved
+with evidence only detection can produce: the operator ran `/scheme auto`, then
+`/scheme`, which printed `scheme dark (detected)`; `~/.config/define/scheme` and
+its emptied directory were gone afterwards. REVISION of bullet 1's live half: a
+real terminal's DARK detection is observed; LIGHT detection's evidence is the
+modelled pty terminal (`TestPTYBackgroundDetection/light`) and the in-process reply
+(`TestRawEditorBackgroundReplyRepaints`), and a real light-terminal
+`light (detected)` is recorded in the atlas as owed. The atlas's "a light profile"
+wording, which contradicted a terminal with white default text, is corrected.
+

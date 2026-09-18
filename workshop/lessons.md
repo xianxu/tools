@@ -4843,6 +4843,13 @@ the consumer's OWN output — the frame it paints (`lastFrame` of its tty), the
 answer it records, the notice it posts. A value any other path also computes is
 not evidence that this path did its part.
 
+**The same holds for MANUAL evidence** (#70, third finding in the family): an
+operator's "working" in a session that ran under a saved choice showed the tint,
+not detection — a saved choice paints the same shade. Ask for the one observation
+only the path under test can produce (`/scheme` reading `(detected)` after
+`/scheme auto`), and record what was NOT established as owed rather than letting a
+general "verified" stand for it.
+
 ## The tick rule, second finding: name the evidence, narrow the claim (#70)
 
 M3 repeated M2's miss one layer out: mutation steps logged COUNTS, not names;

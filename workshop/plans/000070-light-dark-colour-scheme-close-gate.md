@@ -145,6 +145,40 @@ rounds:
       boundary: M3
       recipe: milestone-review
       blocked: true
+    - "n": 6
+      timestamp: "2026-09-18T09:55:13-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: lessons.md now carries "A plan names functions and one strategy line each, not their code (#70)", the rule the prior round asked for at close; the plan itself needs no rewrite.
+          round: 6
+        - id: BR-10
+          disposition: addressed
+          note: TestASittingRepaintsOnABackgroundReply reads the sitting's painted frame; removing show() turns it red (timeout). The editor-after-play test reads lastFrame; removing resume()'s repaint turns it red. Both verified by mutation in a scratch copy of HEAD.
+          round: 6
+        - id: BR-11
+          disposition: addressed
+          note: 'Log names every M3 mutation, fuzz run, strict set and boundary run (two spot-checked red); bullet 1 narrowed by a Log REVISION and plan Revisions; README no longer names terminals; the loop shells now test #hex and Alt-]. The separate distinguishing-evidence gap is raised as a new finding.'
+          round: 6
+        - id: BR-12
+          disposition: addressed
+          note: TestTheInkStepsAsideWithTheTint pins the excluded cell and the producer background at fg -1; removing inkOff reddens both (verified).
+          round: 6
+        - id: BR-13
+          disposition: addressed
+          note: terminalReport (replraw.go:144-153) is the one report rule, used by runEditor and playSession.
+          round: 6
+      findings:
+        - id: BR-14
+          severity: Important
+          title: Done-when bullet 1 cites the operator check as evidence of detection, but the record cannot tell detection from a saved choice
+          detail: 'This is the 3rd finding in family tests-pin-a-shadow-of-the-live-path. Rule for the whole family: evidence for a path (a test assertion OR a manual check) must be something only that path can produce; the shared holder, PaintedTranscript''s re-read, and a light tint that a saved choice also paints all fail this. The Log''s evidence for "light -> 254, dark -> 236, no flag, no saved file" ends with "operator check". The only recorded detail of that check is the first run, and the Log says a saved light was in force then ("not yet /scheme auto''d"). The re-check is recorded only as "working", with no /scheme report. The atlas also calls that run "a light profile", while the Log describes a terminal with white default text. Sweep of the Done-when evidence list: only this item fails; the pty (detected) reports, the in-process light-reply frame and the late-reply repaint all distinguish detection. Fix: extend the lessons.md rule from tests to manual evidence. For this instance, either record one real-terminal /scheme report reading "(detected)" in each appearance after /scheme auto, or state that the live check did not establish detection, so detection''s only evidence is the modelled pty terminal and the ARCH-MOCK live check is still owed. Either way, correct the atlas wording.'
+          family: tests-pin-a-shadow-of-the-live-path
+          round: 6
+      boundary: M3
+      recipe: milestone-review
+      blocked: true
 ---
 
 # Gate ledger — tools#70 (boundary-review)
@@ -219,16 +253,27 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-13** [Minor] `duplicated-logic-not-extracted` The KeyBackground intercept is copied in runEditor (replraw.go:553-561) and playSession (play_loop.go:311-318)
   ARCH-DRY. The neighbouring viewportGesture helper exists precisely so the two loops cannot disagree about a shared key. A one-line helper (apply the report through d.scheme.detect and report whether to repaint) would make the report rule a single source.
 
+## Round 6 — 2026-09-18T09:55:13-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — lessons.md now carries "A plan names functions and one strategy line each, not their code (#70)", the rule the prior round asked for at close; the plan itself needs no rewrite.
+- BR-10 — addressed — TestASittingRepaintsOnABackgroundReply reads the sitting's painted frame; removing show() turns it red (timeout). The editor-after-play test reads lastFrame; removing resume()'s repaint turns it red. Both verified by mutation in a scratch copy of HEAD.
+- BR-11 — addressed — Log names every M3 mutation, fuzz run, strict set and boundary run (two spot-checked red); bullet 1 narrowed by a Log REVISION and plan Revisions; README no longer names terminals; the loop shells now test #hex and Alt-]. The separate distinguishing-evidence gap is raised as a new finding.
+- BR-12 — addressed — TestTheInkStepsAsideWithTheTint pins the excluded cell and the producer background at fg -1; removing inkOff reddens both (verified).
+- BR-13 — addressed — terminalReport (replraw.go:144-153) is the one report rule, used by runEditor and playSession.
+
+### Raised
+
+- **BR-14** [Important] `tests-pin-a-shadow-of-the-live-path` Done-when bullet 1 cites the operator check as evidence of detection, but the record cannot tell detection from a saved choice
+  This is the 3rd finding in family tests-pin-a-shadow-of-the-live-path. Rule for the whole family: evidence for a path (a test assertion OR a manual check) must be something only that path can produce; the shared holder, PaintedTranscript's re-read, and a light tint that a saved choice also paints all fail this. The Log's evidence for "light -> 254, dark -> 236, no flag, no saved file" ends with "operator check". The only recorded detail of that check is the first run, and the Log says a saved light was in force then ("not yet /scheme auto'd"). The re-check is recorded only as "working", with no /scheme report. The atlas also calls that run "a light profile", while the Log describes a terminal with white default text. Sweep of the Done-when evidence list: only this item fails; the pty (detected) reports, the in-process light-reply frame and the late-reply repaint all distinguish detection. Fix: extend the lessons.md rule from tests to manual evidence. For this instance, either record one real-terminal /scheme report reading "(detected)" in each appearance after /scheme auto, or state that the live check did not establish detection, so detection's only evidence is the modelled pty terminal and the ARCH-MOCK live check is still owed. Either way, correct the atlas wording.
+
 ## Open findings
 
-- **BR-1** [Minor] `plan-restates-code` The plan restates the diff: full implementations, test cases listed in prose, call sites by line number
 - **BR-2** [Minor] `state-shape-admits-illegal-combinations` schemeState.withChoice accepts any schemeSource, so choice-by-detected, choice-by-default and empty-choice states are representable
 - **BR-3** [Minor] `tests-pin-a-shadow-of-the-live-path` Two live-edge footer invariants are tested through the test-only boardFooter, not production's boardFooterOutput
 - **BR-4** [Minor] `docs-describe-unshipped-surface` The atlas paragraph on paint-time shade describes saved/session sources and detect/forget as live in M1
 - **BR-5** [Minor] `spec-done-when-drifts-from-delivery` Done-when says dead paths are deleted with tint assertions ported; the renderers were moved to test helpers and fragment-tint assertions dropped
 - **BR-7** [Minor] `state-shape-admits-illegal-combinations` commandCtx session/fullScreen and schemeArg auto/value allow combinations that mean nothing
 - **BR-9** [Minor] `docs-describe-unshipped-surface` The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3
-- **BR-10** [Important] `tests-pin-a-shadow-of-the-live-path` The sitting's repaint after a background reply is unpinned: removing show() at play_loop.go:315-317 leaves the suite green
-- **BR-11** [Important] `ticked-step-lacks-its-evidence` Ticked M3 steps name evidence the record does not hold, including the three-terminal x two-appearance manual check
-- **BR-12** [Minor] `branch-survives-its-mutation` The paired-ink reset in unfill (language_row.go:34-37) is unpinned; removing inkOff leaves the suite green
-- **BR-13** [Minor] `duplicated-logic-not-extracted` The KeyBackground intercept is copied in runEditor (replraw.go:553-561) and playSession (play_loop.go:311-318)
+- **BR-14** [Important] `tests-pin-a-shadow-of-the-live-path` Done-when bullet 1 cites the operator check as evidence of detection, but the record cannot tell detection from a saved choice
