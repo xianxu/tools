@@ -548,15 +548,18 @@ derives from it as it does from the modes.
 
 *Terminals checked by hand* (the real dependency; the pty suite plays a modelled
 terminal). Both in **Terminal.app**, 2026-09-18, each with nothing saved (`/scheme
-auto` first): a DARK appearance printed `scheme dark (detected)` (quoted by the
-operator), and a LIGHT appearance was verified against #77's criterion,
-`scheme light (detected)` — so detection is observed live in both appearances.
-`/scheme auto` also removed the saved file and its emptied directory. Earlier runs
+auto` first): a DARK appearance printed <!-- scheme-report:dark -->`scheme dark (detected)`<!-- /scheme-report:dark -->
+(quoted by the operator; that run's `/scheme auto` also removed the saved file and its
+emptied directory), and a LIGHT appearance was verified against #77's criterion,
+<!-- scheme-report:light -->`scheme light (detected)`<!-- /scheme-report:light --> — so
+detection is observed live in both appearances. Both quotations derive from
+`describeScheme` (`TestAtlasQuotesTheSchemeReportItPrints`). Earlier runs
 were under a SAVED choice, so they evidence the tint and its ink, not detection: the
 first, a saved `light` over a terminal whose default text is white, is what surfaced
 the paired-ink fix above. **Re-check** — and record the terminal, appearance and reply —
 when a terminal is added to what we claim to support, when a detection bug is
-reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
+reported, or when `decodeOSC`, `parseBackgroundColour`, `backgroundQuery` or
+`describeScheme` changes.
 
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —

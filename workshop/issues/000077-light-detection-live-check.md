@@ -60,3 +60,10 @@ each with app, appearance and report line: dark `scheme dark (detected)` (quoted
 by the operator), light verified against the criterion `scheme light (detected)`
 (reported as verified, not quoted). Both lines carry their `scheme ` prefix.
 
+
+Close review round 2 (BR-3, blocking): the atlas hand-quoted the `/scheme`
+report with nothing deriving it — the missing `scheme ` prefix had already shown
+the drift. Now both quotations sit in marked spans that
+`TestAtlasQuotesTheSchemeReportItPrints` composes from `describeScheme`, and
+`describeScheme` joins the atlas's Re-check triggers. The "/scheme auto removed
+the saved file" clause is re-attached to the dark run that observed it.

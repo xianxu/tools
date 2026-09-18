@@ -862,3 +862,22 @@ func TestDocsQuoteTheCommandUsage(t *testing.T) {
 		}
 	}
 }
+
+// The atlas QUOTES the /scheme report in its hand-check record (#77), so the
+// quotation derives from describeScheme — the report's one source — through a
+// marked span, as the raw-notation count does. A changed wording fails here
+// instead of leaving the record describing a line define no longer prints (the
+// record had already lost its "scheme " prefix once, repaired by hand).
+func TestAtlasQuotesTheSchemeReportItPrints(t *testing.T) {
+	b, err := os.ReadFile("../../atlas/define.md")
+	if err != nil {
+		t.Fatalf("atlas/define.md unreadable: %v", err)
+	}
+	for _, sc := range []store.Scheme{store.SchemeDark, store.SchemeLight} {
+		want := fmt.Sprintf("<!-- scheme-report:%s -->`scheme %s`<!-- /scheme-report:%s -->",
+			sc, describeScheme(schemeState{}.withDetected(sc), true), sc)
+		if !strings.Contains(string(b), want) {
+			t.Errorf("atlas/define.md does not quote the %s report define prints.\nwant the marked span %q — describeScheme owns this line; the atlas consumes it.", sc, want)
+		}
+	}
+}
