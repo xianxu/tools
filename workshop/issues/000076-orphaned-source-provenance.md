@@ -124,9 +124,9 @@ Single pass, one `sdlc close`. Task detail lives in the durable plan.
 - [x] Task 2: remove every writer and reader. Restore `parse.go` to `62c6a66^`
   (an empty diff proves it), strip `definitions.go`, and delete the tests of
   what was removed.
-- [ ] Task 3: delete the declarations and producers. Then run mutation checks
+- [x] Task 3: delete the declarations and producers. Then run mutation checks
   M-join and M-break.
-- [ ] Task 4: sweep the atlas, grep for absence, run the live conformance checks
+- [x] Task 4: sweep the atlas, grep for absence, run the live conformance checks
   and diff the binary's output before and after. Log each result.
 
 Every commit builds, including under `-tags conformance`, and passes the full
@@ -190,3 +190,57 @@ The tests the Problem section names, deleted here:
   - Task 3's basis said five production files. It is four, and the Estimate text
     now says so.
   If the actual overruns, these are the first place to look.
+- Implementation, one commit per task, each followed by `CHECK`: `go build`,
+  `go vet` with and without `-tags conformance`, and `go test -count=1 ./...`.
+  Every run was green apart from the three sandbox pty tests, and those passed
+  when re-run outside the sandbox each time.
+  - Task 1 (`4304070`): `TestDisplayProjectionOwnsOnlyMatchingGlyphs` and
+    `FuzzDisplayProjection`, plus the two renames and the literal edits. The
+    fuzz ran 30s and 20s (about 216k execs), with no failure.
+  - Side-quest (`5de02aa`, ordered before Task 2): Task 2's first `CHECK`
+    reddened `TestPlanTableStatusMatchesTheChangeWindow` on the correct
+    `Entry … modified` row. The guard read only new-side hunk lines, so a pure
+    deletion was invisible. The same gap skipped `definitions.go`'s rows
+    entirely, because that file's whole diff was deletions. Fixed to record
+    deletion points, pinned by `TestWindowChangeSeesADeletionInsideADeclaration`.
+    Mutations, each applied, compiled and run with `-count=1`:
+    - M-cut (drop the recorded cuts): two unit cases red, plus the `Entry`
+      guard red;
+    - M-body (count a cut anywhere in the region): the neighbour case red;
+    - a planted `renderDefinitionOutput … unchanged` row: red. The guard could
+      not see that row before the fix.
+    The suite at `5de02aa` ran in a scratch worktree and was green. Plan
+    `## Revisions` and lessons record it.
+  - Task 2 (`2604140`): `git diff 62c6a66^ -- cmd/define/parse.go` is empty.
+    `section.language` stays, because line 58's section tint role reads it.
+  - Task 3 (`1396205`): mutations against the commit, full `define` suite,
+    `-count=1`, each applied and compiled. Apart from the sandbox pty trio:
+    - M-join reddens only
+      `TestDisplayProjectionOwnsOnlyMatchingGlyphs/same-length_substitution`;
+    - M-break reddens its `inserted_space…` and `inserted_newline…` cases and
+      `TestPracticeLongRunOwnershipFollowsPhysicalRows`.
+    Both match the plan's measured kill sets.
+- Task 4:
+  - **Absence grep:** the plan's `git grep` over `cmd atlas README.md` prints
+    nothing (exit 1).
+  - **Live conformance**, `-tags conformance -run 'Bilingual|Oxford'`.
+    Sandboxed, four native tests skipped with "Oxford Spanish dictionary
+    inaccessible": `TestBilingualNativeDirection`, `TestBilingualNativeLimits`,
+    `TestBilingualNativeRendirLayout` and `TestBilingualNativeSystemDictionary`.
+    Outside the sandbox all four ran and passed, including the six Direction
+    subtests. No skips and no failures.
+  - **Before/after binaries** (`fe28b01` against `1396205`), with
+    `DEFINE_NO_CAPTURE=1 DEFINE_NO_BACKGROUND=1 -no-audio` and stdin from
+    `/dev/null`:
+    - piped, over `red rendir mesa record bank` × `-lang en|es`: 30 files
+      (stdout, stderr, exit code) are byte-identical. The Oxford section is
+      present in the Spanish `red`, `rendir`, `mesa` and `record` runs;
+    - under a pty (`script`) with `TERM=xterm-256color`, `-scheme dark|light`
+      and `-lang es`, over `red rendir mesa record`: 16 files are byte-identical,
+      the section tint is painted (62 to 322 background escapes per run), and
+      every run exits 0. This is the run that covers the dropped
+      `ro.Tint = tintPolicy{}`.
+    - An earlier pty run without an explicit `TERM` painted no tint. Its
+      environment wasn't recorded, so the cause isn't established. A re-run with
+      the tool shell's `TERM=pair-vt-256color` does paint it, so the atlas's
+      "disabled by `TERM=dumb`" stands.

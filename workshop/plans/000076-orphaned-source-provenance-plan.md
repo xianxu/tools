@@ -191,8 +191,8 @@ Run `CHECK` after the commit, because two guards read the commit window.
   - delete `TestDictionarySourceProvenanceCorpus`, `TestDictionaryProjectionExactOccurrenceAndFallback` and `TestDictionaryProjectionDoesNotJoinWords`;
   - drop the `bilingualLanguageText` half of `TestOxfordRejectsUnprovenRecords` and `FuzzOxfordDocument`'s `doc.native` loop;
   - change `doc.source.text` to `doc.source` in `TestOxfordNativeTreeAndLeafConservation` and `FuzzOxfordDocument`.
-- [ ] Commit (`#76: delete the language-ownership chain nothing reads`), then run `CHECK`.
-- [ ] Mutation checks against that commit, with `-count=1`. Confirm each mutation applied (`git diff` shows it) and compiled, then restore with `git checkout -- cmd/define/language_text.go`; nothing else is uncommitted at that point.
+- [x] Commit (`#76: delete the language-ownership chain nothing reads`), then run `CHECK`.
+- [x] Mutation checks against that commit, with `-count=1`. Confirm each mutation applied (`git diff` shows it) and compiled, then restore with `git checkout -- cmd/define/language_text.go`; nothing else is uncommitted at that point.
   - **M-join:** replace the non-space mismatch condition `!strings.HasPrefix(source.text[i:], rendered[j:j+n])` with `false`. `TestDisplayProjectionOwnsOnlyMatchingGlyphs` must go red on the same-length substitution `"red red"`→`"red bed"`. Measured 2026-09-18 against a mutant copy of today's body, that is the only case M-join kills. The changed-length and joined-word cases stay neutral under it, because the length guards catch them.
   - **M-break:** reinstate `if begin == i { return languageText{text: rendered} }`. The inserted-break case must go red. Measured 2026-09-18 on a mutant copy, `"another"`→`"an other"` loses its ownership under it.
 
@@ -200,18 +200,18 @@ Run `CHECK` after the commit, because two guards read the commit window.
 
 **Files:** `atlas/define.md`, `workshop/issues/000076-orphaned-source-provenance.md`.
 
-- [ ] `atlas/define.md`:
+- [x] `atlas/define.md`:
   - delete the `RenderOpts.Language` row. `TestAtlasDescribesEveryRenderOpt` reflects over the struct and checks only that each field's qualified name appears (read 2026-09-18, `doc_sync_test.go`), so it needs no edit;
   - rewrite the `parseBilingualDocument` paragraph ("structure and ownership parsing … validated before ownership is trusted") to say it parses structure and validates identity and Text correspondence before the layout is trusted.
 - [ ] Commit, then run `CHECK`.
-- [ ] Absence proof. This command must print nothing:
+- [x] Absence proof. This command must print nothing:
 
   ```
   git grep -n -E 'projectDictionaryText|bilingualLanguageText|projectLanguageText|sourceOffset|advanceSource|sourceAt|sourceKnown|sourceBase|displayWhitespace|RenderOpts\.Language|ro\.Language|ro\.Tint|doc\.native|entry\.source|section\.source|leaf\.lang|node\.lang' -- cmd atlas README.md
   ```
-- [ ] Live checks on this Mac: `go test -count=1 -tags conformance -run 'Bilingual|Oxford' ./cmd/define/`. Record which ran and which skipped, by name.
-- [ ] Run the program before and after. Build `main` and HEAD binaries into `$TMPDIR`, then run each with `DEFINE_NO_CAPTURE=1` and `-no-audio`, piped, over `red`, `rendir`, `mesa`, `record` and `bank`, including the Spanish/bilingual path. Required: `diff` is empty.
-- [ ] Log each run's scope and result in the issue's `## Log`, with the mutations named. Then tick.
+- [x] Live checks on this Mac: `go test -count=1 -tags conformance -run 'Bilingual|Oxford' ./cmd/define/`. Record which ran and which skipped, by name.
+- [x] Run the program before and after. Build `main` and HEAD binaries into `$TMPDIR`, then run each with `DEFINE_NO_CAPTURE=1` and `-no-audio`, piped, over `red`, `rendir`, `mesa`, `record` and `bank`, including the Spanish/bilingual path. Required: `diff` is empty.
+- [x] Log each run's scope and result in the issue's `## Log`, with the mutations named. Then tick.
 
 ## Done when
 
@@ -262,3 +262,20 @@ Run `CHECK` after the commit, because two guards read the commit window.
     `TestPracticeLongRunOwnershipFollowsPhysicalRows`;
   - "every commit passes", "the new tests pass today" and "Expected: diff empty"
     were predictions. Each is now a requirement that `CHECK` or the run observes.
+
+### 2026-09-18: side-quest: the status guard could not see a deletion
+
+- **What happened.** Task 2's `CHECK` reddened
+  `TestPlanTableStatusMatchesTheChangeWindow` on the `Entry | parse.go | modified`
+  row. The row is correct, because Task 2 removes `Entry.source`. The guard mapped
+  the window through new-side hunk lines only, and a pure deletion
+  (`@@ -46 +45,0 @@`) has none. The same blind spot hid the other direction:
+  every hunk in `definitions.go` was a deletion, so the guard read that file as
+  untouched and never checked its three rows.
+- **Delta.** A commit the plan didn't list, `#76 side-quest: repo guard: a
+  deletion inside a declaration is an edit to it`, now records deletion points,
+  pinned by `TestWindowChangeSeesADeletionInsideADeclaration`. It is ordered
+  **before** Task 2: Task 2 was soft-reset, the guard file committed on its own,
+  and Task 2 re-committed with its original message. So every commit is still
+  green. The suite at the side-quest commit was run in a scratch worktree.
+- **Rule** (workshop/lessons.md, *A diff's new side cannot see a deletion*).

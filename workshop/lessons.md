@@ -4883,3 +4883,15 @@ condition EXACTLY, neither narrower nor broader (the fix for "asks only with
 nothing chosen" overshot to "every session asks", and the code asks only where a
 tint can appear).
 
+
+## A diff's new side cannot see a deletion (#76)
+
+`TestPlanTableStatusMatchesTheChangeWindow` mapped a window onto the current
+file through the NEW-side hunk lines, and a pure deletion (`@@ -46 +45,0 @@`) has
+none. Deleting a field from a struct read as "declaration untouched" and failed a
+correct `modified` row. A file whose whole diff was deletions read as "file
+untouched", so its rows went unchecked, green over exactly the edit they
+described. When a check maps a diff onto today's file, record the deletion points
+too. Then decide which side of a boundary they fall on, rather than letting
+"no new line" stand for "no change". The blank line between two declarations is
+the ambiguous spot: git may put a whole-function deletion on either side of it.
