@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -182,5 +183,100 @@ func TestRealDepsConfigDirReadsXDG(t *testing.T) {
 	}
 	if got, ok := d.configDir(); !ok || got != filepath.Join(dir, "define") {
 		t.Fatalf("configDir() = %q, %v; want %q", got, ok, filepath.Join(dir, "define"))
+	}
+}
+
+// fakePersister is the durable half of /scheme, stateful: it holds what was
+// saved, and can be told to fail.
+type fakePersister struct {
+	saved   store.Scheme
+	failing error
+}
+
+func (f *fakePersister) save(s store.Scheme) error {
+	if f.failing != nil {
+		return f.failing
+	}
+	f.saved = s
+	return nil
+}
+
+func (f *fakePersister) clear() error {
+	if f.failing != nil {
+		return f.failing
+	}
+	f.saved = ""
+	return nil
+}
+
+func TestApplyScheme(t *testing.T) {
+	light, dark := store.SchemeLight, store.SchemeDark
+	boom := errors.New("disk full")
+	type want struct {
+		v     store.Scheme
+		src   schemeSource
+		saved store.Scheme
+		err   error // compared with errors.Is; nil means none
+	}
+	for _, tc := range []struct {
+		name    string
+		start   schemeState
+		arg     schemeArg
+		p       *fakePersister // nil: nowhere to save
+		prior   store.Scheme   // what the fake holds before
+		session bool
+		want    want
+	}{
+		{"save light", schemeState{}, schemeArg{value: light}, &fakePersister{}, "", true, want{light, sourceSaved, light, nil}},
+		{"a failed save changes nothing", schemeState{}, schemeArg{value: light}, &fakePersister{failing: boom}, "", true, want{dark, sourceDefault, "", boom}},
+		{"nowhere to save, in a session", schemeState{}, schemeArg{value: light}, nil, "", true, want{light, sourceSession, "", nil}},
+		{"nowhere to save, one-shot", schemeState{}, schemeArg{value: light}, nil, "", false, want{dark, sourceDefault, "", errNowhereToSave}},
+		{"a flag choice is replaced", schemeState{}.withChoice(light, choiceFlag), schemeArg{value: dark}, &fakePersister{}, "", true, want{dark, sourceSaved, dark, nil}},
+		{"auto reveals the reply", schemeState{}.withDetected(dark).withChoice(light, choiceSaved), schemeArg{auto: true}, &fakePersister{}, light, true, want{dark, sourceDetected, "", nil}},
+		{"a failed clear changes nothing", schemeState{}.withChoice(light, choiceSaved), schemeArg{auto: true}, &fakePersister{failing: boom}, light, true, want{light, sourceSaved, light, boom}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newSchemeHolder(tc.start)
+			var p schemePersister
+			if tc.p != nil {
+				tc.p.saved = tc.prior
+				p = tc.p
+			}
+			st, err := applyScheme(h, tc.arg, p, tc.session)
+			if (tc.want.err == nil) != (err == nil) || tc.want.err != nil && !errors.Is(err, tc.want.err) {
+				t.Fatalf("err = %v, want %v", err, tc.want.err)
+			}
+			for _, got := range []schemeState{st, h.Load()} {
+				if v, src := got.effective(); v != tc.want.v || src != tc.want.src {
+					t.Fatalf("effective = %s/%v, want %s/%v", v, src, tc.want.v, tc.want.src)
+				}
+			}
+			if tc.p != nil && tc.p.saved != tc.want.saved {
+				t.Fatalf("saved %q, want %q", tc.p.saved, tc.want.saved)
+			}
+		})
+	}
+	if _, err := applyScheme(nil, schemeArg{value: light}, &fakePersister{}, true); !errors.Is(err, errNoScheme) {
+		t.Fatalf("a nil holder must refuse: %v", err)
+	}
+}
+
+func TestDescribeScheme(t *testing.T) {
+	light, dark := store.SchemeLight, store.SchemeDark
+	for _, tc := range []struct {
+		st         schemeState
+		fullScreen bool
+		want       string
+	}{
+		{schemeState{}.withChoice(light, choiceSaved), true, "light (saved)"},
+		{schemeState{}.withDetected(dark), true, "dark (detected)"},
+		{schemeState{}.withChoice(light, choiceFlag), false, "light (-scheme flag)"},
+		{schemeState{}.withChoice(light, choiceSession), true, "light (session only; not saved)"},
+		{schemeState{}, true, "dark (default: the terminal has not reported its background)"},
+		{schemeState{}, false, "dark (default: detected only in a full-screen session)"},
+	} {
+		if got := describeScheme(tc.st, tc.fullScreen); got != tc.want {
+			t.Errorf("describeScheme = %q, want %q", got, tc.want)
+		}
 	}
 }

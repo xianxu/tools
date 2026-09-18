@@ -792,13 +792,13 @@ if d.scheme == nil {
 ```
   It stays after the `--llm-check` return, so `--version` never reads the user's config (`version_conformance_test.go:73-81` runs with the inherited environment).
 - [x] **Step 4: PASS. Step 5: Commit** `#70 M2: a saved scheme is read at startup, from its own seam`
-- [ ] **Step 6: Mutations:** swap the flag and saved cases → "flag beats saved" reddens; drop the warning → the garbled case reddens; `realDeps` without `configDir` → **TestRealDepsConfigDirReadsXDG** reddens (it asserts `realDeps().configDir != nil` first, so the failure is a message, not a nil-call panic). Restore each.
+- [x] **Step 6: Mutations:** swap the flag and saved cases → "flag beats saved" reddens; drop the warning → the garbled case reddens; `realDeps` without `configDir` → **TestRealDepsConfigDirReadsXDG** reddens (it asserts `realDeps().configDir != nil` first, so the failure is a message, not a nil-call panic). Restore each.
 
 ### Task 9: `describeScheme` and `applyScheme`
 
 **Files:** Modify `cmd/define/scheme.go` (add `errors`); test `cmd/define/scheme_test.go`.
 
-- [ ] **Step 1: Failing tests.** A stateful fake:
+- [x] **Step 1: Failing tests.** A stateful fake:
 
 ```go
 type fakePersister struct {
@@ -832,7 +832,7 @@ func (f *fakePersister) clear() error {
   - saved light → `auto`, failing fake, session → error, holder unchanged (the same failure rule for clearing);
   - nil holder → `errNoScheme`.
   **TestDescribeScheme**, each string exact: `light (saved)`, `dark (detected)`, `light (-scheme flag)`, `light (session only; not saved)`, `dark (default: the terminal has not reported its background)` (full-screen), `dark (default: detected only in a full-screen session)` (otherwise — the spec's "interactive session" wording is revised to this in the issue Log: the piped loop is a session and never detects).
-- [ ] **Step 2: Run — FAIL. Step 3: Implement.**
+- [x] **Step 2: Run — FAIL. Step 3: Implement.**
 
 ```go
 var (
@@ -913,7 +913,7 @@ func describeScheme(s schemeState, fullScreen bool) string {
 	return string(v) + " (default: detected only in a full-screen session)"
 }
 ```
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M2: /scheme's transition persists first, and its report is always true`
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M2: /scheme's transition persists first, and its report is always true`
 - [ ] **Step 6: Mutations:** `h.choose` moved before `p.save` → the failing-fake rows redden; the `p == nil && !session` case removed → the one-shot row reddens. Restore each.
 
 ### Task 10: The `/scheme` command in all three contexts, with its docs

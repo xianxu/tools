@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -196,4 +197,84 @@ func configDirFrom(getenv func(string) string) (string, bool) {
 		return filepath.Join(h, ".config", "define"), true
 	}
 	return "", false
+}
+
+var (
+	errNoScheme      = errors.New("there is no colour scheme to change here")
+	errNowhereToSave = errors.New("nowhere to save it: $XDG_CONFIG_HOME and $HOME are unset or not absolute")
+)
+
+// schemePersister is the durable half of /scheme. nil means there is nowhere to
+// save (no config directory).
+type schemePersister interface {
+	save(store.Scheme) error
+	clear() error
+}
+
+type dirSchemePersister string
+
+func (d dirSchemePersister) save(s store.Scheme) error { return store.WriteScheme(string(d), s) }
+func (d dirSchemePersister) clear() error              { return store.ClearScheme(string(d)) }
+
+// schemePersister is this process's durable half of /scheme, or nil when there
+// is no config directory to write to.
+func (d deps) schemePersister() schemePersister {
+	if d.configDir == nil {
+		return nil
+	}
+	if dir, ok := d.configDir(); ok {
+		return dirSchemePersister(dir)
+	}
+	return nil
+}
+
+// applyScheme is /scheme's transition. PERSIST, THEN SWITCH — /bilingual's rule
+// (bilingual_cmd.go), not a second one: a failed write changes nothing, so the
+// message can never claim a switch that did not persist. With nowhere to save, a
+// session switches for itself alone and says so; a one-shot has nothing else to
+// change, so it refuses.
+func applyScheme(h *schemeHolder, arg schemeArg, p schemePersister, session bool) (schemeState, error) {
+	if h == nil {
+		return schemeState{}, errNoScheme
+	}
+	switch {
+	case p == nil && !session:
+		return h.Load(), errNowhereToSave
+	case p == nil && arg.auto:
+		h.forget()
+	case p == nil:
+		h.choose(arg.value, choiceSession)
+	case arg.auto:
+		if err := p.clear(); err != nil {
+			return h.Load(), err
+		}
+		h.forget()
+	default:
+		if err := p.save(arg.value); err != nil {
+			return h.Load(), err
+		}
+		h.choose(arg.value, choiceSaved)
+	}
+	return h.Load(), nil
+}
+
+// describeScheme is /scheme's report, and every wording is TRUE of its state:
+// "has not reported" holds whether the reply is pending, unsupported or never
+// asked for; outside a full-screen session nothing asks.
+func describeScheme(s schemeState, fullScreen bool) string {
+	v, src := s.effective()
+	switch src {
+	case sourceDetected:
+		return string(v) + " (detected)"
+	case sourceFlag:
+		return string(v) + " (-scheme flag)"
+	case sourceSaved:
+		return string(v) + " (saved)"
+	case sourceSession:
+		return string(v) + " (session only; not saved)"
+	}
+	if fullScreen {
+		return string(v) + " (default: the terminal has not reported its background)"
+	}
+	return string(v) + " (default: detected only in a full-screen session)"
 }
