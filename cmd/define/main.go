@@ -30,7 +30,13 @@ type deps struct {
 	// NOT bilingual's, whose setter replaces the pointer in a by-value copy of
 	// deps and so could never carry a sitting's change back to the editor.
 	scheme *schemeHolder
-	dict   Dictionary
+	// configDir is where the USER's settings live — the saved scheme (#70) —
+	// as opposed to the deck's, which is the current directory. Its own seam,
+	// not getenv: getenv is the model seam, and some tests make it panic to
+	// prove no model call is made. nil (test deps) means "no config", so no
+	// test can reach a real one.
+	configDir func() (string, bool)
+	dict      Dictionary
 	// audio is the seam AND its memo. A *audioSeam rather than an AudioSource so
 	// there is no unwrapped source to hold: the type is what guarantees a caller
 	// cannot reach the network twice for one key, however it obtained its deps.
@@ -122,6 +128,7 @@ func realDeps() deps {
 		getenv:          os.Getenv,
 		newLLM:          llm.New,
 		newClipboard:    newProcessClipboardWriter,
+		configDir:       func() (string, bool) { return configDirFrom(os.Getenv) },
 	}
 }
 
@@ -861,8 +868,17 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// ignored.
 	if d.scheme == nil {
 		var st schemeState
-		if !schemeChoice.auto {
+		switch {
+		case !schemeChoice.auto:
 			st = st.withChoice(schemeChoice.value, choiceFlag)
+		case d.configDir != nil:
+			if dir, ok := d.configDir(); ok {
+				if v, found, err := store.ReadScheme(dir); err != nil {
+					fmt.Fprintf(stderr, "define: ignoring saved scheme: %v\n", err)
+				} else if found {
+					st = st.withChoice(v, choiceSaved)
+				}
+			}
 		}
 		d.scheme = newSchemeHolder(st)
 	}

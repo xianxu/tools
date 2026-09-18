@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -148,5 +149,38 @@ func TestParseTintFlag(t *testing.T) {
 	}
 	if _, err := parseTintFlag("bogus"); err == nil {
 		t.Error("an unknown value must be refused")
+	}
+}
+
+func TestConfigDirFrom(t *testing.T) {
+	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want string
+		ok   bool
+	}{
+		{"xdg wins", map[string]string{"XDG_CONFIG_HOME": "/x", "HOME": "/h"}, "/x/define", true},
+		{"home fallback", map[string]string{"HOME": "/h"}, "/h/.config/define", true},
+		{"relative xdg is ignored", map[string]string{"XDG_CONFIG_HOME": "rel", "HOME": "/h"}, "/h/.config/define", true},
+		{"nothing usable", map[string]string{"HOME": "rel"}, "", false},
+		{"empty", nil, "", false},
+	} {
+		if got, ok := configDirFrom(env(tc.env)); got != tc.want || ok != tc.ok {
+			t.Errorf("%s: got %q,%v want %q,%v", tc.name, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// The production wiring, in process (lessons: adding a field is not wiring it).
+func TestRealDepsConfigDirReadsXDG(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	d := realDeps()
+	if d.configDir == nil {
+		t.Fatal("realDeps supplies no config directory, so a saved scheme is never read")
+	}
+	if got, ok := d.configDir(); !ok || got != filepath.Join(dir, "define") {
+		t.Fatalf("configDir() = %q, %v; want %q", got, ok, filepath.Join(dir, "define"))
 	}
 }

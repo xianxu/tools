@@ -722,13 +722,13 @@ func ClearScheme(dir string) error {
 }
 ```
 - [x] **Step 4: PASS. Step 5: Commit** `#70 M2: store: the saved scheme, one word in the user's config directory`
-- [ ] **Step 6: Mutations:** drop the `len(b) >` check → the 65-byte case reddens; drop `os.Remove(dir)` → the empty-dir case reddens; drop the `Lstat`/`IsDir` guard → the symlinked-dir case reddens; drop the path wrap → the names-the-file case reddens. Restore each. The class (cleanup removes only owned residue) has no other instance in #70: the only other removals are `t.TempDir()`s the tests own. `WriteScheme`'s atomic rename replaces a symlinked `scheme` FILE with a regular one — the store's behaviour for every setting (`bilingual.txt` too), noted in the Log rather than changed here.
+- [x] **Step 6: Mutations:** drop the `len(b) >` check → the 65-byte case reddens; drop `os.Remove(dir)` → the empty-dir case reddens; drop the `Lstat`/`IsDir` guard → the symlinked-dir case reddens; drop the path wrap → the names-the-file case reddens. Restore each. The class (cleanup removes only owned residue) has no other instance in #70: the only other removals are `t.TempDir()`s the tests own. `WriteScheme`'s atomic rename replaces a symlinked `scheme` FILE with a regular one — the store's behaviour for every setting (`bilingual.txt` too), noted in the Log rather than changed here.
 
 ### Task 8: The config-directory seam and the startup read
 
 **Files:** Modify `cmd/define/scheme.go`, `cmd/define/main.go`; tests `cmd/define/scheme_test.go`, `cmd/define/language_style_paths_test.go`.
 
-- [ ] **Step 1: Failing tests.** **TestConfigDirFrom** (pure; `configDirFrom` needs `path/filepath` in `scheme.go`):
+- [x] **Step 1: Failing tests.** **TestConfigDirFrom** (pure; `configDirFrom` needs `path/filepath` in `scheme.go`):
 
 ```go
 func TestConfigDirFrom(t *testing.T) {
@@ -753,7 +753,7 @@ func TestConfigDirFrom(t *testing.T) {
 ```
   **TestRealDepsConfigDirReadsXDG**: `t.Setenv("XDG_CONFIG_HOME", dir)` → `realDeps().configDir()` returns `dir/define`, true (the production wiring, in process — lessons "Adding a field is not wiring it").
   Through `run()` (with `d.configDir` → a temp dir): a saved `light`, no flag → `languageLight` in a lookup; `-scheme dark` beats a saved `light`; a garbled file → exactly one `define: ignoring saved scheme:` line on stderr and the dark shade; `d.configDir == nil` → dark, no stderr.
-- [ ] **Step 2: Run — FAIL. Step 3: Implement.**
+- [x] **Step 2: Run — FAIL. Step 3: Implement.**
 
 ```go
 // configDirFrom resolves define's user config directory. Only ABSOLUTE bases
@@ -791,7 +791,7 @@ if d.scheme == nil {
 }
 ```
   It stays after the `--llm-check` return, so `--version` never reads the user's config (`version_conformance_test.go:73-81` runs with the inherited environment).
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M2: a saved scheme is read at startup, from its own seam`
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M2: a saved scheme is read at startup, from its own seam`
 - [ ] **Step 6: Mutations:** swap the flag and saved cases → "flag beats saved" reddens; drop the warning → the garbled case reddens; `realDeps` without `configDir` → **TestRealDepsConfigDirReadsXDG** reddens (it asserts `realDeps().configDir != nil` first, so the failure is a message, not a nil-call panic). Restore each.
 
 ### Task 9: `describeScheme` and `applyScheme`

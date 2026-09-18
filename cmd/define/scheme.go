@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 
@@ -181,4 +182,18 @@ func parseTintFlag(s string) (bool, error) {
 		return false, fmt.Errorf("-language-tint is on or off now; the shade follows the colour scheme: use -scheme %s", v)
 	}
 	return false, fmt.Errorf("invalid -language-tint %q: use on or off", s)
+}
+
+// configDirFrom resolves define's user config directory (#70). Only ABSOLUTE
+// bases count: a relative XDG_CONFIG_HOME or HOME would put the file wherever
+// the process happens to stand — the deck's directory, the one place this
+// setting must not live.
+func configDirFrom(getenv func(string) string) (string, bool) {
+	if x := getenv("XDG_CONFIG_HOME"); filepath.IsAbs(x) {
+		return filepath.Join(x, "define"), true
+	}
+	if h := getenv("HOME"); filepath.IsAbs(h) {
+		return filepath.Join(h, ".config", "define"), true
+	}
+	return "", false
 }
