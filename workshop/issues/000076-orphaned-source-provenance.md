@@ -1,11 +1,12 @@
 ---
 id: 000076
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-17
-updated: 2026-09-17
+updated: 2026-09-18
 estimate_hours:
+started: 2026-09-18T12:02:43-07:00
 ---
 
 # define: delete or re-use #66's orphaned source-provenance chain
