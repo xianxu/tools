@@ -1,12 +1,13 @@
 ---
 id: 000072
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-16
 updated: 2026-09-17
 estimate_hours: 2.47
 started: 2026-09-17T14:26:02-07:00
+actual_hours: 1.92
 ---
 
 # define: stream the model's answer to the screen as it arrives
@@ -113,14 +114,26 @@ the owned span was the exception to it.
 
 Interaction path: streamed UI response, one answer at a time, no concurrency.
 
-- first text visible ≤ 0.5 s after the model's first text delta — measured basis 0.3 s at width 100
-- display cadence ~0.5 s per row at width 100 with ~60 ms deltas — measured
+Every budget names the guard that enforces it or the measurement that is its
+evidence after the change; one with neither is an assumption, not a bound.
+
+- first text visible ≤ 0.5 s after the model's first text delta — *evidence:* the
+  delta-replay measurement above (first row at 0.3 s, width 100). *Guard:* the
+  ordering assertion in `TestALongPassageReachesTheScreenInPieces`, which is the
+  deterministic stand-in a wall-clock assertion cannot be: it bounds WHERE IN THE
+  STREAM text first appears, not how many seconds, and claims nothing more.
+- piped first byte — *evidence:* 0.917 s after, 9.426 s before (`## Log`)
+- display cadence ~0.5 s per row at width 100 with ~60 ms deltas — *evidence:* the
+  same delta replay. Unguarded by design: the wrapper is untouched by this issue.
 - decoder retention, every component of it, once `d.body` is gone:
   `d.marker` ≤ 64 B (`languageHeaderLimit`), `d.entity` ≤ 64 B (`:241`),
   `d.filter.pending` and `d.literal.pending` ≤ 3 B each — **two** filters, one
   partial rune each (`answer_text.go:30-32`) — and `d.literalText` ≤ one emitted
-  rune. Total ≤ 200 B, bounded by the marker and entity grammars rather than by a
-  size check.
+  rune. Total ≤ `maxLanguageDecoderRetained` = 136 B
+  (`2*languageHeaderLimit + 2*utf8.UTFMax`), bounded by the marker and entity
+  grammars rather than by a size check. Stated as the constant, not as a rounder
+  number beside it: two statements of one bound is how the looser one survives.
+  *Guard:* `FuzzLanguageDecoderChunks`, asserting it after every chunk.
 - the segment-body bound disappears; there is no longer a quantity that can exceed one
 
 ### What #64 inherits
@@ -149,44 +162,50 @@ That question belongs with #64's stage model, not here.
 - The retention bound is asserted as an invariant over every component named in
   the envelope, replacing the `d.body.Len()` guard that dies with the field.
 - Ctrl-C mid-answer still keeps what arrived, highlighted as before.
-- `atlas/define.md` states the streaming behaviour and replaces the sentence
-  "malformed/nested/incomplete segments preserve neutral prose".
+- Every document stating the replaced rule derives from the new one — the
+  ENUMERATION, not one file: `atlas/define.md`, `cmd/define/README.md`
+  ("incomplete annotations fall back to neutral text" is now false for the same
+  reason) and `stepLanguageDecode`'s own doc comment.
 - #64 records the inherited tint question.
 
 ## Plan
 
-- [ ] failing test first, pure and deterministic (ARCH-PURE): `languageDecoder`
+- [x] failing test first, pure and deterministic (ARCH-PURE): `languageDecoder`
       emits owned text BEFORE the close marker — the observable no existing test
       had. No clock, no socket.
-- [ ] own-at-open in `stepLanguageDecode`: `decodeEmitOwned`, drop the two flush
+- [x] own-at-open in `stepLanguageDecode`: `decodeEmitOwned`, drop the two flush
       effects and the `decodeLimit` event, one `d.lang` clearing rule. Update
       `TestLanguageDecodeTransitions`' independent matrices to the table above —
       it stays independently stated, not read off the implementation.
-- [ ] `languageDecoder.lex` is the rune scanner over untrusted model output
+- [x] `languageDecoder.lex` is the rune scanner over untrusted model output
       (ARCH-SECURE): extend `FuzzLanguageDecoderChunks` to assert the retention
       invariant after **every** chunk, seeded with own-at-open forms. Replace
       `TestAnswerControlPayloadAndAnnotationMemoryAreBounded`'s `d.body.Len()`
       check with that invariant over `marker`/`entity`/both filters/`literalText`.
-- [ ] `languageAnswer.accept`: the persistent per-ownership-run highlighter.
+- [x] `languageAnswer.accept`: the persistent per-ownership-run highlighter.
       Tests — the homograph row unchanged (it is the boundary invariant), plus a
       new row for a deck word split across deltas inside an owned passage,
       mirroring `TestStreamedAnswerHighlightsAWordSplitAcrossDeltas` on the
       neutral path. The enumeration is {neutral, owned} × {split across deltas}.
-- [ ] fixture rows whose expectations change with ownership-at-open:
+- [x] fixture rows whose expectations change with ownership-at-open:
       `TestLanguageDecoderRecoveryAndSplits` nested (`red` becomes owned),
       unterminated (`unfinished` becomes owned) and the 16385-byte row (no longer
       an over-limit case). Each is a behaviour change stated in the Spec, not a
       test bent to fit.
-- [ ] end-to-end, the level the operator saw it at: record a LONG-PASSAGE capture
+- [x] end-to-end, the level the operator saw it at: record a LONG-PASSAGE capture
       via `scripts/llm-probe.sh record`. The committed `stream-language.sse`
       closes its passages after ~6 of its 87 deltas, so it cannot exhibit this
       bug at all — `llmtest/testdata/README.md`'s own rule, a capture is evidence
-      only for the shape its recording conditions elicit. Drive it through
-      `Reply{AfterText, FinishRelease}` and assert the sink holds text while the
-      stream is still open (ARCH-MOCK: the barrier is the seam, no wall clock in
-      the assertion).
-- [ ] re-measure the piped one-shot; record before/after in `## Log`
-- [ ] atlas — the streaming behaviour, the replaced "malformed/nested/incomplete
+      only for the shape its recording conditions elicit. Assert the sink
+      holds text while the stream is still open. NOT via `Reply{AfterText,
+      FinishRelease}` as this row first said — that barrier holds after the FIRST
+      text delta, which in this capture is the bare `[lang=es]` marker, so the
+      sink is legitimately empty there with or without the bug. Shipped as a
+      client-level `deltaObserver` reporting each delta after the real writers
+      handled it: same observable, still no wall clock, and the fake is still the
+      seam (ARCH-MOCK).
+- [x] re-measure the piped one-shot; record before/after in `## Log`
+- [x] atlas — the streaming behaviour, the replaced "malformed/nested/incomplete
       segments preserve neutral prose" sentence, and the retired `highlightRegion`
       exception — plus the #64 note, then `sdlc close`
 
@@ -210,7 +229,7 @@ total: 2.47
 
 Derivation notes, so the numbers can be argued with rather than just checked:
 
-- **issue-spec design=1.0** is the top of the 0.5–1.5 band and earns it: the
+- **issue-spec design=1.0** is the midpoint of the 0.5–1.5 band and earns it: the
   brainstorm required a wire probe, a piped measurement, an isolated decoder
   test and a delta-replay cadence measurement, plus two reversals of direction
   (drop-the-annotation proposed, accepted, then withdrawn on blast radius) and a
@@ -234,6 +253,7 @@ Derivation notes, so the numbers can be argued with rather than just checked:
 ## Log
 
 ### 2026-09-17
+- 2026-09-17: closed — Streaming fixed and verified: same piped one-shot went from 2 chunks with first byte at 9.426s to 264 chunks with first at 0.917s; operator smoke-tested interactively and confirms. Wire unchanged throughout (first delta 1.25s, 126 deltas ~60ms apart). go test ./cmd/define green outside the sandbox (pty rows need a real terminal). Ordering asserted through the production chain at width 0 and 100 (first visible at delta 2 and 13 of 161), mutation-verified against three variants of the defect: buffer-then-release-whole (largest write 818 bytes), buffer-then-dribble-at-close (nothing until delta 102 of 161 — the variant BR-1 named), and the restored one-shot highlightRegion (deck word inside a passage unhighlighted). ~600k FuzzLanguageDecoderChunks executions with the retention invariant asserted after every chunk. BR-1..BR-7 disposed in round 3. BR-8 fixed as a rule not a site: the deleted body bound was still restated to the model in sharedLanguageGrammar ("Keep passages below 4000 characters" = 16,000 bytes UTF-8 worst case), now deleted with both goldens re-recorded, and the entity cap now cites languageHeaderLimit rather than a bare 64 — a tree-wide grep for 4000/16 KiB/languageBodyLimit returns only historical references. BR-9: annotatedRegions and three sibling helpers replaced by deriving delta boundaries and ownership from the real decoder. BR-10: duplicated rationale and a present-tense description of a fixed bug both removed.; review verdict: SHIP
 
 Claimed before brainstorming (#113). The title's literal ask looked already
 shipped — `runAsk` calls `client.Stream` and four tests defend streaming — so the
@@ -249,7 +269,158 @@ side ownership pipeline — most of #65/#66. Measuring the row cadence is what
 dissolved the dilemma: at ~0.5 s per row the annotation costs nothing visible
 once the passage buffer is gone, so streaming needed no prompt change at all.
 
+### 2026-09-17 — implementation
+
+**The measurement this issue exists for**, same command before and after
+(`define "?What is the difference between sycophantic and obsequious? Answer in
+three short paragraphs."`, piped, timestamped per chunk):
+
+| | chunks | first byte | last byte |
+|---|---|---|---|
+| before | 2 | 9.426 s | 9.487 s |
+| after | 264 | **0.917 s** | 9.952 s |
+
+The answer now starts arriving before the model is a tenth of the way through
+writing it, and keeps arriving. The wire was unchanged throughout: first text
+delta at 1.25 s, 126 deltas ~60 ms apart.
+
+**The Critical the plan gate caught was real.** `highlightRegion` builds a fresh
+writer per call, so per-rune owned emission matched nothing —
+`TestLanguageAnswerForeignHomographDoesNotUseTargetVocabulary` dropped from 1
+highlight to 0 the moment own-at-open landed. Verified against the tree before
+acting on it, then fixed by DELETING a mechanism rather than adding one: owned
+text now shares the neutral path's streaming highlighter, flushed and
+re-vocabularied per ownership run.
+
+**Three things measured that changed the work:**
+
+- **The hold was stochastic in English.** With English selected the model often
+  leaves its English prose untagged and annotates only a foreign fragment — one
+  recording produced a longest span of 3 bytes. So the defect was reliable only
+  where the prose is itself the annotated language, which is why the new capture
+  is recorded in the study language, and why it read as "sometimes".
+- **The committed capture could not exhibit the bug.** `stream-language.sse`
+  closes its passages after ~6 of its 87 deltas. Every existing test replayed it,
+  so none of them could have failed. `stream-long-passage.sse` is recorded
+  beside it, and its recorder refuses to promote a non-dominant passage.
+- **A write COUNT is the wrong oracle.** Against the buffer restored, this
+  capture arrives in 11 writes — a count threshold would have caught it by
+  accident of how much untagged prose the answer carries. The largest single
+  write is the defect stated directly: 818 bytes buffered, 3 bytes streamed.
+
+**Two of my own errors, kept because they cost real time.** A `countingSink`
+embedding `bytes.Buffer` promoted `WriteString`, which `io.WriteString` prefers,
+so every byte bypassed the counting `Write` and the sink reported ONE write for
+an answer that arrived in 1,232 — twenty minutes spent hunting a regression that
+was in the instrument. And the conformance recorder's first version measured
+unmerged spans, which since own-at-open are one rune each, and declared a
+perfectly good Spanish answer fragmented. Both are in `workshop/lessons.md`.
+
+**Verification.** `go test ./cmd/define` green (134 s, outside the sandbox — the
+pty rows need a terminal the sandbox denies). Both new guards mutation-tested
+against the restored buffer: `TestALongPassageReachesTheScreenInPieces` fails
+with "largest 818 bytes", `TestOwnedTextIsEmittedBeforeItsCloseMarker` with
+"nothing reached the sink while the passage was still open". The owned-highlight
+guard was mutation-tested against the restored `highlightRegion` call. Fuzz:
+~600k executions of `FuzzLanguageDecoderChunks` with the retention invariant
+asserted after every chunk, no failures.
+
+### 2026-09-17 — boundary review round 1
+
+Seven findings, one blocking, and the blocking one was a genuine miss.
+
+**BR-1: the delivered test measured the wrong property.**
+`TestALongPassageReachesTheScreenInPieces` checked the largest single write
+*after* the run — granularity, not ordering. The review mutation-tested it in a
+scratch worktree and showed a decoder that buffers the passage and releases it
+rune-by-rune at the close marker PASSES: still a blank screen for the whole
+generation, still green. Confirmed here, and the test now asserts ordering
+through the production chain — the dribble variant fails at "nothing reached the
+screen until delta 102 of 161".
+
+The barrier the plan promised (`Reply{AfterText, FinishRelease}`, disposed
+`addressed` at PQ-5) could not carry it: `AfterText` holds the stream after the
+FIRST text delta, which in this capture is exactly `[lang=es]` — a marker with no
+prose — so the sink is legitimately empty there whether or not the bug is
+present. The property is delivered instead by a client wrapper reporting each
+delta after the real writers have handled it: same observable, no clock, no held
+connection. Recorded rather than quietly substituted, because the plan named a
+mechanism and this is not it.
+
+**The six Minors, all fixed rather than deferred.** Both properties now also run
+at width 100, putting the wrap writer's row-commit path — the remaining hold — on
+the tested path (BR-2). `splitWordInsideAPassage` takes the wanted language,
+which it needed all along and passed without only because every split candidate
+in the capture happens to sit in an `en` region (BR-3). One span accumulator
+where there were three, and one decode core with a per-chunk hook (BR-4).
+"Dominant passage" is one predicate over one denominator, shared by the guard
+that promotes a capture and the guard that replays it (BR-5). `annotatedRegions`
+ends a region where the parser does — at a nested open rather than at the first
+close, which the nested `[lang=en]Sycophant[lang=es][/lang][/lang]` in this very
+capture exercises (BR-6). And the method is `runVocabulary`, not a second
+`vocabularyFor` (BR-7).
+
+### 2026-09-17 — boundary review rounds 2 and 3
+
+Round 2 disposed nothing (its review emitted no findings block) but recommended
+three plan/doc corrections, all applied and recorded under Revisions. Round 3
+disposed BR-1..BR-7 and raised three more, each stated as a RULE because its
+family had repeated.
+
+**BR-8 (Important): a prompt is a site.** My shadow-sweep enumerated the prose
+consumers of the deleted body bound — atlas, README, doc comment — and missed the
+executable one. `sharedLanguageGrammar` still told the model "Keep passages below
+4000 characters", which is 16,000 bytes at UTF-8 worst case: `languageBodyLimit`
+restated to the model, landed in the same commit as the constant (#65, 62c6a66)
+and outliving it by a diff. Worse than inert — it pushed the model toward exactly
+the fragmented passage shape `TestLongPassageStreamsAgainstLiveService` refuses
+to promote, and contradicted the atlas line this diff landed. Deleted; both
+goldens re-recorded, and the diff is exactly that clause.
+
+The same rule's second open site was mine: `maxLanguageDecoderRetained` is
+computed from `languageHeaderLimit`, but the entity cap it depends on was a bare
+literal `64`. It now cites the constant. A grep for `4000`/`16 KiB`/
+`languageBodyLimit` across the tree now returns only historical references —
+comments saying what was deleted — and no live restatement.
+
+**BR-9 (Minor): a helper that needs a parser boundary derives it from the
+parser.** `annotatedRegions` was a second grammar: taught separately that a
+nested open ends a region, and still disagreeing with the decoder about what
+follows one (the parser is in recovery there, owning nothing). Replaced by
+running the capture through the real decoder one delta at a time, which yields
+where the deltas fell AND who owns each byte from production itself — collapsing
+`annotatedRegions`, `splitWordMatching`, the raw-versus-decoded offset mismatch
+and BR-3's language parameter into one mechanism that cannot disagree with the
+code it tests.
+
+**BR-10 (Minor):** the retention rationale was duplicated verbatim onto a helper
+that asserts nothing, and `assertDominantPassage` described the bug BR-5 fixed in
+the present tense inside the fix. Both corrected.
+
 ## Revisions
+
+### 2026-09-17 — boundary review round 1 (plan artifact)
+
+Reason: the review found the Plan still naming a mechanism the code does not use,
+and two statements of one bound. Per AGENTS.md the plan artifact must stop
+claiming what the code does not deliver.
+
+- **Plan row 6's mechanism changed**, and PQ-5 was disposed `addressed` on the
+  mechanism rather than the property. `Reply{AfterText, FinishRelease}` holds the
+  stream after the FIRST text delta; in `stream-long-passage.sse` that delta is
+  the bare `[lang=es]` marker, so the sink is empty there whether or not the bug
+  is present and the barrier would have asserted nothing. The property — text on
+  screen while deltas are still arriving — ships via a `deltaObserver` client
+  wrapper. Row 6 now says so.
+- **The envelope's retention figure** said "Total ≤ 200 B" where the code states
+  `maxLanguageDecoderRetained` = 136. The implementation is the tighter of the
+  two, so nothing was wrong — but two statements of one bound is how the looser
+  one survives a change, which is the same failure mode as the `d.body.Len()`
+  guard this issue deleted. The Spec now cites the constant.
+- **The Done-when named one file where the rule has three consumers.**
+  `cmd/define/README.md` still said "incomplete annotations fall back to neutral
+  text", which own-at-open makes false; the line now names the enumeration
+  (atlas, README, the decoder's doc comment) rather than the atlas alone.
 
 ### 2026-09-17 — plan-quality round 1 (4 blocking findings)
 

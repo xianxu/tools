@@ -71,6 +71,15 @@ Open questions for the brainstorm:
 - where the record lives (the learner model file or a sibling setting);
 - how an instruction is detected, from a model side channel or a command;
 - how quickly inference may move a stage, and how the move is announced.
+- **whether an answer should be tinted at all** — inherited from #72, 2026-09-17.
+  `renderAskPrompt` names a study language but never requests a REPLY language,
+  and `/bilingual` does not reach the ask path: the request is byte-identical
+  with it on and off. So the answer tint colours a language the model
+  self-reports, unlike the definition tint, which comes from verified
+  `dictionarySourceLanguage` metadata known before a byte is painted. Once a
+  stage sets the reply language, the annotation describes something that was
+  ASKED for and the tint becomes a fact rather than a claim. Decide it here,
+  with the stage model in front of you, rather than twice.
 
 ## Done when
 
@@ -96,3 +105,19 @@ Open questions for the brainstorm:
   `renderAskPrompt` carries no language. `reflectSystem` bands A2–C2 with no
   language named. `renderAuthorPrompt` states the language only in a header line;
   #61 adds an explicit requirement.
+
+### 2026-09-17
+
+#72 measured two facts this issue's brainstorm should start from.
+
+- **`/bilingual` never reaches the ask path.** Verified by grep: no reference in
+  `ask.go`, `askctx.go` or `passageprompt.go`, and `askContext` has no such
+  field. The binary switch this issue generalizes does not currently apply to
+  console answers at all, so stage work there is greenfield rather than a
+  widening of #61.
+- **Reply language is emergent, not requested.** The model infers it from the
+  question's language and the context blocks. With English selected it often
+  leaves its English prose untagged and annotates only a foreign fragment — one
+  recording produced a longest span of three bytes — so even the annotation we
+  DO ask for varies run to run. Any stage policy has to state the reply language
+  in the prompt rather than assume the current behaviour is a floor.

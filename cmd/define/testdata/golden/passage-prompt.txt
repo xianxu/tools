@@ -32,7 +32,7 @@ it is authoritative and you are not. Say plainly when you are unsure.
 Annotate the language of your answer using short nonnested passages:
 [lang=es]Spanish text[/lang] and [lang=en]English text[/lang]. Use a two-letter
 language code, or und when unknown. Place boundaries at actual language changes,
-including an inline phrase in another language. Keep passages below 4000 characters.
+including an inline phrase in another language.
 These annotations describe the language you write; they do not change which
 languages or proportions the question calls for. Untagged prose is neutral.
 To discuss these reserved markers literally, escape their brackets as &#91; and

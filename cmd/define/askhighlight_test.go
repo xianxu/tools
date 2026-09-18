@@ -13,15 +13,81 @@ import (
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
-// splitWordInCapture finds a word the committed capture delivers across TWO
-// deltas, and returns it.
+// splitWordOwnedBy finds a word the committed capture delivers across TWO
+// deltas and that the PARSER puts in `lang` ("" meaning neutral, owned by
+// nobody).
 //
 // Derived, not hardcoded. The fake cannot serve invented streamed text —
 // misapplied() rejects a scripted literal on a streaming request and serveStream
 // always replays the committed capture — so the test's seeded word has to come
 // FROM the capture. Hardcoding one would rot silently the next time the capture
 // is re-recorded; this fails loudly instead.
-func splitWordInCapture(t *testing.T, name string) string {
+//
+// Derived from the DECODER, and that is the second lesson. An earlier version
+// scanned the raw bytes for `[lang=..]` regions itself, which made it a second
+// grammar: it had to be taught separately that a nested open ends a region, and
+// even then it disagreed with the parser about what follows one (the parser is in
+// recovery there, owning nothing). Running the capture through the real decoder
+// one delta at a time yields both facts at once — where the deltas fell, and who
+// owns each byte — and cannot disagree with production because it IS production.
+func splitWordOwnedBy(t *testing.T, name, lang string) string {
+	t.Helper()
+
+	var got languageText
+	d := newLanguageDecoder(spanAccumulator(&got))
+	var boundary []int // decoded length at each delta boundary
+	for _, delta := range captureDeltas(t, name) {
+		d.Write(delta)
+		boundary = append(boundary, len(got.text))
+	}
+	d.Finish()
+
+	// A word belongs to lang when a span CONTAINS it, and is neutral when no span
+	// touches it. Partial overlap is neither, and is skipped rather than guessed.
+	owns := func(start, end int) bool {
+		for _, sp := range got.spans {
+			switch {
+			case sp.start <= start && end <= sp.end:
+				return string(sp.lang) == lang
+			case start < sp.end && sp.start < end:
+				return false // straddles a boundary
+			}
+		}
+		return lang == ""
+	}
+	for _, r := range wordRuns(got.text) {
+		if !owns(r.start, r.end) {
+			continue
+		}
+		for _, b := range boundary {
+			if r.start < b && b < r.end {
+				return got.text[r.start:r.end]
+			}
+		}
+	}
+	// TWO different failures, and since this helper started deriving both facts
+	// from production they share one derivation — so they must not share one
+	// message. With the segment buffer restored, every word arrives whole and
+	// this fires; reading "re-record the capture" there sends the next reader to
+	// the fixture for a regression that is in the decoder.
+	owned := 0
+	for _, sp := range got.spans {
+		if string(sp.lang) == lang {
+			owned += sp.end - sp.start
+		}
+	}
+	if lang != "" && owned == 0 {
+		t.Fatalf("the decoder produced no %q-owned text from %s: either it stopped owning annotated "+
+			"passages (a production regression) or the capture no longer contains one", lang, name)
+	}
+	t.Fatalf("every %q word in %s arrived whole: either the decoder stopped emitting as deltas arrive "+
+		"(a streaming regression — check TestOwnedTextIsEmittedBeforeItsCloseMarker first) or this "+
+		"capture no longer splits one, in which case re-record it; skipping would let this test go "+
+		"quietly inert", lang, name)
+	return ""
+}
+
+func captureDeltas(t *testing.T, name string) []string {
 	t.Helper()
 
 	var deltas []string
@@ -46,23 +112,7 @@ func splitWordInCapture(t *testing.T, name string) string {
 	if err := sc.Err(); err != nil {
 		t.Fatalf("scanning the capture: %v", err)
 	}
-
-	// A boundary splits a word when the delta before it ends in a word rune and
-	// the one after starts with one. wordRuns decides that, so this test and
-	// production cannot disagree about where a word is.
-	full := strings.Join(deltas, "")
-	at := 0
-	for _, d := range deltas[:max(0, len(deltas)-1)] {
-		at += len(d)
-		for _, r := range wordRuns(full) {
-			if r.start < at && at < r.end {
-				return full[r.start:r.end]
-			}
-		}
-	}
-	t.Fatalf("no word in %s is split across deltas — re-record the capture or pick another; "+
-		"skipping here would let this test go quietly inert", name)
-	return ""
+	return deltas
 }
 
 // M3's headline behaviour: a deck word in a streamed answer highlights even when
@@ -70,7 +120,7 @@ func splitWordInCapture(t *testing.T, name string) string {
 func TestStreamedAnswerHighlightsAWordSplitAcrossDeltas(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
-	word := splitWordInCapture(t, streamCapture)
+	word := splitWordOwnedBy(t, streamCapture, "")
 	d.vocab = vocab(word)
 
 	var out, errOut bytes.Buffer
@@ -81,6 +131,32 @@ func TestStreamedAnswerHighlightsAWordSplitAcrossDeltas(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), knownOn+word) {
 		t.Errorf("%q arrives split across deltas and was not highlighted: %q", word, out.String())
+	}
+}
+
+// The owned half of M3's headline behaviour, reachable only since #72: a deck
+// word inside a [lang=..] passage highlights although the model delivered it in
+// two pieces.
+//
+// It is the same claim as the neutral test above and deliberately the same
+// shape, because the fix was to stop the two paths being different mechanisms —
+// the owned path rendered through a one-shot highlightRegion that could not see
+// past one call, and per-rune emission made every call one rune.
+func TestOwnedPassageHighlightsAWordSplitAcrossDeltas(t *testing.T) {
+	d, fake, _, _ := askRig(t)
+	d.lang = "en"
+	fake.Script("", llmtest.Reply{Capture: "stream-language.sse"})
+	word := splitWordOwnedBy(t, "stream-language.sse", "en")
+	d.vocab = vocab(word)
+
+	var out, errOut bytes.Buffer
+	code := runAsk(t.Context(), d, options{color: true}, &session{}, question{text: "Explain buenos días"}, &out, &errOut)
+
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), knownOn+word) {
+		t.Errorf("%q arrives split across deltas inside a passage and was not highlighted: %q", word, out.String())
 	}
 }
 
@@ -105,7 +181,7 @@ func TestStreamedAnswerHighlightsAWordSplitAcrossDeltas(t *testing.T) {
 // is four chances to forget, and a path added later gets it for free. What this
 // table does pin is that no path leaves text dangling.
 func TestEveryStreamExitPathFlushes(t *testing.T) {
-	word := splitWordInCapture(t, streamCapture)
+	word := splitWordOwnedBy(t, streamCapture, "")
 
 	for _, tc := range []struct {
 		name      string
@@ -227,7 +303,7 @@ func TestTheLastWordOfAnAnswerSurvives(t *testing.T) {
 func TestStreamedAnswerCarriesNoEscapesWithoutColour(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
-	d.vocab = vocab(splitWordInCapture(t, streamCapture))
+	d.vocab = vocab(splitWordOwnedBy(t, streamCapture, ""))
 
 	var out, errOut bytes.Buffer
 	runAsk(t.Context(), d, options{color: false}, &session{}, question{text: "q?"}, &out, &errOut)

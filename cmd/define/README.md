@@ -334,7 +334,8 @@ sources stay neutral.
 
 Practice and model rows are tinted when their prose belongs to the current language;
 mixed or unknown rows stay neutral. Model output holds one unfinished display row
-until its ownership is settled. Changing `/lang` affects new output; previously
+until its ownership is settled, so an answer arrives a line at a time as it is
+written rather than all at once when it finishes. Changing `/lang` affects new output; previously
 printed text keeps its original style. Resizing clips history without reflowing it.
 
 The default suits dark terminals. Choose a profile when starting `define`:
@@ -348,7 +349,10 @@ define -language-tint=off     # disable language backgrounds
 Vocabulary foreground colors remain visible, and answer markings take precedence.
 English practice help uses normal readable text. Selection and copying preserve
 plain prose. Model language annotations are removed before display and storage,
-even with tint off; incomplete annotations fall back to neutral text.
+even with tint off. An incomplete or malformed annotation KEEPS the language it
+announced: the text was shown the moment it arrived, and shown text cannot be
+taken back — the alternative was withholding every well-formed answer until it
+ended.
 
 
 ## Periodical Reviewing

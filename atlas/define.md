@@ -1103,7 +1103,9 @@ Its contract, in the order the rules matter:
 `answerTextFilter` → `languageDecoder` → `languageAnswer` →
 `ownedAnswerWrapWriter` → structured output → stdout. The decoder strips reserved `[lang=xx]` / `[/lang]`
 annotations, while the adapter records clean prose, preserves vocabulary
-foreground with `highlightWriter`/`highlightRegion`, and applies language tint.
+foreground with ONE streaming `highlightWriter` per ownership run — `#72` retired
+the one-shot `highlightRegion` from this path, because per-rune emission made
+every such call one rune — and applies language tint.
 Wrapping measures the resulting visible cells with `visibleCells`.
 The wrapper buffers one unfinished physical row, finalizing on wrap, newline or
 finish for both live and append-only sinks. `advanceRowOwnership` makes mixed/unknown
@@ -2295,13 +2297,49 @@ marks explicitly suppress tint for their fragment.
 
 `answer_text.go` incrementally discards terminal controls and string payloads
 before parsing or storing model text. `language_decode.go` has one three-state
-transition core: neutral, segment and recovery. Closed valid segments own their
-language; malformed/nested/incomplete segments preserve neutral prose. Recovery
-ends at the first close, with 16 KiB segment and 64-byte header bounds. Entities
-are decoded after grammar and filtered again. `answer_language.go` owns the
-single stream adapter and flushes decoder, highlighting and wrapping before
-partial-answer history is recorded. Explicit foreign-language segments cannot
+transition core: neutral, segment and recovery, and the table is total.
+
+**A passage is owned when it OPENS, not when it closes** (`#72`). Text inside a
+segment is emitted as it arrives, owned by the language the opening marker
+announced. It used to be accumulated and released at the close, which meant a
+monolingual answer — one passage, closing only when generation ended — was
+invisible for the whole of its generation: measured, an entire 1422-byte answer
+reached the screen in ONE write at 9.4s, on a stream whose deltas had been
+arriving 60ms apart since 1.25s. After the change the same question puts its
+first bytes on screen at 0.9s and arrives in 264 pieces.
+
+The cost is stated rather than hidden: a segment that nests, carries a bad header
+or never closes KEEPS the language it announced, where it used to degrade to
+neutral. Painted text cannot be un-painted, so that revocation was only ever
+purchasable by withholding every well-formed answer too. Recovery still denies
+ownership to text arriving after the malformed event. Three things left with the
+buffer — the body, its 16 KiB bound, and the limit event that bound produced — so
+the only bounds now are the header candidate (`languageHeaderLimit`, which the
+entity candidate shares) and a stated total retention
+(`maxLanguageDecoderRetained`, computed from it), asserted per chunk by the fuzz target
+rather than by a check on a field that can stop existing. Entities are decoded
+after grammar and filtered again.
+
+`answer_language.go` owns the single stream adapter and flushes decoder,
+highlighting and wrapping before partial-answer history is recorded. Owned text
+goes through the SAME streaming `highlightWriter` as neutral prose, flushed and
+re-vocabularied at each ownership change: it used to be rendered by the one-shot
+`highlightRegion`, which worked only while a passage arrived as one lump, and
+per-rune emission made every such call one rune — deck words inside a passage
+silently stopped highlighting. Flush-then-replace is also what keeps a phrase
+from spanning an ownership boundary. Explicit foreign-language segments cannot
 acquire target-deck vocabulary foreground from ambiguous spelling.
+
+What this does NOT change is the row: `ownedAnswerWrapWriter` still commits one
+physical row at a time, because a row's background is decided from whole-row
+ownership. Measured by replaying recorded deltas at their real 60ms spacing at
+width 100, that is a first row at 0.3s and a row every ~0.5s, which reads as
+streaming — so the row stays the commit unit.
+
+Note for anyone reproducing this: with ENGLISH selected the model often leaves
+its English prose untagged and annotates only a foreign fragment, so the hold was
+STOCHASTIC in an English session and reliable only where the prose is itself the
+annotated language.
 
 **English before answering.** With bilingual on in a non-English deck, practice
 shows English while the learner answers. `practice_help.go` is the pure core and
