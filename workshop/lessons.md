@@ -4820,7 +4820,10 @@ whose members are exactly the legal combinations — an enum (`loopKind`), a
 nil-able pointer (`*schemeChoice`), or a single field whose zero value is the
 harmless case (`schemeArg{}` is auto, so it forgets rather than saving a blank).
 Check new structs for it at write time: for each pair of fields, ask whether
-every combination means something.
+every combination means something. The third finding added the corollary for
+LOCAL state too: store only independent facts, and compute a flag that follows
+from others where it is read — the row painter's `inking` was always
+`filled && !coloured`, and a stored copy is a second truth waiting to drift.
 
 ## A step that cites the Log is ticked after the Log line exists (#70)
 
@@ -4866,4 +4869,15 @@ and at every boundary: the code drifted from the plan within a milestone (two
 shape changes were Revisions), so the plan was both long and wrong. Name the
 function, its signature, and one line on the risky decision; the code belongs in
 the diff.
+
+## When a behaviour changes, re-read every sentence that describes it (#70)
+
+Three doc findings in one issue, one shape: M1's atlas described sources M2 and
+M3 had not shipped; M2 dropped a "(from M3)" tag; M3's README kept "suits a dark
+terminal by default" after detection shipped, and said a session asks "with
+nothing chosen" when it asks every time. Each milestone checked the paragraph it
+wrote and not the sentences it made false. When a milestone changes a behaviour,
+grep the docs for that behaviour's words and check each sentence against the
+code's actual condition — no future features, no stale defaults, no narrower
+conditions than the code has.
 

@@ -340,8 +340,8 @@ until its ownership is settled, so an answer arrives a line at a time as it is
 written rather than all at once when it finishes. Changing `/lang` affects new output; previously
 printed text keeps its original style. Resizing clips history without reflowing it.
 
-The tint's shade suits a dark terminal by default. Say which background you
-have when starting `define`:
+The tint's shade follows your terminal's background: a full-screen session asks
+the terminal (below). To say it yourself when starting `define`:
 
 ```sh
 define -scheme light          # light terminal background
@@ -356,10 +356,11 @@ deck directory. `/scheme auto` forgets the saved choice; `/scheme` alone says
 which scheme is in use and where it came from. The `-scheme` flag beats a saved
 choice for one run.
 
-With nothing chosen, a full-screen session asks the terminal for its background
-colour (the standard OSC 11 query) and follows the answer, repainting if it
-arrives after something is already on screen. A terminal that does not answer
-leaves the dark default until you choose. A one-shot lookup (`define word`) never asks: it uses `-scheme`, then the
+Every full-screen session asks the terminal for its background colour (the
+standard OSC 11 query); with no choice in force it follows the answer,
+repainting if the answer arrives after something is already on screen, and
+`/scheme` then reports it as `(detected)`. A terminal that does not answer leaves
+the dark default until you choose. A one-shot lookup (`define word`) never asks: it uses `-scheme`, then the
 saved choice, then dark. If you quit within a moment of starting over a slow link,
 the terminal's answer can land in your shell as stray characters.
 

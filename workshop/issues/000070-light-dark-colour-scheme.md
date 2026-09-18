@@ -370,12 +370,14 @@ code, tests, mutation checks). Three review boundaries:
   `deps.configDir` seam, `applyScheme` (persist-then-switch) and
   `describeScheme`, the command in editor/piped/one-shot, pty harness
   isolation, docs (Tasks 7–12)
-- [ ] M3 — detection: `parseBackgroundColour`, the bounded OSC decoder and
+- [x] M3 — detection: `parseBackgroundColour`, the bounded OSC decoder and
   `KeyBackground`, the query at raw-mode entry, every consumer of the key kind,
   conformance terminals, manual check in three terminals (Tasks 13–18)
 
 ## Log
 
+
+- 2026-09-18: closed M3 — M3: OSC 11 asked once per raw session where a tint can appear; reply decoded by a bounded two-step swallow/parse as KeyBackground; one terminalReport rule in editor and sitting, each pinned by the frame it paints; inert to router and full-queue drop; tinted rows carry a paired ink, reset pinned. Live: a real terminal, after /scheme auto, reported "dark (detected)"; light detection evidenced by the pty terminal and in-process reply, real-light check recorded as owed. go test ./... green; vet both builds; linux build; strict pty 5/5 ran+passed; full tagged suite and -race fail only the pre-existing set; fuzz 3x30s PASS; 23 mutations named in the Log, each red.; review verdict: SHIP
 ### 2026-09-16
 
 ### 2026-09-17
@@ -676,4 +678,11 @@ modelled pty terminal (`TestPTYBackgroundDetection/light`) and the in-process re
 (`TestRawEditorBackgroundReplyRepaints`), and a real light-terminal
 `light (detected)` is recorded in the atlas as owed. The atlas's "a light profile"
 wording, which contradicted a terminal with white default text, is corrected.
+
+M3 closed on review round 3: SHIP. Its three advisories fixed in the close
+commit — the row painter's `inking` is derived (`filled && !coloured`), not
+stored; the README's scheme section no longer calls dark the default or says a
+session asks only "with nothing chosen"; and the owed real light-terminal check
+has an owner, #77 (follow-up, published to the trunk). Lessons record both repeat
+families.
 

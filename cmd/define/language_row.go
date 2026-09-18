@@ -22,18 +22,18 @@ func paintLanguageRow(text string, paint rowPaint, width int, sc store.Scheme) s
 	}
 	background, ink := schemeTint(sc), schemeInk(sc)
 	var out strings.Builder
-	// explicit: the producer set a background; coloured: it set a foreground;
-	// inking: our paired ink is on (only ever when filled and not coloured).
-	explicit, coloured, filled, inking := false, false, false, false
+	// explicit: the producer set a background; coloured: it set a foreground.
+	// Our paired ink is on exactly when filled && !coloured — derived, not
+	// stored: every change to coloured is preceded by unfill().
+	explicit, coloured, filled := false, false, false
 	col, exclude := 0, 0
 	unfill := func() {
 		if !filled {
 			return
 		}
 		out.WriteString(languageOff)
-		if inking {
+		if !coloured {
 			out.WriteString(inkOff)
-			inking = false
 		}
 		filled = false
 	}
@@ -48,7 +48,6 @@ func paintLanguageRow(text string, paint rowPaint, width int, sc store.Scheme) s
 			// Text with no colour of its own takes the tint's paired ink (#70).
 			if !coloured {
 				out.WriteString(ink)
-				inking = true
 			}
 			filled = true
 		}
@@ -61,7 +60,7 @@ func paintLanguageRow(text string, paint rowPaint, width int, sc store.Scheme) s
 			seq := text[i : i+n]
 			if !isSGR(seq) {
 				out.WriteString("\x1b[0m")
-				filled, explicit, coloured, inking = false, false, false, false
+				filled, explicit, coloured = false, false, false
 			}
 			// Remove only our injected paint before a producer style. This keeps
 			// producer resets, explicit answer backgrounds and producer colours
@@ -83,7 +82,7 @@ func paintLanguageRow(text string, paint rowPaint, width int, sc store.Scheme) s
 	}
 	// Synthetic spaces must not inherit explicit answer backgrounds or inverse.
 	out.WriteString("\x1b[0m")
-	explicit, coloured, filled, inking = false, false, false, false
+	explicit, coloured, filled = false, false, false
 	for col < width {
 		fill(1)
 		out.WriteByte(' ')

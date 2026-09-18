@@ -1209,7 +1209,7 @@ if k.Kind == KeyBackground {
 - [x] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`, conformance with `CONFORMANCE_STRICT=1`.
 - [x] **Manual live conformance** (the real external dependency): in Terminal.app, iTerm2 and Ghostty, each in a light and a dark profile — `define`, `/lang es`, look up `red`; check the tint's shade and `/scheme`'s report; `/scheme light|dark|auto` and watch the repaint; quit and check the transcript's shade. Note any terminal that answers `rgba:` or nothing. RECORD the terminal × appearance matrix with the date in `atlas/define.md` (a short "Terminals checked" table beside the detection paragraph), and state there when it is re-run: when a terminal is added to the matrix, when a detection bug is reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
 - [x] Walk every `## Done when` bullet and name the test (or manual check) that proves it.
-- [ ] `sdlc milestone-close --issue 70 --milestone M3`, read the verdict; then `sdlc close --issue 70 --verified '<evidence>'`.
+- [x] `sdlc milestone-close --issue 70 --milestone M3`, read the verdict; then `sdlc close --issue 70 --verified '<evidence>'`.
 
 ## Revisions
 

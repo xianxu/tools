@@ -215,3 +215,96 @@ findings:
     detail: |
       This is the 3rd finding in family tests-pin-a-shadow-of-the-live-path. Rule for the whole family: evidence for a path (a test assertion OR a manual check) must be something only that path can produce; the shared holder, PaintedTranscript's re-read, and a light tint that a saved choice also paints all fail this. The Log's evidence for "light -> 254, dark -> 236, no flag, no saved file" ends with "operator check". The only recorded detail of that check is the first run, and the Log says a saved light was in force then ("not yet /scheme auto'd"). The re-check is recorded only as "working", with no /scheme report. The atlas also calls that run "a light profile", while the Log describes a terminal with white default text. Sweep of the Done-when evidence list: only this item fails; the pty (detected) reports, the in-process light-reply frame and the late-reply repaint all distinguish detection. Fix: extend the lessons.md rule from tests to manual evidence. For this instance, either record one real-terminal /scheme report reading "(detected)" in each appearance after /scheme auto, or state that the live check did not establish detection, so detection's only evidence is the modelled pty terminal and the ARCH-MOCK live check is still owed. Either way, correct the atlas wording.
 ```
+
+---
+
+## Re-review — 2026-09-18T11:08:59-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 70 — define: switch between a light and a dark colour scheme |
+| repo | tools |
+| issue file | workshop/issues/000070-light-dark-colour-scheme.md |
+| boundary | milestone M3 |
+| milestone | M3 |
+| window | 97815dbf85152eb55bc576926ef56b6783238dd5..ab416278b873da40dc206ef0b0fb1c69a6458105 |
+| command | sdlc milestone-close --issue 70 --milestone M3 |
+| reviewer | claude |
+| timestamp | 2026-09-18T11:08:59-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+M3 does what the Spec asks. `decodeOSC` reads the terminal's reply in two steps: it takes in bytes up to a hard limit, then parses them. Only an `rgb:` answer becomes a `KeyBackground`. Every place that reads keys handles it as a report, and the query goes out once per raw session through `rawSession.control`, never through a screen. I ran the repo's `go test ./cmd/define/...` at HEAD; the whole package failed on three tests only (`TestLanguagePromptStartup`, `TestLanguageTintInvocation`, `TestSavedSchemeGovernsALookup`). All three fail because this environment refuses to open a pty ("operation not permitted"). `go vet` passes with and without the conformance tag, and `-race` passes on the M3 tests. In a scratch copy I removed each fix a prior finding claims, plus each consumer guard, and every removal turned its pinning test red. BR-14 is addressed. A real terminal read `dark (detected)` after `/scheme auto`, which only detection can produce. The owed light check is recorded, not claimed. The lessons.md rule now covers manual evidence, and the atlas wording is corrected. Only three Minor findings remain; none blocks.
+
+1. **Strengths**
+   - `decodeOSC` (`cmd/define/key.go:482`) keeps the byte limit and the parse separate. `TestDecodeOSCCap` pins exactly 64 bytes against 65 for both the BEL and the ST (`ESC \`) ending. `TestReadInputBackgroundAcrossWrites` shows the decoder really waits on a partial reply, and Ctrl-C still gets through.
+   - One helper, `terminalReport` (`replraw.go:148`), serves both loops, and `cancelPointerInput` holds the only guard for the pointer router. Removing either editor/sitting repaint turns red: `TestRawEditorBackgroundReplyRepaints` for `draw()`, `TestASittingRepaintsOnABackgroundReply` for `show()`. I removed each in a scratch copy.
+   - The loop tests feed reply bytes through `readInput`, so the decoder, the loop and the consumer run as one path.
+   - `sourceColours` reads each colour escape once for both background and foreground. `sourceBackground` is a thin wrapper around it, so the two cannot disagree.
+   - `terminalQueries` extends `TestEveryEnabledInputModeIsDecoded`, which fails if a query has no decoder row.
+
+2. **Critical:** none.
+
+3. **Important:** none.
+
+4. **Minor**
+   - **`inking` duplicates other state** (`cmd/define/language_row.go:26-27,34`). `inking` is always `filled && !coloured`, because `unfill()` runs before `coloured` can change. The comment on line 26 says so itself. In a scratch copy I dropped the flag and wrote `if !coloured { inkOff }`; every tint, ink, row, selection and screen test stayed green. This is the third finding in family `state-shape-admits-illegal-combinations`. **Rule:** store only independent facts; compute any flag that follows from other state where it is read. Put the rule in lessons.md next to the M2 state-shape entry. Sweep of the M3 diff: this is the only derived flag. `explicit` and `coloured` are what the producer set, and `filled` depends on the excluded cells.
+   - **Two README sentences don't match the code** (`cmd/define/README.md:343,359`).
+     - "The tint's shade suits a dark terminal by default" is out of date: a session now asks the terminal first.
+     - "With nothing chosen, a full-screen session asks" is too narrow. `wantsBackground` asks whether or not a scheme is chosen, which is why `/scheme auto` can later show a detected value.
+
+     This is the third finding in family `docs-describe-unshipped-surface`. **Rule:** when a milestone changes a behaviour, check every doc sentence about it against the code's actual condition. Docs must describe exactly what ships: no future features, no stale defaults, no narrower conditions. Sweep: the atlas detection paragraph and the `-h` text are correct, so the README is the only instance.
+   - **The owed light-terminal check has no tracker** (`atlas/define.md:555`). After `sdlc close`, only atlas text records it. Follow the #76 precedent and open an issue with `sdlc issue new`.
+
+5. **Test coverage**
+   - Removing any of these turns a test red (checked in a scratch copy): the editor's `draw()`, the sitting's `show()`, `inkOff` in `unfill`, the drop-site `KeyBackground` guard, and the `KeyBackground` clause in `cancelPointerInput`.
+   - I could not run the pty conformance tests here. The Log reports them green under `CONFORMANCE_STRICT=1`.
+   - The two "swallowed, nothing detected" cases check the words looked up (no leaked bytes) plus a dark shade. The shade half would also pass with no reply at all; the words half is what proves the behaviour.
+
+6. **Architecture**
+   - **ARCH-DRY: pass.** The loops share `terminalReport`, and `sourceColours` is the single colour parse. The test helper `oscLen` repeats the terminator rule, but it reads output where the decoder reads input, so that is acceptable.
+   - **ARCH-PURE: pass.** `parseBackgroundColour`, `decodeOSC` and `wantsBackground` are pure. The IO shell is `rawSession.ask` plus the two short intercepts.
+   - **ARCH-PURPOSE: pass.** Every reader of `KeyBackground` handles it: `runEditor`, `playSession`, `sittingKeyHandling`, the pointer router and the full-channel drop site. A grep finds no other reader of the keys channel.
+   - **ARCH-MOCK: pass, with a gap already recorded.** The seam is bytes in through `readInput` and bytes out through `control`. The pty tests play light, dark and silent terminals. The live check covers dark only; light is recorded as owed (Minor above).
+   - **ARCH-CONSTRAINTS: pass.** Nothing waits for the reply, the 64-byte cap is pinned, and a repaint happens only when the shade changes.
+   - **ARCH-SECURE: pass.** The reply is untrusted input, capped and turned into the closed scheme enum where it arrives. A malformed reply is swallowed and nothing is detected.
+   - **ARCH-ORDER: pass.** The holder has one writer, the loop in force, and its only writers are its transitions. Tests cover an early reply, a late one, one during a sitting, a duplicate, and one under a choice.
+   - **ARCH-FUNERAL: pass.** M3 creates nothing durable: the query and reply live only in memory for a session.
+
+7. **Plan revisions:** none needed. The Revisions section already covers the paired ink, `terminalReport`, the narrowed Task 18 step 2, and BR-14. An optional small addition: rows in the core-concepts table for `terminalReport`, `wantsBackground`, `schemeInk` and `sourceColours`.
+
+```findings
+dispose:
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Log, atlas:547-558 and plan Revisions record a real /scheme reading "dark (detected)" after /scheme auto; light detection is recorded as owed; lessons.md extends the rule to manual evidence; the "light profile" wording is gone.
+findings:
+  - id: new
+    severity: Minor
+    family: state-shape-admits-illegal-combinations
+    title: |
+      paintLanguageRow stores inking, which always equals filled && !coloured (language_row.go:26-27,34)
+    detail: |
+      This is the 3rd finding in family state-shape-admits-illegal-combinations. The line-26 comment states the derivation. unfill() runs before every change to coloured, so the flag is redundant. Scratch probe: dropping it and writing if !coloured { inkOff } left every tint, ink, row, selection and screen test green. Rule for the family: store only independent facts; compute a flag that follows from other state where it is read. Add this to lessons.md. Sweep of the M3 diff: this is the only derived flag.
+  - id: new
+    severity: Minor
+    family: docs-describe-unshipped-surface
+    title: |
+      README scheme section: "suits a dark terminal by default" is out of date and "With nothing chosen ... asks" is too narrow (README.md:343,359)
+    detail: |
+      This is the 3rd finding in family docs-describe-unshipped-surface. wantsBackground asks whether or not a scheme is chosen; that is what lets /scheme auto show a detected value. And a session no longer just defaults to dark. Rule: when a milestone changes a behaviour, check every doc sentence about it against the code's actual condition. Docs describe exactly what ships: no future features, no stale defaults, no narrower conditions. Sweep: the atlas detection paragraph and -h are correct; the README is the only instance.
+  - id: new
+    severity: Minor
+    family: deferred-obligation-lacks-a-tracker
+    title: |
+      The owed real light-terminal "light (detected)" check exists only in atlas prose (atlas/define.md:555)
+    detail: |
+      Once sdlc close runs, nothing owns it. Follow the M1 residue precedent (#76): open a follow-up with sdlc issue new, or attach it to an existing tracker, so the ARCH-MOCK live check has an owner.
+```

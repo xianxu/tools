@@ -179,6 +179,36 @@ rounds:
       boundary: M3
       recipe: milestone-review
       blocked: true
+    - "n": 7
+      timestamp: "2026-09-18T11:08:59-07:00"
+      agent: claude
+      dispose:
+        - id: BR-14
+          disposition: addressed
+          note: Log, atlas:547-558 and plan Revisions record a real /scheme reading "dark (detected)" after /scheme auto; light detection is recorded as owed; lessons.md extends the rule to manual evidence; the "light profile" wording is gone.
+          round: 7
+      findings:
+        - id: BR-15
+          severity: Minor
+          title: paintLanguageRow stores inking, which always equals filled && !coloured (language_row.go:26-27,34)
+          detail: 'This is the 3rd finding in family state-shape-admits-illegal-combinations. The line-26 comment states the derivation. unfill() runs before every change to coloured, so the flag is redundant. Scratch probe: dropping it and writing if !coloured { inkOff } left every tint, ink, row, selection and screen test green. Rule for the family: store only independent facts; compute a flag that follows from other state where it is read. Add this to lessons.md. Sweep of the M3 diff: this is the only derived flag.'
+          family: state-shape-admits-illegal-combinations
+          round: 7
+        - id: BR-16
+          severity: Minor
+          title: 'README scheme section: "suits a dark terminal by default" is out of date and "With nothing chosen ... asks" is too narrow (README.md:343,359)'
+          detail: 'This is the 3rd finding in family docs-describe-unshipped-surface. wantsBackground asks whether or not a scheme is chosen; that is what lets /scheme auto show a detected value. And a session no longer just defaults to dark. Rule: when a milestone changes a behaviour, check every doc sentence about it against the code''s actual condition. Docs describe exactly what ships: no future features, no stale defaults, no narrower conditions. Sweep: the atlas detection paragraph and -h are correct; the README is the only instance.'
+          family: docs-describe-unshipped-surface
+          round: 7
+        - id: BR-17
+          severity: Minor
+          title: The owed real light-terminal "light (detected)" check exists only in atlas prose (atlas/define.md:555)
+          detail: 'Once sdlc close runs, nothing owns it. Follow the M1 residue precedent (#76): open a follow-up with sdlc issue new, or attach it to an existing tracker, so the ARCH-MOCK live check has an owner.'
+          family: deferred-obligation-lacks-a-tracker
+          round: 7
+      boundary: M3
+      recipe: milestone-review
+      blocked: false
 ---
 
 # Gate ledger — tools#70 (boundary-review)
@@ -268,6 +298,21 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-14** [Important] `tests-pin-a-shadow-of-the-live-path` Done-when bullet 1 cites the operator check as evidence of detection, but the record cannot tell detection from a saved choice
   This is the 3rd finding in family tests-pin-a-shadow-of-the-live-path. Rule for the whole family: evidence for a path (a test assertion OR a manual check) must be something only that path can produce; the shared holder, PaintedTranscript's re-read, and a light tint that a saved choice also paints all fail this. The Log's evidence for "light -> 254, dark -> 236, no flag, no saved file" ends with "operator check". The only recorded detail of that check is the first run, and the Log says a saved light was in force then ("not yet /scheme auto'd"). The re-check is recorded only as "working", with no /scheme report. The atlas also calls that run "a light profile", while the Log describes a terminal with white default text. Sweep of the Done-when evidence list: only this item fails; the pty (detected) reports, the in-process light-reply frame and the late-reply repaint all distinguish detection. Fix: extend the lessons.md rule from tests to manual evidence. For this instance, either record one real-terminal /scheme report reading "(detected)" in each appearance after /scheme auto, or state that the live check did not establish detection, so detection's only evidence is the modelled pty terminal and the ARCH-MOCK live check is still owed. Either way, correct the atlas wording.
 
+## Round 7 — 2026-09-18T11:08:59-07:00 (claude) — passed
+
+### Disposed
+
+- BR-14 — addressed — Log, atlas:547-558 and plan Revisions record a real /scheme reading "dark (detected)" after /scheme auto; light detection is recorded as owed; lessons.md extends the rule to manual evidence; the "light profile" wording is gone.
+
+### Raised
+
+- **BR-15** [Minor] `state-shape-admits-illegal-combinations` paintLanguageRow stores inking, which always equals filled && !coloured (language_row.go:26-27,34)
+  This is the 3rd finding in family state-shape-admits-illegal-combinations. The line-26 comment states the derivation. unfill() runs before every change to coloured, so the flag is redundant. Scratch probe: dropping it and writing if !coloured { inkOff } left every tint, ink, row, selection and screen test green. Rule for the family: store only independent facts; compute a flag that follows from other state where it is read. Add this to lessons.md. Sweep of the M3 diff: this is the only derived flag.
+- **BR-16** [Minor] `docs-describe-unshipped-surface` README scheme section: "suits a dark terminal by default" is out of date and "With nothing chosen ... asks" is too narrow (README.md:343,359)
+  This is the 3rd finding in family docs-describe-unshipped-surface. wantsBackground asks whether or not a scheme is chosen; that is what lets /scheme auto show a detected value. And a session no longer just defaults to dark. Rule: when a milestone changes a behaviour, check every doc sentence about it against the code's actual condition. Docs describe exactly what ships: no future features, no stale defaults, no narrower conditions. Sweep: the atlas detection paragraph and -h are correct; the README is the only instance.
+- **BR-17** [Minor] `deferred-obligation-lacks-a-tracker` The owed real light-terminal "light (detected)" check exists only in atlas prose (atlas/define.md:555)
+  Once sdlc close runs, nothing owns it. Follow the M1 residue precedent (#76): open a follow-up with sdlc issue new, or attach it to an existing tracker, so the ARCH-MOCK live check has an owner.
+
 ## Open findings
 
 - **BR-2** [Minor] `state-shape-admits-illegal-combinations` schemeState.withChoice accepts any schemeSource, so choice-by-detected, choice-by-default and empty-choice states are representable
@@ -276,4 +321,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-5** [Minor] `spec-done-when-drifts-from-delivery` Done-when says dead paths are deleted with tint assertions ported; the renderers were moved to test helpers and fragment-tint assertions dropped
 - **BR-7** [Minor] `state-shape-admits-illegal-combinations` commandCtx session/fullScreen and schemeArg auto/value allow combinations that mean nothing
 - **BR-9** [Minor] `docs-describe-unshipped-surface` The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3
-- **BR-14** [Important] `tests-pin-a-shadow-of-the-live-path` Done-when bullet 1 cites the operator check as evidence of detection, but the record cannot tell detection from a saved choice
+- **BR-15** [Minor] `state-shape-admits-illegal-combinations` paintLanguageRow stores inking, which always equals filled && !coloured (language_row.go:26-27,34)
+- **BR-16** [Minor] `docs-describe-unshipped-surface` README scheme section: "suits a dark terminal by default" is out of date and "With nothing chosen ... asks" is too narrow (README.md:343,359)
+- **BR-17** [Minor] `deferred-obligation-lacks-a-tracker` The owed real light-terminal "light (detected)" check exists only in atlas prose (atlas/define.md:555)
