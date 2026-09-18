@@ -323,7 +323,20 @@ Late replies, the whole class:
 
 ## Plan
 
-- [ ]
+Durable plan: `workshop/plans/000070-light-dark-colour-scheme-plan.md` (tasks,
+code, tests, mutation checks). Three review boundaries:
+
+- [ ] M1 — the tint is a role, the scheme is state: `store.Scheme`,
+  `schemeState` + atomic `schemeHolder`, `rowPaint.tinted` resolved at paint,
+  dead tint paths deleted (renderers moved to test helpers), `-scheme` and
+  `-language-tint on|off` (plan Tasks 1–6)
+- [ ] M2 — `/scheme` and the saved choice: `store.Read/Write/ClearScheme`, the
+  `deps.configDir` seam, `applyScheme` (persist-then-switch) and
+  `describeScheme`, the command in editor/piped/one-shot, pty harness
+  isolation, docs (Tasks 7–12)
+- [ ] M3 — detection: `parseBackgroundColour`, the bounded OSC decoder and
+  `KeyBackground`, the query at raw-mode entry, every consumer of the key kind,
+  conformance terminals, manual check in three terminals (Tasks 13–18)
 
 ## Log
 
