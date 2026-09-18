@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/xianxu/tools/cmd/define/store"
 	"strings"
 	"unicode/utf8"
 )
@@ -61,6 +62,10 @@ const (
 	// KeyPasteRefused is a paste over maxPasteRunes. It carries no text: the
 	// refusal is the message, and the caller reports it.
 	KeyPasteRefused
+	// KeyBackground is a terminal REPORT, not a keystroke: the answer to
+	// backgroundQuery (#70), carrying the scheme in Background. Never typing,
+	// never an answer, never cancels a gesture.
+	KeyBackground
 	// numKeyKinds is NOT a kind: it is the registry's extent, so a guard can
 	// DERIVE the set rather than restate it — the move numRegionKinds already
 	// makes for regions.
@@ -87,6 +92,8 @@ type Key struct {
 	// completed clicks. The wire conversion happens once in clickAt.
 	Row, Col int
 	click    *pointerClick // immutable ticket for a completed application click
+	// Background is what a KeyBackground reported.
+	Background store.Scheme
 }
 
 // keyDecoder is decodeKey plus the one piece of state a byte stream needs.
@@ -171,6 +178,8 @@ func decodeEscape(buf []byte) (Key, int) {
 		return Key{}, 0
 	}
 	switch buf[1] {
+	case ']':
+		return decodeOSC(buf)
 	case '[', 'O':
 		if len(buf) < 3 {
 			return Key{}, 0
@@ -440,4 +449,77 @@ func pointerButton(b int, released, legacy bool) (KeyKind, bool) {
 
 func isPointerKey(k KeyKind) bool {
 	return k == KeyPointerPress || k == KeyPointerMotion || k == KeyPointerRelease
+}
+
+// oscBackgroundReply is the front of the terminal's answer to backgroundQuery.
+const oscBackgroundReply = "\x1b]11;"
+
+// maxOSCReply bounds a reply, terminator included. A real one is about 25 bytes
+// (rgba: about 30); past this it is not a reply.
+const maxOSCReply = 64
+
+// decodeOSC decodes ESC ] … (#70). It SWALLOWS only the reply to the question
+// this program asks, and in two steps so no reply FORMAT can leak as typing — in
+// a sitting a leaked character is an answer:
+//
+//  1. swallow: ESC ] 11 ; then bytes in 0x20-0x7E up to BEL, ST (ESC \) or the
+//     8-bit ST 0x9C (never legal inside a payload), at most maxOSCReply bytes in
+//     all. A sequence longer than that is not a reply (a real one is ~25 bytes),
+//     so it decodes as it always has — the one way past this rule, and it takes
+//     a terminal no one ships. Any byte outside 0x20-0x7E other than a
+//     terminator — Ctrl-C, Enter, DEL, 0x80+, an ESC not followed by \ — ABORTS,
+//     and the input decodes exactly as it always has: ESC ] as a 2-byte
+//     KeyUnknown, then the rest. So Alt-] with meta-sends-escape, then typing or
+//     Ctrl-C, behaves as before; a user would have to type "11;" straight after
+//     Alt-] to enter the swallow at all.
+//  2. parse: rgb: → KeyBackground; any other payload → KeyUnknown, swallowed,
+//     nothing detected.
+//
+// While the buffer is still a PREFIX of a reply it returns 0 and waits. 0x03 is
+// never part of one, so Ctrl-C always aborts in the same pass (lessons: "Trusted
+// ANSI parsing is not untrusted control filtering").
+func decodeOSC(buf []byte) (Key, int) {
+	abort := func() (Key, int) { return Key{Kind: KeyUnknown, Raw: buf[:2]}, 2 }
+	for i := 2; i < len(oscBackgroundReply); i++ {
+		if i >= len(buf) {
+			return Key{}, 0
+		}
+		if buf[i] != oscBackgroundReply[i] {
+			return abort()
+		}
+	}
+	for i := len(oscBackgroundReply); i < len(buf); i++ {
+		if i >= maxOSCReply {
+			return abort()
+		}
+		switch c := buf[i]; {
+		case c == 0x07 || c == 0x9c:
+			return backgroundKey(buf[len(oscBackgroundReply):i], buf[:i+1]), i + 1
+		case c == 0x1b:
+			if i+1 >= maxOSCReply {
+				return abort() // ST would end past the cap
+			}
+			if i+1 == len(buf) {
+				return Key{}, 0
+			}
+			if buf[i+1] != '\\' {
+				return abort()
+			}
+			return backgroundKey(buf[len(oscBackgroundReply):i], buf[:i+2]), i + 2
+		case c < 0x20 || c > 0x7e:
+			return abort()
+		}
+	}
+	if len(buf) >= maxOSCReply {
+		return abort()
+	}
+	return Key{}, 0
+}
+
+// backgroundKey turns a swallowed reply into a report, or into nothing at all.
+func backgroundKey(payload, raw []byte) Key {
+	if s, ok := parseBackgroundColour(string(payload)); ok {
+		return Key{Kind: KeyBackground, Background: s, Raw: raw}
+	}
+	return Key{Kind: KeyUnknown, Raw: raw}
 }

@@ -1027,13 +1027,13 @@ func parseBackgroundColour(payload string) (store.Scheme, bool) {
 }
 ```
 - [x] **Step 4: PASS. Step 5: Commit** `#70 M3: read a terminal's background colour as light or dark`
-- [ ] **Step 6: Mutations:** replace the Rec. 601 sum with linear luminance (square each component, weights 0.2126/0.7152/0.0722) → the `80`/`7f` pair reddens; accept 5 digits → the 5-digit reject reddens. Restore each.
+- [x] **Step 6: Mutations:** replace the Rec. 601 sum with linear luminance (square each component, weights 0.2126/0.7152/0.0722) → the `80`/`7f` pair reddens; accept 5 digits → the 5-digit reject reddens. Restore each.
 
 ### Task 14: The decoder swallows the reply, then parses it
 
 **Files:** Modify `cmd/define/key.go` (`KeyBackground` before the `numKeyKinds` sentinel; `Key.Background store.Scheme`; `case ']'` in `decodeEscape`), `cmd/define/play_loop.go` (`sittingKeyHandling` row only); tests `cmd/define/key_test.go`, the `readInput` tests.
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - **TestDecodeBackgroundReply**: `"\x1b]11;rgb:ffff/ffff/ffff\x07"` → `KeyBackground`/light, consumed = len; the same with ST `"\x1b\\"` and with the 8-bit ST `"\x9c"`; EVERY strict prefix of each → `used == 0`.
   - **TestDecodeBackgroundReplyOtherFormats**: `rgba:…` and `#ffffff` payloads → ONE `KeyUnknown` consuming the whole reply.
   - **TestDecodeOSCAbortsAsToday**: `"\x1b]x"` → `KeyUnknown` (2 bytes), then `KeyRune 'x'`; `"\x1b]11;rgb\x03"` → `KeyUnknown` (2) and, decoding on, `KeyInterrupt` with nothing waiting; DEL (`0x7f`) and `0x80` in the payload abort; `ESC` then anything but `\` aborts.
@@ -1041,7 +1041,7 @@ func parseBackgroundColour(payload string) (store.Scheme, bool) {
   - **TestReadInputBackgroundAcrossWrites** (`io.Pipe`, separate writes): `"\x1b]"` then `"\x03"` → `KeyUnknown`, `KeyInterrupt`; `"\x1b]"` then `"a"` → `KeyUnknown`, `KeyRune 'a'`; a reply split in three writes → one `KeyBackground`.
   - `TestEveryKeyKindIsDecidedForASitting` reddens as soon as `KeyBackground` exists — watch it fail, then add the row.
   - Fuzz: add seeds `"\x1b]"`, `"\x1b]11;"`, `"\x1b]11;rgb:ffff/ffff/ffff\x07"`, `"\x1b]11;rgba:0/0/0/0\x1b\\"` to all three targets (`FuzzDecodeKeyNeverLeaksEscapeTails`, `FuzzDecodeKey`, `FuzzDecodeMouseIsBounded`), and to `FuzzDecodeKey` the invariant: a `KeyBackground` only when the consumed bytes start with `"\x1b]11;rgb:"` and end in BEL or ST.
-- [ ] **Step 2: FAIL. Step 3: Implement** in `key.go`:
+- [x] **Step 2: FAIL. Step 3: Implement** in `key.go`:
 
 ```go
 // oscBackgroundReply is the front of the terminal's answer to backgroundQuery.
@@ -1116,8 +1116,8 @@ func backgroundKey(payload, raw []byte) Key {
 }
 ```
   `decodeEscape`: add `case ']': return decodeOSC(buf)` (after the `len(buf) < 2` guard). `KeyKind`: `KeyBackground` with the doc "a terminal REPORT, not a keystroke: the answer to backgroundQuery. Never typing, never an answer, never cancels a gesture." `sittingKeyHandling`: `KeyBackground: false` under "a terminal report, intercepted before toInput (Task 16) — never an answer".
-- [ ] **Step 4: PASS**: `go test ./cmd/define -run 'Key|Decode|Fuzz|Sitting|ReadInput' -count=1`; then fuzz each target 30 s, anchored so only one matches: `go test ./cmd/define -run '^$' -fuzz '^FuzzDecodeKey$' -fuzztime 30s`, likewise `'^FuzzDecodeKeyNeverLeaksEscapeTails$'` and `'^FuzzDecodeMouseIsBounded$'`.
-- [ ] **Step 5: Commit** `#70 M3: the key decoder reads a background report, bounded byte by byte`
+- [x] **Step 4: PASS**: `go test ./cmd/define -run 'Key|Decode|Fuzz|Sitting|ReadInput' -count=1`; then fuzz each target 30 s, anchored so only one matches: `go test ./cmd/define -run '^$' -fuzz '^FuzzDecodeKey$' -fuzztime 30s`, likewise `'^FuzzDecodeKeyNeverLeaksEscapeTails$'` and `'^FuzzDecodeMouseIsBounded$'`.
+- [x] **Step 5: Commit** `#70 M3: the key decoder reads a background report, bounded byte by byte`
 - [ ] **Step 6: Mutations:** drop the `c < 0x20 || c > 0x7e` abort → the DEL/Ctrl-C cases redden; drop the ESC-case cap check → the 65-byte ST case reddens; make `backgroundKey` return `KeyBackground` for any payload → the `rgba` case reddens. Restore each.
 
 ### Task 15: Ask the question at raw-mode entry

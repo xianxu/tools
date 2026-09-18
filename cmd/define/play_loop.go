@@ -585,6 +585,8 @@ var sittingKeyHandling = map[KeyKind]bool{
 	KeyKillLine: false,
 	// An unmodelled sequence is inert everywhere.
 	KeyUnknown: false,
+	// A terminal report, intercepted before toInput (#70) — never an answer.
+	KeyBackground: false,
 }
 
 // toInput translates a decoded terminal Key into play's own Input.
