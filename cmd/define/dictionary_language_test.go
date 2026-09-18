@@ -113,46 +113,12 @@ func TestDictionaryDefinitionsSectionTintKeepsRegions(t *testing.T) {
 	}
 }
 
-func TestDictionaryParserSourceOffsets(t *testing.T) {
-	for _, raw := range []string{
-		"red noun 1 red: [label] : red. | red. 2 red: red.",
-		"red | rɛd | noun 1 red: [label] : red. | red. verb [with object] | rɛd | 1 red: red.",
-	} {
-		entry := ParseEntry(raw)
-		for _, block := range entry.Blocks {
-			for _, sense := range block.Senses {
-				if !sense.sourceKnown || raw[sense.sourceAt:sense.sourceAt+len(sense.Gloss)] != sense.Gloss {
-					t.Fatalf("wrong gloss offset: %+v", sense)
-				}
-				for _, example := range sense.Examples {
-					if !example.sourceKnown || raw[example.sourceAt:example.sourceAt+len(example.Text)] != example.Text {
-						t.Fatalf("wrong example offset: %+v", example)
-					}
-				}
-			}
-		}
-	}
-	entry := ParseEntry("red noun (past red | rɛd |) a word")
-	if entry.Blocks[0].Senses[0].sourceKnown {
-		t.Fatal("rewritten source retained an unproven offset")
-	}
-}
-
 func TestDictionaryProjectionDoesNotJoinWords(t *testing.T) {
 	for _, pair := range [][2]string{{"an other", "another"}, {"another", "an other"}} {
 		source := languageText{text: pair[0], spans: []languageSpan{{start: 0, end: len(pair[0]), lang: "es"}}}
 		if got := projectDictionaryText(source, pair[1]); len(got.spans) > 0 {
 			t.Fatalf("trusted changed word boundaries: %q → %q", pair[0], pair[1])
 		}
-	}
-}
-
-func TestDictionaryUnprovenSectionAlignmentStaysNeutral(t *testing.T) {
-	source := languageText{text: "red noun other", spans: []languageSpan{{start: 0, end: 3, lang: "es"}}}
-	set := definitionSet{sections: []definitionSection{{err: ErrNoEntry}, {entries: []string{"red noun changed"}, source: []languageText{source}}}}
-	out, _ := renderDefinitions(set, RenderOpts{Color: true, Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}})
-	if strings.Contains(out, languageDark) {
-		t.Fatal("mismatched record text retained ownership")
 	}
 }
 

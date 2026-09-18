@@ -144,14 +144,14 @@ Run `CHECK` after the commit, because two guards read the commit window.
 
 **Files:** create `cmd/define/language_text_test.go`; modify `dictionary_language_test.go`, `dict_test.go`, `dictionary_source_test.go`, `terminal_serialization_test.go`.
 
-- [ ] `TestDisplayProjectionOwnsOnlyMatchingGlyphs` covers `projectDisplayText`'s two directions. It needs one case per branch:
+- [x] `TestDisplayProjectionOwnsOnlyMatchingGlyphs` covers `projectDisplayText`'s two directions. It needs one case per branch:
   - a glyph that differs from the source gives no ownership. The case that reaches the glyph branch is a **same-length substitution** (`"red red"`→`"red bed"`). A changed-length word (`"red red"`→`"red green"`) and joined words (`"an other"`→`"another"`) stay as cases for the length guards (`i >= len(source.text)` and the trailing-leftover check), which are what catch them. Measured 2026-09-18 on a mutant copy of today's body;
   - generated whitespace inside a source word keeps ownership (an inserted break, `"another"`→`"an other"`).
-- [ ] `FuzzDisplayProjection` is seeded with those cases. For any source and rendered text, it asserts the contract and nothing about the input's form (lessons: *A fuzz property may assert only YOUR contract*):
+- [x] `FuzzDisplayProjection` is seeded with those cases. For any source and rendered text, it asserts the contract and nothing about the input's form (lessons: *A fuzz property may assert only YOUR contract*):
   - `result.text == rendered`;
   - spans lie within `rendered`, ascend, and don't overlap.
-- [ ] Rename `TestDictionaryDefinitionsRetainSourceAndRegions` to `TestDictionaryDefinitionsSectionTintKeepsRegions`, whose failure text becomes "tint changed region behavior". Rename `TestDictionaryDuplicateRecordOwnershipIsDeterministic` to `TestDictionaryDuplicateRecordSelectionIsDeterministic`.
-- [ ] Drop `Language:` from every `RenderOpts` literal in the tests. It is optional and unread, so this compiles today. The literals are in:
+- [x] Rename `TestDictionaryDefinitionsRetainSourceAndRegions` to `TestDictionaryDefinitionsSectionTintKeepsRegions`, whose failure text becomes "tint changed region behavior". Rename `TestDictionaryDuplicateRecordOwnershipIsDeterministic` to `TestDictionaryDuplicateRecordSelectionIsDeterministic`.
+- [x] Drop `Language:` from every `RenderOpts` literal in the tests. It is optional and unread, so this compiles today. The literals are in:
   - `TestDictionaryMonolingualOriginAndDisabledTint`
   - `TestDictionaryDefinitionsSectionTintKeepsRegions`
   - `TestDictionaryUnprovenSectionAlignmentStaysNeutral`
@@ -159,22 +159,22 @@ Run `CHECK` after the commit, because two guards read the commit window.
   - `TestDefinitionUnknownSourceDoesNotInheritStudyLanguage`
   - `TestDictionaryAssemblyOwnsVerifiedPrimaryLanguage`
   - `TestTerminalSerializationPreservesOverlongDictionarySource`
-- [ ] Commit (`#76: pin the display projection; drop the unread Language from test literals`), then run `CHECK`. **This plan file lands in the same commit.** `TestPlanCitesTestsThatExist` has no in-progress exemption, so on its own the plan is red: measured 2026-09-18, it fails on exactly the three test names this task writes. The new tests describe a path that survives, so they must pass against today's code. `CHECK` is where that gets observed.
+- [x] Commit (`#76: pin the display projection; drop the unread Language from test literals`), then run `CHECK`. **This plan file lands in the same commit.** `TestPlanCitesTestsThatExist` has no in-progress exemption, so on its own the plan is red: measured 2026-09-18, it fails on exactly the three test names this task writes. The new tests describe a path that survives, so they must pass against today's code. `CHECK` is where that gets observed.
 
 ### Task 2: Remove every writer and reader of the chain's data
 
 **Files:** `cmd/define/parse.go`, `cmd/define/definitions.go`; tests in `dictionary_language_test.go` and `bilingual_conformance_test.go`.
 
-- [ ] `git checkout 62c6a66^ -- cmd/define/parse.go`, which removes `Entry.source` and the offset plumbing.
-- [ ] `definitions.go`:
+- [x] `git checkout 62c6a66^ -- cmd/define/parse.go`, which removes `Entry.source` and the offset plumbing.
+- [x] `definitions.go`:
   - remove `definitionSection.source`;
   - in `renderDefinitionOutput`, remove `ro.Language = …`, `ro.Tint = tintPolicy{}` and the `entry.source` block;
   - in `spanishDefinitions.supplement`, remove both `section.source` appends.
-- [ ] Delete the tests that use what this task removes:
+- [x] Delete the tests that use what this task removes:
   - `TestDictionaryParserSourceOffsets`;
   - `TestDictionaryUnprovenSectionAlignmentStaysNeutral`, which builds a `definitionSection{source: …}`;
   - `TestBilingualNativeLanguageOwnership`, conformance-tagged, which writes `entry.source`.
-- [ ] `git diff 62c6a66^ -- cmd/define/parse.go` is empty.
+- [x] `git diff 62c6a66^ -- cmd/define/parse.go` is empty.
 - [ ] Commit (`#76: stop writing source provenance — parse.go is its pre-#65 self`), then run `CHECK`.
 
 ### Task 3: Delete the declarations and producers

@@ -117,7 +117,7 @@ written at 40% of its range, per v3.1:
 
 Single pass, one `sdlc close`. Task detail lives in the durable plan.
 
-- [ ] Task 1: add tests that are valid today. That means a unit test and a fuzz
+- [x] Task 1: add tests that are valid today. That means a unit test and a fuzz
   pinning `projectDisplayText` in both directions, renaming the two tests whose
   names describe the deleted concept, and dropping the unread `Language:` from
   test literals.

@@ -43,7 +43,6 @@ type Entry struct {
 	Blocks   []Block
 	Sections []Section
 	Raw      string
-	source   languageText // explicit ownership from the selected native record
 }
 
 // Accessors derive from Head, so there is exactly one representation of the
@@ -180,12 +179,10 @@ type Block struct {
 
 // Sense is a numbered sense or a • sub-sense.
 type Sense struct {
-	Number      string
-	Sub         bool
-	Gloss       string
-	Examples    []Example
-	sourceAt    int
-	sourceKnown bool
+	Number   string
+	Sub      bool
+	Gloss    string
+	Examples []Example
 }
 
 // Example is one usage example, with any grammar label that introduces it.
@@ -198,10 +195,8 @@ type Sense struct {
 // models this concept one level
 // up; this is its counterpart.
 type Example struct {
-	sourceAt    int
-	sourceKnown bool
-	Label       string
-	Text        string
+	Label string
+	Text  string
 }
 
 // Section is a trailing all-caps block such as DERIVATIVES or ORIGIN.
@@ -399,16 +394,15 @@ func ParseEntry(raw string) Entry {
 		// Sections must be peeled here too. Skipping it left DERIVATIVES inside a
 		// block, where its pronunciation pipes were consumed as example
 		// separators and surfaced as quoted "-ˈkälik(ə)lē" examples.
-		bodyAt := len(raw) - len(body)
 		body, e.Sections = splitSections(body)
-		e.Blocks = parseBlocks(body, e.HeadPOS(), "", bodyAt)
+		e.Blocks = parseBlocks(body, e.HeadPOS(), "")
 		return e
 	}
 	e.IPA = ipa
 	e.Head = parseHead(rewritePronunciations(head, "", ""))
 	body, sections := splitSections(rest)
 	e.Sections = sections
-	e.Blocks = parseBlocks(body, e.HeadPOS(), ipa, len(raw)-len(rest))
+	e.Blocks = parseBlocks(body, e.HeadPOS(), ipa)
 	return e
 }
 
@@ -532,8 +526,7 @@ func splitSections(body string) (string, []Section) {
 
 // parseBlocks splits the body on part-of-speech tokens. gluedPOS opens block 0
 // when the head already carried a part-of-speech.
-func parseBlocks(body, gluedPOS, entryIPA string, sourceBase ...int) []Block {
-	base := sourceOffset(sourceBase)
+func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 	type mark struct {
 		idx int
 		pos string
@@ -564,7 +557,7 @@ func parseBlocks(body, gluedPOS, entryIPA string, sourceBase ...int) []Block {
 		i += width
 	}
 
-	newBlock := func(pos, text string, offset int) Block {
+	newBlock := func(pos, text string) Block {
 		b := Block{POS: pos}
 		// A block's pronunciation follows its POS, but a grammar label may sit
 		// between them: "verb [with object] | rəˈkôrd | 1 set down …". The label
@@ -572,7 +565,6 @@ func parseBlocks(body, gluedPOS, entryIPA string, sourceBase ...int) []Block {
 		if before, ipa, after, ok := findPronunciation(text); ok && isGrammarLabelOnly(before) {
 			b.IPA = ipa
 			b.Label = strings.TrimSpace(before)
-			offset = advanceSource(offset, len(text)-len(after))
 			text = after
 		}
 		// Convert any remaining pronunciation spans BEFORE splitting senses.
@@ -581,14 +573,8 @@ func parseBlocks(body, gluedPOS, entryIPA string, sourceBase ...int) []Block {
 		// parroted | ˈperədəd |)" — whose pipes would otherwise be consumed as
 		// example separators, burying the pronunciation inside a quoted example
 		// where nothing downstream can recognise it.
-		rewritten := rewritePronunciations(text, "", "")
-		if rewritten != text {
-			offset = -1
-		} // rewritten bytes have no exact source range
-		text = rewritten
-		trimmed := strings.TrimSpace(text)
-		offset = advanceSource(offset, len(text)-len(strings.TrimLeftFunc(text, unicode.IsSpace)))
-		b.Senses = parseSenses(trimmed, offset)
+		text = rewritePronunciations(text, "", "")
+		b.Senses = parseSenses(strings.TrimSpace(text))
 		return b
 	}
 
@@ -598,7 +584,7 @@ func parseBlocks(body, gluedPOS, entryIPA string, sourceBase ...int) []Block {
 		lead = body[:marks[0].idx]
 	}
 	if strings.TrimSpace(lead) != "" || gluedPOS != "" {
-		lb := newBlock(gluedPOS, lead, base)
+		lb := newBlock(gluedPOS, lead)
 		lb.FromHead = gluedPOS != ""
 		blocks = append(blocks, lb)
 	}
@@ -607,7 +593,7 @@ func parseBlocks(body, gluedPOS, entryIPA string, sourceBase ...int) []Block {
 		if i+1 < len(marks) {
 			end = marks[i+1].idx
 		}
-		blocks = append(blocks, newBlock(m.pos, body[m.idx+len(m.pos):end], advanceSource(base, m.idx+len(m.pos))))
+		blocks = append(blocks, newBlock(m.pos, body[m.idx+len(m.pos):end]))
 	}
 	return blocks
 }
@@ -620,8 +606,7 @@ var senseSplit = regexp.MustCompile(`(?:^|\s)(\d+)\s|•`)
 // marathons") looks exactly like a sense number, so a numbered split is accepted
 // only when it opens the block or continues the sequence. Rejected numerals stay
 // in the surrounding sense text — they are never dropped.
-func parseSenses(text string, sourceBase ...int) []Sense {
-	base := sourceOffset(sourceBase)
+func parseSenses(text string) []Sense {
 	if text == "" {
 		return nil
 	}
@@ -672,11 +657,11 @@ func parseSenses(text string, sourceBase ...int) []Sense {
 		want++
 	}
 	if len(accepted) == 0 {
-		return []Sense{newSense("", false, text, base)}
+		return []Sense{newSense("", false, text)}
 	}
 	var senses []Sense
 	if lead := strings.TrimSpace(text[:accepted[0][0]]); lead != "" {
-		senses = append(senses, newSense("", false, lead, advanceSource(base, len(text)-len(strings.TrimLeftFunc(text, unicode.IsSpace)))))
+		senses = append(senses, newSense("", false, lead))
 	}
 	for i, loc := range accepted {
 		end := len(text)
@@ -687,7 +672,7 @@ func parseSenses(text string, sourceBase ...int) []Sense {
 		if loc[2] >= 0 {
 			number = text[loc[2]:loc[3]]
 		}
-		senses = append(senses, newSense(number, number == "", text[loc[1]:end], advanceSource(base, loc[1])))
+		senses = append(senses, newSense(number, number == "", strings.TrimSpace(text[loc[1]:end])))
 	}
 	return senses
 }
@@ -754,18 +739,14 @@ func firstSenseNumber(locs [][]int, text string) int {
 // `delimiterDepths` was already in this file for the same class of mistake:
 // firstSenseNumber uses it to ignore numerals inside brackets. Reaching for the
 // tool that was already here is the whole fix.
-func newSense(number string, sub bool, text string, sourceBase ...int) Sense {
-	base := advanceSource(sourceOffset(sourceBase), len(text)-len(strings.TrimLeftFunc(text, unicode.IsSpace)))
-	text = strings.TrimSpace(text)
-	s := Sense{Number: number, Sub: sub, sourceAt: base, sourceKnown: base >= 0}
+func newSense(number string, sub bool, text string) Sense {
+	s := Sense{Number: number, Sub: sub}
 	if i := topLevelColon(text); i >= 0 {
 		s.Gloss = strings.TrimSpace(text[:i])
-		at := i + 1
 		for _, seg := range strings.Split(text[i+1:], "|") {
-			if ex, ok := newExample(seg, advanceSource(base, at)); ok {
+			if ex, ok := newExample(seg); ok {
 				s.Examples = append(s.Examples, ex)
 			}
-			at += len(seg) + 1
 		}
 		return s
 	}
@@ -786,8 +767,7 @@ func topLevelColon(text string) int {
 
 // newExample peels any leading bracketed grammar label (and the colon that
 // follows it) off one example segment.
-func newExample(seg string, sourceBase ...int) (Example, bool) {
-	original := seg
+func newExample(seg string) (Example, bool) {
 	seg = strings.TrimSpace(seg)
 	var label string
 	for {
@@ -803,14 +783,11 @@ func newExample(seg string, sourceBase ...int) (Example, bool) {
 		seg = strings.TrimSpace(seg[end+1:])
 		seg = strings.TrimSpace(strings.TrimPrefix(seg, ":"))
 	}
-	at := len(original) - len(strings.TrimRightFunc(original, unicode.IsSpace)) // trailing whitespace
-	at = len(original) - at - len(seg)
 	seg = strings.TrimRight(seg, ".")
 	if seg == "" && label == "" {
 		return Example{}, false
 	}
-	base := advanceSource(sourceOffset(sourceBase), at)
-	return Example{Label: label, Text: seg, sourceAt: base, sourceKnown: base >= 0}, true
+	return Example{Label: label, Text: seg}, true
 }
 
 // --- small helpers ---------------------------------------------------------
@@ -989,19 +966,4 @@ func indexToken(s, token string) int {
 		}
 	}
 	return -1
-}
-
-// Source offsets are threaded at slicing boundaries; transformed text explicitly
-// loses its mapping rather than searching for a similarly spelled occurrence.
-func sourceOffset(offsets []int) int {
-	if len(offsets) == 0 {
-		return -1
-	}
-	return offsets[0]
-}
-func advanceSource(at, n int) int {
-	if at < 0 {
-		return -1
-	}
-	return at + n
 }

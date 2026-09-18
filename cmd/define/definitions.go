@@ -11,7 +11,6 @@ type definitionSection struct {
 	label        string
 	language     store.Lang
 	entries      []string
-	source       []languageText
 	documents    []bilingualDocument
 	presentation store.Lang
 	formatErr    error
@@ -77,15 +76,10 @@ func renderDefinitionOutput(set definitionSet, opt RenderOpts) renderedOutput {
 		}
 		for entryIndex, raw := range section.entries {
 			ro := opt
-			ro.Language = section.language
-			ro.Tint = tintPolicy{}
 			if index > 0 {
 				ro.Vocab = nil
 			}
 			entry := ParseEntry(raw)
-			if entryIndex < len(section.source) && section.source[entryIndex].text == raw {
-				entry.source = section.source[entryIndex]
-			}
 			var rendered string
 			var rs []Region
 			if entryIndex < len(section.documents) && section.documents[entryIndex].root != nil {
@@ -139,9 +133,6 @@ func (d spanishDefinitions) supplement(word, primary string) definitionSection {
 			section.documents = append(section.documents, doc)
 			if parseErr != nil {
 				section.formatErr = parseErr
-				section.source = append(section.source, languageText{text: record.Text})
-			} else {
-				section.source = append(section.source, doc.native)
 			}
 		}
 	}
