@@ -973,7 +973,7 @@ func runScheme(c commandCtx, args []string) int {
 - [x] **Step 3:** **TestPTYSavedSchemeSurvivesARestart** (tag `darwin && conformance`; skip via `bilingualNativeProbe` like `TestPTYLanguageTint`), all three runs passing ONE shared `XDG_CONFIG_HOME=<dir>` in `env` and one Spanish deck: run 1 `/scheme light`, wait for `scheme light (saved)`, quit; run 2 looks up `red` → the Spanish section carries `languageLight`; `/scheme auto`, wait for its report, quit; run 3 → `languageDark`.
 - [x] **Step 4:** `go test ./cmd/define/... -count=1`; `go test -tags conformance ./cmd/define -run 'TestPTY' -count=1` — PASS; name what ran vs skipped.
 - [x] **Step 5: Commit** `#70 M2: the pty harness gets its own config directory`
-- [ ] **Step 6: Mutation — never touching the real config:** drop the harness's `XDG_CONFIG_HOME` line, then run `XDG_CONFIG_HOME=$(mktemp -d) sh -c 'mkdir -p "$XDG_CONFIG_HOME/define" && echo light > "$XDG_CONFIG_HOME/define/scheme" && go test -tags conformance ./cmd/define -run TestPTYLanguageTint/default -count=1'` (the harness appends `os.Environ()`, so the binary inherits it) → the `default` subtest reddens. Restore.
+- [x] **Step 6: Mutation — never touching the real config:** drop the harness's `XDG_CONFIG_HOME` line, then run `XDG_CONFIG_HOME=$(mktemp -d) sh -c 'mkdir -p "$XDG_CONFIG_HOME/define" && echo light > "$XDG_CONFIG_HOME/define/scheme" && go test -tags conformance ./cmd/define -run TestPTYLanguageTint/default -count=1'` (the harness appends `os.Environ()`, so the binary inherits it) → the `default` subtest reddens. Restore.
 
 ### Task 12: M2 boundary
 

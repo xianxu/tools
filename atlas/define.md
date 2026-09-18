@@ -512,9 +512,9 @@ screen. `layoutSelectionFrame` reads it ONCE per frame and `paintedTranscript` o
 switch recolours history and the exit transcript, and no frame carries two shades. Its
 only writers are its transitions — `choose`, `forget`, `detect` — each reporting whether
 the painted shade changed. Writers with no screen (`serializeOutput`: one-shot, piped,
-answers) take the scheme at write time. The flag is `-scheme dark|light|auto`; in M1 the
-flag is the only choice there is — the saved and session sources arrive with `/scheme`
-(M2), and a report from the terminal with detection (M3), so `auto` means dark until then.
+answers) take the scheme at write time. The choices are `-scheme dark|light|auto` and
+`/scheme` (see Command mode); a report from the terminal arrives with detection (M3),
+so until then `auto` means the saved choice, else dark.
 
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —
@@ -732,8 +732,12 @@ ephemeral by construction and the transcript is the record.
 
 ## The store
 
-Persistence is YAML files under the **working directory** — no config, no brain
-resolution, no home-directory search. `NewYAML(dir, lang, warn)` takes both the
+Persistence is YAML files under the **working directory** — no brain resolution,
+no home-directory search. The ONE exception is not the deck's at all: the saved
+colour scheme (#70) is the TERMINAL's property, so it lives in the user's config
+directory — `$XDG_CONFIG_HOME/define/scheme`, else `$HOME/.config/define/scheme`,
+absolute bases only — through `store.ReadScheme`/`WriteScheme`/`ClearScheme`. See
+`/scheme` under Command mode. `NewYAML(dir, lang, warn)` takes both the
 directory and the language as parameters, so *who chooses them* stays one line at
 the boundary if a config arrives later.
 
@@ -989,6 +993,29 @@ literal is `\word`. `matchesFor` unwraps both — the `?` especially, because
 requiring the user to type one to complete a question they asked without one
 would make past questions uncompletable. `/` is deliberately not unwrapped:
 commands are a real separate namespace, not a marker on a word.
+
+### `/scheme`: the one setting that is not the deck's (#70)
+
+`/scheme` reports the colour scheme in use and where it came from; `/scheme
+light|dark` switches and saves it; `/scheme auto` forgets the saved choice. The
+precedence is `-scheme` flag, then the saved file, then dark — and a `/scheme`
+choice REPLACES a flag's for the session. The transition is `applyScheme`,
+**persist then switch** — `/bilingual`'s rule, reused: a failed write changes
+nothing, so no report claims a switch that did not persist. With nowhere to save
+(no absolute `$XDG_CONFIG_HOME` or `$HOME`) a session switches for itself and says
+`(session only; not saved)`; the one-shot `define /scheme light` has no session to
+keep it in, so it refuses. Every report is true of its state — `describeScheme`
+names the source (`saved`, `-scheme flag`, `session only`, or the default).
+
+The recolour needs no command-specific code: every screen reads the one
+`schemeHolder` at paint, so the editor's ordinary draw after dispatch repaints
+history in the new shade. `commandCtx` carries the holder and its
+`schemePersister` (`nil` = nowhere to save) plus two facts only a loop can
+supply — `session` (both loops) and `fullScreen` (the raw editor) — each pinned by
+a test that drives that loop. The file is untrusted input: capped at 64 bytes,
+parsed into the closed enum, anything else one warning at startup and ignored.
+`ClearScheme` removes only what is ours — the directory only if it is a real,
+now-empty directory, never a dotfile manager's symlink.
 
 ### `/lang` and the one thing a `deps` swap cannot reach
 
