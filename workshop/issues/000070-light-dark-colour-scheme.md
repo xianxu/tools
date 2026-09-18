@@ -509,3 +509,15 @@ kept its own SHADE — the opposite of #70 — and now asserts each row keeps it
 own tint BIT and that a producer mutating its slice after writing does not
 reach the screen. pty conformance (`TestPTYLanguageTint`, `TestPTYNativeRendirSectionLayout`)
 ran against the built binary with `-scheme dark|light` and `-language-tint off`: green.
+
+M1 boundary. Operator decision on the residue: file a follow-up — #76
+("delete or re-use #66's orphaned source-provenance chain"), carrying the member
+list and the four tests that go with it. Pre-existing failures found while
+verifying, all reproduced on the branch point 75370a2 (so not #70's): 13 pty
+conformance tests fail in this environment (`TestPTYSuggestionAndAcceptance`,
+`TestPTYCommandMenuAppearsAndClears`, `TestPTYTranscriptIsPrintedOnExit`,
+`TestPTYWithoutMouseBehavesAsBefore`, `TestPTYMouseTrackingIsAskedForAndGivenBack`,
+`TestPTYCtrlCMidAnswerKeepsTheSession` and seven `TestPTYPlay*`), and
+`TestPlayClickOnThePromptWordPlaysIt` fails under `-race` only (3/3 on the base:
+its 5 s wait is too short for the race detector). `TestLongPassageStreamsAgainstLiveService`
+asks a live model and failed on answer shape, not code.
