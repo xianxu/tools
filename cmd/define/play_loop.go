@@ -112,7 +112,7 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 	// belongs under the line being typed (D3a). Everything else about taking a
 	// terminal is the same question, and the first version of this file answered
 	// it a second time (BR-7).
-	con := newConsole(ctx, d, sess, stdout, newPinnedScreen)
+	con := newConsole(ctx, d, sess, stdout, newPinnedScreen, wantsBackground(opt))
 	return playSession(ctx, d, opt, play.NewSession(questions), held,
 		readInput(ctx, f, interrupts, con.pointer), con)
 }

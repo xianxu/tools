@@ -30,7 +30,7 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	}
 	defer sess.restore()
 
-	con := newConsole(ctx, d, sess, stdout, newLiveScreen)
+	con := newConsole(ctx, d, sess, stdout, newLiveScreen, wantsBackground(opt))
 	keys := readInput(ctx, f, interrupts, con.pointer)
 	return runEditor(ctx, keys, interrupts, d, opt, con)
 }
@@ -71,13 +71,21 @@ func applyShape(opt *options, view display, sz winSize) {
 // the editor's footer follows its content, and a sitting's status bar sits on
 // the terminal's bottom row (`#41` D3a).
 func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
-	newScreen func(tty io.Writer, rows, cols int) *liveScreen) console {
+	newScreen func(tty io.Writer, rows, cols int) *liveScreen, askTerminal bool) console {
 	// The alternate screen, and with it the END of the cooked/raw dance (#30 D4).
 	// `cooked()` existed so a definition's bare "\n"s translated while it was
 	// printed; here the screen places every line itself, so nothing depends on
 	// the line discipline and raw mode is continuous — which is what "render
 	// cooked, play raw" wanted all along.
 	sess.enterModes()
+	// The terminal's background, asked once per raw session, after the modes
+	// (#70). The reply is a KeyBackground whenever it comes; nothing waits.
+	// askTerminal, not ask: that name is the package's ask().
+	if askTerminal {
+		for _, q := range terminalQueries {
+			sess.ask(q.query)
+		}
+	}
 	live := newScreen(stdout, terminalRows(stdout), terminalCols(stdout))
 	// Before the router and the resize watcher can see it (#70).
 	live.attachScheme(d.scheme)

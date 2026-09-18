@@ -481,6 +481,39 @@ func TestEveryEnabledInputModeIsDecoded(t *testing.T) {
 			})
 		}
 	}
+
+	// And every QUESTION the program asks (#70). Not modes — no ?NNNNh to read
+	// off, so a separate loop keyed by name — but the same obligation: a
+	// terminal that answers owes the decoder a case. FAILS CLOSED on a query
+	// with no row.
+	queryReplies := map[string][]struct{ encoding, sample string }{
+		"background colour": {
+			{"rgb with BEL", "\x1b]11;rgb:ffff/ffff/ffff\x07"},
+			{"rgb with ST", "\x1b]11;rgb:0/0/0\x1b\\"},
+			{"rgba", "\x1b]11;rgba:ffff/ffff/ffff/ffff\x1b\\"},
+		},
+	}
+	if len(terminalQueries) == 0 {
+		t.Fatal("no terminal queries found; this half of the guard would be vacuous")
+	}
+	for _, q := range terminalQueries {
+		rows, listed := queryReplies[q.name]
+		if !listed {
+			t.Errorf("the program asks the terminal %q and no row here says how the answer decodes", q.name)
+			continue
+		}
+		for _, r := range rows {
+			t.Run(q.name+" — "+r.encoding, func(t *testing.T) {
+				k, n := decodeKey([]byte(r.sample))
+				if n != len(r.sample) {
+					t.Errorf("decodeKey(%q) consumed %d of %d — the tail reaches the line as text", r.sample, n, len(r.sample))
+				}
+				if k.Kind == KeyRune {
+					t.Errorf("decodeKey(%q) produced the rune %q — the answer was typed rather than read", r.sample, k.Rune)
+				}
+			})
+		}
+	}
 }
 
 // An extended mouse button is not the left one.

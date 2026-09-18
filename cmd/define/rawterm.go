@@ -134,6 +134,33 @@ var enabledModes = []struct {
 	{"alternate screen", altScreenOn, altScreenOff, false},
 }
 
+// backgroundQuery asks the terminal for its background colour (OSC 11, #70).
+// The answer arrives as input, whenever it arrives; nothing waits for it.
+const backgroundQuery = "\x1b]11;?\x1b\\"
+
+// terminalQueries is every QUESTION this program asks a terminal. Not modes —
+// there is nothing to tear down — but they share enabledModes' obligation: a
+// terminal that answers owes the decoder a case, and
+// TestEveryEnabledInputModeIsDecoded derives from both lists. Every query here
+// is about the tint today, so one condition (wantsBackground) governs them all;
+// a query with a different condition gets its own.
+var terminalQueries = []struct{ name, query string }{
+	{"background colour", backgroundQuery},
+}
+
+// ask writes a query where the modes go. NEVER through a screen: scanEscape
+// reads ESC ] as a 2-byte escape, so the rest would be painted as text.
+func (r *rawSession) ask(query string) {
+	if r == nil || r.control == nil {
+		return
+	}
+	fmt.Fprint(r.control, query)
+}
+
+// wantsBackground: ask only where a tint can appear — colour on, the tint on,
+// not -raw. TERM=dumb already turned tintOn off at flag parse.
+func wantsBackground(opt options) bool { return opt.tty && opt.color && opt.tintOn && !opt.raw }
+
 // enterModes takes every mode, in reverse teardown order.
 //
 // A LOOP over the list rather than three calls, so a mode added to the list is

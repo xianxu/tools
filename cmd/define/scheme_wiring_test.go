@@ -24,7 +24,7 @@ func TestNewConsoleAttachesTheSchemeHolder(t *testing.T) {
 		func(tty io.Writer, rows, cols int) *liveScreen {
 			screen = newLiveScreen(tty, rows, cols)
 			return screen
-		})
+		}, false)
 	if con.finish != nil {
 		defer con.finish()
 	}
@@ -70,4 +70,73 @@ func TestASittingPaintsInTheEditorsScheme(t *testing.T) {
 	}
 	keys <- Key{Kind: KeyInterrupt} // end the sitting
 	<-done
+}
+
+// newConsole asks EXACTLY the terminal's queries, after the modes, when asked
+// to — one recorder for the control stream and the screen, as production writes
+// both to the same tty. Derived from terminalQueries, so the sends and the list
+// cannot drift (#67's lesson with enabledModes).
+func TestNewConsoleAsksEveryQuery(t *testing.T) {
+	var queries strings.Builder
+	for _, q := range terminalQueries {
+		queries.WriteString(q.query)
+	}
+	for _, ask := range []bool{true, false} {
+		var tty syncBuf
+		sess := &rawSession{control: &tty}
+		con := newConsole(t.Context(), testDeps(t), sess, &tty,
+			func(w io.Writer, rows, cols int) *liveScreen { return newLiveScreen(w, rows, cols) }, ask)
+		var modes strings.Builder
+		for i := len(enabledModes) - 1; i >= 0; i-- {
+			modes.WriteString(enabledModes[i].on)
+		}
+		got := strings.TrimPrefix(tty.String(), modes.String())
+		if !strings.HasPrefix(tty.String(), modes.String()) {
+			t.Fatalf("the modes were not written first: %q", tty.String())
+		}
+		if ask && !strings.HasPrefix(got, queries.String()) {
+			t.Errorf("asked, but after the modes came %q, want %q", got, queries.String())
+		}
+		if !ask && strings.Contains(tty.String(), backgroundQuery) {
+			t.Errorf("not asked, yet the query was sent: %q", tty.String())
+		}
+		if con.finish != nil {
+			con.finish()
+		}
+	}
+}
+
+func TestWantsBackground(t *testing.T) {
+	on := options{tty: true, color: true, tintOn: true}
+	if !wantsBackground(on) {
+		t.Fatal("a colour terminal with the tint on asks")
+	}
+	for name, o := range map[string]options{
+		"tint off": {tty: true, color: true},
+		"-raw":     {tty: true, color: true, tintOn: true, raw: true},
+		"no tty":   {color: true, tintOn: true},
+		"no color": {tty: true, tintOn: true},
+	} {
+		if wantsBackground(o) {
+			t.Errorf("%s: asked where no tint can appear", name)
+		}
+	}
+}
+
+// A /play sitting borrows the editor's raw session and must not ask again.
+func TestASittingDoesNotAskAgain(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	var tty syncBuf
+	sess := &rawSession{control: &tty}
+	con := newConsole(t.Context(), d, sess, &tty,
+		func(w io.Writer, rows, cols int) *liveScreen { return newLiveScreen(w, rows, cols) }, true)
+	keys := make(chan Key, 1)
+	keys <- Key{Kind: KeyInterrupt}
+	con.newSitting(t.Context(), d, opt, keys, &interrupter{}, io.Discard)
+	if con.finish != nil {
+		con.finish()
+	}
+	if n := strings.Count(tty.String(), backgroundQuery); n != 1 {
+		t.Fatalf("the query went out %d times; the sitting must borrow, not ask again", n)
+	}
 }

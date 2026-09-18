@@ -223,7 +223,7 @@ func TestNewConsoleEnablesEveryMode(t *testing.T) {
 	var control strings.Builder
 	sess := &rawSession{control: &control}
 	con := newConsole(t.Context(), testDeps(t), sess, io.Discard,
-		func(tty io.Writer, rows, cols int) *liveScreen { return newLiveScreen(tty, rows, cols) })
+		func(tty io.Writer, rows, cols int) *liveScreen { return newLiveScreen(tty, rows, cols) }, false)
 	if con.finish != nil {
 		defer con.finish()
 	}

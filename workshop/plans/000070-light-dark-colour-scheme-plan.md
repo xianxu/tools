@@ -1118,18 +1118,18 @@ func backgroundKey(payload, raw []byte) Key {
   `decodeEscape`: add `case ']': return decodeOSC(buf)` (after the `len(buf) < 2` guard). `KeyKind`: `KeyBackground` with the doc "a terminal REPORT, not a keystroke: the answer to backgroundQuery. Never typing, never an answer, never cancels a gesture." `sittingKeyHandling`: `KeyBackground: false` under "a terminal report, intercepted before toInput (Task 16) — never an answer".
 - [x] **Step 4: PASS**: `go test ./cmd/define -run 'Key|Decode|Fuzz|Sitting|ReadInput' -count=1`; then fuzz each target 30 s, anchored so only one matches: `go test ./cmd/define -run '^$' -fuzz '^FuzzDecodeKey$' -fuzztime 30s`, likewise `'^FuzzDecodeKeyNeverLeaksEscapeTails$'` and `'^FuzzDecodeMouseIsBounded$'`.
 - [x] **Step 5: Commit** `#70 M3: the key decoder reads a background report, bounded byte by byte`
-- [ ] **Step 6: Mutations:** drop the `c < 0x20 || c > 0x7e` abort → the DEL/Ctrl-C cases redden; drop the ESC-case cap check → the 65-byte ST case reddens; make `backgroundKey` return `KeyBackground` for any payload → the `rgba` case reddens. Restore each.
+- [x] **Step 6: Mutations:** drop the `c < 0x20 || c > 0x7e` abort → the DEL/Ctrl-C cases redden; drop the ESC-case cap check → the 65-byte ST case reddens; make `backgroundKey` return `KeyBackground` for any payload → the `rgba` case reddens. Restore each.
 
 ### Task 15: Ask the question at raw-mode entry
 
 **Files:** Modify `cmd/define/rawterm.go`, `cmd/define/replraw.go` (`newConsole`, `replRaw`), `cmd/define/play_loop.go:115`, and every test caller of `newConsole(` (`grep -n 'newConsole(' cmd/define/*_test.go`); tests `cmd/define/rawterm_test.go`, `cmd/define/key_test.go`.
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - **TestNewConsoleAsksEveryQuery**: one recorder for BOTH `control` and the console's stdout (production writes both to the tty); with `askTerminal=true`, everything `newConsole` writes to control after the mode enables is exactly the concatenation of `terminalQueries` (so the sends and the list cannot drift); with `false`, none of it.
   - **TestWantsBackground**: true for `{tty: true, color: true, tintOn: true}`; false with `tintOn` false, with `raw` true, with `tty` false.
   - **TestASittingDoesNotAskAgain**: `/play` from an editor built through `newConsole` with `askTerminal=true` (Task 5's pattern) → exactly ONE `backgroundQuery` in the shared recorder.
   - Extend `TestEveryEnabledInputModeIsDecoded` with a SEPARATE loop over `terminalQueries` keyed by name (its regex reads `?NNNNh` modes and cannot match an OSC query): the reply table gains `"background colour": {{"rgb with BEL", "\x1b]11;rgb:ffff/ffff/ffff\x07"}, {"rgb with ST", "\x1b]11;rgb:0/0/0\x1b\\"}, {"rgba", "\x1b]11;rgba:ffff/ffff/ffff/ffff\x1b\\"}}`; a query with no row FAILS (closed); every sample decodes with no `KeyRune`.
-- [ ] **Step 2: FAIL. Step 3: Implement.**
+- [x] **Step 2: FAIL. Step 3: Implement.**
 
 ```go
 // backgroundQuery asks the terminal for its background colour (OSC 11, #70).
@@ -1160,7 +1160,7 @@ func (r *rawSession) ask(query string) {
 func wantsBackground(opt options) bool { return opt.tty && opt.color && opt.tintOn && !opt.raw }
 ```
   `newConsole(ctx, d, sess, stdout, newScreen, askTerminal bool)` (not `ask`, which would shadow the package's `ask` function): after `sess.enterModes()`, `if askTerminal { for _, q := range terminalQueries { sess.ask(q.query) } }`. Callers: `replRaw` and `runPlay` pass `wantsBackground(opt)`; test callers pass `false` unless testing the query. `sittingInPlace` has no `sess`, so it cannot ask.
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M3: a full-screen session asks the terminal for its background, once`
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M3: a full-screen session asks the terminal for its background, once`
 - [ ] **Step 6: Mutations:** drop the `askTerminal` loop → **TestNewConsoleAsksEveryQuery** reddens; `wantsBackground` ignores `tintOn` → **TestWantsBackground** reddens. (The callers' `wantsBackground(opt)` arguments — `replRaw` AND `runPlay` — are pinned by Task 17's **TestPTYNoQueryWithoutATint**.) Restore each.
 
 ### Task 16: Every consumer of the new key kind
