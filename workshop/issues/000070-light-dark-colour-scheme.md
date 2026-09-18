@@ -589,3 +589,38 @@ producer colours (headword, IPA, examples, deck words) keep theirs.
 the ink steps aside for a producer's foreground as the tint does for its
 background. Pinned by `TestATintedRowCarriesItsOwnTextColour` and
 `TestSourceColoursTracksTheProducersForeground`.
+
+2026-09-18 — M3 manual live check: the operator verified the rebuilt binary
+"working" (after the paired-ink change; their earlier light-profile screenshot is
+what found it). Per-terminal reply strings were not reported, and the atlas says
+so rather than inventing a matrix; it names the re-check triggers.
+
+Done-when, each with its evidence:
+- Light terminal → 254, dark → 236, no flag, no saved file: in process via
+  `TestRawEditorBackgroundReplyRepaints` (reply bytes through `readInput` into
+  `runEditor`); pty `TestPTYBackgroundDetection` light/dark/silent; operator check.
+- A late reply repaints; a choice in force outranks it: `TestRawEditorBackgroundReplyRepaints`
+  (flag-choice case), `TestPTYBackgroundDetection/late`, `TestSchemeStateSequences`.
+- `/scheme light` repaints the screen AND the exit transcript: `TestRawEditorSchemeRepaintsWhatIsOnScreen`;
+  piped: `TestPipedSchemeSaves`, `TestPipedSchemeWithNowhereToSave`; sitting:
+  `TestASittingIgnoresABackgroundReply`, `TestAReplyDuringPlayReachesTheEditor`.
+- Persistence: `TestPTYSavedSchemeSurvivesARestart`; session-only / one-shot refusal /
+  write error / garbled file: `TestRawEditorSchemeWithNowhereToSave`, `TestOneShotScheme`,
+  `TestRawEditorSchemeWriteErrorChangesNothing`, `TestInitialSchemeState`, `TestSavedSchemeGovernsALookup`.
+- A dropped reply is silent and keeps the next notice: `TestADroppedReplyIsSilent`.
+- No leak for rgb, rgba or #hex; mid-drag; Alt-] then typing / Ctrl-C in separate
+  writes: `TestDecodeBackgroundReply`, `TestDecodeBackgroundReplyOtherFormats`,
+  `TestDecodeOSCAbortsAsToday`, `TestReadInputBackgroundAcrossWrites`,
+  `TestAReplyMidDragKeepsTheSelection`, and through both loops above.
+- A /play reply reaches the editor; a sitting starts in the editor's scheme:
+  `TestAReplyDuringPlayReachesTheEditor`, `TestASittingPaintsInTheEditorsScheme`.
+- No query under `-language-tint off`, `-raw`, `TERM=dumb`; the tint-flag refusal;
+  `-scheme light` then `/scheme dark` → `dark (saved)`; transition sequences:
+  `TestPTYNoQueryWithoutATint`, `TestWantsBackground`, `TestLanguageTintInvalidFlagBeforeStore`,
+  `TestOneShotScheme`, `TestSchemeStateSequences`, `TestSchemeHolder`.
+- Dead paths deleted, live halves ported (the spec's "ported" reconciled in the
+  M1 review entry above): M1 Task 3 entry.
+- Every new test seen failing with its fix removed: the mutation lists in the M1,
+  M2 and M3 entries (M3: colour parse ×2, decoder ×3, query ×2, consumers ×4,
+  caller wiring ×3, paired ink ×3).
+- README, `-h`, atlas updated; doc-sync tests green.

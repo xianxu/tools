@@ -546,6 +546,14 @@ a slow link) leaves the answer to the shell, echoed, because the terminal is coo
 again. `terminalQueries` lists every question, and `TestEveryEnabledInputModeIsDecoded`
 derives from it as it does from the modes.
 
+*Terminals checked by hand* (the real dependency; the pty suite plays a modelled
+terminal). 2026-09-18: the operator ran the #70 binary and reported it **working**.
+Their first run, a light profile, surfaced the paired-ink fix above (white default text
+on the light tint); the re-check after it passed. Terminal-by-terminal reply strings
+were not itemised. **Re-check** — and record the terminal, appearance and reply —
+when a terminal is added to what we claim to support, when a detection bug is
+reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
+
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —
 including the deferred wrap that lets a line clipped to exactly the width still
