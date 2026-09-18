@@ -338,11 +338,12 @@ until its ownership is settled, so an answer arrives a line at a time as it is
 written rather than all at once when it finishes. Changing `/lang` affects new output; previously
 printed text keeps its original style. Resizing clips history without reflowing it.
 
-The default suits dark terminals. Choose a profile when starting `define`:
+The tint's shade suits a dark terminal by default. Say which background you
+have when starting `define`:
 
 ```sh
-define -language-tint=light   # light terminal background
-define -language-tint=off     # disable language backgrounds
+define -scheme light          # light terminal background
+define -language-tint off     # disable language backgrounds
 ```
 
 `-no-color`, redirected output and `TERM=dumb` also disable the background.

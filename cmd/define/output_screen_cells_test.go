@@ -36,7 +36,7 @@ func TestOutputScreenFillSelectionAndResize(t *testing.T) {
 	l := newLiveScreen(io.Discard, 8, 20)
 	defer l.Stop()
 	source := "  hola\n\nabcdefghijklmnop\n"
-	if err := l.WriteOutput(renderedOutput{text: source, rows: []rowPaint{{background: languageDark}, {background: languageDark}, {background: languageDark}}}); err != nil {
+	if err := l.WriteOutput(renderedOutput{text: source, rows: []rowPaint{{tinted: true}, {tinted: true}, {tinted: true}}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, width := range []int{20, 10, 24} {
@@ -69,12 +69,15 @@ func TestOutputScreenFillSelectionAndResize(t *testing.T) {
 func TestOutputScreenImmutablePolicyAndCurrentWidthTranscript(t *testing.T) {
 	l := newLiveScreen(io.Discard, 8, 20)
 	defer l.Stop()
-	o := renderedOutput{text: "hola\n", rows: []rowPaint{{background: languageDark}}}
+	// Each row keeps the paint it was WRITTEN with — since #70 that is whether it
+	// is tinted (its shade follows the scheme at paint, one for the whole screen),
+	// so the second write and the producer's later mutation carry the other bit.
+	o := renderedOutput{text: "hola\n", rows: []rowPaint{{tinted: true}}}
 	if err := l.WriteOutput(o); err != nil {
 		t.Fatal(err)
 	}
-	o.rows[0].background = languageLight
-	if err := l.WriteOutput(renderedOutput{text: "hello\n", rows: []rowPaint{{background: languageLight}}}); err != nil {
+	o.rows[0].tinted = false
+	if err := l.WriteOutput(renderedOutput{text: "hello\n", rows: []rowPaint{{}}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, width := range []int{12, 24} {
@@ -87,7 +90,7 @@ func TestOutputScreenImmutablePolicyAndCurrentWidthTranscript(t *testing.T) {
 			cells, _ := rowTestCells(t, line, width)
 			want := 236
 			if row == 1 {
-				want = 254
+				want = -1
 			}
 			for col, c := range cells {
 				if c.bg != want {
@@ -101,7 +104,7 @@ func TestOutputScreenImmutablePolicyAndCurrentWidthTranscript(t *testing.T) {
 func TestOutputScreenKeepsProducerStyleAcrossRows(t *testing.T) {
 	l := newLiveScreen(io.Discard, 8, 20)
 	defer l.Stop()
-	if err := l.WriteOutput(renderedOutput{text: "\x1b[31muno\ndos\x1b[0m\n", rows: []rowPaint{{background: languageDark}, {background: languageDark}}}); err != nil {
+	if err := l.WriteOutput(renderedOutput{text: "\x1b[31muno\ndos\x1b[0m\n", rows: []rowPaint{{tinted: true}, {tinted: true}}}); err != nil {
 		t.Fatal(err)
 	}
 	cells := screenOutputRows(t, l.s, 20, 2, false)
@@ -119,7 +122,7 @@ func TestOutputScreenSnapshotsAnswerExclusions(t *testing.T) {
 	l := newLiveScreen(io.Discard, 8, 20)
 	defer l.Stop()
 	exclusions := []cellRange{{0, 1}}
-	if err := l.WriteOutput(renderedOutput{text: "ab\n", rows: []rowPaint{{background: languageDark, exclusions: exclusions}}}); err != nil {
+	if err := l.WriteOutput(renderedOutput{text: "ab\n", rows: []rowPaint{{tinted: true, exclusions: exclusions}}}); err != nil {
 		t.Fatal(err)
 	}
 	exclusions[0] = cellRange{1, 2}

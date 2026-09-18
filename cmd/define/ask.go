@@ -161,7 +161,7 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	}
 
 	client := foregroundClient(d.newLLM(cfg), out, opt)
-	answer := newLanguageAnswer(out, opt.width, vocabularyFor(d, opt), opt.tintFor(d.lang))
+	answer := newLanguageAnswer(out, opt.width, vocabularyFor(d, opt), tintFor(d, opt))
 	// GATHERED ONCE, then the renderer is chosen. gatherAskContext is the IO step
 	// — it reads the learner model and the deck, and WARNS on failure — so
 	// computing it twice printed "could not read the deck" twice to the reader

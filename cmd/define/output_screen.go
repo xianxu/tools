@@ -9,16 +9,19 @@ import (
 
 type outputWriter interface{ WriteOutput(renderedOutput) error }
 
-func writeOutput(w io.Writer, o renderedOutput, width int) error {
+// writeOutput hands o to its sink. A screen keeps the row roles and paints them
+// itself, reading its own scheme holder, so sc is for the other sinks: it is the
+// scheme in effect when the output is written (#70).
+func writeOutput(w io.Writer, o renderedOutput, width int, sc store.Scheme) error {
 	if sink, ok := w.(outputWriter); ok {
 		return sink.WriteOutput(o)
 	}
 	if sink, ok := w.(regionWriter); ok {
 		o = layoutOutput(o, width)
-		sink.WriteRegions(serializeOutput(o, width), o.regions)
+		sink.WriteRegions(serializeOutput(o, width, sc), o.regions)
 		return nil
 	}
-	text := serializeOutput(o, width)
+	text := serializeOutput(o, width, sc)
 	n, err := io.WriteString(w, text)
 	if err == nil && n < len(text) {
 		return io.ErrShortWrite
@@ -72,11 +75,12 @@ func (l *liveScreen) WriteOutput(o renderedOutput) error {
 
 func (s *screen) paintedTranscript(width int) string {
 	var b strings.Builder
+	sc := s.scheme.Scheme() // once, so the transcript is one shade
 	for i, line := range outputStyledRows(strings.Join(s.lines, "\n")) {
 		if len(s.lines) == 0 {
 			break
 		}
-		b.WriteString(paintLanguageRow(clipVisible(line, width), s.paints[i], width))
+		b.WriteString(paintLanguageRow(clipVisible(line, width), s.paints[i], width, sc))
 		b.WriteByte('\n')
 	}
 	return b.String()
@@ -107,8 +111,8 @@ func normalizedLang(lang store.Lang) store.Lang {
 	return v
 }
 
-func paintOutputChunk(text string, p rowPaint, width int) string {
-	if p.background == "" {
+func paintOutputChunk(text string, p rowPaint, width int, sc store.Scheme) string {
+	if !p.tinted {
 		return text
 	}
 	rows := selectionPhysicalRows(text, width)
@@ -118,13 +122,13 @@ func paintOutputChunk(text string, p rowPaint, width int) string {
 	var b strings.Builder
 	start := 0
 	for _, row := range rows {
-		b.WriteString(paintLanguageRow(row, sliceRowPaint(p, start, visibleCells(row)), width))
+		b.WriteString(paintLanguageRow(row, sliceRowPaint(p, start, visibleCells(row)), width, sc))
 		start += visibleCells(row)
 	}
 	return b.String()
 }
 func sliceRowPaint(p rowPaint, start, width int) rowPaint {
-	out := rowPaint{background: p.background}
+	out := rowPaint{tinted: p.tinted}
 	for _, r := range p.exclusions {
 		a, b := max(r.start, start), min(r.end, start+width)
 		if a < b {

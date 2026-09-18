@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 type rowTestCell struct {
@@ -86,7 +88,7 @@ func rowTestCells(t *testing.T, text string, width int) ([]rowTestCell, rowTestC
 
 func TestLanguageRowFillsWhitespace(t *testing.T) {
 	text := "  hola"
-	got := paintLanguageRow(text, rowPaint{background: languageDark}, 10)
+	got := paintLanguageRow(text, rowPaint{tinted: true}, 10, store.SchemeDark)
 	cells, _ := rowTestCells(t, got, 10)
 	for col, c := range cells {
 		if c.bg != 236 {
@@ -97,7 +99,7 @@ func TestLanguageRowFillsWhitespace(t *testing.T) {
 
 func TestLanguageRowStylesAndExclusions(t *testing.T) {
 	text := "\x1b[31m a\x1b[0mb\x1b[42mc\x1b[49m\x1b[7md\x1b[27me"
-	got := paintLanguageRow(text, rowPaint{background: languageLight, exclusions: []cellRange{{1, 2}}}, 9)
+	got := paintLanguageRow(text, rowPaint{tinted: true, exclusions: []cellRange{{1, 2}}}, 9, store.SchemeLight)
 	cells, end := rowTestCells(t, got, 9)
 	want := []int{254, -1, 254, 42, 254, 254, 254, 254, 254}
 	for col, c := range cells {
@@ -118,7 +120,7 @@ func TestLanguageRowStylesAndExclusions(t *testing.T) {
 
 func TestLanguageRowBlankWideAndExactEdge(t *testing.T) {
 	for _, text := range []string{"", "  ", "界ab", "abc界", "abcdef"} {
-		got := paintLanguageRow(text, rowPaint{background: languageDark}, 4)
+		got := paintLanguageRow(text, rowPaint{tinted: true}, 4, store.SchemeDark)
 		cells, end := rowTestCells(t, got, 4)
 		for col, c := range cells {
 			if c.bg != 236 {
@@ -136,19 +138,35 @@ func TestLanguageRowBlankWideAndExactEdge(t *testing.T) {
 
 func TestLanguageRowNeutralAndInvalid(t *testing.T) {
 	control := "\x1b[H\x1b[2Jhello\r\n"
-	for _, p := range []rowPaint{{}, {background: "untrusted"}, {background: languageDark, exclusions: []cellRange{{3, 1}}}} {
-		if got := paintLanguageRow(control, p, 4); got != control {
+	// An untrusted background STRING was once a case here; since #70 a paint is
+	// only a bit, so that input is unrepresentable rather than filtered.
+	for _, p := range []rowPaint{{}, {tinted: true, exclusions: []cellRange{{3, 1}}}} {
+		if got := paintLanguageRow(control, p, 4, store.SchemeDark); got != control {
 			t.Errorf("neutral/control write changed: %q", got)
 		}
 	}
-	if got := paintLanguageRow("hola", rowPaint{background: languageDark}, 0); got != "hola" {
+	if got := paintLanguageRow("hola", rowPaint{tinted: true}, 0, store.SchemeDark); got != "hola" {
 		t.Errorf("zero width adds paint: %q", got)
 	}
 }
 
 func TestLanguageRowResetsBeforeCursorControl(t *testing.T) {
-	got := paintLanguageRow("a\x1b[Kb", rowPaint{background: languageDark}, 4)
+	got := paintLanguageRow("a\x1b[Kb", rowPaint{tinted: true}, 4, store.SchemeDark)
 	if !strings.Contains(got, "\x1b[0m\x1b[K") {
 		t.Fatalf("background reaches erase control: %q", got)
+	}
+}
+
+// The role is frozen at production; the shade resolves at paint (#70).
+func TestATintedRowTakesTheShadeOfTheSchemeItIsPaintedIn(t *testing.T) {
+	p := rowPaint{tinted: true}
+	if got := paintLanguageRow("hola", p, 6, store.SchemeDark); !strings.Contains(got, languageDark) || strings.Contains(got, languageLight) {
+		t.Errorf("dark: %q", got)
+	}
+	if got := paintLanguageRow("hola", p, 6, store.SchemeLight); !strings.Contains(got, languageLight) || strings.Contains(got, languageDark) {
+		t.Errorf("light: %q", got)
+	}
+	if got := paintLanguageRow("hola", rowPaint{}, 6, store.SchemeLight); got != "hola" {
+		t.Errorf("an untinted row is untouched: %q", got)
 	}
 }

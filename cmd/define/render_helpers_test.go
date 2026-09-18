@@ -11,14 +11,20 @@ import (
 // (#70): every writer paints at its terminal boundary instead (serializeOutput,
 // the screen). They live on as the tests' string view of that same path.
 
-// Compatibility string renderers have no viewport. Paint their source width;
-// production writers retain metadata until their actual terminal boundary.
-func renderOutputText(o renderedOutput) string {
+// Compatibility string renderers have no viewport. Paint their source width,
+// in the scheme sc; production writers retain metadata until their actual
+// terminal boundary.
+func renderOutputText(o renderedOutput, sc store.Scheme) string {
 	lines := outputStyledRows(o.text)
 	for i, line := range lines {
-		lines[i] = paintLanguageRow(line, paintAt(o.rows, i), visibleCells(line))
+		lines[i] = paintLanguageRow(line, paintAt(o.rows, i), visibleCells(line), sc)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// holderFor is a holder already set to one scheme, for tests that paint a shade.
+func holderFor(s store.Scheme) *schemeHolder {
+	return newSchemeHolder(schemeState{}.withChoice(s, sourceFlag))
 }
 
 // renderDefinitions preserves per-section language ownership of word actions.
@@ -26,17 +32,17 @@ func renderOutputText(o renderedOutput) string {
 // pass over the composed bilingual string afterward.
 func renderDefinitions(set definitionSet, opt RenderOpts) (string, []Region) {
 	o := renderDefinitionOutput(set, opt)
-	return renderOutputText(o), o.regions
+	return renderOutputText(o, opt.Tint.scheme.Scheme()), o.regions
 }
 
 // Vocabulary and language styling share the form's emitted boundaries. Neutral
 // fragments include pre-rendered dictionary entries, which must stay untouched.
 func renderPracticePresentation(p play.Presentation, lang, source store.Lang, policy tintPolicy, vocab Vocabulary, sf surface, subject string) string {
-	return renderOutputText(renderPracticeOutput(p, lang, source, policy, vocab, sf, subject, 0))
+	return renderOutputText(renderPracticeOutput(p, lang, source, policy, vocab, sf, subject, 0), policy.scheme.Scheme())
 }
 
 func practiceChrome(p play.Presentation, d deps, opt options) string {
-	return renderPracticePresentation(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "")
+	return renderPracticePresentation(p, d.lang, dictionarySourceLanguage(d.dict), tintFor(d, opt), nil, surfaceProse, "")
 }
 
 // boardFooter is the live edge for a board: everything the FORM draws, then the
@@ -76,7 +82,7 @@ func practiceChrome(p play.Presentation, d deps, opt options) string {
 func boardFooter(q play.Question, fig sittingFigures, pal palette, d deps, opt options) []string {
 	text := q.Prompt()
 	if p, ok := q.(practicePresenter); ok {
-		text = renderPracticePresentation(p.PromptPresentation(), d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceOf(q.Form()), q.Word())
+		text = renderPracticePresentation(p.PromptPresentation(), d.lang, dictionarySourceLanguage(d.dict), tintFor(d, opt), nil, surfaceOf(q.Form()), q.Word())
 	}
 	return append(strings.Split(text, "\n"), asChrome(practiceChrome(sittingBarPresentation(fig), d, opt), pal))
 }

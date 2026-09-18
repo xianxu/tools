@@ -4,26 +4,27 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // renderedOutput keeps terminal paint separate from unpadded, selectable text.
-// Row backgrounds are resolved when produced, so later policy changes do not
-// recolor history. Coordinates in exclusions are half-open display columns.
+// WHETHER a row is tinted is decided when it is produced, so later policy
+// changes (a /lang switch) do not recolour history; WHICH shade a tint is
+// resolves at paint from the scheme in effect (#70), so a /scheme switch does.
+// Coordinates in exclusions are half-open display columns.
 type renderedOutput struct {
 	text    string
 	regions []Region
 	rows    []rowPaint
 }
 type rowPaint struct {
-	background string
+	tinted     bool
 	exclusions []cellRange
 }
 type cellRange struct{ start, end int }
 
 func validRowPaint(p rowPaint) bool {
-	if p.background != "" && p.background != languageDark && p.background != languageLight {
-		return false
-	}
 	if len(p.exclusions) > maxSelectionCells {
 		return false
 	}
@@ -77,7 +78,7 @@ func layoutOutput(o renderedOutput, width int) renderedOutput {
 		for row := range physical {
 			p := rowPaint{}
 			if valid && ok && line < len(o.rows) {
-				p.background = o.rows[line].background
+				p.tinted = o.rows[line].tinted
 				for col, origin := range origins[row] {
 					if origin < 0 {
 						continue
@@ -248,9 +249,9 @@ func outputStyledRows(text string) []string {
 	return lines
 }
 
-// serializeOutput paints only at the terminal boundary. Width zero is the
-// clean pipe/history path and never introduces synthetic spaces.
-func serializeOutput(o renderedOutput, width int) string {
+// serializeOutput paints only at the terminal boundary, in the scheme sc. Width
+// zero is the clean pipe/history path and never introduces synthetic spaces.
+func serializeOutput(o renderedOutput, width int, sc store.Scheme) string {
 	if width <= 0 {
 		return o.text
 	}
@@ -265,7 +266,7 @@ func serializeOutput(o renderedOutput, width int) string {
 		if i < len(o.rows) {
 			paint = o.rows[i]
 		}
-		lines[i] = paintLanguageRow(line, paint, width)
+		lines[i] = paintLanguageRow(line, paint, width, sc)
 	}
 	return strings.Join(lines, "\n")
 }

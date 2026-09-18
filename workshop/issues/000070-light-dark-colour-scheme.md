@@ -494,3 +494,18 @@ only the residue, to go with it: `TestDictionaryParserSourceOffsets`,
 `TestDictionarySourceProvenanceCorpus`, the kept half of
 `TestDictionaryProjectionExactOccurrenceAndFallback`, and the provenance check
 left in `TestBilingualNativeLanguageOwnership`.
+
+M1 Task 4 — the tint is a role. `rowPaint.background` (an escape string) became
+`rowPaint.tinted` (a bit); the shade resolves in `paintLanguageRow` from the
+scheme, read ONCE per frame from the holder the screen was given
+(`attachScheme`, in `newConsole` and `sittingInPlace`). `-scheme` and
+`-language-tint on|off` landed in the same commit. The test migration (136
+compile errors, ~20 files + tagged pty/layout tests) was delegated to a
+subagent under the plan's rules and reviewed. Two cases fed a foreign
+background STRING to check it was dropped; the new type makes that input
+unrepresentable, so those two list items are gone rather than rewritten.
+`TestOutputScreenImmutablePolicyAndCurrentWidthTranscript` asserted each row
+kept its own SHADE — the opposite of #70 — and now asserts each row keeps its
+own tint BIT and that a producer mutating its slice after writing does not
+reach the screen. pty conformance (`TestPTYLanguageTint`, `TestPTYNativeRendirSectionLayout`)
+ran against the built binary with `-scheme dark|light` and `-language-tint off`: green.

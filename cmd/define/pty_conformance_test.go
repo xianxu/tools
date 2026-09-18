@@ -1236,13 +1236,14 @@ func TestPTYDeckQuestionArrivesBeforeTheEditor(t *testing.T) {
 // production raw loop. This does not make claims about terminal font rendering.
 func TestPTYLanguageTint(t *testing.T) {
 	bilingualNativeProbe(t)
-	for _, profile := range []struct{ name, background string }{{"dark", languageDark}, {"light", languageLight}, {"off", ""}} {
+	// -scheme picks the tint's shade; -language-tint off removes it (#70).
+	for _, profile := range []struct{ name, flag, shade string }{{"dark", "--scheme=dark", languageDark}, {"light", "--scheme=light", languageLight}, {"off", "--language-tint=off", ""}} {
 		t.Run(profile.name, func(t *testing.T) {
 			deck := t.TempDir()
 			if err := store.WriteLang(deck, "es"); err != nil {
 				t.Fatal(err)
 			}
-			cmd, f := startDefineInDir(t, deck, []string{"TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio", "--no-flags", "--language-tint="+profile.name)
+			cmd, f := startDefineInDir(t, deck, []string{"TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio", "--no-flags", profile.flag)
 			if err := pty.Setsize(f, &pty.Winsize{Rows: 160, Cols: 160}); err != nil {
 				t.Fatal(err)
 			}
@@ -1280,7 +1281,7 @@ func TestPTYLanguageTint(t *testing.T) {
 			}
 			write("red\r")
 			spanish := take(func(s string) bool { return strings.Contains(unstyled(s), "clutches") })
-			assertDictionaryTint(t, spanish, "Spanish — Larousse Diccionario General", profile.background != "")
+			assertDictionaryTint(t, spanish, "Spanish — Larousse Diccionario General", profile.shade != "")
 			assertDictionaryTint(t, spanish, "English — Oxford Spanish–English", false)
 			assertDictionaryTint(t, spanish, "subir a la red", false)
 			assertDictionaryTint(t, spanish, "to go up to", false)
@@ -1291,12 +1292,12 @@ func TestPTYLanguageTint(t *testing.T) {
 			}
 			write("sycophantic\r")
 			english := take(func(s string) bool { return strings.Contains(unstyled(s), "obsequious") })
-			assertDictionaryTint(t, english, "obsequious", profile.background != "")
-			if profile.background != "" && (!strings.Contains(spanish, profile.background) || !strings.Contains(english, profile.background)) {
+			assertDictionaryTint(t, english, "obsequious", profile.shade != "")
+			if profile.shade != "" && (!strings.Contains(spanish, profile.shade) || !strings.Contains(english, profile.shade)) {
 				t.Fatal("chosen tint profile did not reach both dictionary languages")
 			}
 			for _, background := range []string{languageDark, languageLight} {
-				if background != profile.background && strings.Contains(transcript.String(), background) {
+				if background != profile.shade && strings.Contains(transcript.String(), background) {
 					t.Fatalf("unexpected background %q in %s profile", background, profile.name)
 				}
 			}

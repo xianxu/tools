@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 func assertDictionaryTint(t *testing.T, out, needle string, want bool) {
@@ -92,11 +94,11 @@ func TestDictionaryDefinitionsRetainSourceAndRegions(t *testing.T) {
 	vocab := &memVocabulary{}
 	vocab.Add("red")
 	vocab.Add("net")
-	opt := RenderOpts{Color: true, Word: "red", Vocab: vocab, Tint: tintPolicy{lang: "es", background: languageDark}}
+	opt := RenderOpts{Color: true, Word: "red", Vocab: vocab, Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}}
 	out, regions := renderDefinitions(set, opt)
 	assertDictionaryTint(t, out, "subir a la red", false)
 	assertDictionaryTint(t, out, "to go up to", false)
-	english, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "en", background: languageDark}})
+	english, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}})
 	assertDictionaryTint(t, english, "subir a la red", true)
 	assertDictionaryTint(t, english, "to go up to", true)
 	opt.Tint = tintPolicy{}
@@ -148,7 +150,7 @@ func TestDictionaryProjectionDoesNotJoinWords(t *testing.T) {
 func TestDictionaryUnprovenSectionAlignmentStaysNeutral(t *testing.T) {
 	source := languageText{text: "red noun other", spans: []languageSpan{{start: 0, end: 3, lang: "es"}}}
 	set := definitionSet{sections: []definitionSection{{err: ErrNoEntry}, {entries: []string{"red noun changed"}, source: []languageText{source}}}}
-	out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "es", background: languageDark}})
+	out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}})
 	if strings.Contains(out, languageDark) {
 		t.Fatal("mismatched record text retained ownership")
 	}

@@ -79,6 +79,8 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 	// cooked, play raw" wanted all along.
 	sess.enterModes()
 	live := newScreen(stdout, terminalRows(stdout), terminalCols(stdout))
+	// Before the router and the resize watcher can see it (#70).
+	live.attachScheme(d.scheme)
 	var clipboard clipboardWriter
 	var clipboardErr error
 	if d.newClipboard != nil {

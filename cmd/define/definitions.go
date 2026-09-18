@@ -114,7 +114,7 @@ func renderDefinitionOutput(set definitionSet, opt RenderOpts) renderedOutput {
 		}
 		if opt.Color && role != "" && normalizedLang(role) == normalizedLang(opt.Tint.lang) {
 			for i := startLine; i < endLine; i++ {
-				paints[i].background = opt.Tint.background
+				paints[i].tinted = opt.Tint.on
 			}
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
@@ -45,6 +46,7 @@ func TestAskFinalOwnedRowSurvivesTermination(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				d, fake, _, _ := askRig(t)
 				d.lang = "en"
+				d.scheme = holderFor(store.SchemeDark) // the 236 asserted below
 				fake.Script("", llmtest.Reply{Capture: "stream-language.sse"})
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
@@ -56,11 +58,12 @@ func TestAskFinalOwnedRowSurvivesTermination(t *testing.T) {
 				var screen *liveScreen
 				if live {
 					screen = newLiveScreen(io.Discard, 8, 20)
+					screen.attachScheme(d.scheme)
 					defer screen.Stop()
 					out = screen
 				}
 				sess := &session{}
-				if code := runAsk(ctx, d, options{color: true, width: 20, tintBackground: languageDark}, sess, question{text: "Explain buenos días"}, out, &errOut); code != 0 {
+				if code := runAsk(ctx, d, options{color: true, width: 20, tintOn: true}, sess, question{text: "Explain buenos días"}, out, &errOut); code != 0 {
 					t.Fatalf("code %d: %s", code, &errOut)
 				}
 				if len(sess.turns) != 1 {
@@ -100,7 +103,7 @@ func TestPartialOwnedRowPlainTermination(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLiveScreen(io.Discard, 8, 20)
 			defer l.Stop()
-			if err := l.WriteOutput(renderedOutput{text: "hola", rows: []rowPaint{{background: languageDark}}}); err != nil {
+			if err := l.WriteOutput(renderedOutput{text: "hola", rows: []rowPaint{{tinted: true}}}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := io.WriteString(l, tc.text); err != nil {
@@ -127,16 +130,19 @@ func TestPartialOwnedRowStructuredTermination(t *testing.T) {
 		output renderedOutput
 		owned  bool
 	}{
-		{"newline metadata", renderedOutput{text: "\n", rows: []rowPaint{{background: languageLight}}}, true},
-		{"crlf metadata", renderedOutput{text: "\r\n", rows: []rowPaint{{background: languageLight}}}, true},
+		// Each fragment's metadata is the OPPOSITE of the row's expected paint, so
+		// a partial row that took it would fail. (Before #70 the fragments carried
+		// the other shade; a row now keeps one bit, so the contrast is the bit.)
+		{"newline metadata", renderedOutput{text: "\n", rows: []rowPaint{{}}}, true},
+		{"crlf metadata", renderedOutput{text: "\r\n", rows: []rowPaint{{}}}, true},
 		{"newline no metadata", renderedOutput{text: "\n"}, true},
 		{"substantive no metadata", renderedOutput{text: " hello\n"}, false},
-		{"substantive metadata", renderedOutput{text: " hello\n", rows: []rowPaint{{background: languageLight}}}, false},
+		{"substantive metadata", renderedOutput{text: " hello\n", rows: []rowPaint{{tinted: true}}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLiveScreen(io.Discard, 8, 20)
 			defer l.Stop()
-			if err := l.WriteOutput(renderedOutput{text: "hola", rows: []rowPaint{{background: languageDark}}}); err != nil {
+			if err := l.WriteOutput(renderedOutput{text: "hola", rows: []rowPaint{{tinted: true}}}); err != nil {
 				t.Fatal(err)
 			}
 			if err := l.WriteOutput(tc.output); err != nil {

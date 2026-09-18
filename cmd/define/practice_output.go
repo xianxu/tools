@@ -93,7 +93,7 @@ func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy t
 			col += w
 		}
 		if !state.mixed && state.lang != "" && normalizedLang(store.Lang(state.lang)) == normalizedLang(policy.lang) {
-			paint.background = policy.background
+			paint.tinted = policy.on
 		}
 		o.rows = append(o.rows, paint)
 		pos += len(line) + 1
@@ -113,7 +113,7 @@ func renderPracticeOutput(p play.Presentation, lang, source store.Lang, policy t
 			last--
 		}
 		for row := first; row <= last && row < len(sectionBase.rows); row++ {
-			sectionBase.rows[row].background = region.Background
+			sectionBase.rows[row].tinted = region.Tinted
 			sectionLines[row] = true
 		}
 	}
@@ -139,7 +139,7 @@ func definitionPresentationRegions(o renderedOutput) []play.PresentationRegion {
 	at := 0
 	for i, line := range strings.SplitAfter(o.text, "\n") {
 		if line != "" {
-			rs = append(rs, play.PresentationRegion{Start: at, End: at + len(line), Background: paintAt(o.rows, i).background})
+			rs = append(rs, play.PresentationRegion{Start: at, End: at + len(line), Tinted: paintAt(o.rows, i).tinted})
 		}
 		at += len(line)
 	}
@@ -147,14 +147,14 @@ func definitionPresentationRegions(o renderedOutput) []play.PresentationRegion {
 }
 
 func practiceChromeOutput(p play.Presentation, d deps, opt options, pal palette) renderedOutput {
-	o := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "", 0)
+	o := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), tintFor(d, opt), nil, surfaceProse, "", 0)
 	o.text = asChrome(o.text, pal)
 	return o
 }
 func boardFooterOutput(q play.Question, fig sittingFigures, pal palette, d deps, opt options) renderedOutput {
 	o := renderedOutput{text: q.Prompt()}
 	if p, ok := q.(practicePresenter); ok {
-		o = renderPracticeOutput(p.PromptPresentation(), d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceOf(q.Form()), q.Word(), 0)
+		o = renderPracticeOutput(p.PromptPresentation(), d.lang, dictionarySourceLanguage(d.dict), tintFor(d, opt), nil, surfaceOf(q.Form()), q.Word(), 0)
 	}
 	rows := strings.Count(o.text, "\n") + 1
 	for len(o.rows) < rows {

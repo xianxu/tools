@@ -110,6 +110,9 @@ func sittingInPlace(ctx context.Context, d deps, opt options, keys <-chan Key,
 	// goroutine; without this its pending frame lands inside the sitting's.
 	repl.suspend()
 	sitting := newPinnedScreen(tty, rows, cols)
+	// The editor's holder, so a reply heard during the sitting is in force when
+	// the editor resumes, and the sitting starts in the editor's shade (#70).
+	sitting.attachScheme(d.scheme)
 	var pointer *pointerRouter
 	if len(pointers) > 0 {
 		pointer = pointers[0]

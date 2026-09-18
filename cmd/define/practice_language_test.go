@@ -10,7 +10,7 @@ import (
 func TestPracticePresentationTintAndEnglishNeutral(t *testing.T) {
 	q := play.NewChoice("rojo", "\x1b[48;5;254mentry\x1b[49m", []play.Option{{Gloss: "color", Correct: true}})
 	q.SetHelp([]string{"red color"})
-	policy := tintPolicy{lang: "es", background: "\x1b[48;5;236m"}
+	policy := tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}
 	got := renderPracticePresentation(q.PromptPresentation(), "es", "es", policy, nil, surfaceProse, "")
 	if !strings.Contains(got, "\x1b[48;5;236mrojo") {
 		t.Fatalf("missing target tint: %q", got)
@@ -32,8 +32,8 @@ func TestPracticePresentationTintAndEnglishNeutral(t *testing.T) {
 }
 
 func TestPracticePresentationRealPromptAndFooter(t *testing.T) {
-	opt := options{color: true, width: 80, tintBackground: languageDark}
-	d := deps{lang: "es", dict: practiceSourceDictionary{source: "es"}}
+	opt := options{color: true, width: 80, tintOn: true}
+	d := deps{lang: "es", dict: practiceSourceDictionary{source: "es"}, scheme: holderFor(store.SchemeDark)}
 	c := play.NewCloze("rojo", "Es ___", "Es rojo", "", []play.Option{{Word: "rojo", Correct: true}})
 	c.SetHelp("It is ___")
 	var out strings.Builder
@@ -78,7 +78,7 @@ func TestPracticePresentationVocabularyRetainsForeground(t *testing.T) {
 	v.Add("color")
 	q := play.NewChoice("rojo", "", []play.Option{{Gloss: "color", Correct: true}})
 	q.SetHelp([]string{"color"})
-	got := renderPracticePresentation(q.PromptPresentation(), "es", "es", tintPolicy{"es", languageDark}, v, surfaceProse, "rojo")
+	got := renderPracticePresentation(q.PromptPresentation(), "es", "es", tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}, v, surfaceProse, "rojo")
 	if !strings.Contains(got, knownOn) {
 		t.Fatalf("vocabulary foreground lost %q", got)
 	}
@@ -93,26 +93,26 @@ func TestPracticeChromeOwnership(t *testing.T) {
 	if p.Text != gradePrompt(q) {
 		t.Fatal("keys layout differs")
 	}
-	got := renderPracticePresentation(p, "en", "en", tintPolicy{"en", languageDark}, nil, surfaceProse, "")
+	got := renderPracticePresentation(p, "en", "en", tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}, nil, surfaceProse, "")
 	assertDictionaryTint(t, got, "1-1", true)
 	assertDictionaryTint(t, got, "pick the definition", true)
 	assertDictionaryTint(t, got, "Ctrl-C", true)
 	assertDictionaryTint(t, got, "to stop", true)
-	output := renderPracticeOutput(p, "en", "en", tintPolicy{"en", languageDark}, nil, surfaceProse, "", 80)
-	cells, _ := rowTestCells(t, serializeOutput(output, 80), 80)
+	output := renderPracticeOutput(p, "en", "en", tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}, nil, surfaceProse, "", 80)
+	cells, _ := rowTestCells(t, serializeOutput(output, 80, store.SchemeDark), 80)
 	for col, c := range cells {
 		if c.bg != 236 {
 			t.Fatalf("chrome column %d not filled", col)
 		}
 	}
 	bar := sittingBarPresentation(sittingFigures{done: 2, total: 4, load: 8, budget: 10})
-	got = renderPracticePresentation(bar, "en", "en", tintPolicy{"en", languageDark}, nil, surfaceProse, "")
+	got = renderPracticePresentation(bar, "en", "en", tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}, nil, surfaceProse, "")
 	assertDictionaryTint(t, got, "2", true)
 	assertDictionaryTint(t, got, "reviews/day", true)
 }
 
 func TestPracticeSubsequentEnglishOutputAndAllAnswerMarks(t *testing.T) {
-	opt := options{color: true, width: 80, tintBackground: languageDark}
+	opt := options{color: true, width: 80, tintOn: true}
 	d := deps{lang: "es", dict: practiceSourceDictionary{source: "es"}}
 	spanish := play.NewChoice("rojo", "", []play.Option{{Gloss: "color vivo", Correct: true}})
 	spanish.SetHelp([]string{"bright color"})
@@ -179,7 +179,7 @@ func TestPracticeDictionaryGlossOwnership(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := deps{lang: "it", dict: practiceSourceDictionary{source: tc.source}}
-			opt := options{color: true, width: 80, tintBackground: languageDark}
+			opt := options{color: true, width: 80, tintOn: true}
 			q := play.NewChoice("rosso", "", []play.Option{{Gloss: "a bright color", Correct: true}})
 			var out strings.Builder
 			writePrompt(&out, q, d, opt)
@@ -199,7 +199,7 @@ func TestPracticeDictionaryGlossOwnership(t *testing.T) {
 
 func TestPracticeDictionaryRoleResolvesToActualSource(t *testing.T) {
 	q := play.NewChoice("rosso", "", []play.Option{{Gloss: "a bright color", Correct: true}})
-	got := renderPracticePresentation(q.PromptPresentation(), "it", "en", tintPolicy{"en", languageDark}, nil, surfaceProse, "")
+	got := renderPracticePresentation(q.PromptPresentation(), "it", "en", tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}, nil, surfaceProse, "")
 	assertDictionaryTint(t, got, "rosso", false)
 	assertDictionaryTint(t, got, "a bright color", true)
 }
@@ -214,5 +214,5 @@ func trimPaintPadding(s string) string {
 }
 
 func paintedBoardFooterForTest(q play.Question, fig sittingFigures, pal palette, d deps, opt options) []string {
-	return strings.Split(serializeOutput(boardFooterOutput(q, fig, pal, d, opt), opt.width), "\n")
+	return strings.Split(serializeOutput(boardFooterOutput(q, fig, pal, d, opt), opt.width, d.scheme.Scheme()), "\n")
 }

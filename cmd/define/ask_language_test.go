@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
@@ -14,10 +15,11 @@ func TestAskAnnotatedCaptureReachesCleanHistoryAndTint(t *testing.T) {
 	for _, color := range []bool{true, false} {
 		d, fake, _, _ := askRig(t)
 		d.lang = "es"
+		d.scheme = holderFor(store.SchemeDark) // the shade the no-tint check looks for
 		fake.Script("", llmtest.Reply{Capture: "stream-language.sse"})
 		var out, errOut bytes.Buffer
 		sess := &session{}
-		code := runAsk(t.Context(), d, options{color: color, tintBackground: languageDark}, sess, question{text: "Explain buenos días"}, &out, &errOut)
+		code := runAsk(t.Context(), d, options{color: color, tintOn: true}, sess, question{text: "Explain buenos días"}, &out, &errOut)
 		if code != 0 {
 			t.Fatalf("code %d: %s", code, errOut.String())
 		}
@@ -67,13 +69,14 @@ func (c cancelLanguageStream) Stream(ctx context.Context, r llm.Request, delta f
 func TestAskAnnotatedCancellationFlushesBeforeHistory(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	d.lang = "en"
+	d.scheme = holderFor(store.SchemeDark) // the shade asserted below
 	fake.Script("", llmtest.Reply{Capture: "stream-language.sse"})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	d.newLLM = func(cfg llm.Config) llm.Client { return cancelLanguageStream{Client: llm.New(cfg), cancel: cancel} }
 	var out, errOut bytes.Buffer
 	sess := &session{}
-	runAsk(ctx, d, options{color: true, width: 20, tintBackground: languageDark}, sess, question{text: "Explain buenos días"}, &out, &errOut)
+	runAsk(ctx, d, options{color: true, width: 20, tintOn: true}, sess, question{text: "Explain buenos días"}, &out, &errOut)
 	if len(sess.turns) != 1 || !strings.HasPrefix(sess.turns[0].Answer, "The") {
 		t.Fatalf("missing partial history: %+v / %s", sess.turns, errOut.String())
 	}
@@ -198,7 +201,7 @@ func TestALongPassageReachesTheScreenInPieces(t *testing.T) {
 				}}
 			}
 			var errOut bytes.Buffer
-			code := runAsk(t.Context(), d, options{color: true, width: tc.width, tintBackground: languageDark}, &session{}, question{text: "sicofante vs obsequioso"}, &sink, &errOut)
+			code := runAsk(t.Context(), d, options{color: true, width: tc.width, tintOn: true}, &session{}, question{text: "sicofante vs obsequioso"}, &sink, &errOut)
 
 			if code != 0 {
 				t.Fatalf("exit = %d, stderr = %s", code, errOut.String())

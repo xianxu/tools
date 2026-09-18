@@ -15,8 +15,11 @@ func TestLanguageTintInvocation(t *testing.T) {
 		term, want string
 		redirect   bool
 	}{
+		// -scheme picks the shade; auto with nothing detected is dark (#70).
 		{"default", nil, "xterm-256color", languageDark, false},
-		{"light", []string{"-language-tint", "light"}, "xterm-256color", languageLight, false},
+		{"scheme dark", []string{"-scheme", "dark"}, "xterm-256color", languageDark, false},
+		{"scheme light", []string{"-scheme", "light"}, "xterm-256color", languageLight, false},
+		{"scheme auto", []string{"-scheme", "auto"}, "xterm-256color", languageDark, false},
 		{"off", []string{"-language-tint", "off"}, "xterm-256color", "", false},
 		{"plain", []string{"-no-color"}, "xterm-256color", "", false},
 		{"dumb", nil, "dumb", "", false},
@@ -85,13 +88,28 @@ func TestLanguageTintInvocation(t *testing.T) {
 	}
 }
 
+// A usage error is settled before anything opens a store, and -language-tint's
+// old shade values are refused by NAME, pointing at the flag that owns the
+// shade now (#70: narrowed to on|off, not aliased).
 func TestLanguageTintInvalidFlagBeforeStore(t *testing.T) {
-	d := testDeps(t)
-	opened := false
-	d.newStore = func(options, io.Writer, *deckPermission) storeDeps { opened = true; return storeDeps{} }
-	var out, errout bytes.Buffer
-	code := run(t.Context(), []string{"-language-tint", "bogus", "sycophantic"}, d, strings.NewReader(""), &out, &errout)
-	if code != 2 || opened || !strings.Contains(errout.String(), "invalid language tint") {
-		t.Fatalf("code=%d opened=%v stderr=%s", code, opened, &errout)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-language-tint", "light"}, "-scheme light"},
+		{[]string{"-language-tint", "dark"}, "-scheme dark"},
+		{[]string{"-language-tint", "bogus"}, "invalid -language-tint"},
+		{[]string{"-scheme", "sepia"}, "not a colour scheme"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			d := testDeps(t)
+			opened := false
+			d.newStore = func(options, io.Writer, *deckPermission) storeDeps { opened = true; return storeDeps{} }
+			var out, errout bytes.Buffer
+			code := run(t.Context(), append(tc.args, "sycophantic"), d, strings.NewReader(""), &out, &errout)
+			if code != 2 || opened || !strings.Contains(errout.String(), tc.want) {
+				t.Fatalf("code=%d opened=%v stderr=%s", code, opened, &errout)
+			}
+		})
 	}
 }

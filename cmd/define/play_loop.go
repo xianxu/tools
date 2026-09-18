@@ -1038,7 +1038,7 @@ func todaysQuestions(ctx context.Context, d deps, opt options, stdout, stderr io
 			// `jalapeno` in the deck against `jalapeño` on the head line, for
 			// which the CDN answers different URLs.
 			Word:  key,
-			Tint:  opt.tintFor(d.lang),
+			Tint:  tintFor(d, opt),
 			Color: opt.color, Width: opt.width, Vocab: deckVocabulary(d),
 		})
 		rendered, rs := output.text, output.regions

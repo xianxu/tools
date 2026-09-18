@@ -39,13 +39,13 @@ func writePracticePresentation(w io.Writer, p play.Presentation, rs []Region, d 
 	for i := range actions {
 		actions[i].Line-- // source presentation excludes the surrounding blank line
 	}
-	output := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), v, sf, subject, opt.width, actions...)
+	output := renderPracticeOutput(p, d.lang, dictionarySourceLanguage(d.dict), tintFor(d, opt), v, sf, subject, opt.width, actions...)
 	output.text = "\n" + output.text + "\n"
 	output.rows = append([]rowPaint{{}}, output.rows...)
 	for i := range output.regions {
 		output.regions[i].Line++
 	}
-	writeOutput(w, output, opt.width)
+	writeOutput(w, output, opt.width, d.scheme.Scheme())
 }
 
 // practiceBuilder records generated chrome beside its numbers and key glyphs.
@@ -125,6 +125,6 @@ func finishStyled(w io.Writer, s play.Session, fig sittingFigures, d deps, opt o
 	p.neutral("\n")
 	p.append(costPresentation(fig))
 	p.neutral("\n")
-	writeOutput(w, renderPracticeOutput(p.Presentation, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "", opt.width), opt.width)
+	writeOutput(w, renderPracticeOutput(p.Presentation, d.lang, dictionarySourceLanguage(d.dict), tintFor(d, opt), nil, surfaceProse, "", opt.width), opt.width, d.scheme.Scheme())
 	return 0
 }

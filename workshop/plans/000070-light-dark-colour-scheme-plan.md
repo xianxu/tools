@@ -49,6 +49,8 @@
 | `TestLanguageTextValidation` | `cmd/define/language_style_test.go` | deleted |
 | `TestDictionaryCapturedMixedOwnership` | `cmd/define/dictionary_language_test.go` | deleted |
 | `TestDictionaryInlinePronunciationRemainsNeutral` | `cmd/define/dictionary_language_test.go` | deleted |
+| `tintProfile` | `cmd/define/language_style.go` | deleted |
+| `TestLanguageTintProfile` | `cmd/define/language_style_test.go` | deleted |
 
 Rows for DELETED symbols are added by the task that deletes them, in the same commit (Task 3): a `| deleted |` row asserts the symbol is already gone (`TestPlanTablesNameEntitiesThatExist`), and it is also what exempts this plan's prose from `TestARemovedDeclarationIsSweptOrRetired`.
 
@@ -497,7 +499,7 @@ Do this BEFORE the role change (Task 4), so nothing is migrated only to be delet
 - [x] **Step 7: Add one `| deleted |` row per removed citable symbol** to this plan's Pure-entities table, each alone in its first cell with a repo-relative path — e.g. `` | `styleLanguageText` | `cmd/define/language_style.go` | deleted | `` — for `styleLanguageText`, `dictionaryFragment`, `dictionaryText` (`cmd/define/dictionary_language.go`), `styledBoardPrompt` (`cmd/define/practice_language.go`), `lineInkBounds` / `validateLanguageText` if removed, AND every deleted test function this plan names (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and `TestLanguageTextValidation` if it goes — path `cmd/define/language_style_test.go`). A removed `Test*` name the plan still mentions fails both `TestPlanCitesTestsThatExist` and `TestARemovedDeclarationIsSweptOrRetired`; the row is what exempts it.
 - [x] **Step 8: Verify.** `go build ./cmd/define/...` (only a build catches production still calling a helper that moved into a `_test.go`), `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (ran or skipped — say which) — PASS. Sweep: `grep -rnw 'styleLanguageText\|dictionaryFragment\|dictionaryText\|lineInkBounds\|validateLanguageText\|styledBoardPrompt\|headAt' cmd/define atlas README.md` — expected output: EMPTY.
 - [x] **Step 9: Commit** `#70 M1: delete the tint paths production never reached`
-- [ ] **Step 10: After the commit, run the whole package again** — `TestARemovedDeclarationIsSweptOrRetired` and `TestPlanTableStatusMatchesTheChangeWindow` read `base..HEAD`, so before the commit they cannot see the deletion (lessons #53: "After a commit, run the whole package"). A failure here is fixed in a follow-up commit, not by amending history that has been read.
+- [x] **Step 10: After the commit, run the whole package again** — `TestARemovedDeclarationIsSweptOrRetired` and `TestPlanTableStatusMatchesTheChangeWindow` read `base..HEAD`, so before the commit they cannot see the deletion (lessons #53: "After a commit, run the whole package"). A failure here is fixed in a follow-up commit, not by amending history that has been read.
 
 ### Task 4: The tint becomes a role; the flags choose the shade
 
@@ -560,7 +562,7 @@ if d.scheme == nil {
   `-h` prose: one sentence — *"-scheme light or dark picks the shade of the language tint to suit the terminal's background; -language-tint off turns the tint off."* (M2 and M3 extend it; no mention of detection yet.)
 - `cmd/define/README.md:344-345` — `-scheme light` and `-language-tint off` replace `-language-tint=light|off`.
 
-- [ ] **Step 1: Write the failing tests** (they will not compile until the type exists — that is the RED):
+- [x] **Step 1: Write the failing tests** (they will not compile until the type exists — that is the RED):
 
 ```go
 // language_row_test.go — the role is frozen at production; the shade resolves at paint.
@@ -599,8 +601,8 @@ func TestAScreenRepaintsHistoryInTheCurrentScheme(t *testing.T) {
 }
 ```
   And rewrite `TestLanguageTintInvocation` / `TestLanguageTintInvalidFlagBeforeStore` (`language_style_paths_test.go`) as the flag table (args → exit, shade): none → 0, `languageDark`; `-scheme dark` → dark; `-scheme light` → `languageLight`; `-scheme auto` → dark; `-language-tint off` → no tint escape; `-language-tint light` → exit 2, stderr contains `-scheme light`, NO store directory created; `-language-tint bogus` → exit 2, `invalid -language-tint`; `-scheme sepia` → exit 2, `not a colour scheme`; `TERM=dumb` → no tint; and KEEP today's `plain` (`-no-color`) and `redirect` rows (`language_style_paths_test.go:21,23`). They cannot pin `tintFor`'s colour gate, though: the lookup path has its own (`definitions.go:123`, `opt.Color && …`). The gate matters where there is no second check — practice output (`practice_output.go:96`) and the answer writer use `policy.on` alone, so `define --play -no-color` would print tint escapes without it. So add **TestTintForGatesOnColour**: `tintFor(deps{lang: "es"}, options{color: false, tintOn: true}).on` is false, and with `color: true` it is true — the direct pin `TestLanguageTintProfile`'s second half used to be.
-- [ ] **Step 2: Make every production change listed above.** `go build ./cmd/define/...` until clean.
-- [ ] **Step 3: Migrate every test the compiler rejects — default AND tagged** (`go vet -tags conformance ./cmd/define` finds the tagged ones: `bilingual_layout_conformance_test.go:55-61` and the `assertDefinitionSectionCells` helper it calls in `definitions_output_test.go:22`). Rules, so each test asserts what it asserted before:
+- [x] **Step 2: Make every production change listed above.** `go build ./cmd/define/...` until clean.
+- [x] **Step 3: Migrate every test the compiler rejects — default AND tagged** (`go vet -tags conformance ./cmd/define` finds the tagged ones: `bilingual_layout_conformance_test.go:55-61` and the `assertDefinitionSectionCells` helper it calls in `definitions_output_test.go:22`). Rules, so each test asserts what it asserted before:
   1. `rowPaint{background: languageDark|languageLight}` → `rowPaint{tinted: true}`; the paint call that follows receives the matching `store.SchemeDark` / `store.SchemeLight`; `rowPaint{background: ""}` → `rowPaint{}`.
   2. `tintPolicy{lang, languageX}` → `tintPolicy{lang: lang, on: true, scheme: holderFor(store.SchemeX)}`; `tintPolicy{lang, ""}` → `tintPolicy{lang: lang}`.
   3. `options{tintBackground: languageX}` → `options{tintOn: true}` plus `d.scheme = holderFor(store.SchemeX)` where the shade matters; `opt.tintFor(x)` → `tintFor(d, opt)` with `d.lang = x`.
@@ -618,8 +620,8 @@ func holderFor(s store.Scheme) *schemeHolder {
 	return newSchemeHolder(schemeState{}.withChoice(s, sourceFlag))
 }
 ```
-- [ ] **Step 4: Verify.** `go build ./cmd/define/...`, `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define` — PASS. Conformance: `go test -tags conformance ./cmd/define -run 'TestPTYLanguageTint|TestPTYNativeRendir|TestBilingualNativeRendirLayout' -count=1` — PASS; say which ran and which skipped (they need the Oxford ES dictionary, `bilingualNativeProbe`). Grep: `grep -rn 'tintBackground\|tintProfile\|paint\.background\|p\.background\b' cmd/define --include='*.go'` — expected: EMPTY (`answerwrap.go`'s `w.background` is a different field and does not match; a pty test's `profile.background` field should be renamed by rule 9 anyway).
-- [ ] **Step 5: Commit** `#70 M1: a row records whether it is tinted; -scheme picks the shade at paint`, then run the whole package again (the window guards read `base..HEAD`).
+- [x] **Step 4: Verify.** `go build ./cmd/define/...`, `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define` — PASS. Conformance: `go test -tags conformance ./cmd/define -run 'TestPTYLanguageTint|TestPTYNativeRendir|TestBilingualNativeRendirLayout' -count=1` — PASS; say which ran and which skipped (they need the Oxford ES dictionary, `bilingualNativeProbe`). Grep: `grep -rn 'tintBackground\|tintProfile\|paint\.background\|p\.background\b' cmd/define --include='*.go'` — expected: EMPTY (`answerwrap.go`'s `w.background` is a different field and does not match; a pty test's `profile.background` field should be renamed by rule 9 anyway).
+- [x] **Step 5: Commit** `#70 M1: a row records whether it is tinted; -scheme picks the shade at paint`, then run the whole package again (the window guards read `base..HEAD`).
 - [ ] **Step 6: Mutations**, one at a time: `paintLanguageRow` always writes `languageDark` → both new tests redden; `paintedTranscript` reads nothing (uses `store.SchemeDark`) → the transcript assertion reddens; skip `withChoice` for the flag → the `-scheme light` row reddens; `tintFor` ignores `opt.tintOn` → the `-language-tint off` row reddens; `tintFor` ignores `opt.color` → **TestTintForGatesOnColour** reddens; drop the `TERM=dumb` line → its row reddens. Restore each.
 
 ### Task 5: Pin the holder's wiring in the loop shells

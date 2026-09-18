@@ -1,20 +1,26 @@
 package main
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
+)
 
 // paintLanguageRow composes a row background with the producer's styles.
 // Explicit backgrounds and excluded answer cells win; selection inverse and
 // foreground styles pass through. Padding exists only in this terminal string.
-func paintLanguageRow(text string, paint rowPaint, width int) string {
+// A tinted row takes the shade of the scheme it is painted in (#70).
+func paintLanguageRow(text string, paint rowPaint, width int, sc store.Scheme) string {
 	if width <= 0 {
 		return text
 	}
 	if width > maxSelectionCells || len(text) > maxSelectionSource || !validRowPaint(paint) {
 		paint = rowPaint{}
 	}
-	if paint.background == "" {
+	if !paint.tinted {
 		return text
 	}
+	background := schemeTint(sc)
 	var out strings.Builder
 	explicit, filled := false, false
 	col, exclude := 0, 0
@@ -25,7 +31,7 @@ func paintLanguageRow(text string, paint rowPaint, width int) string {
 		excluded := exclude < len(paint.exclusions) && paint.exclusions[exclude].start < col+w
 		wanted := !explicit && !excluded
 		if wanted && !filled {
-			out.WriteString(paint.background)
+			out.WriteString(background)
 			filled = true
 		}
 		if !wanted && filled {

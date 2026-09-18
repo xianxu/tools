@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/xianxu/tools/cmd/define/store"
 	"strconv"
 	"strings"
@@ -13,9 +12,23 @@ const (
 	languageOff   = "\x1b[49m"
 )
 
+// tintPolicy says whether a producer marks the target language's rows as
+// tinted (#70): on is the -language-tint setting with colour on. The shade is
+// not here — it resolves at paint — but scheme travels with the policy so a
+// writer holding only the policy (the answer writer) can paint in it.
 type tintPolicy struct {
-	lang       store.Lang
-	background string
+	lang   store.Lang
+	on     bool
+	scheme *schemeHolder
+}
+
+// schemeTint is the shade a tinted row takes in a scheme: the only colour the
+// scheme decides, because it is the only one the terminal's theme cannot remap.
+func schemeTint(s store.Scheme) string {
+	if s == store.SchemeLight {
+		return languageLight
+	}
+	return languageDark
 }
 
 // Background state of the producer, excluding the tint we inject. Skip extended
@@ -53,22 +66,7 @@ func sourceBackground(seq string, active bool) bool {
 	return active
 }
 
-func tintProfile(name string) (string, error) {
-	switch name {
-	case "dark":
-		return languageDark, nil
-	case "light":
-		return languageLight, nil
-	case "off":
-		return "", nil
-	default:
-		return "", fmt.Errorf("invalid language tint %q: use dark, light, or off", name)
-	}
-}
-func (o options) tintFor(lang store.Lang) tintPolicy {
-	background := o.tintBackground
-	if !o.color {
-		background = ""
-	}
-	return tintPolicy{lang, background}
+// tintFor is the tint policy for this session's language.
+func tintFor(d deps, opt options) tintPolicy {
+	return tintPolicy{lang: d.lang, on: opt.color && opt.tintOn, scheme: d.scheme}
 }

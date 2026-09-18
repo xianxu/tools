@@ -19,11 +19,11 @@ func capturedDefinitionSet(t *testing.T) definitionSet {
 }
 
 // Check emitted cells, independently of the row metadata that requested paint.
-func assertDefinitionSectionCells(t *testing.T, set definitionSet, lang store.Lang, background string, width int) renderedOutput {
+func assertDefinitionSectionCells(t *testing.T, set definitionSet, lang store.Lang, sc store.Scheme, width int) renderedOutput {
 	t.Helper()
-	opt := RenderOpts{Word: entryIdentity(ParseEntry(set.sections[0].entries[0])), Color: true, Width: width, Tint: tintPolicy{lang: lang, background: background}}
+	opt := RenderOpts{Word: entryIdentity(ParseEntry(set.sections[0].entries[0])), Color: true, Width: width, Tint: tintPolicy{lang: lang, on: true, scheme: holderFor(sc)}}
 	output := renderDefinitionOutput(set, opt)
-	serialized := serializeOutput(output, width)
+	serialized := serializeOutput(output, width, sc)
 	lines := strings.Split(serialized, "\n")
 	plain := strings.Split(stripEscapes(serialized), "\n")
 	second := -1
@@ -39,7 +39,7 @@ func assertDefinitionSectionCells(t *testing.T, set definitionSet, lang store.La
 	// The separator is inserted as the opening row of the second section.
 	second--
 	wantTint := 236
-	if background == languageLight {
+	if sc == store.SchemeLight {
 		wantTint = 254
 	}
 	for i, line := range lines[:len(lines)-1] {
@@ -57,10 +57,10 @@ func assertDefinitionSectionCells(t *testing.T, set definitionSet, lang store.La
 			t.Fatalf("row %d leaks background to newline", i)
 		}
 	}
-	if strings.Contains(output.text, background) {
+	if strings.Contains(output.text, schemeTint(sc)) {
 		t.Fatal("source text contains paint")
 	}
-	if serializeOutput(output, 0) != output.text {
+	if serializeOutput(output, 0, sc) != output.text {
 		t.Fatal("pipe adds paint/padding")
 	}
 	return output
@@ -68,10 +68,10 @@ func assertDefinitionSectionCells(t *testing.T, set definitionSet, lang store.La
 
 func TestDefinitionOutputUniformSections(t *testing.T) {
 	set := capturedDefinitionSet(t)
-	for _, background := range []string{languageDark, languageLight} {
+	for _, sc := range []store.Scheme{store.SchemeDark, store.SchemeLight} {
 		for _, lang := range []store.Lang{"es", "en"} {
 			for _, width := range []int{32, 80} {
-				output := assertDefinitionSectionCells(t, set, lang, background, width)
+				output := assertDefinitionSectionCells(t, set, lang, sc, width)
 				if len(output.regions) < 2 {
 					t.Fatal("section headword actions missing")
 				}
@@ -112,7 +112,7 @@ func TestDefinitionOutputFormattingFallbackPreservesPrimary(t *testing.T) {
 	if set.sections[1].formatErr == nil {
 		t.Fatal("missing structural failure")
 	}
-	output := renderDefinitionOutput(set, RenderOpts{Word: "mesa", Color: true, Width: 80, Tint: tintPolicy{lang: "en", background: languageDark}})
+	output := renderDefinitionOutput(set, RenderOpts{Word: "mesa", Color: true, Width: 80, Tint: tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}})
 	plain := stripEscapes(output.text)
 	if !strings.Contains(oxfordContent(plain), oxfordContent(record.Text)) {
 		t.Fatal("fallback dropped native source content")
@@ -124,7 +124,7 @@ func TestDefinitionOutputFormattingFallbackPreservesPrimary(t *testing.T) {
 		t.Fatal("primary lost on supplement formatting failure")
 	}
 	for _, row := range output.rows {
-		if row.background != "" {
+		if row.tinted {
 			t.Fatal("unproven fallback acquired tint")
 		}
 	}
@@ -133,9 +133,9 @@ func TestDefinitionOutputFormattingFallbackPreservesPrimary(t *testing.T) {
 func TestDefinitionOutputUnknownPrimaryIsNeutral(t *testing.T) {
 	set := capturedDefinitionSet(t)
 	set.sections[0].language = ""
-	output := renderDefinitionOutput(set, RenderOpts{Color: true, Width: 80, Tint: tintPolicy{lang: "es", background: languageDark}})
+	output := renderDefinitionOutput(set, RenderOpts{Color: true, Width: 80, Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}})
 	for _, row := range output.rows {
-		if row.background != "" {
+		if row.tinted {
 			t.Fatal("display label established ownership for unverified source")
 		}
 	}
@@ -143,14 +143,14 @@ func TestDefinitionOutputUnknownPrimaryIsNeutral(t *testing.T) {
 
 func TestDefinitionOutputDisabledTintKeepsCleanLayout(t *testing.T) {
 	set := capturedDefinitionSet(t)
-	for _, opt := range []RenderOpts{{Width: 32, Tint: tintPolicy{lang: "es", background: languageDark}}, {Color: true, Width: 32, Tint: tintPolicy{lang: "es"}}} {
+	for _, opt := range []RenderOpts{{Width: 32, Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}}, {Color: true, Width: 32, Tint: tintPolicy{lang: "es"}}} {
 		output := renderDefinitionOutput(set, opt)
 		for _, row := range output.rows {
-			if row.background != "" {
+			if row.tinted {
 				t.Fatal("disabled tint retained paint")
 			}
 		}
-		rendered := serializeOutput(output, 32)
+		rendered := serializeOutput(output, 32, opt.Tint.scheme.Scheme())
 		if strings.Contains(rendered, languageDark) || strings.Contains(rendered, languageLight) {
 			t.Fatal("disabled tint emitted background")
 		}
