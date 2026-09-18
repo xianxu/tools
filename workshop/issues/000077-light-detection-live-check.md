@@ -38,10 +38,18 @@ detection bug or an unanswering terminal — record it and open the fix.
 
 ## Plan
 
-- [ ] Record the operator's light-terminal check in the atlas's *Terminals
+- [x] Record the operator's light-terminal check in the atlas's *Terminals
   checked by hand*, and drop its "Owed" sentence.
-- [ ] Log the check here, stating exactly what was and was not reported.
+- [x] Log the check here, stating exactly what was and was not reported.
 
 ## Log
 
 ### 2026-09-18
+
+The operator verified light detection in a real light terminal against this
+issue's criterion (`/scheme auto`, then `/scheme` → `light (detected)`), reported
+as "#77 verified". Not reported: the terminal app's name and the verbatim line;
+the atlas records the check as verified against the criterion, app not named.
+With #70's `dark (detected)`, detection is observed live in both appearances.
+The atlas's "Owed" sentence is replaced by this record.
+

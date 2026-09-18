@@ -552,9 +552,10 @@ terminal). 2026-09-18, the operator's terminal (app not named): with nothing sav
 the query and a dark background was classified dark; `/scheme auto` also removed the
 saved file and its emptied directory. Earlier runs were under a SAVED choice, so they
 evidence the tint and its ink, not detection: the first, a saved `light` over a terminal
-whose default text is white, is what surfaced the paired-ink fix above. **Owed** (#77): a
-real LIGHT terminal reading `light (detected)` — light detection is evidenced so far
-only by the modelled pty terminal and the in-process reply. **Re-check** — and record the terminal, appearance and reply —
+whose default text is white, is what surfaced the paired-ink fix above. 2026-09-18
+(#77): the operator verified the LIGHT side in a real light terminal (app not named)
+against #77's criterion — `/scheme auto`, then `/scheme` reading `light (detected)` —
+so detection is now observed live in both appearances. **Re-check** — and record the terminal, appearance and reply —
 when a terminal is added to what we claim to support, when a detection bug is
 reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
 
