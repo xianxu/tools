@@ -86,9 +86,11 @@ func startDefineInDir(t *testing.T, dir string, env []string, args ...string) (*
 func startDefineBinary(t *testing.T, bin, dir string, env []string, args ...string) (*exec.Cmd, *os.File) {
 	t.Helper()
 	cmd := exec.Command(bin, args...)
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
+	// EVERY launch gets its own config directory (#70): a developer's saved
+	// /scheme would otherwise flip every "default" expectation in this suite.
+	// The caller's env comes LAST, so a test can still point it somewhere —
+	// os/exec keeps the last of a duplicated key.
+	cmd.Env = append(append(os.Environ(), "XDG_CONFIG_HOME="+t.TempDir()), env...)
 	cmd.Dir = dir
 	f, err := pty.Start(cmd)
 	if err != nil {
@@ -1237,13 +1239,19 @@ func TestPTYDeckQuestionArrivesBeforeTheEditor(t *testing.T) {
 func TestPTYLanguageTint(t *testing.T) {
 	bilingualNativeProbe(t)
 	// -scheme picks the tint's shade; -language-tint off removes it (#70).
-	for _, profile := range []struct{ name, flag, shade string }{{"dark", "--scheme=dark", languageDark}, {"light", "--scheme=light", languageLight}, {"off", "--language-tint=off", ""}} {
+	// "default" passes NO scheme flag, so it is the one case that depends on the
+	// harness's isolated config directory: a saved scheme would flip it.
+	for _, profile := range []struct{ name, flag, shade string }{{"default", "", languageDark}, {"dark", "--scheme=dark", languageDark}, {"light", "--scheme=light", languageLight}, {"off", "--language-tint=off", ""}} {
 		t.Run(profile.name, func(t *testing.T) {
 			deck := t.TempDir()
 			if err := store.WriteLang(deck, "es"); err != nil {
 				t.Fatal(err)
 			}
-			cmd, f := startDefineInDir(t, deck, []string{"TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, "--no-audio", "--no-flags", profile.flag)
+			args := []string{"--no-audio", "--no-flags"}
+			if profile.flag != "" {
+				args = append(args, profile.flag)
+			}
+			cmd, f := startDefineInDir(t, deck, []string{"TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, args...)
 			if err := pty.Setsize(f, &pty.Winsize{Rows: 160, Cols: 160}); err != nil {
 				t.Fatal(err)
 			}
@@ -1300,6 +1308,12 @@ func TestPTYLanguageTint(t *testing.T) {
 				if background != profile.shade && strings.Contains(transcript.String(), background) {
 					t.Fatalf("unexpected background %q in %s profile", background, profile.name)
 				}
+			}
+			if profile.name == "default" {
+				write("/scheme\r")
+				take(func(s string) bool {
+					return strings.Contains(unstyled(s), "scheme dark (default: the terminal has not reported its background)")
+				})
 			}
 			write("\x04")
 			done := make(chan error, 1)
@@ -1426,4 +1440,66 @@ func TestPTYEveryEnabledModeIsAskedForAndGivenBack(t *testing.T) {
 			t.Errorf("%s was left ON in a real terminal: %q", m.name, rest)
 		}
 	}
+}
+
+// A /scheme choice outlives the session that made it, and /scheme auto forgets
+// it (#70). Three launches share ONE config directory and one Spanish deck.
+func TestPTYSavedSchemeSurvivesARestart(t *testing.T) {
+	bilingualNativeProbe(t)
+	config, deck := t.TempDir(), t.TempDir()
+	if err := store.WriteLang(deck, "es"); err != nil {
+		t.Fatal(err)
+	}
+	// run drives one launch: waits for the prompt, runs the script, quits.
+	run := func(t *testing.T, script func(write func(string), take func(string) string)) {
+		t.Helper()
+		cmd, f := startDefineInDir(t, deck, []string{"TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE=", "XDG_CONFIG_HOME=" + config}, "--no-audio", "--no-flags")
+		if err := pty.Setsize(f, &pty.Winsize{Rows: 160, Cols: 160}); err != nil {
+			t.Fatal(err)
+		}
+		out := watch(f)
+		take := func(want string) string {
+			t.Helper()
+			return awaitActivityPTY(t, out, func(s string) bool { return strings.Contains(unstyled(s), want) })
+		}
+		write := func(s string) {
+			t.Helper()
+			if _, err := f.WriteString(s); err != nil {
+				t.Fatal(err)
+			}
+		}
+		take("[es] › ")
+		script(write, take)
+		write("\x04")
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("exit: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("define did not exit")
+		}
+	}
+	run(t, func(write func(string), take func(string) string) {
+		write("/scheme light\r")
+		take("scheme light (saved)")
+	})
+	run(t, func(write func(string), take func(string) string) {
+		write("red\r")
+		spanish := take("clutches")
+		if !strings.Contains(spanish, languageLight) || strings.Contains(spanish, languageDark) {
+			t.Fatal("a new process did not use the saved scheme")
+		}
+		write("/scheme auto\r")
+		take("scheme dark (default: the terminal has not reported its background)")
+	})
+	run(t, func(write func(string), take func(string) string) {
+		write("red\r")
+		spanish := take("clutches")
+		if !strings.Contains(spanish, languageDark) || strings.Contains(spanish, languageLight) {
+			t.Fatal("/scheme auto did not forget the saved scheme")
+		}
+	})
 }

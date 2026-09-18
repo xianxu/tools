@@ -43,7 +43,8 @@ func TestPTYNativeRendirSectionLayout(t *testing.T) {
 			t.Run(fmt.Sprintf("%s-%d", profile.name, width), func(t *testing.T) {
 				cmd := exec.Command(builtBinary(t), "--lang=es", "--no-audio", "--no-flags", profile.flag, "rendir")
 				cmd.Dir = t.TempDir()
-				cmd.Env = append(os.Environ(), "TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE=1", "NO_COLOR=")
+				// Its own config directory, as startDefineBinary gives every launch (#70).
+				cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+t.TempDir(), "TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE=1", "NO_COLOR=")
 				f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 160, Cols: uint16(width)})
 				if err != nil {
 					conformance.SkipOrFail(t, "no pty available", err)
