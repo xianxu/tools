@@ -868,20 +868,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// member of deps — which also means a test that injects one has -scheme
 	// ignored.
 	if d.scheme == nil {
-		var st schemeState
-		switch {
-		case !schemeChoice.auto:
-			st = st.withChoice(schemeChoice.value, choiceFlag)
-		case d.configDir != nil:
-			if dir, ok := d.configDir(); ok {
-				if v, found, err := store.ReadScheme(dir); err != nil {
-					fmt.Fprintf(stderr, "define: ignoring saved scheme: %v\n", err)
-				} else if found {
-					st = st.withChoice(v, choiceSaved)
-				}
-			}
-		}
-		d.scheme = newSchemeHolder(st)
+		d.scheme = newSchemeHolder(initialSchemeState(schemeChoice, d.schemePersister(), stderr))
 	}
 
 	// The flag rides on the LINE, beside `literal`, because that is what it is:

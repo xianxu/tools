@@ -697,8 +697,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					cc.setBilingual = sessionSetBilingual(&d, d.persistBilingual)
 					// /scheme's repaint is the draw() after dispatch: every screen
 					// reads the one holder at paint (#70).
-					cc.session = true
-					cc.fullScreen = true
+					cc.loop = loopEditor
 					// And &voc, because THIS loop caches the highlight set in
 					// a local before the loop starts (see above). Reassigning
 					// d alone would leave the editor highlighting from the

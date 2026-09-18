@@ -250,13 +250,21 @@ type commandCtx struct {
 	// transition lives in applyScheme, and every screen reads the same holder.
 	scheme          *schemeHolder
 	schemePersister schemePersister
-	// session says a loop exists for a session-only choice to live in; false for
-	// the one-shot, which then refuses a choice it could not keep.
-	session bool
-	// fullScreen marks the raw editor: the loop that asks the terminal for its
-	// background, from M3 — so "not reported" is the true default report there.
-	fullScreen bool
+	// loop is which loop dispatched the command. /scheme derives both facts it
+	// needs from it — is there a session to keep a session-only choice in, and
+	// does this loop ask the terminal for its background (the raw editor, from
+	// M3) — so they cannot disagree. The zero value is the one-shot.
+	loop loopKind
 }
+
+// loopKind names the loop that dispatched a command.
+type loopKind int
+
+const (
+	loopOneShot loopKind = iota
+	loopPiped
+	loopEditor
+)
 
 // newCommandCtx is the single construction point. Built at two call sites (both
 // loops) and M2 adds a deck and a clock, so a literal in each loop is two places
@@ -277,7 +285,7 @@ func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 		// also re-derives the session; a one-shot keeps this one, which is why
 		// `define /lang es` still sets the directory's language.
 		setLang: d.persistLang,
-		// The one-shot's: no session, no full screen. Both loops override.
+		// loop stays loopOneShot here; both loops set their own.
 		scheme:          d.scheme,
 		schemePersister: d.schemePersister(),
 	}

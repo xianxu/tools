@@ -1010,10 +1010,14 @@ names the source (`saved`, `-scheme flag`, `session only`, or the default).
 The recolour needs no command-specific code: every screen reads the one
 `schemeHolder` at paint, so the editor's ordinary draw after dispatch repaints
 history in the new shade. `commandCtx` carries the holder and its
-`schemePersister` (`nil` = nowhere to save) plus two facts only a loop can
-supply — `session` (both loops) and `fullScreen` (the raw editor) — each pinned by
-a test that drives that loop. The file is untrusted input: capped at 64 bytes,
-parsed into the closed enum, anything else one warning at startup and ignored.
+`schemePersister` (`nil` = nowhere to save; `load`, `save`, `clear` — the startup
+read goes through it too, as the pure `initialSchemeState`) plus the `loopKind`
+that dispatched it — one-shot, piped or editor — from which `/scheme` derives both
+facts it needs: is there a session to keep a session-only choice in, and does this
+loop ask the terminal. One value, so the two cannot disagree; each loop's setting
+is pinned by a test that drives that loop. The file is untrusted input: capped at
+64 bytes, parsed into the closed enum, anything else one warning at startup and
+ignored.
 `ClearScheme` removes only what is ours — the directory only if it is a real,
 now-empty directory, never a dotfile manager's symlink.
 

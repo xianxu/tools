@@ -124,7 +124,7 @@ func TestSchemeHolderConcurrentReaders(t *testing.T) {
 
 func TestParseSchemeArg(t *testing.T) {
 	for in, want := range map[string]schemeArg{
-		"auto": {auto: true}, "AUTO": {auto: true},
+		"auto": {}, "AUTO": {},
 		"dark": {value: store.SchemeDark}, "light": {value: store.SchemeLight},
 	} {
 		if got, err := parseSchemeArg(in); err != nil || got != want {
@@ -191,6 +191,16 @@ func TestRealDepsConfigDirReadsXDG(t *testing.T) {
 type fakePersister struct {
 	saved   store.Scheme
 	failing error
+	garbled error // what load reports for a file it cannot parse
+	loads   int
+}
+
+func (f *fakePersister) load() (store.Scheme, bool, error) {
+	f.loads++
+	if f.garbled != nil {
+		return "", false, f.garbled
+	}
+	return f.saved, f.saved != "", nil
 }
 
 func (f *fakePersister) save(s store.Scheme) error {
@@ -232,8 +242,8 @@ func TestApplyScheme(t *testing.T) {
 		{"nowhere to save, in a session", schemeState{}, schemeArg{value: light}, nil, "", true, want{light, sourceSession, "", nil}},
 		{"nowhere to save, one-shot", schemeState{}, schemeArg{value: light}, nil, "", false, want{dark, sourceDefault, "", errNowhereToSave}},
 		{"a flag choice is replaced", schemeState{}.withChoice(light, choiceFlag), schemeArg{value: dark}, &fakePersister{}, "", true, want{dark, sourceSaved, dark, nil}},
-		{"auto reveals the reply", schemeState{}.withDetected(dark).withChoice(light, choiceSaved), schemeArg{auto: true}, &fakePersister{}, light, true, want{dark, sourceDetected, "", nil}},
-		{"a failed clear changes nothing", schemeState{}.withChoice(light, choiceSaved), schemeArg{auto: true}, &fakePersister{failing: boom}, light, true, want{light, sourceSaved, light, boom}},
+		{"auto reveals the reply", schemeState{}.withDetected(dark).withChoice(light, choiceSaved), schemeArg{}, &fakePersister{}, light, true, want{dark, sourceDetected, "", nil}},
+		{"a failed clear changes nothing", schemeState{}.withChoice(light, choiceSaved), schemeArg{}, &fakePersister{failing: boom}, light, true, want{light, sourceSaved, light, boom}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newSchemeHolder(tc.start)
@@ -278,5 +288,49 @@ func TestDescribeScheme(t *testing.T) {
 		if got := describeScheme(tc.st, tc.fullScreen); got != tc.want {
 			t.Errorf("describeScheme = %q, want %q", got, tc.want)
 		}
+	}
+}
+
+// The startup precedence, pure: no pty, no filesystem (the M2 review's
+// ARCH-PURE finding — this order used to live in run() glue, pinned only
+// through a terminal).
+func TestInitialSchemeState(t *testing.T) {
+	light, dark := store.SchemeLight, store.SchemeDark
+	garbled := errors.New("scheme: \"sepia\" is not a colour scheme")
+	for _, tc := range []struct {
+		name     string
+		flag     schemeArg
+		p        *fakePersister // nil: no config directory
+		want     store.Scheme
+		src      schemeSource
+		warnings int
+		loads    int
+	}{
+		{"flag beats saved, without reading it", schemeArg{value: dark}, &fakePersister{saved: light, garbled: garbled}, dark, sourceFlag, 0, 0},
+		{"saved when no flag", schemeArg{}, &fakePersister{saved: light}, light, sourceSaved, 0, 1},
+		{"nothing saved", schemeArg{}, &fakePersister{}, dark, sourceDefault, 0, 1},
+		{"garbled warns once and is unset", schemeArg{}, &fakePersister{garbled: garbled}, dark, sourceDefault, 1, 1},
+		{"no config directory", schemeArg{}, nil, dark, sourceDefault, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var warn strings.Builder
+			var p schemePersister
+			if tc.p != nil {
+				p = tc.p
+			}
+			st := initialSchemeState(tc.flag, p, &warn)
+			if v, src := st.effective(); v != tc.want || src != tc.src {
+				t.Fatalf("effective = %s/%v, want %s/%v", v, src, tc.want, tc.src)
+			}
+			if got := strings.Count(warn.String(), "define: ignoring saved scheme:"); got != tc.warnings {
+				t.Fatalf("%d warnings, want %d: %q", got, tc.warnings, warn.String())
+			}
+			if tc.p != nil && tc.p.loads != tc.loads {
+				t.Fatalf("loaded %d times, want %d", tc.p.loads, tc.loads)
+			}
+		})
+	}
+	if !(schemeArg{}).auto() {
+		t.Fatal("the zero schemeArg must be auto, so it forgets rather than saving a blank")
 	}
 }

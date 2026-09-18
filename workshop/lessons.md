@@ -4805,3 +4805,30 @@ capture of the OTHER shape.
 **When a fixture cannot exhibit the defect, adding assertions to it is wasted
 work.** Record the shape that can, and have the recorder refuse to promote one
 that does not.
+
+## Fields whose legal combinations are a subset are ONE value (#70)
+
+Three times in one issue, the same shape: a choice beside a `chosenBy` source
+that could say "detected" (M1), an `auto` flag beside a `value` (M2), and two
+booleans `session` + `fullScreen` where full-screen without a session means
+nothing (M2). Each was fine at every call site that existed and wrong as a
+TYPE: it could hold a state no code meant, and the next caller would find it.
+The review escalated on the second instance with "fix rules, not instances".
+
+The rule: when N fields depend on each other, collapse them into one value
+whose members are exactly the legal combinations — an enum (`loopKind`), a
+nil-able pointer (`*schemeChoice`), or a single field whose zero value is the
+harmless case (`schemeArg{}` is auto, so it forgets rather than saving a blank).
+Check new structs for it at write time: for each pair of fields, ask whether
+every combination means something.
+
+## A step that cites the Log is ticked after the Log line exists (#70)
+
+M2's plan steps said "noted in the Log" and "name what ran vs skipped", were
+ticked, and the Log had no M2 entry at all — the boundary review blocked the
+milestone on it. One step also claimed a clean PASS where only the affected
+subset had run and the full suite had pre-existing failures. A tick is a claim
+that its evidence exists; when the evidence is prose in another file, write
+that prose first, and state the scope of any run exactly (which tests, which
+passed, which failed and why).
+

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -152,16 +153,18 @@ func (h *schemeHolder) detect(v store.Scheme) bool {
 	return h != nil && h.set(h.Load().withDetected(v))
 }
 
-// schemeArg is what -scheme and /scheme accept: a scheme, or auto (no choice).
-// ONE parser for both (ARCH-DRY), so the flag and the command cannot disagree.
-type schemeArg struct {
-	auto  bool
-	value store.Scheme
-}
+// schemeArg is what -scheme and /scheme accept: a scheme, or auto — no choice.
+// ONE field, not an auto flag beside a value: the empty value IS auto, so the
+// two cannot contradict each other and the zero value is the harmless one (it
+// forgets rather than saving a blank). ONE parser for the flag and the command
+// (ARCH-DRY), so they cannot disagree either.
+type schemeArg struct{ value store.Scheme }
+
+func (a schemeArg) auto() bool { return a.value == "" }
 
 func parseSchemeArg(s string) (schemeArg, error) {
 	if strings.EqualFold(strings.TrimSpace(s), "auto") {
-		return schemeArg{auto: true}, nil
+		return schemeArg{}, nil
 	}
 	v, err := store.ParseScheme(s)
 	if err != nil {
@@ -204,17 +207,43 @@ var (
 	errNowhereToSave = errors.New("nowhere to save it: $XDG_CONFIG_HOME and $HOME are unset or not absolute")
 )
 
-// schemePersister is the durable half of /scheme. nil means there is nowhere to
-// save (no config directory).
+// schemePersister is the durable half of the scheme: the startup read and
+// /scheme's save and clear, through ONE seam. nil means there is no config
+// directory.
 type schemePersister interface {
+	load() (store.Scheme, bool, error)
 	save(store.Scheme) error
 	clear() error
 }
 
 type dirSchemePersister string
 
-func (d dirSchemePersister) save(s store.Scheme) error { return store.WriteScheme(string(d), s) }
-func (d dirSchemePersister) clear() error              { return store.ClearScheme(string(d)) }
+func (d dirSchemePersister) load() (store.Scheme, bool, error) { return store.ReadScheme(string(d)) }
+func (d dirSchemePersister) save(s store.Scheme) error         { return store.WriteScheme(string(d), s) }
+func (d dirSchemePersister) clear() error                      { return store.ClearScheme(string(d)) }
+
+// initialSchemeState is the scheme a process starts with: the -scheme flag,
+// else the saved choice, else nothing (the dark default, or a later report).
+// A saved file that cannot be read is untrusted input gone wrong, so it warns
+// once and counts as unset. Pure apart from the persister and warn it is given.
+func initialSchemeState(flag schemeArg, p schemePersister, warn io.Writer) schemeState {
+	var st schemeState
+	if !flag.auto() {
+		return st.withChoice(flag.value, choiceFlag)
+	}
+	if p == nil {
+		return st
+	}
+	v, found, err := p.load()
+	if err != nil {
+		fmt.Fprintf(warn, "define: ignoring saved scheme: %v\n", err)
+		return st
+	}
+	if found {
+		st = st.withChoice(v, choiceSaved)
+	}
+	return st
+}
 
 // schemePersister is this process's durable half of /scheme, or nil when there
 // is no config directory to write to.
@@ -240,11 +269,11 @@ func applyScheme(h *schemeHolder, arg schemeArg, p schemePersister, session bool
 	switch {
 	case p == nil && !session:
 		return h.Load(), errNowhereToSave
-	case p == nil && arg.auto:
+	case p == nil && arg.auto():
 		h.forget()
 	case p == nil:
 		h.choose(arg.value, choiceSession)
-	case arg.auto:
+	case arg.auto():
 		if err := p.clear(); err != nil {
 			return h.Load(), err
 		}

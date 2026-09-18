@@ -16,7 +16,7 @@ func runScheme(c commandCtx, args []string) int {
 		return 2
 	}
 	if len(args) == 0 {
-		fmt.Fprintf(c.stdout, "  scheme %s\n", describeScheme(c.scheme.Load(), c.fullScreen))
+		fmt.Fprintf(c.stdout, "  scheme %s\n", describeScheme(c.scheme.Load(), c.loop == loopEditor))
 		return 0
 	}
 	arg, err := parseSchemeArg(args[0])
@@ -24,11 +24,11 @@ func runScheme(c commandCtx, args []string) int {
 		fmt.Fprintf(c.stderr, "define: /scheme: %v\n", err)
 		return 2
 	}
-	st, err := applyScheme(c.scheme, arg, c.schemePersister, c.session)
+	st, err := applyScheme(c.scheme, arg, c.schemePersister, c.loop != loopOneShot)
 	if err != nil {
 		fmt.Fprintf(c.stderr, "define: /scheme: %v\n", err)
 		return 2
 	}
-	fmt.Fprintf(c.stdout, "  scheme %s\n", describeScheme(st, c.fullScreen))
+	fmt.Fprintf(c.stdout, "  scheme %s\n", describeScheme(st, c.loop == loopEditor))
 	return 0
 }

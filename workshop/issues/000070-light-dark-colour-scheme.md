@@ -534,3 +534,33 @@ deleted — tests still use them), and the per-fragment tint assertions were
 DROPPED, not ported: they described behaviour production never had (it tints
 whole sections, pinned by `TestDefinitionOutputUniformSections`); their live
 halves (producer backgrounds, copy over tint) were ported.
+
+M2 — `/scheme` and the saved choice. What the ticked plan steps rest on:
+- **Symlinked FILE (Task 7 Step 6):** `WriteScheme`'s atomic rename REPLACES a
+  symlinked `scheme` file with a regular file, so a dotfile manager that links
+  the file itself (not its directory) loses the link on `/scheme light`. That is
+  the store's behaviour for every setting (`bilingual.txt` too), not changed in
+  #70; `ClearScheme` removing the file is intended (it IS the saved choice). A
+  symlinked config DIRECTORY is kept — `TestClearSchemeRemovesOnlyWhatIsOurs`.
+- **pty (Task 11 Step 4), precisely:** at the step I ran only the three affected
+  tests on the built binary — `TestPTYLanguageTint` (default/dark/light/off),
+  `TestPTYNativeRendirSectionLayout` (6 subtests), `TestPTYSavedSchemeSurvivesARestart`
+  — all passed. The FULL tagged suite ran at the boundary: 1338 passed, 1 skipped
+  (`TestPlanNamedTestsExist`), 14 failed, all 14 the pre-existing set logged at
+  M1 and reproduced on the branch point 75370a2. `-race`: only the pre-existing
+  `TestPlayClickOnThePromptWordPlaysIt`.
+- **Mutations**, each applied, compiled, run with `-count=1`, red, restored:
+  Task 7 — the size cap, the empty-dir removal, the `Lstat` guard, the path in
+  the error; Task 8 — flag and saved swapped, the garbled-file warning dropped,
+  `realDeps` without `configDir`; Task 9 — `choose` before `save`, the one-shot
+  refusal removed; Task 10 — the editor's `session`, the editor's `fullScreen`,
+  the piped loop's `session`, `applyScheme` skipping `choose`; Task 11 — the
+  harness's `XDG_CONFIG_HOME` dropped under a fake config holding `light`.
+
+M2 review: FIX-THEN-SHIP; the ledger blocked the close on BR-6 (this entry was
+missing). Also fixed, the family rule rather than the instances (the
+state-shape family's 2nd finding): `schemeArg` is ONE field (empty = auto — the
+zero value forgets instead of saving a blank line); `commandCtx`'s `session` +
+`fullScreen` became one `loopKind` {one-shot, piped, editor}; and the startup
+read goes through the same `schemePersister` seam as save and clear, as a pure
+`initialSchemeState` pinned by `TestInitialSchemeState` with no pty.
