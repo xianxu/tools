@@ -46,7 +46,8 @@ ONE holder per process — `deps.scheme`, a stable pointer on the
 `deps.practiceHelp` precedent (`main.go:25-27`: "a pointer, so a nested sitting
 and the next one share"), NOT the `deps.bilingual` one, whose setter replaces the
 pointer in a by-value copy of `deps` and so never reaches the editor from a
-sitting. State changes only through the holder's transition function:
+sitting. The holder is an `atomic.Pointer` to an IMMUTABLE `schemeState`; a pure
+transition function builds the next value and the loop stores it:
 
 ```
 schemeState{ choice *{value, source: flag|saved|session}; detected *scheme }
@@ -74,9 +75,20 @@ next paint, and the only effect a transition has is to repaint the ACTIVE screen
 a suspended editor screen repaints on `resume` (`play_cmd.go:148`) with whatever
 is in force then, and a sitting's new screen starts with it. `paintLanguageRow`
 still takes the scheme as an explicit parameter (ARCH-PURE); only its callers read
-the holder. The holder is safe for concurrent use, because the throttled paint
-runs on a timer goroutine (`liveScreen`'s 16 ms flush) while the loop applies
-events.
+the holder. A nil holder means dark, read-only.
+
+Concurrency: exactly ONE writer at a time — the loop goroutine in force (the
+editor's, the piped loop's, or `--play`'s; a `/play` sitting runs on the editor
+loop's own goroutine). FIVE goroutines read while painting under the screen lock
+`l.mu`: the loop (`Draw`/`DrawOutput`/`WriteOutput` → `repaint`), the throttle
+timer (`flush`, `screen.go:935,944-950`), the activity ticker (`activity.go:54` →
+`throttledPaint`), `readInput` (pointer routing → `repaint`,
+`selection_input.go:28-49`), and clipboard completion (`copyFinishedLocked`,
+`selection_screen.go:141-152`). An atomic load of an immutable value has no lock to
+order against `l.mu` and the pointer router's lock, which is why it is an atomic
+pointer rather than a mutex. A frame reads `effective()` ONCE, in
+`layoutSelectionFrame`, and passes the value down, so a transition landing
+mid-frame cannot mix two tints in one frame.
 
 `/scheme` reports `effective` and its source, and each report is true:
 `light (detected)`, `dark (detected)`, `dark (saved)`, `light (-scheme flag)`,
@@ -103,9 +115,10 @@ to detect in, says `(default: detected only in an interactive session)`.
 Once the query is sent a reply is certain, and in a sitting a leaked character is
 an ANSWER (digits pick options; `d` removes the word).
 
-1. **Swallow** — `ESC ] 11 ;` then printable bytes (0x20–0x7E) up to BEL or ST
-   (`ESC \`), at most 64 bytes, possibly split across reads. Any other C0 byte
-   (Ctrl-C, Enter, an `ESC` not followed by `\`) or the cap aborts, and the input
+1. **Swallow** — `ESC ] 11 ;` then bytes in 0x20–0x7E up to BEL or ST
+   (`ESC \`), at most 64 bytes, possibly split across reads. Any byte outside
+   0x20–0x7E other than the terminators (Ctrl-C, Enter, DEL, 0x80+, an `ESC` not
+   followed by `\`) or the cap aborts, and the input
    decodes exactly as today: `ESC ]` as a 2-byte `KeyUnknown` (`key.go:240`), then
    the rest. Before `11;` is complete the decoder waits for the next byte, which
    holds a lone Alt-] until the next key (it is inert either way). A user would
@@ -128,9 +141,11 @@ because a mid-grey terminal is what users call mid, not dark.
 - The pointer router classes it as NOT input, like `KeyUnknown`, so a reply
   mid-drag does not cancel the selection or its notice (`selection_input.go:48-49`,
   `:234-243`).
-- The full-channel branch (`selection_input.go:192-200`) drops it SILENTLY — no
-  "input full" notice, no pointer cancel. A dropped reply leaves the scheme where
-  it was, which is an accepted outcome.
+- BOTH full-channel drop sites — the length check (`selection_input.go:192-200`)
+  and the `select`'s `default:` arm (`:216-221`) — drop it SILENTLY: no
+  "input full" notice, no pointer cancel, and the `saturated` latch NOT set, or a
+  dropped reply would suppress the notice for the next real key dropped. A
+  dropped reply leaves the scheme where it was, which is an accepted outcome.
 
 The query's reply owes the decoder a case — the obligation `enabledModes`'
 `replies` flag records (`rawterm.go:118`). The query is not a mode (no teardown),
@@ -168,8 +183,11 @@ Late replies, the whole class:
   package stops carrying background escapes.
 - **The scheme reaches the painter as an explicit parameter, never a global**
   (ARCH-PURE): `paintLanguageRow` takes it, and so do its callers.
-  - The screen (`*screen`) holds the `deps.scheme` holder (given at construction:
-    `newLiveScreen`, `newPinnedScreen`) and reads `effective()` when it paints.
+  - The screen (`*screen`) holds the `deps.scheme` holder — attached in
+    `newConsole` and `sittingInPlace`, not threaded through the constructors
+    (`newLiveScreen`/`newPinnedScreen` have ~108 test call sites, and
+    `newConsole` takes the constructor as a value, `replraw.go:77-78`) — and
+    reads `effective()` once per frame.
     That covers every `*screen` painter: the frame (`layoutSelectionFrame`,
     `selectionLayout.paint` → `paintOutputChunk`), `paintActivity`, and the exit
     transcript (`paintedTranscript`, which already paints from `screen.paints`).
@@ -177,7 +195,9 @@ Late replies, the whole class:
     repaint hook the loops call.
   - The non-screen path (`writeOutput` → `serializeOutput`: one-shot, piped and
     answer output) reads `effective()` from the same holder when the output is
-    written.
+    written. `options` no longer carries a scheme, so `tintPolicy` carries the
+    holder from `d` (`tintFor` takes it; `ownedAnswerWrapWriter` sees only its
+    `tintPolicy`, `answerwrap.go:358`).
 - **Dead code is deleted, not converted**, once each is shown unreachable in
   production (both reviewers confirmed): `styleLanguageText` (only production
   caller runs with `ro.Tint` zeroed, `definitions.go:89`) with `dictionaryFragment`
@@ -272,8 +292,11 @@ Late replies, the whole class:
   loop.
 - `/scheme light` persists (a new process with no flag uses it). `/scheme auto`
   removes it and detection governs again. A missing config directory reports
-  "session only; not saved". A write error fails the command and changes nothing.
-  A garbled file warns once and is ignored.
+  "session only; not saved" in a session, and the one-shot `define /scheme light`
+  exits 2 naming `$XDG_CONFIG_HOME`/`$HOME`. A write error fails the command and
+  changes nothing. A garbled file warns once and is ignored.
+- A reply dropped on a full input channel posts no notice and leaves the next
+  real dropped key's "input full" notice intact.
 - An OSC 11 reply in the editor inserts no text, and in a sitting records no
   answer — for an `rgb:` reply AND for an `rgba:` / `#rrggbb` one (swallowed,
   nothing detected). A reply mid-drag leaves the selection intact. Alt-] followed
@@ -340,3 +363,13 @@ grammar, so any other reply format (`rgba:`) leaked as typing — and as ANSWERS
 in a sitting; now swallow-then-parse. (4) One-shot `/scheme` with no config dir
 refuses, as `/bilingual`'s does. Also: query goes to `rawSession.control`, never
 the screen; not sent under `-raw` or `TERM=dumb`; `asked` dropped (no reader).
+
+Spec review, round 3: round-2 fixes verified against the code; two small issues.
+(1) Holder concurrency named one reader where there are five painting goroutines
+under `l.mu` → an `atomic.Pointer` to an immutable state (single writer: the loop
+in force), so there is no lock to order; one `effective()` read per frame.
+(2) The full-channel class had two drop sites, not one (`:216-221`), and a silent
+drop must not set the `saturated` latch. Advisories adopted: nil holder = dark;
+holder attached in `newConsole`/`sittingInPlace`, not the ~108-call-site
+constructors; `tintPolicy` carries the holder to the non-screen path; the swallow
+byte range stated exactly; a Done-when for the one-shot refusal.
