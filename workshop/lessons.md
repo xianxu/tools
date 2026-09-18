@@ -4878,6 +4878,8 @@ terminal by default" after detection shipped, and said a session asks "with
 nothing chosen" when it asks every time. Each milestone checked the paragraph it
 wrote and not the sentences it made false. When a milestone changes a behaviour,
 grep the docs for that behaviour's words and check each sentence against the
-code's actual condition — no future features, no stale defaults, no narrower
-conditions than the code has.
+code's actual condition — no future features, no stale defaults, and the code's
+condition EXACTLY, neither narrower nor broader (the fix for "asks only with
+nothing chosen" overshot to "every session asks", and the code asks only where a
+tint can appear).
 

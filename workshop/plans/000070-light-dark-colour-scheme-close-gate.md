@@ -209,6 +209,48 @@ rounds:
       boundary: M3
       recipe: milestone-review
       blocked: false
+    - "n": 8
+      timestamp: "2026-09-18T11:19:17-07:00"
+      agent: claude
+      dispose:
+        - id: BR-2
+          disposition: addressed
+          note: schemeState.choice is *schemeChoice{value, by choiceSource}; choiceSource admits only flag/saved/session (scheme.go:30-58).
+          round: 8
+        - id: BR-3
+          disposition: addressed
+          note: boardFooter and practiceChrome are gone; both tests call paintedBoardFooterForTest; the rationale now sits on boardFooterOutput (practice_output.go:155-189).
+          round: 8
+        - id: BR-4
+          disposition: addressed
+          note: At close every source and transition the paragraph describes has shipped; atlas/define.md:512-531 matches scheme.go and screen.go.
+          round: 8
+        - id: BR-5
+          disposition: addressed
+          note: The issue Log's M1 review entry states the renderers were moved and the fragment-tint assertions dropped, with the live halves ported; the Done-when evidence list cites that reconciliation.
+          round: 8
+        - id: BR-7
+          disposition: addressed
+          note: commandCtx uses loopKind {oneShot, piped, editor} (command.go:257-267); schemeArg is one field whose empty value means auto (scheme.go:164-166).
+          round: 8
+        - id: BR-9
+          disposition: addressed
+          note: Detection shipped in M3, so the atlas sentence about a loop asking the terminal is now true of loopEditor; no later-milestone claims are left.
+          round: 8
+        - id: BR-15
+          disposition: addressed
+          note: inking is removed; unfill writes inkOff when !coloured, which is correct because unfill runs before every change to coloured (language_row.go:24-38).
+          round: 8
+        - id: BR-16
+          disposition: not-addressed
+          note: 'Both named sentences are fixed, but the replacement at README.md:359 ("Every full-screen session asks") claims more than the code does: wantsBackground (rawterm.go:162) also requires colour on, -language-tint on and not -raw, while the editor opens on terminalUI && opt.tty alone (repl.go:297). So define -language-tint off and define -raw are full-screen sessions that never ask. Fix: state the predicate as the atlas does ("unless -language-tint off or -raw"), and change lessons.md "no narrower conditions than the code has" to "the code''s condition exactly, neither narrower nor broader". Prevalence in the family: 4.'
+          round: 8
+        - id: BR-17
+          disposition: addressed
+          note: '#77 ("confirm light detection in a real light terminal") is committed on origin/main (9b9f691), and atlas/define.md:555 cites it.'
+          round: 8
+      recipe: milestone-review
+      blocked: false
 ---
 
 # Gate ledger — tools#70 (boundary-review)
@@ -313,14 +355,20 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-17** [Minor] `deferred-obligation-lacks-a-tracker` The owed real light-terminal "light (detected)" check exists only in atlas prose (atlas/define.md:555)
   Once sdlc close runs, nothing owns it. Follow the M1 residue precedent (#76): open a follow-up with sdlc issue new, or attach it to an existing tracker, so the ARCH-MOCK live check has an owner.
 
+## Round 8 — 2026-09-18T11:19:17-07:00 (claude) — passed
+
+### Disposed
+
+- BR-2 — addressed — schemeState.choice is *schemeChoice{value, by choiceSource}; choiceSource admits only flag/saved/session (scheme.go:30-58).
+- BR-3 — addressed — boardFooter and practiceChrome are gone; both tests call paintedBoardFooterForTest; the rationale now sits on boardFooterOutput (practice_output.go:155-189).
+- BR-4 — addressed — At close every source and transition the paragraph describes has shipped; atlas/define.md:512-531 matches scheme.go and screen.go.
+- BR-5 — addressed — The issue Log's M1 review entry states the renderers were moved and the fragment-tint assertions dropped, with the live halves ported; the Done-when evidence list cites that reconciliation.
+- BR-7 — addressed — commandCtx uses loopKind {oneShot, piped, editor} (command.go:257-267); schemeArg is one field whose empty value means auto (scheme.go:164-166).
+- BR-9 — addressed — Detection shipped in M3, so the atlas sentence about a loop asking the terminal is now true of loopEditor; no later-milestone claims are left.
+- BR-15 — addressed — inking is removed; unfill writes inkOff when !coloured, which is correct because unfill runs before every change to coloured (language_row.go:24-38).
+- BR-16 — not-addressed — Both named sentences are fixed, but the replacement at README.md:359 ("Every full-screen session asks") claims more than the code does: wantsBackground (rawterm.go:162) also requires colour on, -language-tint on and not -raw, while the editor opens on terminalUI && opt.tty alone (repl.go:297). So define -language-tint off and define -raw are full-screen sessions that never ask. Fix: state the predicate as the atlas does ("unless -language-tint off or -raw"), and change lessons.md "no narrower conditions than the code has" to "the code's condition exactly, neither narrower nor broader". Prevalence in the family: 4.
+- BR-17 — addressed — #77 ("confirm light detection in a real light terminal") is committed on origin/main (9b9f691), and atlas/define.md:555 cites it.
+
 ## Open findings
 
-- **BR-2** [Minor] `state-shape-admits-illegal-combinations` schemeState.withChoice accepts any schemeSource, so choice-by-detected, choice-by-default and empty-choice states are representable
-- **BR-3** [Minor] `tests-pin-a-shadow-of-the-live-path` Two live-edge footer invariants are tested through the test-only boardFooter, not production's boardFooterOutput
-- **BR-4** [Minor] `docs-describe-unshipped-surface` The atlas paragraph on paint-time shade describes saved/session sources and detect/forget as live in M1
-- **BR-5** [Minor] `spec-done-when-drifts-from-delivery` Done-when says dead paths are deleted with tint assertions ported; the renderers were moved to test helpers and fragment-tint assertions dropped
-- **BR-7** [Minor] `state-shape-admits-illegal-combinations` commandCtx session/fullScreen and schemeArg auto/value allow combinations that mean nothing
-- **BR-9** [Minor] `docs-describe-unshipped-surface` The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3
-- **BR-15** [Minor] `state-shape-admits-illegal-combinations` paintLanguageRow stores inking, which always equals filled && !coloured (language_row.go:26-27,34)
 - **BR-16** [Minor] `docs-describe-unshipped-surface` README scheme section: "suits a dark terminal by default" is out of date and "With nothing chosen ... asks" is too narrow (README.md:343,359)
-- **BR-17** [Minor] `deferred-obligation-lacks-a-tracker` The owed real light-terminal "light (detected)" check exists only in atlas prose (atlas/define.md:555)

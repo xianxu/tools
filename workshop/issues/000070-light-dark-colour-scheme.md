@@ -1,13 +1,14 @@
 ---
 id: 000070
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-16
-updated: 2026-09-17
+updated: 2026-09-18
 estimate_hours: 6.1
 started: 2026-09-17T17:20:31-07:00
 flow: {kind: full, provenance: inferred}
+actual_hours: 10.05
 ---
 
 # define: switch between a light and a dark colour scheme
@@ -377,6 +378,8 @@ code, tests, mutation checks). Three review boundaries:
 ## Log
 
 
+
+- 2026-09-18: closed — Light/dark colour scheme for define, 3 milestones each SHIP/FIX-THEN-SHIP and closed. Tint is a role resolved at paint from one atomic scheme holder (so /scheme recolours history and the exit transcript); tinted rows carry a paired ink; -scheme and -language-tint on|off; /scheme saves to $XDG_CONFIG_HOME/define/scheme (persist-then-switch; symlink-safe clear); OSC 11 detection read as a KeyBackground by a bounded decoder, applied by editor and sitting. go test ./... green; vet both builds; linux build; strict pty conformance green on the built binary; full tagged suite and -race fail only the pre-existing set (reproduced on the branch point). Live: a real terminal reported "dark (detected)"; light live check owed as #77. Follow-ups #76, #77.; review verdict: SHIP
 - 2026-09-18: closed M3 — M3: OSC 11 asked once per raw session where a tint can appear; reply decoded by a bounded two-step swallow/parse as KeyBackground; one terminalReport rule in editor and sitting, each pinned by the frame it paints; inert to router and full-queue drop; tinted rows carry a paired ink, reset pinned. Live: a real terminal, after /scheme auto, reported "dark (detected)"; light detection evidenced by the pty terminal and in-process reply, real-light check recorded as owed. go test ./... green; vet both builds; linux build; strict pty 5/5 ran+passed; full tagged suite and -race fail only the pre-existing set; fuzz 3x30s PASS; 23 mutations named in the Log, each red.; review verdict: SHIP
 ### 2026-09-16
 
@@ -685,4 +688,10 @@ stored; the README's scheme section no longer calls dark the default or says a
 session asks only "with nothing chosen"; and the owed real light-terminal check
 has an owner, #77 (follow-up, published to the trunk). Lessons record both repeat
 families.
+
+Issue close: SHIP (round 7, converging; 9 prior findings disposed). Its one
+advisory, BR-16, fixed in the close commit: the README's "every full-screen
+session asks" was broader than `wantsBackground`, which asks only where a tint can
+appear; it now names the exceptions, and the docs lesson says "the code's
+condition exactly, neither narrower nor broader". Follow-ups: #76, #77.
 

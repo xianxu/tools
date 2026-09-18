@@ -356,8 +356,10 @@ deck directory. `/scheme auto` forgets the saved choice; `/scheme` alone says
 which scheme is in use and where it came from. The `-scheme` flag beats a saved
 choice for one run.
 
-Every full-screen session asks the terminal for its background colour (the
-standard OSC 11 query); with no choice in force it follows the answer,
+A full-screen session asks the terminal for its background colour (the standard
+OSC 11 query) whenever something could be tinted — not under
+`-language-tint off`, `-raw`, `-no-color` or `TERM=dumb`. With no choice in force
+it follows the answer,
 repainting if the answer arrives after something is already on screen, and
 `/scheme` then reports it as `(detected)`. A terminal that does not answer leaves
 the dark default until you choose. A one-shot lookup (`define word`) never asks: it uses `-scheme`, then the
