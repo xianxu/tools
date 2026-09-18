@@ -132,7 +132,7 @@ Single-pass atomic work: plain checkboxes, one `sdlc close`.
 2. every writer and reader of the chain's data;
 3. the declarations and producers.
 
-The table's rows follow the same split. A `modified` row is checked by `TestPlanTableStatusMatchesTheChangeWindow` once this window touches its file, so each task touches every row in the files it opens. Rows marked `deleted` or `new` are not checked mid-plan (read 2026-09-18 in `repo_guard_test.go`). `currentTruthOnly` strips `deleted` names, `TestPlanTablesNameEntitiesThatExist` skips `new` rows while a `- [ ] ` remains, and `TestPlanTableStatusMatchesTheChangeWindow` skips `new`, `deleted`, and files the window doesn't touch.
+The table's rows follow the same split. A `modified` row is checked by `TestPlanTableStatusMatchesTheChangeWindow` once this window touches its file, so each task touches every row in the files it opens. Rows marked `deleted` or `new` are not checked mid-plan (read 2026-09-18 in `repo_guard_test.go`). `currentTruthOnly` strips `deleted` names, `TestPlanTablesNameEntitiesThatExist` skips `new` rows while any box is unticked, and `TestPlanTableStatusMatchesTheChangeWindow` skips `new`, `deleted`, and files the window doesn't touch.
 
 **The check after every commit is the same** (`CHECK` below):
 - `go build ./... && go vet ./... && go vet -tags conformance ./cmd/define/ && go test -count=1 ./...`, green;
@@ -203,7 +203,7 @@ Run `CHECK` after the commit, because two guards read the commit window.
 - [x] `atlas/define.md`:
   - delete the `RenderOpts.Language` row. `TestAtlasDescribesEveryRenderOpt` reflects over the struct and checks only that each field's qualified name appears (read 2026-09-18, `doc_sync_test.go`), so it needs no edit;
   - rewrite the `parseBilingualDocument` paragraph ("structure and ownership parsing … validated before ownership is trusted") to say it parses structure and validates identity and Text correspondence before the layout is trusted.
-- [ ] Commit, then run `CHECK`.
+- [x] Commit, then run `CHECK`.
 - [x] Absence proof. This command must print nothing:
 
   ```
