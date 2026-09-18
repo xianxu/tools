@@ -550,6 +550,15 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				finish()
 				return 0
 			}
+			// A terminal REPORT, not a keystroke (#70): apply it and repaint only
+			// if the shade on screen changed. Never Apply, never history, never a
+			// viewport key.
+			if k.Kind == KeyBackground {
+				if d.scheme.detect(k.Background) {
+					draw()
+				}
+				continue
+			}
 			// A VIEWPORT gesture never reaches Apply — shared with `--play`, so
 			// the two loops cannot disagree about which keys move the view or
 			// which direction a page goes.

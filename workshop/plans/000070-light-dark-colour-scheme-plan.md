@@ -1161,19 +1161,19 @@ func wantsBackground(opt options) bool { return opt.tty && opt.color && opt.tint
 ```
   `newConsole(ctx, d, sess, stdout, newScreen, askTerminal bool)` (not `ask`, which would shadow the package's `ask` function): after `sess.enterModes()`, `if askTerminal { for _, q := range terminalQueries { sess.ask(q.query) } }`. Callers: `replRaw` and `runPlay` pass `wantsBackground(opt)`; test callers pass `false` unless testing the query. `sittingInPlace` has no `sess`, so it cannot ask.
 - [x] **Step 4: PASS. Step 5: Commit** `#70 M3: a full-screen session asks the terminal for its background, once`
-- [ ] **Step 6: Mutations:** drop the `askTerminal` loop → **TestNewConsoleAsksEveryQuery** reddens; `wantsBackground` ignores `tintOn` → **TestWantsBackground** reddens. (The callers' `wantsBackground(opt)` arguments — `replRaw` AND `runPlay` — are pinned by Task 17's **TestPTYNoQueryWithoutATint**.) Restore each.
+- [x] **Step 6: Mutations:** drop the `askTerminal` loop → **TestNewConsoleAsksEveryQuery** reddens; `wantsBackground` ignores `tintOn` → **TestWantsBackground** reddens. (The callers' `wantsBackground(opt)` arguments — `replRaw` AND `runPlay` — are pinned by Task 17's **TestPTYNoQueryWithoutATint**.) Restore each.
 
 ### Task 16: Every consumer of the new key kind
 
 **Files:** Modify `cmd/define/replraw.go` (`runEditor`), `cmd/define/play_loop.go` (`playSession` intercept), `cmd/define/selection_input.go` (`cancelPointerInput`, the length-check drop site); tests beside the existing loop, sitting and saturation tests.
 
-- [ ] **Step 1: Failing tests** — the loops take a key channel built by **`readInput` over reply BYTES**, not a hand-built `Key`, so the decoder, the loop and the consumer are one path (Done-when: "driving `runEditor` with the reply as input").
+- [x] **Step 1: Failing tests** — the loops take a key channel built by **`readInput` over reply BYTES**, not a hand-built `Key`, so the decoder, the loop and the consumer are one path (Done-when: "driving `runEditor` with the reply as input").
   1. **TestRawEditorBackgroundReplyRepaints**: a live-screen console (Task 10's pattern) with a tinted row on screen; input bytes = `"\x1b]11;rgb:ffff/ffff/ffff\x1b\\" + "parrot\r"` then EOF (`parrot` has a fixture, so the lookup hits) → the row repaints in `languageLight`, and the word looked up is exactly `parrot` — wrap `d.dict` in the existing `countingDict` (`optionpool_test.go:17-27`, which records `words`) and assert `words == ["parrot"]`: no reply byte reached the line. Keep background preparation OFF in this rig (it can call `d.dict.Lookup`, `harvest.go:590`, and `countingDict` is not goroutine-safe). Repeat with BEL, and with an `rgba:` reply (→ looked up `parrot`, shade stays dark). With the holder chosen by flag dark, the rgb light reply → the row stays `languageDark`.
   2. **TestASittingIgnoresABackgroundReply**: `playSession` over `readInput` of `reply + "1"` (or the rig's first valid answer key) → exactly one answer recorded, the intended one; the sitting's screen repaints light. Repeat with `rgba:` → one answer, and the shade stays dark (no `languageLight` — the answer key itself repaints, so "no repaint" is not the observable).
   3. **TestAReplyDuringPlayReachesTheEditor**: through `newConsole` with `playRig` and the real `sittingInPlace` (`selection_nested_test.go:56` pattern), keys from a scripted channel (`scriptKeys`/`keySeq`) so the order is explicit: `/play⏎`, the decoded `KeyBackground` light, then Ctrl-C to end the sitting; after it ends, `/scheme` in the editor reports `light (detected)` and the editor's frame paints light.
   4. **TestAReplyMidDragKeepsTheSelection**: press + motion, then a `KeyBackground` through `route`, then release → the gesture still completes to a copy.
   5. **TestADroppedReplyIsSilent**, deterministic on an `io.Pipe`: write 256 × `x`; write the reply; then a ZERO-LENGTH write as the barrier — `io.Pipe` delivers it as a `Read`, so its return proves `readInput` finished the reply chunk and came back for more; assert `selectionNotice == ""` (no notice for the reply); THEN write `y` and `waitFor` the "input full" notice (the dropped `y` posts it, so the reply did not set `saturated`); close. (Asserting after `y`'s write instead races `y`'s own drop notice.)
-- [ ] **Step 2: FAIL. Step 3: Implement.**
+- [x] **Step 2: FAIL. Step 3: Implement.**
   - `runEditor`, first in `case k, open := <-keys:` after the `!open` check:
 
 ```go
@@ -1188,7 +1188,7 @@ if k.Kind == KeyBackground {
 ```
   - `playSession`: the same intercept where it intercepts `KeyClick` and paging before `toInput`, calling its `show()`.
   - `selection_input.go` — ONE guard, in `cancelPointerInput` (both `route` and `cancelInput` reach it; a second guard in `route` would hide a mutation of this one): `if k.Kind == KeyUnknown || k.Kind == KeyBackground { return }`. At the length-check drop site (`if !isPointerKey(k.Kind) && len(out) == cap(out) {`), first statement: `if k.Kind == KeyBackground { continue } // a report, not typing: no notice, and saturated untouched`. The `select`'s `default:` arm is NOT guarded: `readInput`'s goroutine is `out`'s only sender and the length check diverts every non-pointer key first, so only a router-made `KeyClick` reaches it — a guard there could never be exercised (lessons "An untestable branch is an unreachable knob"). Say so in a comment there, and record in the issue Log that this revises the spec's "both drop sites".
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M3: a background report reaches every consumer as a report, never as typing`
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M3: a background report reaches every consumer as a report, never as typing`
 - [ ] **Step 6: Mutations**, one at a time: remove the `runEditor` intercept → test 1 reddens (the lookup is not `parrot`, or no repaint); remove the `playSession` intercept → test 2 reddens; remove the `cancelPointerInput` clause → test 4 reddens; remove the length-check clause → test 5 reddens. Restore each.
 
 ### Task 17: Conformance and docs
