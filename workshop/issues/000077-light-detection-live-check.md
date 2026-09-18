@@ -1,6 +1,6 @@
 ---
 id: 000077
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-18
@@ -8,6 +8,7 @@ updated: 2026-09-18
 estimate_hours:
 started: 2026-09-18T11:29:09-07:00
 flow: {kind: quick, provenance: inferred, spec: "9ca556cc", done: "c819ada4"}
+actual_hours: 0.38
 ---
 
 # define: confirm light detection in a real light terminal
@@ -38,10 +39,41 @@ detection bug or an unanswering terminal — record it and open the fix.
 
 ## Plan
 
-- [ ] Record the operator's light-terminal check in the atlas's *Terminals
+- [x] Record the operator's light-terminal check in the atlas's *Terminals
   checked by hand*, and drop its "Owed" sentence.
-- [ ] Log the check here, stating exactly what was and was not reported.
+- [x] Log the check here, stating exactly what was and was not reported.
 
 ## Log
 
 ### 2026-09-18
+- 2026-09-18: closed — Operator verified light detection in Terminal.app (light appearance) against #77 criterion (/scheme auto, then /scheme -> scheme light (detected)); with #70 dark check (scheme dark (detected), Terminal.app) detection is observed live in both appearances. Atlas records app, appearance and line; both quotations derive from describeScheme via TestAtlasQuotesTheSchemeReportItPrints (mutation of the wording reddens it); go test guards green.; review verdict: SHIP
+
+The operator verified light detection in a real light terminal against this
+issue's criterion (`/scheme auto`, then `/scheme` → `light (detected)`), reported
+as "#77 verified". Not reported: the terminal app's name and the verbatim line;
+the atlas records the check as verified against the criterion, app not named.
+With #70's `dark (detected)`, detection is observed live in both appearances.
+The atlas's "Owed" sentence is replaced by this record.
+
+Close review round 1 (BR-1, blocking): the Done-when requires the terminal app
+named, and both hand-check records — this one and #70's dark one — lacked it.
+The operator named it: both checks ran in Terminal.app. The atlas now records
+each with app, appearance and report line: dark `scheme dark (detected)` (quoted
+by the operator), light verified against the criterion `scheme light (detected)`
+(reported as verified, not quoted). Both lines carry their `scheme ` prefix.
+
+
+Close review round 2 (BR-3, blocking): the atlas hand-quoted the `/scheme`
+report with nothing deriving it — the missing `scheme ` prefix had already shown
+the drift. Now both quotations sit in marked spans that
+`TestAtlasQuotesTheSchemeReportItPrints` composes from `describeScheme`, and
+`describeScheme` joins the atlas's Re-check triggers. The "/scheme auto removed
+the saved file" clause is re-attached to the dark run that observed it.
+
+Close: SHIP (round 3). Its two advisories fixed in the close commit — the
+derived-restatement family's second finding, as a rule: `schemeReport` is the one
+source of the whole line (runScheme prints it; the guard composes from it), the
+guard fails closed on any scheme-report span it does not derive, and every other
+doc mention DESCRIBES the report rather than quoting it (the atlas source list
+now includes detected). And the guard's failure says to REPEAT the hand check,
+since a changed wording makes the dated record stale, not merely misquoted.

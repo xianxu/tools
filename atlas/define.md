@@ -547,16 +547,19 @@ again. `terminalQueries` lists every question, and `TestEveryEnabledInputModeIsD
 derives from it as it does from the modes.
 
 *Terminals checked by hand* (the real dependency; the pty suite plays a modelled
-terminal). 2026-09-18, the operator's terminal (app not named): with nothing saved
-(`/scheme auto` first), `/scheme` read **`dark (detected)`** — a real terminal answered
-the query and a dark background was classified dark; `/scheme auto` also removed the
-saved file and its emptied directory. Earlier runs were under a SAVED choice, so they
-evidence the tint and its ink, not detection: the first, a saved `light` over a terminal
-whose default text is white, is what surfaced the paired-ink fix above. **Owed** (#77): a
-real LIGHT terminal reading `light (detected)` — light detection is evidenced so far
-only by the modelled pty terminal and the in-process reply. **Re-check** — and record the terminal, appearance and reply —
+terminal). Both in **Terminal.app**, 2026-09-18, each with nothing saved (`/scheme
+auto` first): a DARK appearance printed <!-- scheme-report:dark -->`scheme dark (detected)`<!-- /scheme-report:dark -->
+(quoted by the operator; that run's `/scheme auto` also removed the saved file and its
+emptied directory), and a LIGHT appearance was verified against #77's criterion,
+<!-- scheme-report:light -->`scheme light (detected)`<!-- /scheme-report:light --> — so
+detection is observed live in both appearances. Both quotations derive from
+`schemeReport` (`TestAtlasQuotesTheSchemeReportItPrints`). Earlier runs
+were under a SAVED choice, so they evidence the tint and its ink, not detection: the
+first, a saved `light` over a terminal whose default text is white, is what surfaced
+the paired-ink fix above. **Re-check** — and record the terminal, appearance and reply —
 when a terminal is added to what we claim to support, when a detection bug is
-reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
+reported, or when `decodeOSC`, `parseBackgroundColour`, `backgroundQuery` or
+`schemeReport` changes.
 
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —
@@ -1044,10 +1047,11 @@ precedence is `-scheme` flag, then the saved file, then dark — and a `/scheme`
 choice REPLACES a flag's for the session. The transition is `applyScheme`,
 **persist then switch** — `/bilingual`'s rule, reused: a failed write changes
 nothing, so no report claims a switch that did not persist. With nowhere to save
-(no absolute `$XDG_CONFIG_HOME` or `$HOME`) a session switches for itself and says
-`(session only; not saved)`; the one-shot `define /scheme light` has no session to
+(no absolute `$XDG_CONFIG_HOME` or `$HOME`) a session switches for itself and its
+report says it was not saved; the one-shot `define /scheme light` has no session to
 keep it in, so it refuses. Every report is true of its state — `describeScheme`
-names the source (`saved`, `-scheme flag`, `session only`, or the default).
+names where the scheme came from: saved, the flag, session only, detected, or the
+default. (Exact report lines are quoted only in the hand-check record, derived.)
 
 The recolour needs no command-specific code: every screen reads the one
 `schemeHolder` at paint, so the editor's ordinary draw after dispatch repaints
