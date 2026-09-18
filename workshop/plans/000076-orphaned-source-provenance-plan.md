@@ -79,8 +79,8 @@ None changes. The one seam nearby is the native Oxford record source (`recordSou
 |------|----------|--------|
 | `TestDisplayProjectionOwnsOnlyMatchingGlyphs` | `cmd/define/language_text_test.go` | new |
 | `FuzzDisplayProjection` | `cmd/define/language_text_test.go` | new |
-| `TestDictionaryDefinitionsSectionTintKeepsRegions` | `cmd/define/dictionary_language_test.go` | new |
-| `TestDictionaryDuplicateRecordSelectionIsDeterministic` | `cmd/define/dictionary_language_test.go` | new |
+| `TestDictionaryDefinitionsSectionTintKeepsRegions` | `cmd/define/definitions_output_test.go` | new |
+| `TestDictionaryDuplicateRecordSelectionIsDeterministic` | `cmd/define/bilingual_test.go` | new |
 | `TestDictionarySourceProvenanceCorpus` | `cmd/define/dictionary_language_test.go` | deleted |
 | `TestDictionaryParserSourceOffsets` | `cmd/define/dictionary_language_test.go` | deleted |
 | `TestDictionaryProjectionExactOccurrenceAndFallback` | `cmd/define/dictionary_language_test.go` | deleted |
@@ -89,7 +89,7 @@ None changes. The one seam nearby is the native Oxford record source (`recordSou
 | `TestDictionaryDefinitionsRetainSourceAndRegions` | `cmd/define/dictionary_language_test.go` | deleted |
 | `TestDictionaryDuplicateRecordOwnershipIsDeterministic` | `cmd/define/dictionary_language_test.go` | deleted |
 | `TestBilingualNativeLanguageOwnership` | `cmd/define/bilingual_conformance_test.go` | deleted |
-| `TestDictionaryMonolingualOriginAndDisabledTint` | `cmd/define/dictionary_language_test.go` | modified |
+| `TestDictionaryMonolingualOriginAndDisabledTint` | `cmd/define/dictionary_language_test.go` | deleted |
 | `TestLockedDictionaryPreservesSupplementalCapability` | `cmd/define/dict_test.go` | modified |
 | `TestDefinitionUnknownSourceDoesNotInheritStudyLanguage` | `cmd/define/dictionary_source_test.go` | modified |
 | `TestDictionaryAssemblyOwnsVerifiedPrimaryLanguage` | `cmd/define/dictionary_source_test.go` | modified |
@@ -279,3 +279,29 @@ Run `CHECK` after the commit, because two guards read the commit window.
   and Task 2 re-committed with its original message. So every commit is still
   green. The suite at the side-quest commit was run in a scratch worktree.
 - **Rule** (workshop/lessons.md, *A diff's new side cannot see a deletion*).
+
+### 2026-09-18: close review advisories (BR-1..BR-4, all Minor)
+
+- **Class.** Three findings are one rule: a deletion sweep takes the names and
+  prose that described the deleted concept, not only its identifiers. The
+  absence grep matched identifiers, so these survived it:
+  - BR-1: `dictionary_language_test.go` outlived `dictionary_language.go`. The
+    file is gone. `assertDictionaryTint` and
+    `TestDictionaryDefinitionsSectionTintKeepsRegions` move to
+    `definitions_output_test.go`, and
+    `TestDictionaryDuplicateRecordSelectionIsDeterministic` moves beside the
+    other selection tests in `bilingual_test.go`. Neither body changes;
+  - BR-2: `TestDictionaryMonolingualOriginAndDisabledTint` checked only that
+    `Color:false` emits no ANSI, which `TestRenderColorOnlyWhenAsked` already
+    checks along with presentation-only colour. The test is deleted. Measured
+    2026-09-18: with `newPalette` made to ignore `on`, both tests go red, and
+    `render.go` has no escape outside `newPalette`;
+  - BR-3: `atlas/define.md`'s `renderDefinitionOutput` sentence described the
+    deleted `ro.Language` write. It now says what the code does: region offsets
+    per section, and deck-word actions only in the primary section.
+- **BR-4** (`unwritten-precondition`): `languageSpan`'s comment now states that
+  spans ascend and never overlap, because `projectDisplayText` relies on it.
+- **Delta.** Three Tests rows change: two `new` rows name their new files, and
+  `TestDictionaryMonolingualOriginAndDisabledTint` goes from `modified` to
+  `deleted`. Rule: `workshop/lessons.md`, *Sweep a deleted concept's
+  vocabulary, not only its identifiers*.

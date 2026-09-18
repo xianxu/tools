@@ -1,6 +1,6 @@
 ---
 id: 000076
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-17
@@ -8,6 +8,7 @@ updated: 2026-09-18
 estimate_hours: 1.92
 started: 2026-09-18T12:02:43-07:00
 flow: {kind: full, provenance: inferred}
+actual_hours: 1.32
 ---
 
 # define: delete or re-use #66's orphaned source-provenance chain
@@ -146,6 +147,7 @@ The tests the Problem section names, deleted here:
 ### 2026-09-17
 
 ### 2026-09-18
+- 2026-09-18: closed — orphaned source-provenance chain deleted: absence git grep over cmd/atlas/README (17 member names) prints nothing at HEAD; parse.go byte-identical to 62c6a66^; go build + vet (both tag sets) + full test suite green at HEAD 5b7ed8f (3 pty tests pass unsandboxed); projectDisplayText pinned by TestDisplayProjectionOwnsOnlyMatchingGlyphs + FuzzDisplayProjection, M-join/M-break mutations killed; live -tags conformance Bilingual|Oxford green unsandboxed; before/after binaries byte-identical over 30 piped + 16 pty runs; review verdict: SHIP
 
 - Claimed. Operator decision: delete ("generally, I'd like to delete unused
   features"). Traced the chain from its readers rather than from the listed
@@ -244,3 +246,27 @@ The tests the Problem section names, deleted here:
       environment wasn't recorded, so the cause isn't established. A re-run with
       the tool shell's `TERM=pair-vt-256color` does paint it, so the atlas's
       "disabled by `TERM=dumb`" stands.
+- Close: the boundary review (window `fe28b01..5b7ed8fc`) returned **SHIP**,
+  with no Critical or Important findings and five Minors. The reviewer
+  reproduced the empty `parse.go` diff, the absence grep, build + vet for all
+  six commits, and both mutation kill sets. Fixed in the close commit, per the
+  post-verdict protocol:
+  - BR-1 and BR-2 (`name-outlives-referent`) and BR-3
+    (`atlas-describes-removed-surface`) are one rule: a deletion sweep also
+    takes the concept's names and prose. `dictionary_language_test.go` is
+    deleted. Its two live tests and helper move to `definitions_output_test.go`
+    and `bilingual_test.go` unchanged.
+    `TestDictionaryMonolingualOriginAndDisabledTint` is deleted, because
+    `TestRenderColorOnlyWhenAsked` covers it. Measured: with `newPalette`
+    ignoring `on`, both tests go red. The atlas sentence now describes the
+    region offsets and primary-only deck-word actions. A vocabulary sweep
+    (`provenance`, `ownership`, `origin` over file names, test names and prose)
+    found no other residue; the remaining hits describe live concepts.
+  - BR-4: `languageSpan`'s comment states that spans ascend and never overlap.
+  - BR-5: the unrelated working-tree changes stay out of the commit.
+  - The plan's `## Revisions` and `workshop/lessons.md` (*Sweep a deleted
+    concept's vocabulary, not only its identifiers*) record it.
+  - Measured actual 1.32h against the 1.92h estimate (1.5× under).
+- `gofmt -l` flags `cmd/define/play/presentation.go` and
+  `selection_paths_test.go`. Both were last touched in #70 (`60321f0`), not in
+  this window, so they are left alone.

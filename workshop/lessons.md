@@ -4895,3 +4895,17 @@ described. When a check maps a diff onto today's file, record the deletion point
 too. Then decide which side of a boundary they fall on, rather than letting
 "no new line" stand for "no change". The blank line between two declarations is
 the ambiguous spot: git may put a whole-function deletion on either side of it.
+
+## Sweep a deleted concept's vocabulary, not only its identifiers (#76 close)
+
+#76's absence grep listed 17 identifiers and came back empty, yet three
+findings survived it, all of one shape: a file (`dictionary_language_test.go`),
+a test (`…MonolingualOriginAndDisabledTint`) and an atlas sentence ("retains
+section language ownership") still named the deleted concept. None of them
+spelled an identifier. An identifier grep proves nothing reads or writes the
+deleted code. It cannot prove that nothing still *describes* it. So a deletion
+sweep also greps the concept's own words (here `language`, `ownership`,
+`origin`, `provenance`) over file names, test names and prose, and each hit
+gets renamed, rewritten, or deleted when nothing is left to name. The sibling
+rule for a changed behaviour is *When a behaviour changes, re-read every
+sentence that describes it* (#70).

@@ -9,7 +9,9 @@ import (
 )
 
 // Language ranges address the exact text supplied by its producer. Missing
-// ownership is unknown, never a guess based on the spelling of a word.
+// ownership is unknown, never a guess based on the spelling of a word. Spans
+// ascend and never overlap: projectDisplayText walks them once, in step with the
+// text, so a span out of order silently loses its owner.
 type languageSpan struct {
 	start, end int
 	lang       store.Lang

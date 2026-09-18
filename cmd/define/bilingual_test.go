@@ -189,3 +189,24 @@ func FuzzBilingualRecords(f *testing.F) {
 		}
 	})
 }
+
+func TestDictionaryDuplicateRecordSelectionIsDeterministic(t *testing.T) {
+	selected, err := selectedSpanishRecords(bilingualFixture(t, "red"), "red", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := selected[0]
+	b := a
+	b.HTML = strings.Replace(b.HTML, `class="ex"`, `class="unverified"`, 1)
+	first, err := selectedSpanishRecords([]bilingualRecord{a, b}, "red", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := selectedSpanishRecords([]bilingualRecord{b, a}, "red", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatal("equal-text duplicate selected different ownership by order")
+	}
+}

@@ -2347,8 +2347,9 @@ ambiguous spelling such as Spanish `red` from selecting English `red` → `rojo`
 non-darwin sibling reports the unavailable capability. The stateful record fake
 and captured Oxford records exercise direction, malformed data and failures.
 
-`renderDefinitionOutput` retains section language ownership through rendering and
-region offsets: English prose does not acquire Spanish deck-word actions.
+`renderDefinitionOutput` offsets each section's click regions by its row and gives
+deck-word actions only to the primary section. Later sections render without
+`Vocab`, so English prose does not acquire Spanish deck-word actions.
 Ordinary lookup and the full post-answer `play.Choice` and `play.Cloze` reveals
 share this composition through `play_loop.go` and `cloze.go`.
 `TestBilingualPracticeReveal` and `TestBilingualClozeReveal` cover both reveal
