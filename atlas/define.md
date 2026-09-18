@@ -547,15 +547,14 @@ again. `terminalQueries` lists every question, and `TestEveryEnabledInputModeIsD
 derives from it as it does from the modes.
 
 *Terminals checked by hand* (the real dependency; the pty suite plays a modelled
-terminal). 2026-09-18, the operator's terminal (app not named): with nothing saved
-(`/scheme auto` first), `/scheme` read **`dark (detected)`** — a real terminal answered
-the query and a dark background was classified dark; `/scheme auto` also removed the
-saved file and its emptied directory. Earlier runs were under a SAVED choice, so they
-evidence the tint and its ink, not detection: the first, a saved `light` over a terminal
-whose default text is white, is what surfaced the paired-ink fix above. 2026-09-18
-(#77): the operator verified the LIGHT side in a real light terminal (app not named)
-against #77's criterion — `/scheme auto`, then `/scheme` reading `light (detected)` —
-so detection is now observed live in both appearances. **Re-check** — and record the terminal, appearance and reply —
+terminal). Both in **Terminal.app**, 2026-09-18, each with nothing saved (`/scheme
+auto` first): a DARK appearance printed `scheme dark (detected)` (quoted by the
+operator), and a LIGHT appearance was verified against #77's criterion,
+`scheme light (detected)` — so detection is observed live in both appearances.
+`/scheme auto` also removed the saved file and its emptied directory. Earlier runs
+were under a SAVED choice, so they evidence the tint and its ink, not detection: the
+first, a saved `light` over a terminal whose default text is white, is what surfaced
+the paired-ink fix above. **Re-check** — and record the terminal, appearance and reply —
 when a terminal is added to what we claim to support, when a detection bug is
 reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
 

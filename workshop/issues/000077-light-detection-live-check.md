@@ -53,3 +53,10 @@ the atlas records the check as verified against the criterion, app not named.
 With #70's `dark (detected)`, detection is observed live in both appearances.
 The atlas's "Owed" sentence is replaced by this record.
 
+Close review round 1 (BR-1, blocking): the Done-when requires the terminal app
+named, and both hand-check records — this one and #70's dark one — lacked it.
+The operator named it: both checks ran in Terminal.app. The atlas now records
+each with app, appearance and report line: dark `scheme dark (detected)` (quoted
+by the operator), light verified against the criterion `scheme light (detected)`
+(reported as verified, not quoted). Both lines carry their `scheme ` prefix.
+
