@@ -624,3 +624,44 @@ Done-when, each with its evidence:
   M2 and M3 entries (M3: colour parse ×2, decoder ×3, query ×2, consumers ×4,
   caller wiring ×3, paired ink ×3).
 - README, `-h`, atlas updated; doc-sync tests green.
+
+M3 review round 1 (FIX-THEN-SHIP; BR-10 and BR-11 blocking). The M3 evidence the
+ticked steps name, written out (the rule, now in lessons.md: a tick is a claim
+its evidence exists where the step says it goes):
+- **Mutations**, each applied, compiled, `-count=1`, red, restored — Task 13:
+  linear luminance for Rec. 601; 5-digit components accepted. Task 14: the
+  non-printable abort dropped; the ESC-case cap check dropped; any payload
+  treated as a report. Task 15: the ask loop dropped; `wantsBackground` ignoring
+  `tintOn`. Task 16: each consumer's guard removed (editor intercept, sitting
+  intercept, `cancelPointerInput` clause, length-check drop). Task 17: `replRaw`
+  passing false; `runPlay` passing false; `runPlay` passing true. Paired ink: no
+  ink; ink over a producer colour; foreground codes ignored in `sourceColours`.
+  Round-1 fixes: the sitting's `show()` removed; `inkOff` removed (below).
+- **Fuzz (Task 14 Step 4):** `FuzzDecodeKey`, `FuzzDecodeKeyNeverLeaksEscapeTails`,
+  `FuzzDecodeMouseIsBounded`, 30 s each, anchored `-fuzz '^Name$'` — all PASS,
+  no new corpus entries.
+- **Strict conformance (Task 17 Step 3):** `CONFORMANCE_STRICT=1` over
+  `TestPTYBackgroundDetection`, `TestPTYNoQueryWithoutATint`,
+  `TestPTYSavedSchemeSurvivesARestart`, `TestPTYLanguageTint`,
+  `TestPTYNativeRendirSectionLayout` — all five RAN (the installed Oxford
+  dictionary satisfied `bilingualNativeProbe`) and passed; none skipped.
+- **Boundary (Task 18 step 1):** `go test ./...` ok; `go vet ./...` and
+  `go vet -tags conformance ./cmd/define` clean; `GOOS=linux go build ./...` ok;
+  `-race`: only the pre-existing `TestPlayClickOnThePromptWordPlaysIt`; full
+  tagged suite: 1359 passed, 1 skipped (`TestPlanNamedTestsExist`), 13 failed —
+  the pre-existing pty set logged at M1.
+- **Manual matrix (Task 18 step 2) — REVISION.** Done-when bullet 1's "checked by
+  hand in Terminal.app, iTerm2 and Ghostty, both appearances" is narrowed to what
+  happened: the operator verified the binary working after the paired-ink fix,
+  without itemising terminals or replies. The atlas records exactly that plus
+  the re-check triggers, and the README no longer names terminals as answering.
+- **Bullet 6** now holds as written: `#rrggbb` and Alt-] reach both loop shells
+  (`TestRawEditorBackgroundReplyRepaints`, `TestASittingIgnoresABackgroundReply`).
+
+Fixes: BR-10 — `TestASittingRepaintsOnABackgroundReply` checks the frame the
+sitting PAINTS, and `TestAReplyDuringPlayReachesTheEditor` the editor's painted
+frame on resume (both used shared state or `PaintedTranscript`, which re-reads
+the holder and so cannot show a repaint). The paired ink's reset is pinned by
+`TestTheInkStepsAsideWithTheTint`; the two loops' report intercept is one
+helper, `terminalReport`, on `viewportGesture`'s precedent.
+

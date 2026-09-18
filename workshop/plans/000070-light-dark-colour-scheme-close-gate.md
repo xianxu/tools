@@ -109,6 +109,42 @@ rounds:
       boundary: M2
       recipe: milestone-review
       blocked: false
+    - "n": 5
+      timestamp: "2026-09-18T09:36:44-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: M3 Tasks 13-15 still carry full implementations, and the window adds no lessons.md rule telling future plans to name functions plus one strategy line. Record that rule at close; the plan itself needs no rewrite.
+          round: 5
+      findings:
+        - id: BR-10
+          severity: Important
+          title: 'The sitting''s repaint after a background reply is unpinned: removing show() at play_loop.go:315-317 leaves the suite green'
+          detail: 'This is the 2nd finding in family tests-pin-a-shadow-of-the-live-path. Rule: a consumer''s test checks what that consumer itself outputs (the frame it paints, the answer it records, the notice it posts), never only the shared state it writes. PaintedTranscript is not evidence of a repaint, because it re-reads the holder when called. Consumers of KeyBackground: editor frame pinned (dropping draw() goes red, verified); router drag and drop-site notice pinned; sitting frame NOT pinned (TestASittingIgnoresABackgroundReply checks d.scheme.Scheme(); dropping show() stayed green, verified), and this is the path that paints --play''s first question on a light terminal. TestAReplyDuringPlayReachesTheEditor''s PaintedTranscript check repeats its effective() check. Fix: follow TestASittingPaintsInTheEditorsScheme (a tinted row on the sitting''s screen), send the reply, and assert lastFrame of the tty carries languageLight. Record the rule in lessons.md.'
+          family: tests-pin-a-shadow-of-the-live-path
+          round: 5
+        - id: BR-11
+          severity: Important
+          title: Ticked M3 steps name evidence the record does not hold, including the three-terminal x two-appearance manual check
+          detail: 'This is the 2nd finding in family ticked-step-lacks-its-evidence; the 1st was M2''s BR-6. Rule: tick a step that names evidence (a run result, "name what ran", a mutation list, a recorded matrix) only in the commit that writes that evidence where the step says it goes. If a step was done differently, add a Revisions entry saying what was done instead. Steps to sweep: Task 14 Step 4 (three 30 s fuzz runs); the mutation steps of Tasks 13-17 (the Log gives counts, not names as M1 and M2 did); Task 17 Step 3 (which TestPTY tests ran or skipped under CONFORMANCE_STRICT; TestPTYBackgroundDetection sits behind bilingualNativeProbe); Task 18 step 1 (full suite, -race, vet, linux build, strict results); Task 18 step 2 (the matrix; the atlas says "not itemised"). Done-when bullet 1 still claims Terminal.app, iTerm2 and Ghostty in both appearances. Bullet 6 claims Alt-] and #rrggbb are pinned "through each loop shell", but only the decoder and readInput test them. The README says those three terminals reply. Either record the matrix or add a Revisions entry that narrows bullet 1, and make the README match what is recorded. Record the rule in lessons.md.'
+          family: ticked-step-lacks-its-evidence
+          round: 5
+        - id: BR-12
+          severity: Minor
+          title: The paired-ink reset in unfill (language_row.go:34-37) is unpinned; removing inkOff leaves the suite green
+          detail: 'Verified by mutation. If it regressed, 235 or 252 ink would carry onto a producer''s own background (the \x1b[42mc cell, column 3, in TestLanguageRowStylesAndExclusions) and onto uncoloured excluded answer cells. The atlas says the ink steps aside for either. Fix: assert cells[3].fg == -1 there, and add an uncoloured excluded cell with fg == -1.'
+          family: branch-survives-its-mutation
+          round: 5
+        - id: BR-13
+          severity: Minor
+          title: The KeyBackground intercept is copied in runEditor (replraw.go:553-561) and playSession (play_loop.go:311-318)
+          detail: ARCH-DRY. The neighbouring viewportGesture helper exists precisely so the two loops cannot disagree about a shared key. A one-line helper (apply the report through d.scheme.detect and report whether to repaint) would make the report rule a single source.
+          family: duplicated-logic-not-extracted
+          round: 5
+      boundary: M3
+      recipe: milestone-review
+      blocked: true
 ---
 
 # Gate ledger — tools#70 (boundary-review)
@@ -166,6 +202,23 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-9** [Minor] `docs-describe-unshipped-surface` The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3
   This is the 2nd finding in this family (BR-4 at M1 was the 1st). atlas/define.md:1016-1017, added in a4ec10d, drops the "(from M3)" tag that the loopKind code comment keeps. Rule: a doc written at milestone N describes only what N ships, and anything from a later milestone carries that milestone inline. Sweep: grep the milestone's doc diff for the later milestone's words (for #70: detect, ask, report, query, OSC, KeyBackground). That sweep over atlas and README finds only this hit; prevalence in #70 is 2.
 
+## Round 5 — 2026-09-18T09:36:44-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — M3 Tasks 13-15 still carry full implementations, and the window adds no lessons.md rule telling future plans to name functions plus one strategy line. Record that rule at close; the plan itself needs no rewrite.
+
+### Raised
+
+- **BR-10** [Important] `tests-pin-a-shadow-of-the-live-path` The sitting's repaint after a background reply is unpinned: removing show() at play_loop.go:315-317 leaves the suite green
+  This is the 2nd finding in family tests-pin-a-shadow-of-the-live-path. Rule: a consumer's test checks what that consumer itself outputs (the frame it paints, the answer it records, the notice it posts), never only the shared state it writes. PaintedTranscript is not evidence of a repaint, because it re-reads the holder when called. Consumers of KeyBackground: editor frame pinned (dropping draw() goes red, verified); router drag and drop-site notice pinned; sitting frame NOT pinned (TestASittingIgnoresABackgroundReply checks d.scheme.Scheme(); dropping show() stayed green, verified), and this is the path that paints --play's first question on a light terminal. TestAReplyDuringPlayReachesTheEditor's PaintedTranscript check repeats its effective() check. Fix: follow TestASittingPaintsInTheEditorsScheme (a tinted row on the sitting's screen), send the reply, and assert lastFrame of the tty carries languageLight. Record the rule in lessons.md.
+- **BR-11** [Important] `ticked-step-lacks-its-evidence` Ticked M3 steps name evidence the record does not hold, including the three-terminal x two-appearance manual check
+  This is the 2nd finding in family ticked-step-lacks-its-evidence; the 1st was M2's BR-6. Rule: tick a step that names evidence (a run result, "name what ran", a mutation list, a recorded matrix) only in the commit that writes that evidence where the step says it goes. If a step was done differently, add a Revisions entry saying what was done instead. Steps to sweep: Task 14 Step 4 (three 30 s fuzz runs); the mutation steps of Tasks 13-17 (the Log gives counts, not names as M1 and M2 did); Task 17 Step 3 (which TestPTY tests ran or skipped under CONFORMANCE_STRICT; TestPTYBackgroundDetection sits behind bilingualNativeProbe); Task 18 step 1 (full suite, -race, vet, linux build, strict results); Task 18 step 2 (the matrix; the atlas says "not itemised"). Done-when bullet 1 still claims Terminal.app, iTerm2 and Ghostty in both appearances. Bullet 6 claims Alt-] and #rrggbb are pinned "through each loop shell", but only the decoder and readInput test them. The README says those three terminals reply. Either record the matrix or add a Revisions entry that narrows bullet 1, and make the README match what is recorded. Record the rule in lessons.md.
+- **BR-12** [Minor] `branch-survives-its-mutation` The paired-ink reset in unfill (language_row.go:34-37) is unpinned; removing inkOff leaves the suite green
+  Verified by mutation. If it regressed, 235 or 252 ink would carry onto a producer's own background (the \x1b[42mc cell, column 3, in TestLanguageRowStylesAndExclusions) and onto uncoloured excluded answer cells. The atlas says the ink steps aside for either. Fix: assert cells[3].fg == -1 there, and add an uncoloured excluded cell with fg == -1.
+- **BR-13** [Minor] `duplicated-logic-not-extracted` The KeyBackground intercept is copied in runEditor (replraw.go:553-561) and playSession (play_loop.go:311-318)
+  ARCH-DRY. The neighbouring viewportGesture helper exists precisely so the two loops cannot disagree about a shared key. A one-line helper (apply the report through d.scheme.detect and report whether to repaint) would make the report rule a single source.
+
 ## Open findings
 
 - **BR-1** [Minor] `plan-restates-code` The plan restates the diff: full implementations, test cases listed in prose, call sites by line number
@@ -175,3 +228,7 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-5** [Minor] `spec-done-when-drifts-from-delivery` Done-when says dead paths are deleted with tint assertions ported; the renderers were moved to test helpers and fragment-tint assertions dropped
 - **BR-7** [Minor] `state-shape-admits-illegal-combinations` commandCtx session/fullScreen and schemeArg auto/value allow combinations that mean nothing
 - **BR-9** [Minor] `docs-describe-unshipped-surface` The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3
+- **BR-10** [Important] `tests-pin-a-shadow-of-the-live-path` The sitting's repaint after a background reply is unpinned: removing show() at play_loop.go:315-317 leaves the suite green
+- **BR-11** [Important] `ticked-step-lacks-its-evidence` Ticked M3 steps name evidence the record does not hold, including the three-terminal x two-appearance manual check
+- **BR-12** [Minor] `branch-survives-its-mutation` The paired-ink reset in unfill (language_row.go:34-37) is unpinned; removing inkOff leaves the suite green
+- **BR-13** [Minor] `duplicated-logic-not-extracted` The KeyBackground intercept is copied in runEditor (replraw.go:553-561) and playSession (play_loop.go:311-318)

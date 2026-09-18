@@ -357,9 +357,9 @@ which scheme is in use and where it came from. The `-scheme` flag beats a saved
 choice for one run.
 
 With nothing chosen, a full-screen session asks the terminal for its background
-colour and follows the answer — Terminal.app, iTerm2, Ghostty and most modern
-terminals reply — repainting if the answer arrives after something is already on
-screen. A one-shot lookup (`define word`) never asks: it uses `-scheme`, then the
+colour (the standard OSC 11 query) and follows the answer, repainting if it
+arrives after something is already on screen. A terminal that does not answer
+leaves the dark default until you choose. A one-shot lookup (`define word`) never asks: it uses `-scheme`, then the
 saved choice, then dark. If you quit within a moment of starting over a slow link,
 the terminal's answer can land in your shell as stray characters.
 

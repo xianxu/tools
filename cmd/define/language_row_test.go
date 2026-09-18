@@ -212,3 +212,20 @@ func TestATintedRowCarriesItsOwnTextColour(t *testing.T) {
 		t.Errorf("an untinted row takes no ink: %q", got)
 	}
 }
+
+// The paired ink steps aside WITH the tint (#70): an excluded answer cell and a
+// producer's own background keep the terminal's default text colour — the
+// reset that makes the ink step aside is pinned here, not just the ink.
+func TestTheInkStepsAsideWithTheTint(t *testing.T) {
+	got := paintLanguageRow("ba\x1b[42mc\x1b[49m", rowPaint{tinted: true, exclusions: []cellRange{{1, 2}}}, 6, store.SchemeLight)
+	cells, _ := rowTestCells(t, got, 6)
+	if cells[0].bg != 254 || cells[0].fg != 235 {
+		t.Fatalf("the tinted cell: %+v", cells[0])
+	}
+	if cells[1].bg != -1 || cells[1].fg != -1 {
+		t.Errorf("the excluded answer cell took the tint's ink: %+v in %q", cells[1], got)
+	}
+	if cells[2].bg != 42 || cells[2].fg != -1 {
+		t.Errorf("the producer's own background took the tint's ink: %+v in %q", cells[2], got)
+	}
+}

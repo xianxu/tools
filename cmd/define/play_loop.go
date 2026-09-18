@@ -311,8 +311,8 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// A terminal REPORT, not a keystroke (#70): apply it, repaint if the
 		// shade changed, and never let it near toInput — in a sitting a leaked
 		// report would be an answer.
-		if k.Kind == KeyBackground {
-			if d.scheme.detect(k.Background) {
+		if report, changed := terminalReport(d, k); report {
+			if changed {
 				show()
 			}
 			continue

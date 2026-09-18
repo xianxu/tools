@@ -141,6 +141,17 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 	return con
 }
 
+// terminalReport applies k if it is a terminal REPORT rather than a keystroke
+// (#70), and says whether it was one and whether what is painted changed. ONE
+// rule for both loops — the move viewportGesture makes for the view keys — so
+// the editor and a sitting cannot disagree about what a report is.
+func terminalReport(d deps, k Key) (report, changed bool) {
+	if k.Kind != KeyBackground {
+		return false, false
+	}
+	return true, d.scheme.detect(k.Background)
+}
+
 // viewportGesture moves the VIEW rather than the state, and reports whether it
 // consumed the key.
 //
@@ -550,11 +561,10 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				finish()
 				return 0
 			}
-			// A terminal REPORT, not a keystroke (#70): apply it and repaint only
-			// if the shade on screen changed. Never Apply, never history, never a
-			// viewport key.
-			if k.Kind == KeyBackground {
-				if d.scheme.detect(k.Background) {
+			// A terminal REPORT, not a keystroke (#70): applied, repainted only if
+			// the shade changed. Never Apply, never history, never a viewport key.
+			if report, changed := terminalReport(d, k); report {
+				if changed {
 					draw()
 				}
 				continue

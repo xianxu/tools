@@ -54,6 +54,8 @@ func TestRawEditorBackgroundReplyRepaints(t *testing.T) {
 		{"light reply, ST", schemeState{}, lightReplyST, languageLight},
 		{"light reply, BEL", schemeState{}, lightReplyBEL, languageLight},
 		{"rgba is swallowed, nothing detected", schemeState{}, rgbaReply, languageDark},
+		{"#hex is swallowed, nothing detected", schemeState{}, "\x1b]11;#ffffff\x07", languageDark},
+		{"Alt-] then typing is unchanged", schemeState{}, "\x1b]", languageDark},
 		{"a flag choice outranks the reply", schemeState{}.withChoice(store.SchemeDark, choiceFlag), lightReplyST, languageDark},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -86,6 +88,10 @@ func TestASittingIgnoresABackgroundReply(t *testing.T) {
 	}{
 		{"rgb", lightReplyST, store.SchemeLight},
 		{"rgba", rgbaReply, store.SchemeDark},
+		{"#hex", "\x1b]11;#ffffff\x07", store.SchemeDark},
+		// Alt-] then the answer key: ESC ] 1 waits for "1;", the next byte aborts
+		// the swallow, and the key still answers.
+		{"Alt-] then the answer", "\x1b]", store.SchemeDark},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, opt, st := playRig(t, "sycophantic", "ephemeral")
@@ -104,6 +110,45 @@ func TestASittingIgnoresABackgroundReply(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The SITTING's own repaint (the M3 review's BR-10): a consumer's test checks
+// what that consumer paints, not only the shared state it writes — the shared
+// state is also what PaintedTranscript re-reads, so it cannot show a repaint.
+// A tinted row on the sitting's screen, then the reply: the frame the sitting
+// PAINTS must carry the new shade.
+func TestASittingRepaintsOnABackgroundReply(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	d.scheme = newSchemeHolder(schemeState{})
+	var tty syncBuf
+	parent := newLiveScreen(&tty, 24, 80)
+	parent.attachScheme(d.scheme)
+	defer parent.Stop()
+	router := newPointerRouter(parent, nil)
+	defer router.Stop()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	keys := make(chan Key, 2)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sittingInPlace(ctx, d, opt, keys, &interrupter{}, parent, nil, &tty, io.Discard, router)
+	}()
+	var nested *liveScreen
+	waitFor(t, func() bool {
+		router.mu.Lock()
+		defer router.mu.Unlock()
+		nested = router.active
+		return nested != nil && nested != parent
+	})
+	nested.interval = -1
+	if err := nested.WriteOutput(renderedOutput{text: "hola\n", rows: []rowPaint{{tinted: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	keys <- Key{Kind: KeyBackground, Background: store.SchemeLight}
+	waitFor(t, func() bool { return strings.Contains(holaRow(lastFrame(tty.String())), languageLight) })
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
 }
 
 // A reply heard during a /play sitting is in force in the editor after it.
@@ -128,8 +173,10 @@ func TestAReplyDuringPlayReachesTheEditor(t *testing.T) {
 	if v, src := d.scheme.Load().effective(); v != store.SchemeLight || src != sourceDetected {
 		t.Fatalf("after the sitting the scheme is %s/%v, want light, detected", v, src)
 	}
-	if tr := editor.PaintedTranscript(); !strings.Contains(tr, languageLight) || strings.Contains(tr, languageDark) {
-		t.Fatalf("the editor's screen did not take the sitting's reply: %q", tr)
+	// The frame the editor PAINTS on resume, not PaintedTranscript (which
+	// re-reads the holder and so would pass without any repaint).
+	if row := holaRow(lastFrame(tty.String())); !strings.Contains(row, languageLight) || strings.Contains(row, languageDark) {
+		t.Fatalf("the editor did not repaint in the sitting's reply: %q", row)
 	}
 }
 

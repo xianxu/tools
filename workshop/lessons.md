@@ -4832,3 +4832,31 @@ that its evidence exists; when the evidence is prose in another file, write
 that prose first, and state the scope of any run exactly (which tests, which
 passed, which failed and why).
 
+## A consumer's test checks what THAT consumer outputs (#70)
+
+Twice in one issue a test for a consumer asserted the shared state it writes
+instead of what it produces: a sitting's reply handler was "pinned" by reading
+the scheme holder, and a repaint by `PaintedTranscript` — which re-reads the
+holder when called, so it passes with no repaint at all. Removing the sitting's
+`show()` left the suite green. The rule: for every consumer of an event, assert
+the consumer's OWN output — the frame it paints (`lastFrame` of its tty), the
+answer it records, the notice it posts. A value any other path also computes is
+not evidence that this path did its part.
+
+## The tick rule, second finding: name the evidence, narrow the claim (#70)
+
+M3 repeated M2's miss one layer out: mutation steps logged COUNTS, not names;
+fuzz and strict runs were done but not recorded; and a Done-when bullet kept
+claiming a per-terminal manual matrix the operator had verified only as a whole.
+Name each mutation, record each run's scope and result, and when a step is done
+differently than planned, write the Revision that narrows the claim — the tick
+must describe what happened, not what was planned.
+
+## A plan names functions and one strategy line each, not their code (#70)
+
+#70's plan carried full implementations. The review flagged it at the plan gate
+and at every boundary: the code drifted from the plan within a milestone (two
+shape changes were Revisions), so the plan was both long and wrong. Name the
+function, its signature, and one line on the risky decision; the code belongs in
+the diff.
+
