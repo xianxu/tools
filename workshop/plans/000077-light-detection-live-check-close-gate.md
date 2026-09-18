@@ -90,6 +90,43 @@ rounds:
           round: 2
       recipe: small-diff-review
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-18T11:49:01-07:00"
+      agent: claude
+      dispose:
+        - id: BR-3
+          disposition: addressed
+          note: Guard doc_sync_test.go:871 composes both spans from describeScheme; mutation-verified red on atlas drift, wording change, marker deletion; describeScheme joins Re-check (atlas:559-562). Prefix residual raised new.
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: atlas/define.md:552 re-attaches the clause to the dark run ("that run's /scheme auto also removed..."), matching the pre-window text where the same run observed it.
+          round: 3
+      findings:
+        - id: BR-5
+          severity: Minor
+          title: The guard types the "scheme " prefix itself, and describeScheme's wording is still hand-quoted elsewhere in the tree
+          detail: |-
+            2nd in family. Rule: every doc quotation of /scheme output (whole line or source suffix) sits in a marked span composed from the ONE function that prints it.
+            Instances: (1) doc_sync_test.go:877 types "scheme " itself while runScheme owns it at scheme_cmd.go:18 and :31. Changing both to "colour scheme" left the guard green (verified), so the claims at doc_sync_test.go:866-867 ("the report's one source") and atlas/define.md:555-556 overstate.
+            (2) atlas/define.md:1051 quotes (session only; not saved) with no guard.
+            (3) atlas/define.md:1052-1053 lists describeScheme's sources as saved, -scheme flag, session only, or the default. It omits detected, so the list is incomplete today.
+            (4) cmd/define/README.md:364 quotes (detected) with no guard.
+            (5) The guard lacks the sibling test's check that the number of markers equals the number of matching spans (doc_sync_test.go:283-289).
+            Fix: add schemeReport(st, fullScreen) = "scheme " + describeScheme(...), called by both runScheme sites and the guard. Put each quoted suffix in a derived span. Correct the source list.
+          family: derived-restatement
+          round: 3
+        - id: BR-6
+          severity: Minor
+          title: The guard's failure message tells the reader to re-quote a dated observation instead of repeating the hand check
+          detail: |-
+            2nd in family. Rule: an observation record changes only with a new observation, so a guard over one names repeating the observation as the fix.
+            doc_sync_test.go:880 says "describeScheme owns this line; the atlas consumes it", and the comment at :868-870 frames the fix as re-quoting. After a wording change, following that rewrites the 2026-09-18 Terminal.app record into a line never observed. currentTruthOnly calls this "the lie".
+            The atlas Re-check rule (atlas/define.md:559-562) already gives the right action; the test should point at it. Fix: reword the failure message and comment to say "re-run the hand check in a real terminal and record the new date, terminal and line".
+          family: claim-detached-from-its-evidence
+          round: 3
+      recipe: small-diff-review
+      blocked: false
 ---
 
 # Gate ledger — tools#77 (boundary-review)
@@ -158,7 +195,29 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   rather than observed. This is the "diff's neighbourhood" class: the only other moved
   claim in the window is the Re-check sentence at :557-559, which survived intact.
 
+## Round 3 — 2026-09-18T11:49:01-07:00 (claude) — passed
+
+### Disposed
+
+- BR-3 — addressed — Guard doc_sync_test.go:871 composes both spans from describeScheme; mutation-verified red on atlas drift, wording change, marker deletion; describeScheme joins Re-check (atlas:559-562). Prefix residual raised new.
+- BR-4 — addressed — atlas/define.md:552 re-attaches the clause to the dark run ("that run's /scheme auto also removed..."), matching the pre-window text where the same run observed it.
+
+### Raised
+
+- **BR-5** [Minor] `derived-restatement` The guard types the "scheme " prefix itself, and describeScheme's wording is still hand-quoted elsewhere in the tree
+  2nd in family. Rule: every doc quotation of /scheme output (whole line or source suffix) sits in a marked span composed from the ONE function that prints it.
+  Instances: (1) doc_sync_test.go:877 types "scheme " itself while runScheme owns it at scheme_cmd.go:18 and :31. Changing both to "colour scheme" left the guard green (verified), so the claims at doc_sync_test.go:866-867 ("the report's one source") and atlas/define.md:555-556 overstate.
+  (2) atlas/define.md:1051 quotes (session only; not saved) with no guard.
+  (3) atlas/define.md:1052-1053 lists describeScheme's sources as saved, -scheme flag, session only, or the default. It omits detected, so the list is incomplete today.
+  (4) cmd/define/README.md:364 quotes (detected) with no guard.
+  (5) The guard lacks the sibling test's check that the number of markers equals the number of matching spans (doc_sync_test.go:283-289).
+  Fix: add schemeReport(st, fullScreen) = "scheme " + describeScheme(...), called by both runScheme sites and the guard. Put each quoted suffix in a derived span. Correct the source list.
+- **BR-6** [Minor] `claim-detached-from-its-evidence` The guard's failure message tells the reader to re-quote a dated observation instead of repeating the hand check
+  2nd in family. Rule: an observation record changes only with a new observation, so a guard over one names repeating the observation as the fix.
+  doc_sync_test.go:880 says "describeScheme owns this line; the atlas consumes it", and the comment at :868-870 frames the fix as re-quoting. After a wording change, following that rewrites the 2026-09-18 Terminal.app record into a line never observed. currentTruthOnly calls this "the lie".
+  The atlas Re-check rule (atlas/define.md:559-562) already gives the right action; the test should point at it. Fix: reword the failure message and comment to say "re-run the hand check in a real terminal and record the new date, terminal and line".
+
 ## Open findings
 
-- **BR-3** [Important] `derived-restatement` The atlas hand-quotes the scheme report line in two places with no guard deriving it and no Re-check trigger naming its owning symbol
-- **BR-4** [Minor] `claim-detached-from-its-evidence` The "/scheme auto also removed the saved file" sentence lost the run it was observed in
+- **BR-5** [Minor] `derived-restatement` The guard types the "scheme " prefix itself, and describeScheme's wording is still hand-quoted elsewhere in the tree
+- **BR-6** [Minor] `claim-detached-from-its-evidence` The guard's failure message tells the reader to re-quote a dated observation instead of repeating the hand check

@@ -873,11 +873,20 @@ func TestAtlasQuotesTheSchemeReportItPrints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("atlas/define.md unreadable: %v", err)
 	}
-	for _, sc := range []store.Scheme{store.SchemeDark, store.SchemeLight} {
-		want := fmt.Sprintf("<!-- scheme-report:%s -->`scheme %s`<!-- /scheme-report:%s -->",
-			sc, describeScheme(schemeState{}.withDetected(sc), true), sc)
+	schemes := []store.Scheme{store.SchemeDark, store.SchemeLight}
+	for _, sc := range schemes {
+		want := fmt.Sprintf("<!-- scheme-report:%s -->`%s`<!-- /scheme-report:%s -->",
+			sc, schemeReport(schemeState{}.withDetected(sc), true), sc)
 		if !strings.Contains(string(b), want) {
-			t.Errorf("atlas/define.md does not quote the %s report define prints.\nwant the marked span %q — describeScheme owns this line; the atlas consumes it.", sc, want)
+			t.Errorf("atlas/define.md does not quote the %s report define prints (want %q).\n"+
+				"The report's wording changed, so the dated hand-check record no longer describes "+
+				"what define prints: REPEAT the check in a real %s terminal and record the new line "+
+				"in the atlas's Terminals checked by hand — do not just re-quote.", sc, want, sc)
 		}
+	}
+	// FAIL CLOSED on a span this guard does not derive, as the raw-notation
+	// count checks its marker count: a new hand-quoted report must join here.
+	if n := strings.Count(string(b), "<!-- scheme-report:"); n != len(schemes) {
+		t.Errorf("atlas/define.md has %d scheme-report spans, and this guard derives %d", n, len(schemes))
 	}
 }

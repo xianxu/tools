@@ -223,3 +223,91 @@ findings:
       rather than observed. This is the "diff's neighbourhood" class: the only other moved
       claim in the window is the Re-check sentence at :557-559, which survived intact.
 ```
+
+---
+
+## Re-review — 2026-09-18T11:49:01-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 77 — define: confirm light detection in a real light terminal |
+| repo | tools |
+| issue file | workshop/issues/000077-light-detection-live-check.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 2d36c9d5d0b47b6be8b94e0fdb8c1ff71af73b89..09a55e8f9da6f2061c1ba9469c15be7a309a60ac |
+| command | sdlc close --issue 77 |
+| reviewer | claude |
+| timestamp | 2026-09-18T11:49:01-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+Both prior findings are fixed, and the fix is proven by a test that fails without it. The `/scheme` quotations at `atlas/define.md:551` and `:554` now sit in marked spans. `TestAtlasQuotesTheSchemeReportItPrints` (`cmd/define/doc_sync_test.go:871`) builds each one from `describeScheme`. I ran mutations against it: it goes red when the atlas drops the `scheme ` prefix (the BR-2 drift), red when `describeScheme`'s wording changes, and red when the markers are deleted, so it fails closed. The Re-check trigger now names `describeScheme`, and the "removed the saved file" clause is back on the dark run that observed it. The Done-when is met: Terminal.app is named for a LIGHT appearance, the line is recorded, and `Owed` is gone from the atlas. Nothing blocks SHIP. Two Minor findings remain. First, the guard's `scheme ` prefix is still a hard-coded string, and describeScheme's wording is still hand-quoted elsewhere in the tree. Second, the test's failure message tells the reader to edit the quotation instead of repeating the hand check.
+
+**1. Strengths**
+- The guard copies the tree's own marked-span pattern (`TestAtlasQuotesTheRawNotationCount`, `TestDocsQuoteThePronHelp`), as the `derived-restatement` target asks. It builds the words from `describeScheme(schemeState{}.withDetected(sc), true)` and leaves out the two-space screen indent.
+- It fails closed: deleting the markers turns it red, so it can't pass by checking nothing.
+- The record is honest about where each line came from. Dark is "(quoted by the operator)"; light is "verified against #77's criterion". Neither is presented as a verbatim quote it isn't.
+- `describeScheme` joined the Re-check trigger (`atlas/define.md:559-562`), which closes BR-3 item (3).
+
+**2. Critical:** none.
+
+**3. Important:** none.
+
+**4. Minor**
+- **`derived-restatement`, 2nd finding in this family.** The printed line is `"  scheme %s\n"` in `runScheme` (`scheme_cmd.go:18`, `:31`) wrapped around `describeScheme`. The guard types `scheme ` itself. I changed both format strings to `"  colour scheme %s\n"` and the guard stayed green. That makes two claims overstated: the test comment calling `describeScheme` "the report's one source" (`doc_sync_test.go:866-867`), and the atlas saying "Both quotations derive from `describeScheme`" (`:555-556`). The same wording is also quoted by hand elsewhere in the tree (details in the findings block). Stating the rule rather than fixing one more site: every doc quotation of `/scheme`'s output, whether the whole line or just the `(source)` part, sits in a marked span built from the one function that prints it, and there is exactly one such function.
+- **`claim-detached-from-its-evidence`, 2nd finding in this family.** The guard ties a dated observation to current code. Its failure text, "describeScheme owns this line; the atlas consumes it" (`:880`), invites someone to re-quote the 2026-09-18 Terminal.app record after a wording change. The record would then claim a line nobody saw. `currentTruthOnly` warns against exactly this: "revising it to match today is the lie". Rule: an observation record changes only with a new observation, so a guard over one must name repeating the observation as the fix.
+- The guard uses `strings.Contains`. Unlike its sibling raw-notation test (`doc_sync_test.go:283-289`), it doesn't check that the number of markers equals the number of matching spans, so a second, stale `scheme-report:*` span would pass.
+
+**5. Test coverage**
+- The new guard is a pure read of the doc, and its reachability is shown by the mutations above.
+- `go test ./cmd/define/...`: everything passes except three pty tests (`TestLanguagePromptStartup`, `TestLanguageTintInvocation`, `TestSavedSchemeGovernsALookup`). They fail because `pty.Open` returns "operation not permitted" in this review environment. The window doesn't touch them.
+- Process note: my first mutation run couldn't create its scratch directory and ran in the real checkout. Each edit was reverted with `git checkout`; the tree is clean and HEAD is still `09a55e8`.
+
+**6. Architecture**
+- **ARCH-DRY: flagged (Minor).** The `scheme ` prefix now has three copies: two in `runScheme` and one in the guard. The shared helper they should become is a `schemeReport(st, fullScreen)` function.
+- **ARCH-PURE: passes.** `describeScheme` is pure, and the guard only reads a file, the same doc-sync seam the other guards use.
+- **ARCH-PURPOSE: passes on the issue's purpose.** The light check is recorded, the app is named, and `Owed` is removed. The sweep of the tree still finds three hand-quoted uses of `describeScheme`'s wording outside the window, listed under the first Minor finding and in the findings block.
+
+**7. Plan revisions:** none needed. The issue's `## Log` matches the code.
+
+```findings
+dispose:
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Guard doc_sync_test.go:871 composes both spans from describeScheme; mutation-verified red on atlas drift, wording change, marker deletion; describeScheme joins Re-check (atlas:559-562). Prefix residual raised new.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      atlas/define.md:552 re-attaches the clause to the dark run ("that run's /scheme auto also removed..."), matching the pre-window text where the same run observed it.
+findings:
+  - id: new
+    severity: Minor
+    family: derived-restatement
+    title: |
+      The guard types the "scheme " prefix itself, and describeScheme's wording is still hand-quoted elsewhere in the tree
+    detail: |
+      2nd in family. Rule: every doc quotation of /scheme output (whole line or source suffix) sits in a marked span composed from the ONE function that prints it.
+      Instances: (1) doc_sync_test.go:877 types "scheme " itself while runScheme owns it at scheme_cmd.go:18 and :31. Changing both to "colour scheme" left the guard green (verified), so the claims at doc_sync_test.go:866-867 ("the report's one source") and atlas/define.md:555-556 overstate.
+      (2) atlas/define.md:1051 quotes (session only; not saved) with no guard.
+      (3) atlas/define.md:1052-1053 lists describeScheme's sources as saved, -scheme flag, session only, or the default. It omits detected, so the list is incomplete today.
+      (4) cmd/define/README.md:364 quotes (detected) with no guard.
+      (5) The guard lacks the sibling test's check that the number of markers equals the number of matching spans (doc_sync_test.go:283-289).
+      Fix: add schemeReport(st, fullScreen) = "scheme " + describeScheme(...), called by both runScheme sites and the guard. Put each quoted suffix in a derived span. Correct the source list.
+  - id: new
+    severity: Minor
+    family: claim-detached-from-its-evidence
+    title: |
+      The guard's failure message tells the reader to re-quote a dated observation instead of repeating the hand check
+    detail: |
+      2nd in family. Rule: an observation record changes only with a new observation, so a guard over one names repeating the observation as the fix.
+      doc_sync_test.go:880 says "describeScheme owns this line; the atlas consumes it", and the comment at :868-870 frames the fix as re-quoting. After a wording change, following that rewrites the 2026-09-18 Terminal.app record into a line never observed. currentTruthOnly calls this "the lie".
+      The atlas Re-check rule (atlas/define.md:559-562) already gives the right action; the test should point at it. Fix: reword the failure message and comment to say "re-run the hand check in a real terminal and record the new date, terminal and line".
+```

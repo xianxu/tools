@@ -361,7 +361,7 @@ OSC 11 query) whenever something could be tinted — not under
 `-language-tint off`, `-raw`, `-no-color` or `TERM=dumb`. With no choice in force
 it follows the answer,
 repainting if the answer arrives after something is already on screen, and
-`/scheme` then reports it as `(detected)`. A terminal that does not answer leaves
+`/scheme` then reports it as detected. A terminal that does not answer leaves
 the dark default until you choose. A one-shot lookup (`define word`) never asks: it uses `-scheme`, then the
 saved choice, then dark. If you quit within a moment of starting over a slow link,
 the terminal's answer can land in your shell as stray characters.

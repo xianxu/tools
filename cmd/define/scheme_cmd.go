@@ -15,7 +15,7 @@ func runScheme(c commandCtx, args []string) int {
 		return 2
 	}
 	if len(args) == 0 {
-		fmt.Fprintf(c.stdout, "  scheme %s\n", describeScheme(c.scheme.Load(), c.loop == loopEditor))
+		fmt.Fprintf(c.stdout, "  %s\n", schemeReport(c.scheme.Load(), c.loop == loopEditor))
 		return 0
 	}
 	arg, err := parseSchemeArg(args[0])
@@ -28,6 +28,13 @@ func runScheme(c commandCtx, args []string) int {
 		fmt.Fprintf(c.stderr, "define: /scheme: %v\n", err)
 		return 2
 	}
-	fmt.Fprintf(c.stdout, "  scheme %s\n", describeScheme(st, c.loop == loopEditor))
+	fmt.Fprintf(c.stdout, "  %s\n", schemeReport(st, c.loop == loopEditor))
 	return 0
+}
+
+// schemeReport is the whole line /scheme prints, and the ONE source every
+// quotation of it derives from (the atlas's hand-check record, through
+// TestAtlasQuotesTheSchemeReportItPrints).
+func schemeReport(st schemeState, fullScreen bool) string {
+	return "scheme " + describeScheme(st, fullScreen)
 }

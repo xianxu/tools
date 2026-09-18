@@ -1,6 +1,6 @@
 ---
 id: 000077
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-18
@@ -8,6 +8,7 @@ updated: 2026-09-18
 estimate_hours:
 started: 2026-09-18T11:29:09-07:00
 flow: {kind: quick, provenance: inferred, spec: "9ca556cc", done: "c819ada4"}
+actual_hours: 0.38
 ---
 
 # define: confirm light detection in a real light terminal
@@ -45,6 +46,7 @@ detection bug or an unanswering terminal — record it and open the fix.
 ## Log
 
 ### 2026-09-18
+- 2026-09-18: closed — Operator verified light detection in Terminal.app (light appearance) against #77 criterion (/scheme auto, then /scheme -> scheme light (detected)); with #70 dark check (scheme dark (detected), Terminal.app) detection is observed live in both appearances. Atlas records app, appearance and line; both quotations derive from describeScheme via TestAtlasQuotesTheSchemeReportItPrints (mutation of the wording reddens it); go test guards green.; review verdict: SHIP
 
 The operator verified light detection in a real light terminal against this
 issue's criterion (`/scheme auto`, then `/scheme` → `light (detected)`), reported
@@ -67,3 +69,11 @@ the drift. Now both quotations sit in marked spans that
 `TestAtlasQuotesTheSchemeReportItPrints` composes from `describeScheme`, and
 `describeScheme` joins the atlas's Re-check triggers. The "/scheme auto removed
 the saved file" clause is re-attached to the dark run that observed it.
+
+Close: SHIP (round 3). Its two advisories fixed in the close commit — the
+derived-restatement family's second finding, as a rule: `schemeReport` is the one
+source of the whole line (runScheme prints it; the guard composes from it), the
+guard fails closed on any scheme-report span it does not derive, and every other
+doc mention DESCRIBES the report rather than quoting it (the atlas source list
+now includes detected). And the guard's failure says to REPEAT the hand check,
+since a changed wording makes the dated record stale, not merely misquoted.
