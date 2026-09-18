@@ -75,7 +75,9 @@ next paint, and the only effect a transition has is to repaint the ACTIVE screen
 a suspended editor screen repaints on `resume` (`play_cmd.go:148`) with whatever
 is in force then, and a sitting's new screen starts with it. `paintLanguageRow`
 still takes the scheme as an explicit parameter (ARCH-PURE); only its callers read
-the holder. A nil holder means dark, read-only.
+the holder. A nil holder means dark, read-only: it paints dark, and `/scheme`
+refuses with a message rather than silently doing nothing (only reachable from
+tests that drive a loop with bare test deps; `run()` always builds the holder).
 
 Concurrency: exactly ONE writer at a time — the loop goroutine in force (the
 editor's, the piped loop's, or `--play`'s; a `/play` sitting runs on the editor
@@ -187,7 +189,11 @@ Late replies, the whole class:
     `newConsole` and `sittingInPlace`, not threaded through the constructors
     (`newLiveScreen`/`newPinnedScreen` have ~108 test call sites, and
     `newConsole` takes the constructor as a value, `replraw.go:77-78`) — and
-    reads `effective()` once per frame.
+    reads `effective()` once per frame. It is attached BEFORE the screen is
+    shared with another goroutine — in `newConsole` before `newPointerRouter` and
+    `watchResize` (`replraw.go:81-100`), in `sittingInPlace` before
+    `pointer.activate` (`play_cmd.go:112-119`) — because the screen's field is
+    not atomic.
     That covers every `*screen` painter: the frame (`layoutSelectionFrame`,
     `selectionLayout.paint` → `paintOutputChunk`), `paintActivity`, and the exit
     transcript (`paintedTranscript`, which already paints from `screen.paints`).
@@ -373,3 +379,7 @@ drop must not set the `saturated` latch. Advisories adopted: nil holder = dark;
 holder attached in `newConsole`/`sittingInPlace`, not the ~108-call-site
 constructors; `tintPolicy` carries the holder to the non-screen path; the swallow
 byte range stated exactly; a Done-when for the one-shot refusal.
+
+Spec review, round 4: ✅ approved. Two advisories folded in — attach the holder
+before any painter goroutine can see the screen, and `/scheme` on a nil holder
+refuses rather than silently doing nothing.
