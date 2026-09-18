@@ -5,8 +5,9 @@ deps: []
 github_issue:
 created: 2026-09-17
 updated: 2026-09-18
-estimate_hours:
+estimate_hours: 1.92
 started: 2026-09-18T12:02:43-07:00
+flow: {kind: full, provenance: inferred}
 ---
 
 # define: delete or re-use #66's orphaned source-provenance chain
@@ -65,6 +66,52 @@ Output does not change. Durable plan:
 - Either every member listed above is gone with its tests (grep proves no
   reader and no writer remains), or a consumer reads it and a test pins that.
 
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec              design=0.75 impl=0.1
+item: smaller-go-module       design=0.05 impl=0.15
+item: smaller-go-module       design=0.0  impl=0.1
+item: cross-cutting-refactor  design=0.1  impl=0.2
+item: atlas-docs              design=0.05 impl=0.08
+item: milestone-review        design=0.0  impl=0.2
+design-buffer: 0.15
+total: 1.92
+```
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* (`sdlc estimate-source` flags the
+calibration doc stale, so the numbers are provisional.)
+
+Derivation, row by row. The v2 table gives the ranges, and each `impl=` is
+written at 40% of its range, per v3.1:
+
+- **issue-spec design=0.75**, lower-middle of 0.5–1.5. There was no brainstorm
+  dialogue, because the operator gave the decision in one line. The hours went
+  into three things: tracing the chain reader-first, which found five members
+  the issue didn't list; two plan-gate rounds; and measuring PQ-4 by running
+  the two mutants against the full suite.
+- **Task 1: `smaller-go-module`.** A new test file with a unit test and a fuzz,
+  two renames, and seven literal edits. Design is ×0.2 of 0–0.3, since the plan
+  names every case.
+- **Task 2: `smaller-go-module`, design 0.** `parse.go` is a `git checkout` with
+  an empty-diff check. `definitions.go` loses a handful of lines.
+- **Task 3: `cross-cutting-refactor`, impl at the top of its range.** Five
+  production files, the projection fold, and test edits under two tag sets, then
+  two mutation runs of about 135s each.
+- **Task 4: `atlas-docs`.** Two atlas edits. The absence grep, the conformance
+  run and the before/after binary diff are verification inside the same row.
+- **`milestone-review`** is the one `sdlc close` boundary review. It's
+  single-pass, with no Mx rows.
+- **Step 2.5** doesn't apply, because nothing here is greenfield or on a novel
+  stack. **Step 3** gives ×0.2 design on every implementation row, because the
+  plan resolves them to the line. So the buffer is +15%, not +30%.
+  **Familiarity 1.0**: the same files as #65 and #70.
+- The arithmetic: design is 0.95, which ×1.15 gives 1.09. Impl is 0.83. The
+  total is 1.92.
+
 ## Plan
 
 Single pass, one `sdlc close`. Task detail lives in the durable plan.
@@ -120,3 +167,15 @@ The tests the Problem section names, deleted here:
   tasks are ordered tests → writers/readers → declarations, so every commit is
   green. PQ-3 added `FuzzDisplayProjection`. Recorded in the plan's
   `## Revisions`.
+- Plan gate round 2 passed with one advisory, PQ-4 (Minor, 2nd in
+  `unbacked-existing-behavior-claim`): M-join survives both cases the plan
+  named. Measured on mutant copies of today's body: only `"red red"`→`"red bed"`
+  kills M-join, and `"another"`→`"an other"` kills M-break. Ran both mutants
+  against today's committed code with the full suite (`-count=1`, each applied,
+  compiled, then restored). M-join reddens nothing: no test pins the glyph branch
+  in either mode. M-break reddens `TestPracticeLongRunOwnershipFollowsPhysicalRows`.
+  Applied the family rule plan-wide, not only to the PQ-4 instance. Every
+  predicted guard or test outcome is now marked measured/read 2026-09-18, or
+  restated as a requirement that `CHECK` observes. Recorded in the plan's
+  `## Revisions`.
+- Estimate derived: v3.1 Method A, 1.92h (see `## Estimate`).
