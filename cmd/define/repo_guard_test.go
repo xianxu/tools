@@ -1372,12 +1372,12 @@ func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 				// `deleted` has no declaration left to locate.
 				continue
 			}
-			touched := changedLines(t, base, m[2])
-			if touched == nil {
+			change := changedLines(t, base, m[2])
+			if change == nil {
 				continue // the file itself is untouched by this window
 			}
 			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {
-				checkPlanStatus(t, root, filepath.Base(plan), nm[1], m[2], status, touched, &checked)
+				checkPlanStatus(t, root, filepath.Base(plan), nm[1], m[2], status, change, &checked)
 			}
 		}
 	}
@@ -1500,9 +1500,9 @@ func changeWindowBase(t *testing.T) (string, bool) {
 	return base, head != base
 }
 
-// changedLines returns the line numbers this window touched in path, or nil when
-// it touched none. Uses the NEW-side hunk headers, which is what maps onto the
-// file as it stands.
+// changedLines returns what this window did to path, or nil when it touched
+// nothing. Line numbers are the NEW side's, which is what maps onto the file as
+// it stands.
 // Also through git(): returning nil on an error would be the same value as "this
 // window did not touch the file", so a git failure would silently downgrade every
 // row to unchecked — a check that cannot fail reading as green.
@@ -1511,28 +1511,81 @@ func changeWindowBase(t *testing.T) (string, bool) {
 // PACKAGE directory, so a bare repo-relative path matches nothing and every row
 // reads as untouched — the same trap repoRoot's comment records for `git
 // ls-files`, and it made this guard silently skip on its first run.
-func changedLines(t *testing.T, base, path string) map[int]bool {
+func changedLines(t *testing.T, base, path string) *windowChange {
 	t.Helper()
 	out := git(t, "diff", "--unified=0", base+"..HEAD", "--", ":/"+path)
 	if len(out) == 0 {
 		return nil
 	}
+	change := parseHunks(t, string(out))
+	if len(change.lines) == 0 && len(change.cuts) == 0 {
+		return nil
+	}
+	return &change
+}
+
+// windowChange is one file's diff in its CURRENT line numbers: the lines this
+// window added or rewrote, and the places it only deleted.
+//
+// A DELETION HAS NO NEW-SIDE LINE, and the first version of this guard read
+// only new-side lines, so a pure-deletion hunk (`@@ -46 +45,0 @@`) marked
+// nothing. #76 found both directions of that. Removing a field from `Entry`
+// read as "declaration untouched" and failed a correct `modified` row. A file
+// whose whole diff was deletions (definitions.go in the same window) read as
+// "file untouched", so none of its rows was checked, and an `unchanged` row
+// there would have passed over a deleted line.
+type windowChange struct {
+	lines map[int]bool // lines this window added or rewrote
+	cuts  []int        // a pure deletion between line N and N+1 records N
+}
+
+// parseHunks reads the hunk headers of `git diff --unified=0` output.
+func parseHunks(t *testing.T, diff string) windowChange {
+	t.Helper()
 	hunk := regexp.MustCompile(`(?m)^@@ -\S+ \+(\d+)(?:,(\d+))? @@`)
-	touched := map[int]bool{}
-	for _, m := range hunk.FindAllStringSubmatch(string(out), -1) {
+	change := windowChange{lines: map[int]bool{}}
+	for _, m := range hunk.FindAllStringSubmatch(diff, -1) {
 		start := atoiTest(t, m[1])
 		n := 1
 		if m[2] != "" {
 			n = atoiTest(t, m[2])
 		}
+		if n == 0 {
+			change.cuts = append(change.cuts, start)
+			continue
+		}
 		for i := 0; i < n; i++ {
-			touched[start+i] = true
+			change.lines[start+i] = true
 		}
 	}
-	if len(touched) == 0 {
-		return nil
+	return change
+}
+
+// edits reports whether the window changed the declaration at lines lo..hi
+// (1-indexed, as declarationRegion returns them) of src.
+//
+// A CUT COUNTS ONLY WHEN BOTH LINES AROUND IT ARE IN THE BODY, meaning lo
+// through the last non-blank line. The region runs on over the blank lines
+// after the closing brace, and git may place the deletion of the NEXT
+// declaration on either side of the blank line between them. Counting a cut
+// anywhere in the region would mark a neighbour modified because the function
+// after it was removed.
+func (c *windowChange) edits(lo, hi int, src []string) bool {
+	for ln := lo; ln <= hi; ln++ {
+		if c.lines[ln] {
+			return true
+		}
 	}
-	return touched
+	body := hi
+	for body > lo && body <= len(src) && strings.TrimSpace(src[body-1]) == "" {
+		body--
+	}
+	for _, n := range c.cuts {
+		if lo <= n && n+1 <= body {
+			return true
+		}
+	}
+	return false
 }
 
 func atoiTest(t *testing.T, s string) int {
@@ -1545,7 +1598,7 @@ func atoiTest(t *testing.T, s string) int {
 }
 
 // checkPlanStatus holds one row's claim against the window.
-func checkPlanStatus(t *testing.T, root, plan, name, path, status string, touched map[int]bool, checked *int) {
+func checkPlanStatus(t *testing.T, root, plan, name, path, status string, change *windowChange, checked *int) {
 	t.Helper()
 	recv, name := splitReceiver(name, path)
 	src, err := os.ReadFile(filepath.Join(root, path))
@@ -1557,13 +1610,7 @@ func checkPlanStatus(t *testing.T, root, plan, name, path, status string, touche
 		return // the sibling test owns "this symbol does not exist"
 	}
 	*checked++
-	inWindow := false
-	for ln := lo; ln <= hi; ln++ {
-		if touched[ln] {
-			inWindow = true
-			break
-		}
-	}
+	inWindow := change.edits(lo, hi, strings.Split(string(src), "\n"))
 	switch {
 	case status == "unchanged" && inWindow:
 		t.Errorf("%s calls %q unchanged, but this window edits its declaration "+
@@ -1650,6 +1697,51 @@ func TestPlanStatusNormalisesToTheVocabulary(t *testing.T) {
 			got, ok := planStatus(tc.cell)
 			if got != tc.want || ok != tc.ok {
 				t.Errorf("planStatus(%q) = %q, %v; want %q, %v", tc.cell, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
+// The status guard's view of a diff, in both directions: a deletion INSIDE a
+// declaration is an edit to it, and deleting the declaration after it is not.
+//
+// #76's window removed a field from `Entry` (`@@ -46 +45,0 @@`) and the guard
+// read it as untouched, because a pure deletion has no new-side line. The
+// neighbour cases pin the other half: the region runs on over the blank line
+// after its closing brace, and git may put a whole-function deletion on either
+// side of that blank.
+func TestWindowChangeSeesADeletionInsideADeclaration(t *testing.T) {
+	src := strings.Split(strings.Join([]string{
+		"package p", //  1
+		"",          //  2
+		"// A is first.",
+		"type A struct {", //  4
+		"\tx int",         //  5
+		"}",               //  6
+		"",                //  7
+		"func B() {}",     //  8
+		"",                //  9
+	}, "\n"), "\n")
+	aLo, aHi, ok := declarationRegion(strings.Join(src, "\n"), "A", "")
+	if !ok || aLo != 3 || aHi != 7 {
+		t.Fatalf("A's region = %d-%d (%v), want 3-7: the cases below are placed against it", aLo, aHi, ok)
+	}
+	for _, tc := range []struct {
+		name string
+		hunk string
+		want bool
+	}{
+		{"a field deleted before the closing brace", "@@ -6 +5,0 @@", true},
+		{"a field deleted after the opening line", "@@ -5 +4,0 @@", true},
+		{"a field rewritten", "@@ -5 +5 @@", true},
+		{"the next function deleted, blank line after it", "@@ -8,2 +7,0 @@", false},
+		{"the next function deleted, blank line before it", "@@ -7,2 +6,0 @@", false},
+		{"a line deleted above the doc comment", "@@ -3 +2,0 @@", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			change := parseHunks(t, tc.hunk)
+			if got := change.edits(aLo, aHi, src); got != tc.want {
+				t.Errorf("%s: edits(A) = %v, want %v", tc.hunk, got, tc.want)
 			}
 		})
 	}
