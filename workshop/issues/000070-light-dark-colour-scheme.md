@@ -455,3 +455,12 @@ because an issue cannot carry both `## Revisions` and `## Log`:
   rather than deleted here — separable, and it touches the parser.
 - Deletion runs BEFORE the role change; the flags move into the role commit
   (every commit green); docs describe only what each milestone ships.
+
+`sdlc change-code`: plan-quality cleared in 2 rounds (PQ-1 Important — a
+symlinked config dir unlinked by `ClearScheme` — fixed and probed in a scratch
+worktree; PQ-4 "plan restates code" carried to the close review as a Minor).
+Estimate 6.1h (v3.1, Method A). The estimate-quality judge passed it (INFO) but
+forecast ~9–11h measured: `sdlc actual` already read 4.01h of DESIGN before any
+code, against 1.85h the table priced, and several build rows hold more than one
+commit. Kept as derived rather than re-fitted after the gate; when the ledger
+row lands, read the gap as the design half first. Branch created in place.
