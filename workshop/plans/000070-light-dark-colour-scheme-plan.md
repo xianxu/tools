@@ -979,7 +979,7 @@ func runScheme(c commandCtx, args []string) int {
 
 - [ ] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`.
 - [ ] Atlas: `/scheme` under **Command mode**; the saved file under **The store** ("not the deck — the user's config directory", precedence flag → saved → dark).
-- [ ] `sdlc milestone-close --issue 70 --milestone M2` — read the verdict before ticking.
+- [x] `sdlc milestone-close --issue 70 --milestone M2` — read the verdict before ticking.
 
 ---
 
@@ -989,8 +989,8 @@ func runScheme(c commandCtx, args []string) int {
 
 **Files:** Create `cmd/define/scheme_detect.go` (imports `strconv`, `strings`, `store`); test `cmd/define/scheme_detect_test.go`.
 
-- [ ] **Step 1: Failing test** **TestParseBackgroundColour** (table): `rgb:ffff/ffff/ffff` → light; `rgb:0000/0000/0000` → dark; `rgb:1e1e/1e1e/1e1e` → dark; `rgb:fdf6/e3e3/e3e3` → light; `rgb:f/f/f` → light; `rgb:80/80/80` → light (0.502) and `rgb:7f/7f/7f` → dark (0.498) — the boundary that separates Rec. 601 on encoded values from linear luminance; rejects: `rgba:ffff/ffff/ffff/ffff`, `#ffffff`, `rgb:fffff/0/0`, `rgb:ff/ff`, `rgb:gg/00/00`, `rgb:`, empty.
-- [ ] **Step 2: FAIL. Step 3: Implement.**
+- [x] **Step 1: Failing test** **TestParseBackgroundColour** (table): `rgb:ffff/ffff/ffff` → light; `rgb:0000/0000/0000` → dark; `rgb:1e1e/1e1e/1e1e` → dark; `rgb:fdf6/e3e3/e3e3` → light; `rgb:f/f/f` → light; `rgb:80/80/80` → light (0.502) and `rgb:7f/7f/7f` → dark (0.498) — the boundary that separates Rec. 601 on encoded values from linear luminance; rejects: `rgba:ffff/ffff/ffff/ffff`, `#ffffff`, `rgb:fffff/0/0`, `rgb:ff/ff`, `rgb:gg/00/00`, `rgb:`, empty.
+- [x] **Step 2: FAIL. Step 3: Implement.**
 
 ```go
 // parseBackgroundColour reads an OSC 11 reply's payload (#70). Only the rgb:
@@ -1026,7 +1026,7 @@ func parseBackgroundColour(payload string) (store.Scheme, bool) {
 	return store.SchemeLight, true
 }
 ```
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M3: read a terminal's background colour as light or dark`
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M3: read a terminal's background colour as light or dark`
 - [ ] **Step 6: Mutations:** replace the Rec. 601 sum with linear luminance (square each component, weights 0.2126/0.7152/0.0722) → the `80`/`7f` pair reddens; accept 5 digits → the 5-digit reject reddens. Restore each.
 
 ### Task 14: The decoder swallows the reply, then parses it
