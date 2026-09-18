@@ -38,6 +38,17 @@
 | `parseBackgroundColour` (M3) | `cmd/define/scheme_detect.go` | new |
 | `decodeOSC` (M3) | `cmd/define/key.go` | new |
 | `KeyBackground` (M3) | `cmd/define/key.go` | new |
+| `styleLanguageText` | `cmd/define/language_style.go` | deleted |
+| `lineInkBounds` | `cmd/define/language_style.go` | deleted |
+| `validateLanguageText` | `cmd/define/language_text.go` | deleted |
+| `dictionaryFragment` | `cmd/define/dictionary_language.go` | deleted |
+| `dictionaryText` | `cmd/define/dictionary_language.go` | deleted |
+| `styledBoardPrompt` | `cmd/define/practice_language.go` | deleted |
+| `TestLanguageTintStyle` | `cmd/define/language_style_test.go` | deleted |
+| `TestLanguageTintMixedAndSelection` | `cmd/define/language_style_test.go` | deleted |
+| `TestLanguageTextValidation` | `cmd/define/language_style_test.go` | deleted |
+| `TestDictionaryCapturedMixedOwnership` | `cmd/define/dictionary_language_test.go` | deleted |
+| `TestDictionaryInlinePronunciationRemainsNeutral` | `cmd/define/dictionary_language_test.go` | deleted |
 
 Rows for DELETED symbols are added by the task that deletes them, in the same commit (Task 3): a `| deleted |` row asserts the symbol is already gone (`TestPlanTablesNameEntitiesThatExist`), and it is also what exempts this plan's prose from `TestARemovedDeclarationIsSweptOrRetired`.
 
@@ -83,7 +94,7 @@ Behaviour after M1: identical to today except the flags — `-scheme dark|light|
 
 **Files:** Create `cmd/define/store/scheme.go`; test `cmd/define/store/scheme_test.go`.
 
-- [ ] **Step 1: Write the failing test** **TestParseScheme**:
+- [x] **Step 1: Write the failing test** **TestParseScheme**:
 
 ```go
 package store
@@ -108,8 +119,8 @@ func TestParseScheme(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (`undefined: ParseScheme`): `go test ./cmd/define/store -run TestParseScheme -count=1`
-- [ ] **Step 3: Implement**
+- [x] **Step 2: Run — expect FAIL** (`undefined: ParseScheme`): `go test ./cmd/define/store -run TestParseScheme -count=1`
+- [x] **Step 3: Implement**
 
 ```go
 package store
@@ -139,14 +150,14 @@ func ParseScheme(s string) (Scheme, error) {
 }
 ```
 
-- [ ] **Step 4: Run — PASS.** **Step 5: Commit** `#70 M1: store: a Scheme enum for the terminal background`
-- [ ] **Step 6: Mutations** (after the commit): drop `strings.ToLower` → the `DARK`/` Light` rows redden; drop `TrimSpace` → ` Light\n` reddens. Restore each.
+- [x] **Step 4: Run — PASS.** **Step 5: Commit** `#70 M1: store: a Scheme enum for the terminal background`
+- [x] **Step 6: Mutations** (after the commit): drop `strings.ToLower` → the `DARK`/` Light` rows redden; drop `TrimSpace` → ` Light\n` reddens. Restore each.
 
 ### Task 2: `schemeState`, `schemeHolder`, the two flag parsers
 
 **Files:** Create `cmd/define/scheme.go`; test `cmd/define/scheme_test.go`.
 
-- [ ] **Step 1: Write the failing tests** — **TestSchemeStateSequences** (event sequences, ARCH-ORDER), **TestSchemeHolder**, **TestSchemeHolderConcurrentReaders**, **TestParseSchemeArg**, **TestParseTintFlag**:
+- [x] **Step 1: Write the failing tests** — **TestSchemeStateSequences** (event sequences, ARCH-ORDER), **TestSchemeHolder**, **TestSchemeHolderConcurrentReaders**, **TestParseSchemeArg**, **TestParseTintFlag**:
 
 ```go
 package main
@@ -303,8 +314,8 @@ func TestParseTintFlag(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (undefined): `go test ./cmd/define -run 'TestSchemeState|TestSchemeHolder|TestParseSchemeArg|TestParseTintFlag' -count=1`
-- [ ] **Step 3: Implement `cmd/define/scheme.go`**
+- [x] **Step 2: Run — expect FAIL** (undefined): `go test ./cmd/define -run 'TestSchemeState|TestSchemeHolder|TestParseSchemeArg|TestParseTintFlag' -count=1`
+- [x] **Step 3: Implement `cmd/define/scheme.go`**
 
 ```go
 package main
@@ -467,9 +478,9 @@ func parseTintFlag(s string) (bool, error) {
 }
 ```
 
-- [ ] **Step 4: Run — PASS**, including `go test ./cmd/define -race -run TestSchemeHolderConcurrentReaders -count=1`; then `go vet ./cmd/define`.
-- [ ] **Step 5: Commit** `#70 M1: scheme state as an immutable value behind one atomic holder`
-- [ ] **Step 6: Mutations**, one at a time: (a) `effective()` checks `heard` before `chosenBy` → the "choice outranks" and holder cases redden; (b) `withoutChoice` leaves `chosenBy` → "clearing reveals" reddens; (c) `detect` returns `true` unconditionally → the "same reply twice" case reddens; (d) change the holder to a plain `*schemeState` field (no atomic) → `-race` on **TestSchemeHolderConcurrentReaders** reports a race; (f) `choose` returns `true` unconditionally → the holder test's "changes nothing visible" case reddens (add that assertion on `choose`'s result); (e) `parseTintFlag` drops the `dark, light` case → the named-refusal assertion reddens. Restore each.
+- [x] **Step 4: Run — PASS**, including `go test ./cmd/define -race -run TestSchemeHolderConcurrentReaders -count=1`; then `go vet ./cmd/define`.
+- [x] **Step 5: Commit** `#70 M1: scheme state as an immutable value behind one atomic holder`
+- [x] **Step 6: Mutations**, one at a time: (a) `effective()` checks `heard` before `chosenBy` → the "choice outranks" and holder cases redden; (b) `withoutChoice` leaves `chosenBy` → "clearing reveals" reddens; (c) `detect` returns `true` unconditionally → the "same reply twice" case reddens; (d) change the holder to a plain `*schemeState` field (no atomic) → `-race` on **TestSchemeHolderConcurrentReaders** reports a race; (f) `choose` returns `true` unconditionally → the holder test's "changes nothing visible" case reddens (add that assertion on `choose`'s result); (e) `parseTintFlag` drops the `dark, light` case → the named-refusal assertion reddens. Restore each.
 
 ### Task 3: Delete the tint paths production never reached
 
@@ -477,15 +488,15 @@ Do this BEFORE the role change (Task 4), so nothing is migrated only to be delet
 
 **Files:** `cmd/define/language_style.go`, `cmd/define/dictionary_language.go`, `cmd/define/render.go`, `cmd/define/output_screen.go`, `cmd/define/definitions.go`, `cmd/define/practice_language.go`, `cmd/define/play_loop.go`; create `cmd/define/render_helpers_test.go`; tests `language_style_test.go`, `dictionary_language_test.go`, `bilingual_conformance_test.go` (tagged). NOT `dict_test.go` or `dictionary_source_test.go`: they go through `renderDefinitions` → `renderDefinitionOutput`, where the tint returns as section row paint — the LIVE path.
 
-- [ ] **Step 1: Evidence, by SIMULATING the deletion** (lessons "Deleting a test needs the same evidence as writing one"; a `panic` would trip the zero-tint calls production DOES make and abort the test binary). On the committed baseline, make `styleLanguageText` return `t.text` as its first statement. Run through `go test` ONLY — `go vet` would report the now-unreachable body, which is the simulation, not a finding: `go test ./cmd/define/... -count=1` and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (say whether it ran or skipped). Every failure must be a test that calls `Render` or `styleLanguageText` directly with a NON-ZERO tint; a reviewer measured exactly five in the default suite, on a run WITHOUT the pty-backed tests (`TestLanguageTintInvocation`, `TestLanguagePromptStartup` — expected to pass, since they render with a zero tint; a sixth failure in a full environment is investigated, not accepted) — `TestDictionaryCapturedMixedOwnership`, `TestDictionarySourceProvenanceCorpus`, `TestDictionaryMonolingualOriginAndDisabledTint`, `TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`. Record the list in the issue Log. Any OTHER failure means a live path — STOP and re-plan. Restore with `git checkout HEAD -- cmd/define/language_style.go`.
-- [ ] **Step 2: Remove the tint from `Render`** (`render.go`). Each `opt.dictionaryText(e, <original>, <rendered>, …)` returned `<rendered>` whenever the tint is zero (`projectLanguageText` returns `text: rendered`), so replace each call with its `<rendered>` argument — at ~203 `opt.prose(wrapText(body, opt.Width, lead), "")`, at ~221 `opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex)`. At ~147-154 the call sat in an `if … { text = … }` block that becomes a no-op: delete the block and `headAt`, which loses its only reader. At ~243-245 delete the statement and the `if` left empty around it.
-- [ ] **Step 3: Delete** `RenderOpts.dictionaryText`, `dictionaryFragment`, `styleLanguageText`, and each helper left with no reader — check `lineInkBounds` and `validateLanguageText` with `grep -rnw <name> cmd/define --include='*.go'`. KEEP `sourceBackground` (read by `paintLanguageRow` and `answerwrap.go:129`). Delete `styledBoardPrompt` (no callers at all).
-- [ ] **Step 4: Record the residue, don't widen the task.** Also name, in the Log, the tests that will then check ONLY the residue — the `entry.source.spans` check in `TestBilingualNativeLanguageOwnership`, `TestDictionaryParserSourceOffsets`, the `projectDictionaryText` half kept in Step 6, and whatever remains of the three `TestDictionary*` tests — so they go with the chain when it goes. After Step 3 a provenance chain loses its last reader: `RenderOpts.Language` (read only at the deleted `dictionary_language.go:141`), `definitions.go:88-89`, `Entry.source` (`parse.go:46`, `definitions.go:94-95`), `sourceAt`/`sourceKnown` (`parse.go:187-202,760,813`), `definitionSection.source` (`definitions.go:150,152`), `bilingualDocument.native` and `projectDictionaryText` (`bilingual_layout.go:105`). Go does not report unused struct fields, so nothing forces this. Verify each member's readers by grep, list the chain in the issue Log, and raise the follow-up (delete #66's source-provenance data, or give it a consumer) with the operator at the M1 boundary. It is separable from #70 (ARCH-PURPOSE: it is not the purpose), and deleting it touches the parser.
-- [ ] **Step 5: Move the test-only renderers into `render_helpers_test.go`** with their names and signatures unchanged — `renderOutputText`, `renderDefinitions`, `renderPracticePresentation`, `practiceChrome`, `boardFooter` (their only callers are tests; still declared, so no removed-name sweep). Delete them from production.
-- [ ] **Step 6: Tests.** `language_style_test.go`: delete the direct `styleLanguageText` unit tests (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and whatever of `TestLanguageTextValidation` exercised a deleted helper); `TestLanguageTintProfile` stays until Task 4. Step 1's list is authoritative for the rest: the per-fragment tint assertions that went through `Render` with a non-zero tint (the three `TestDictionary*` tests it names, and the tagged `TestBilingualNativeLanguageOwnership` at `bilingual_conformance_test.go:129`) describe behaviour production never had — it tints whole SECTIONS (`definitions.go:123-127`), pinned by `TestDefinitionOutputUniformSections`. Remove the tint half of each; keep what they assert about text and regions. `TestDictionaryProjectionExactOccurrenceAndFallback` calls `dictionaryFragment` directly: delete that half, keep its `projectDictionaryText` half. A test left with nothing to assert is deleted and gets a `| deleted |` row (Step 7). Name each in the Log.
-- [ ] **Step 7: Add one `| deleted |` row per removed citable symbol** to this plan's Pure-entities table, each alone in its first cell with a repo-relative path — e.g. `` | `styleLanguageText` | `cmd/define/language_style.go` | deleted | `` — for `styleLanguageText`, `dictionaryFragment`, `dictionaryText` (`cmd/define/dictionary_language.go`), `styledBoardPrompt` (`cmd/define/practice_language.go`), `lineInkBounds` / `validateLanguageText` if removed, AND every deleted test function this plan names (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and `TestLanguageTextValidation` if it goes — path `cmd/define/language_style_test.go`). A removed `Test*` name the plan still mentions fails both `TestPlanCitesTestsThatExist` and `TestARemovedDeclarationIsSweptOrRetired`; the row is what exempts it.
-- [ ] **Step 8: Verify.** `go build ./cmd/define/...` (only a build catches production still calling a helper that moved into a `_test.go`), `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (ran or skipped — say which) — PASS. Sweep: `grep -rnw 'styleLanguageText\|dictionaryFragment\|dictionaryText\|lineInkBounds\|validateLanguageText\|styledBoardPrompt\|headAt' cmd/define atlas README.md` — expected output: EMPTY.
-- [ ] **Step 9: Commit** `#70 M1: delete the tint paths production never reached`
+- [x] **Step 1: Evidence, by SIMULATING the deletion** (lessons "Deleting a test needs the same evidence as writing one"; a `panic` would trip the zero-tint calls production DOES make and abort the test binary). On the committed baseline, make `styleLanguageText` return `t.text` as its first statement. Run through `go test` ONLY — `go vet` would report the now-unreachable body, which is the simulation, not a finding: `go test ./cmd/define/... -count=1` and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (say whether it ran or skipped). Every failure must be a test that calls `Render` or `styleLanguageText` directly with a NON-ZERO tint; a reviewer measured exactly five in the default suite, on a run WITHOUT the pty-backed tests (`TestLanguageTintInvocation`, `TestLanguagePromptStartup` — expected to pass, since they render with a zero tint; a sixth failure in a full environment is investigated, not accepted) — `TestDictionaryCapturedMixedOwnership`, `TestDictionarySourceProvenanceCorpus`, `TestDictionaryMonolingualOriginAndDisabledTint`, `TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`. Record the list in the issue Log. Any OTHER failure means a live path — STOP and re-plan. Restore with `git checkout HEAD -- cmd/define/language_style.go`.
+- [x] **Step 2: Remove the tint from `Render`** (`render.go`). Each `opt.dictionaryText(e, <original>, <rendered>, …)` returned `<rendered>` whenever the tint is zero (`projectLanguageText` returns `text: rendered`), so replace each call with its `<rendered>` argument — at ~203 `opt.prose(wrapText(body, opt.Width, lead), "")`, at ~221 `opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex)`. At ~147-154 the call sat in an `if … { text = … }` block that becomes a no-op: delete the block and `headAt`, which loses its only reader. At ~243-245 delete the statement and the `if` left empty around it.
+- [x] **Step 3: Delete** `RenderOpts.dictionaryText`, `dictionaryFragment`, `styleLanguageText`, and each helper left with no reader — check `lineInkBounds` and `validateLanguageText` with `grep -rnw <name> cmd/define --include='*.go'`. KEEP `sourceBackground` (read by `paintLanguageRow` and `answerwrap.go:129`). Delete `styledBoardPrompt` (no callers at all).
+- [x] **Step 4: Record the residue, don't widen the task.** Also name, in the Log, the tests that will then check ONLY the residue — the `entry.source.spans` check in `TestBilingualNativeLanguageOwnership`, `TestDictionaryParserSourceOffsets`, the `projectDictionaryText` half kept in Step 6, and whatever remains of the three `TestDictionary*` tests — so they go with the chain when it goes. After Step 3 a provenance chain loses its last reader: `RenderOpts.Language` (read only at the deleted `dictionary_language.go:141`), `definitions.go:88-89`, `Entry.source` (`parse.go:46`, `definitions.go:94-95`), `sourceAt`/`sourceKnown` (`parse.go:187-202,760,813`), `definitionSection.source` (`definitions.go:150,152`), `bilingualDocument.native` and `projectDictionaryText` (`bilingual_layout.go:105`). Go does not report unused struct fields, so nothing forces this. Verify each member's readers by grep, list the chain in the issue Log, and raise the follow-up (delete #66's source-provenance data, or give it a consumer) with the operator at the M1 boundary. It is separable from #70 (ARCH-PURPOSE: it is not the purpose), and deleting it touches the parser.
+- [x] **Step 5: Move the test-only renderers into `render_helpers_test.go`** with their names and signatures unchanged — `renderOutputText`, `renderDefinitions`, `renderPracticePresentation`, `practiceChrome`, `boardFooter` (their only callers are tests; still declared, so no removed-name sweep). Delete them from production.
+- [x] **Step 6: Tests.** `language_style_test.go`: delete the direct `styleLanguageText` unit tests (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and whatever of `TestLanguageTextValidation` exercised a deleted helper); `TestLanguageTintProfile` stays until Task 4. Step 1's list is authoritative for the rest: the per-fragment tint assertions that went through `Render` with a non-zero tint (the three `TestDictionary*` tests it names, and the tagged `TestBilingualNativeLanguageOwnership` at `bilingual_conformance_test.go:129`) describe behaviour production never had — it tints whole SECTIONS (`definitions.go:123-127`), pinned by `TestDefinitionOutputUniformSections`. Remove the tint half of each; keep what they assert about text and regions. `TestDictionaryProjectionExactOccurrenceAndFallback` calls `dictionaryFragment` directly: delete that half, keep its `projectDictionaryText` half. A test left with nothing to assert is deleted and gets a `| deleted |` row (Step 7). Name each in the Log.
+- [x] **Step 7: Add one `| deleted |` row per removed citable symbol** to this plan's Pure-entities table, each alone in its first cell with a repo-relative path — e.g. `` | `styleLanguageText` | `cmd/define/language_style.go` | deleted | `` — for `styleLanguageText`, `dictionaryFragment`, `dictionaryText` (`cmd/define/dictionary_language.go`), `styledBoardPrompt` (`cmd/define/practice_language.go`), `lineInkBounds` / `validateLanguageText` if removed, AND every deleted test function this plan names (`TestLanguageTintStyle`, `TestLanguageTintMixedAndSelection`, and `TestLanguageTextValidation` if it goes — path `cmd/define/language_style_test.go`). A removed `Test*` name the plan still mentions fails both `TestPlanCitesTestsThatExist` and `TestARemovedDeclarationIsSweptOrRetired`; the row is what exempts it.
+- [x] **Step 8: Verify.** `go build ./cmd/define/...` (only a build catches production still calling a helper that moved into a `_test.go`), `go test ./cmd/define/... -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, and `go test -tags conformance ./cmd/define -run TestBilingualNativeLanguageOwnership -count=1` (ran or skipped — say which) — PASS. Sweep: `grep -rnw 'styleLanguageText\|dictionaryFragment\|dictionaryText\|lineInkBounds\|validateLanguageText\|styledBoardPrompt\|headAt' cmd/define atlas README.md` — expected output: EMPTY.
+- [x] **Step 9: Commit** `#70 M1: delete the tint paths production never reached`
 - [ ] **Step 10: After the commit, run the whole package again** — `TestARemovedDeclarationIsSweptOrRetired` and `TestPlanTableStatusMatchesTheChangeWindow` read `base..HEAD`, so before the commit they cannot see the deletion (lessons #53: "After a commit, run the whole package"). A failure here is fixed in a follow-up commit, not by amending history that has been read.
 
 ### Task 4: The tint becomes a role; the flags choose the shade

@@ -142,16 +142,6 @@ func cloneRowPaints(rows []rowPaint) []rowPaint {
 	return out
 }
 
-// Compatibility string renderers have no viewport. Paint their source width;
-// production writers retain metadata until their actual terminal boundary.
-func renderOutputText(o renderedOutput) string {
-	lines := outputStyledRows(o.text)
-	for i, line := range lines {
-		lines[i] = paintLanguageRow(line, paintAt(o.rows, i), visibleCells(line))
-	}
-	return strings.Join(lines, "\n")
-}
-
 func (l *liveScreen) PaintedTranscript() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()

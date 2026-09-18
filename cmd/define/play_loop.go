@@ -744,48 +744,6 @@ func boardPalette(opt options) play.Palette {
 	return play.Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Drop: "\x1b[2;9m", Off: "\x1b[0m"}
 }
 
-// boardFooter is the live edge for a board: everything the FORM draws, then the
-// bar.
-//
-// One line of assembly, and that is the point. The grid and the panel are the
-// board's own rendering — a form owns how it looks, and a loop composing it out
-// of accessors would make the board's appearance a thing two files agree about,
-// on the surface where disagreeing marks the wrong word. All this adds is the
-// bar, which belongs to the sitting rather than to the question.
-//
-// THE FORM IS FIRST, which is load-bearing rather than aesthetic: formCell reads
-// a footer entry index straight back as a grid row, so anything above it would
-// silently shift every cell. It is also the order of value that fitFooter drops
-// from: the bar goes first, then the panel, then grid rows.
-//
-// A BOARD CAN END UP IN A FOOTER THAT DROPS ROWS, and D15's "never" was measured
-// wrong (R11). It holds at SELECTION — `packBoards` refuses a board the terminal
-// cannot draw whole — and a resize afterwards is a shape nobody chose.
-//
-// What the order buys is that the losses are SURVIVABLE in sequence: the bar (a
-// figure), the panel (cosmetic), then grid rows. An earlier version of this
-// comment called them "harmless", which was checked against the CLICK map —
-// FooterRowAt answers nothing for a row that was never painted — and was false
-// of the SWEEP, which does not go through that map at all: Enter took every
-// unmarked word including ones the window never drew. That is why Enter is now
-// held while the board is not whole (R17), and why a safety word has to name the
-// path it was checked on.
-//
-// The one thing that must not go is the statement of what a click will MEAN, and
-// that is why the mode moved to the prompt row, which Paint clips last.
-//
-// THE PALETTE is threaded in rather than reached for, on the same seam
-// `boardPalette` sits on: `main` owns the terminal's colours and the form takes
-// finished sequences. It styles only the BAR — the grid above it is the board's
-// own rendering, already painted through `play.Palette` (#44).
-func boardFooter(q play.Question, fig sittingFigures, pal palette, d deps, opt options) []string {
-	text := q.Prompt()
-	if p, ok := q.(practicePresenter); ok {
-		text = renderPracticePresentation(p.PromptPresentation(), d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceOf(q.Form()), q.Word())
-	}
-	return append(strings.Split(text, "\n"), asChrome(practiceChrome(sittingBarPresentation(fig), d, opt), pal))
-}
-
 // barRows is the ONE row the bar is guaranteed below the board.
 //
 // A minimum rather than a measurement, and that asymmetry with promptRows is

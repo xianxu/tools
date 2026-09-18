@@ -464,3 +464,33 @@ forecast ~9–11h measured: `sdlc actual` already read 4.01h of DESIGN before an
 code, against 1.85h the table priced, and several build rows hold more than one
 commit. Kept as derived rather than re-fitted after the gate; when the ledger
 row lands, read the gap as the design half first. Branch created in place.
+
+M1 Task 3 — the dead tint paths. EVIDENCE (simulated deletion: the tint
+painter's first statement made `return t.text`, run through `go test` only):
+exactly five default-suite failures — `TestDictionaryCapturedMixedOwnership`,
+`TestDictionarySourceProvenanceCorpus`, `TestDictionaryMonolingualOriginAndDisabledTint`,
+and the painter's own two unit tests — plus the tagged `TestBilingualNativeLanguageOwnership`
+(ran; failed under simulation, passed on the baseline). The two pty-backed
+tests passed under simulation outside the sandbox. Nothing live. Then:
+deleted the fragment-tint painter, its two helpers, `Render`'s four calls into
+it (each replaced by the rendered text it returned under a zero tint) and the
+`headAt` bookkeeping that fed only the first; moved the five test-only string
+renderers into `render_helpers_test.go` unchanged; deleted the one with no
+callers. Tests: the painter's unit tests go, but their LIVE halves were ported —
+the producer-background cases into `TestSourceBackgroundTracksTheProducersBackground`
+(nothing tested `sourceBackground` directly) and copy/highlight over a tinted
+row into `TestSelectionCopiesATintedRowsText`, both on the live painter. Two
+dictionary tests deleted: one held only fragment-tint assertions, and the
+inline-pronunciation one asserted only an ABSENCE that can no longer occur (a
+test that cannot fail). Three kept their live halves (provenance corpus,
+no-colour, projection fallback); the tagged Oxford test keeps its provenance
+check. Section tint stays pinned by `TestDefinitionOutputUniformSections`.
+
+RESIDUE (raised at the M1 boundary, not deleted here): #66's source-provenance
+chain now has no production reader — `RenderOpts.Language`, `Entry.source`,
+`sourceAt`/`sourceKnown`, `definitionSection.source`, `bilingualDocument.native`,
+`projectDictionaryText`, `bilingualLanguageText`. Tests that will then check
+only the residue, to go with it: `TestDictionaryParserSourceOffsets`,
+`TestDictionarySourceProvenanceCorpus`, the kept half of
+`TestDictionaryProjectionExactOccurrenceAndFallback`, and the provenance check
+left in `TestBilingualNativeLanguageOwnership`.

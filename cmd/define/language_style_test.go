@@ -6,76 +6,44 @@ import (
 	"testing"
 )
 
-func TestLanguageTextValidation(t *testing.T) {
+// sourceBackground is the producer-background tracker paintLanguageRow composes
+// with. #70 moved these cases here when the per-fragment tint painter, its other
+// consumer, was deleted. An explicit producer background must win over the tint,
+// and a colour PAYLOAD must never be read as a code of its own.
+func TestSourceBackgroundTracksTheProducersBackground(t *testing.T) {
 	for _, tc := range []struct {
-		text  string
-		spans []languageSpan
-		valid bool
+		name, seq string
+		before    bool
+		want      bool
 	}{
-		{"árbol", []languageSpan{{0, 6, "es"}}, true},
-		{"árbol", []languageSpan{{1, 6, "es"}}, false},
-		{"word", []languageSpan{{0, 5, "en"}}, false},
-		{"word", []languageSpan{{0, 3, "en"}, {2, 4, "es"}}, false},
-		{"word", []languageSpan{{-1, 2, "en"}}, false},
-		{"word", []languageSpan{{3, 2, "en"}}, false},
-		{"word", nil, true},
-		{"\x1b[32mword", []languageSpan{{2, 9, "en"}}, false},
+		{"256-colour background", "\x1b[48;5;22m", false, true},
+		{"basic background", "\x1b[42m", false, true},
+		{"bright background", "\x1b[102m", false, true},
+		{"reset", "\x1b[0m", true, false},
+		{"default background", "\x1b[49m", true, false},
+		{"combined reset and foreground", "\x1b[0;32m", true, false},
+		{"an rgb zero is a payload, not a reset", "\x1b[38;2;0;0;0m", true, true},
+		{"a 256-colour 48 is a payload, not a background", "\x1b[38;5;48m", false, false},
+		{"not SGR", "\x1b[2J", true, true},
 	} {
-		if got := validateLanguageText(languageText{tc.text, tc.spans}); got != tc.valid {
-			t.Errorf("%q %+v: valid=%v want %v", tc.text, tc.spans, got, tc.valid)
+		if got := sourceBackground(tc.seq, tc.before); got != tc.want {
+			t.Errorf("%s: sourceBackground(%q, %v) = %v, want %v", tc.name, tc.seq, tc.before, got, tc.want)
 		}
 	}
 }
 
-func TestLanguageTintStyle(t *testing.T) {
-	for _, tc := range []struct {
-		name, text, want string
-		lang             store.Lang
-	}{
-		{"plain", "hola", languageDark + "hola" + languageOff, "es"},
-		{"unknown", "hola", "hola", ""},
-		{"other", "hello", "hello", "en"},
-		{"invalid tag", "hola", "hola", "\x1b[31m"},
-		{"line whitespace", "  hola mundo  \n  adiós \n", "  " + languageDark + "hola mundo" + languageOff + "  \n  " + languageDark + "adiós" + languageOff + " \n", "es"},
-		{"foreground reset", knownOn + "hola" + sgrOff + " mundo", knownOn + languageDark + "hola" + languageOff + sgrOff + languageDark + " mundo" + languageOff, "es"},
-		{"semantic background", "\x1b[48;5;22mhola\x1b[0m mundo", "\x1b[48;5;22mhola\x1b[0m" + languageDark + " mundo" + languageOff, "es"},
-		{"combined reset foreground", "\x1b[0;32mhola", "\x1b[0;32m" + languageDark + "hola" + languageOff, "es"},
-		{"rgb foreground", "\x1b[38;2;0;0;0mhola", "\x1b[38;2;0;0;0m" + languageDark + "hola" + languageOff, "es"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			lt := languageText{tc.text, []languageSpan{{0, len(tc.text), tc.lang}}}
-			got := styleLanguageText(lt, tintPolicy{"es", languageDark})
-			if got != tc.want {
-				t.Fatalf("got %q want %q", got, tc.want)
-			}
-			if stripANSI(got) != stripANSI(tc.text) || visibleCells(got) != visibleCells(tc.text) {
-				t.Fatal("style changed text or width")
-			}
-		})
-	}
-}
-
-func TestLanguageTintMixedAndSelection(t *testing.T) {
-	lt := languageText{"A menudo means often.", []languageSpan{{0, 8, "es"}, {8, 21, "en"}}}
-	got := styleLanguageText(lt, tintPolicy{"es", languageDark})
-	if want := languageDark + "A menudo" + languageOff + " means often."; got != want {
-		t.Fatalf("got %q want %q", got, want)
-	}
-	if got := styleLanguageText(lt, tintPolicy{"en", languageLight}); got != "A menudo"+languageLight+" means often."+languageOff {
-		t.Fatalf("English %q", got)
-	}
-	for _, p := range []tintPolicy{{"es", ""}, {"es", "\x1b[2J"}} {
-		if styleLanguageText(lt, p) != lt.text {
-			t.Fatal("disabled/invalid palette styled text")
-		}
-	}
-	frame := newSelectionFrame(30, 1, []selectionRow{{styled: got, selectable: true}})
-	text, err := selectedText(frame, selectionPoint{0, 0}, selectionPoint{0, 20})
-	if err != nil || text != lt.text {
-		t.Fatalf("copy=%q err=%v", text, err)
+// Selecting across a tinted row copies its text, not its paint, and the
+// selection's inverse still shows over the tint.
+func TestSelectionCopiesATintedRowsText(t *testing.T) {
+	const text = "A menudo means often."
+	row := paintLanguageRow(text, rowPaint{background: languageDark}, 30)
+	frame := newSelectionFrame(30, 1, []selectionRow{{styled: row, selectable: true}})
+	got, err := selectedText(frame, selectionPoint{0, 0}, selectionPoint{0, 20})
+	if err != nil || got != text {
+		t.Fatalf("copy=%q err=%v", got, err)
 	}
 	selected := frame.highlightRow(0, selectionPoint{0, 0}, selectionPoint{0, 7})
-	if !strings.Contains(selected, "\x1b[7m") || stripANSI(selected) != lt.text {
+	if !strings.Contains(selected, "\x1b[7m") || strings.TrimRight(stripANSI(selected), " ") != text {
 		t.Fatalf("selection=%q", selected)
 	}
 }

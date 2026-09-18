@@ -6,18 +6,11 @@ import (
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/play"
-	"github.com/xianxu/tools/cmd/define/store"
 )
 
 type practicePresenter interface {
 	PromptPresentation() play.Presentation
 	RevealPresentation() play.Presentation
-}
-
-// Vocabulary and language styling share the form's emitted boundaries. Neutral
-// fragments include pre-rendered dictionary entries, which must stay untouched.
-func renderPracticePresentation(p play.Presentation, lang, source store.Lang, policy tintPolicy, vocab Vocabulary, sf surface, subject string) string {
-	return renderOutputText(renderPracticeOutput(p, lang, source, policy, vocab, sf, subject, 0))
 }
 
 func writePracticePresentation(w io.Writer, p play.Presentation, rs []Region, d deps, opt options, sf surface, subject, already string) {
@@ -122,22 +115,7 @@ func livePromptPresentation(s play.Session) play.Presentation {
 	p.append(reservedPresentation(q))
 	return p.Presentation
 }
-func practiceChrome(p play.Presentation, d deps, opt options) string {
-	return renderPracticePresentation(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "")
-}
 
-func styledBoardPrompt(q play.Question, whole bool, pal palette, d deps, opt options) string {
-	p := gradePromptPresentation(q)
-	if !whole {
-		var b practiceBuilder
-		b.english("window too short for the whole board — mark what you see")
-		b.neutral(", Ctrl-C ")
-		b.english("to stop")
-		p = b.Presentation
-	}
-	text := renderPracticePresentation(p, d.lang, dictionarySourceLanguage(d.dict), opt.tintFor(d.lang), nil, surfaceProse, "")
-	return highlightBoardPrompt(text, true, pal)
-}
 func finishStyled(w io.Writer, s play.Session, fig sittingFigures, d deps, opt options) int {
 	var p practiceBuilder
 	p.neutral("\n" + fmt.Sprint(s.Right) + " ")

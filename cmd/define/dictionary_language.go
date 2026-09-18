@@ -1,7 +1,6 @@
 package main
 
 import (
-	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -111,35 +110,4 @@ func projectLanguageText(source languageText, rendered string, displayWhitespace
 		return languageText{text: rendered}
 	}
 	return result
-}
-
-func dictionaryFragment(source languageText, at int, text string) languageText {
-	out := languageText{text: text}
-	if at < 0 || at > len(source.text) || len(text) > len(source.text)-at || source.text[at:at+len(text)] != text {
-		return out
-	}
-	end := at + len(text)
-	first := sort.Search(len(source.spans), func(i int) bool { return source.spans[i].end > at })
-	for _, span := range source.spans[first:] {
-		if span.start >= end {
-			break
-		}
-		out.spans = append(out.spans, languageSpan{start: max(span.start, at) - at, end: min(span.end, end) - at, lang: span.lang})
-	}
-	return out
-}
-
-func (o RenderOpts) dictionaryText(e Entry, original, rendered string, at int, known bool) string {
-	if !o.Color || !known && at < 0 {
-		return rendered
-	}
-	source := languageText{text: original}
-	if e.source.text != "" {
-		if known {
-			source = dictionaryFragment(e.source, at, original)
-		}
-	} else if o.Language != "" {
-		source.spans = []languageSpan{{start: 0, end: len(original), lang: o.Language}}
-	}
-	return styleLanguageText(projectDictionaryText(source, rendered), o.Tint)
 }
