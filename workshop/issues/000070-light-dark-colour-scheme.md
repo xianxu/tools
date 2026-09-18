@@ -42,11 +42,14 @@ everything) were rejected as larger than the problem.
 
 ### Scheme state (ARCH-ORDER)
 
-One pure state value per process, shared by the editor and any sitting it starts
-(a pointer, the way `deps.bilingual` is shared):
+ONE holder per process — `deps.scheme`, a stable pointer on the
+`deps.practiceHelp` precedent (`main.go:25-27`: "a pointer, so a nested sitting
+and the next one share"), NOT the `deps.bilingual` one, whose setter replaces the
+pointer in a by-value copy of `deps` and so never reaches the editor from a
+sitting. State changes only through the holder's transition function:
 
 ```
-schemeState{ choice *{value, source: flag|saved|session}; detected *scheme; asked bool }
+schemeState{ choice *{value, source: flag|saved|session}; detected *scheme }
 effective(state) = choice.value ?? detected ?? dark        (+ the source it came from)
 ```
 
@@ -63,58 +66,92 @@ effective(state) = choice.value ?? detected ?? dark        (+ the source it came
   and nothing changes.
 - `/scheme auto` deletes the saved file (same failure rule) and clears `choice`,
   so detection — or the dark fallback — governs again.
-- Every transition that changes `effective` has one effect: repaint.
+
+**Nothing holds a resolved copy.** Every screen (the editor's, a sitting's, a
+suspended one) and the non-screen writer hold the holder and read `effective()`
+when they paint or write. So a transition anywhere is in force everywhere at the
+next paint, and the only effect a transition has is to repaint the ACTIVE screen:
+a suspended editor screen repaints on `resume` (`play_cmd.go:148`) with whatever
+is in force then, and a sitting's new screen starts with it. `paintLanguageRow`
+still takes the scheme as an explicit parameter (ARCH-PURE); only its callers read
+the holder. The holder is safe for concurrent use, because the throttled paint
+runs on a timer goroutine (`liveScreen`'s 16 ms flush) while the loop applies
+events.
 
 `/scheme` reports `effective` and its source, and each report is true:
 `light (detected)`, `dark (detected)`, `dark (saved)`, `light (-scheme flag)`,
 `light (session only; not saved)`, and `dark (default: the terminal has not
 reported its background)` while nothing is detected — true whether the reply is
-pending, unsupported, or was never asked for. Outside an interactive session it
-says `(default: detected only in an interactive session)`.
+pending, unsupported, or never asked for. The one-shot form, which has no session
+to detect in, says `(default: detected only in an interactive session)`.
 
 ### Detection: a query sent in raw mode, a reply read as a key (ARCH-MOCK)
 
-- Every raw session (the editor, `--play`) writes `OSC 11 ?` (`ESC ] 11 ; ? ESC \`)
-  once, right after entering its terminal modes — only when colour is on and the
-  tint is on (`-language-tint off` leaves the scheme nothing to change). Nothing
-  waits for an answer: the first frame paints with `effective` as it stands, and a
-  reply is just another input event.
-- The key decoder learns the reply: `ESC ] 11 ; rgb:R/G/B` with 1–4 hex digits
-  per component, terminated by BEL or ST (`ESC \`), possibly split across reads.
-  It decodes to a `KeyBackground` event carrying the scheme. Both loops (editor,
-  sitting) apply it to the shared state; neither ever treats it as typing or an
-  answer.
-- **The swallow is bounded, byte by byte.** Past `ESC ]` the bytes must continue
-  the reply grammar exactly; the first byte that cannot — any other C0 (Ctrl-C
-  included), a letter where a hex digit belongs, or a 64-byte cap — aborts, and the
-  input decodes exactly as today (`ESC ]` as a 2-byte `KeyUnknown`, `key.go:240`,
-  then the rest). So Alt-] with meta-sends-escape, followed by typing or Ctrl-C,
-  behaves as it does now (`lessons.md`: "Trusted ANSI parsing is not untrusted
-  control filtering").
-- A reply that parses as `rgb:` but carries no usable colour is `KeyUnknown`:
-  swallowed, nothing detected.
-- Classification: Rec. 601 luma on the gamma-encoded components,
-  `0.299R + 0.587G + 0.114B`, normalised to 0–1; below 0.5 → dark, otherwise
-  light. This is Neovim's background heuristic (prior art), chosen over linear
-  luminance because a mid-grey terminal is what users call mid, not dark.
-- The query's reply owes the decoder a case, the same obligation
-  `enabledModes`' `replies` flag records (`rawterm.go:118`). The query is not a
-  mode (no teardown), so it gets its own list, and
-  `TestEveryEnabledInputModeIsDecoded` derives from both.
-- Paths with no raw session never probe: one-shot lookups, the piped loop,
-  `--version`, `--stats`, `--forget`, `--llm-check`, `-raw`. Operator decision:
-  one-shot uses flag, then saved, then dark — no blocking probe.
+- **Sent once per raw session**, at mode entry, to `rawSession.control`
+  (`rawterm.go:31`) beside `enterModes` — never through a screen, where
+  `scanEscape` would read `ESC ]` as a 2-byte escape (`sgr.go:92-95`) and leave
+  `11;?` in the frame and the exit transcript. A `/play` sitting borrows the
+  editor's raw session and does not send it again; `--play` on its own sends it.
+- **Sent only when a tint can appear:** colour on, `-language-tint on`, not `-raw`,
+  and `TERM` not `dumb` (which already turns the tint off, `main.go:609-611`, and
+  would print the query as text).
+- The query is `OSC 11 ?` (`ESC ] 11 ; ? ESC \`). Nothing waits for an answer: the
+  first frame paints with `effective` as it stands, and a reply is just another
+  input event.
+
+**The swallow and the colour parse are two steps, so no reply format can leak.**
+Once the query is sent a reply is certain, and in a sitting a leaked character is
+an ANSWER (digits pick options; `d` removes the word).
+
+1. **Swallow** — `ESC ] 11 ;` then printable bytes (0x20–0x7E) up to BEL or ST
+   (`ESC \`), at most 64 bytes, possibly split across reads. Any other C0 byte
+   (Ctrl-C, Enter, an `ESC` not followed by `\`) or the cap aborts, and the input
+   decodes exactly as today: `ESC ]` as a 2-byte `KeyUnknown` (`key.go:240`), then
+   the rest. Before `11;` is complete the decoder waits for the next byte, which
+   holds a lone Alt-] until the next key (it is inert either way). A user would
+   have to type `11;` straight after Alt-] to enter the swallow at all.
+2. **Parse** the swallowed payload: `rgb:R/G/B` with 1–4 hex digits per component
+   → `KeyBackground` carrying the scheme. Anything else — `rgba:`, `#rrggbb`,
+   garbage — → `KeyUnknown`: swallowed, nothing detected.
+
+Classification: Rec. 601 luma on the gamma-encoded components,
+`0.299R + 0.587G + 0.114B`, normalised to 0–1; below 0.5 → dark, otherwise light.
+This is Neovim's background heuristic (prior art), chosen over linear luminance
+because a mid-grey terminal is what users call mid, not dark.
+
+**`KeyBackground` is a new key kind, so every consumer of keys is enumerated**
+(ARCH-PURPOSE):
+
+- `runEditor` applies it to the holder BEFORE `Apply` — it is never typing.
+- The sitting applies it via its `sittingKeyHandling` entry (`play_loop.go:570`),
+  which `TestEveryKeyKindIsDecidedForASitting` forces — it is never an answer.
+- The pointer router classes it as NOT input, like `KeyUnknown`, so a reply
+  mid-drag does not cancel the selection or its notice (`selection_input.go:48-49`,
+  `:234-243`).
+- The full-channel branch (`selection_input.go:192-200`) drops it SILENTLY — no
+  "input full" notice, no pointer cancel. A dropped reply leaves the scheme where
+  it was, which is an accepted outcome.
+
+The query's reply owes the decoder a case — the obligation `enabledModes`'
+`replies` flag records (`rawterm.go:118`). The query is not a mode (no teardown),
+so it gets its own list, and `TestEveryEnabledInputModeIsDecoded` derives from both.
+
+Paths with no raw session never send it: one-shot lookups (including one-shot
+`-raw`), the piped loop, `--version`, `--stats`, `--forget`, `--llm-check`.
+Operator decision: one-shot uses flag, then saved, then dark — no blocking probe.
 
 Late replies, the whole class:
 - **Inside the session** (any time before exit): an event → at most a repaint.
-- **During a `/play` sitting**: the sitting's loop applies it to the shared state.
+- **During a `/play` sitting**: the sitting's loop applies it to the shared holder;
+  the editor sees it on resume.
 - **After exit** (the session ended within one terminal round trip of starting —
-  a fast quit over a slow link): the reply reaches whatever reads the terminal
-  next, usually the shell. Accepted and documented; it needs a quit faster than
-  the terminal's answer.
-- Nothing reads stdin in cooked mode after the query is sent: the deck question
-  (`repl.go:295`) and `--play`'s queue build (`play_loop.go:84`) both finish
-  before raw mode begins.
+  a fast quit over a slow link): the terminal is cooked again, so the reply is
+  echoed as visible junk and reaches whatever reads next, usually the shell.
+  Accepted and documented; it needs a quit faster than the terminal's answer.
+- Nothing reads stdin in cooked mode between sending the query and exit: the deck
+  question (`repl.go:295`) and `--play`'s queue build (`play_loop.go:84`) both
+  finish before `enterRaw`, and the only reader until the restore is `readInput`
+  (`replraw.go:34`, `play_loop.go:117`).
 
 ### Repaint: the role is frozen, the colour is not
 
@@ -124,20 +161,22 @@ Late replies, the whole class:
   production — that is the `/lang` rule, and it survives. WHICH colour a tint is
   gets resolved at paint.
 - Every carrier of the escape changes with it: `options.tintBackground`
-  (`main.go:462,672`, the root) becomes the tint on/off plus the resolved scheme;
+  (`main.go:462,672`, the root) becomes the tint on/off alone — no resolved scheme;
   `tintPolicy.background`; `play.PresentationRegion.Background` (a question holds
   it until reveal); and the equality checks against `languageDark`/`languageLight`
   in `validRowPaint` (`output_layout.go:24`) and `answerwrap.go:352`. The `play`
   package stops carrying background escapes.
 - **The scheme reaches the painter as an explicit parameter, never a global**
   (ARCH-PURE): `paintLanguageRow` takes it, and so do its callers.
-  - The screen (`*screen`) holds the scheme in effect; `liveScreen.SetScheme`
-    stores it and repaints. That covers every `*screen` painter: the frame
-    (`layoutSelectionFrame`, `selectionLayout.paint` → `paintOutputChunk`),
-    `paintActivity`, and the exit transcript (`paintedTranscript`, which already
-    paints from `screen.paints`).
+  - The screen (`*screen`) holds the `deps.scheme` holder (given at construction:
+    `newLiveScreen`, `newPinnedScreen`) and reads `effective()` when it paints.
+    That covers every `*screen` painter: the frame (`layoutSelectionFrame`,
+    `selectionLayout.paint` → `paintOutputChunk`), `paintActivity`, and the exit
+    transcript (`paintedTranscript`, which already paints from `screen.paints`).
+    The display fakes (`recordDisplay`, `editorloop_test.go:275`) gain whatever
+    repaint hook the loops call.
   - The non-screen path (`writeOutput` → `serializeOutput`: one-shot, piped and
-    answer output) takes the scheme from `options`, resolved when the output is
+    answer output) reads `effective()` from the same holder when the output is
     written.
 - **Dead code is deleted, not converted**, once each is shown unreachable in
   production (both reviewers confirmed): `styleLanguageText` (only production
@@ -172,7 +211,9 @@ Late replies, the whole class:
   Residue: at most one directory and one file of ≤ 6 bytes.
 - The one-shot form saves, like `/lang` and `/bilingual` (`command.go:214-219`):
   `define /scheme light` writes the file, `define /scheme auto` clears it, and a
-  bare `define /scheme` reports.
+  bare `define /scheme` reports. With no config directory it REFUSES (exit 2,
+  naming `$XDG_CONFIG_HOME`/`$HOME`), as `/bilingual`'s one-shot does
+  (`bilingual_cmd.go:58-61`) — there is no session for "session only" to mean.
 
 ### Flags
 
@@ -234,9 +275,15 @@ Late replies, the whole class:
   "session only; not saved". A write error fails the command and changes nothing.
   A garbled file warns once and is ignored.
 - An OSC 11 reply in the editor inserts no text, and in a sitting records no
-  answer. Alt-] followed by typing, and Alt-] followed by Ctrl-C, behave exactly
-  as today. Pinned in the decoder, and through each loop shell.
-- `-language-tint off` disables the tint and the query. `-language-tint light` is
+  answer — for an `rgb:` reply AND for an `rgba:` / `#rrggbb` one (swallowed,
+  nothing detected). A reply mid-drag leaves the selection intact. Alt-] followed
+  by typing, and Alt-] followed by Ctrl-C sent as SEPARATE writes (so the decoder
+  is really waiting), behave exactly as today. Pinned in the decoder, the pointer
+  router, and through each loop shell.
+- A reply applied during a `/play` sitting is in force in the editor after the
+  sitting ends, and a sitting starts with the editor's scheme.
+- `-language-tint off`, `-raw` and `TERM=dumb` send no query; `-language-tint off`
+  disables the tint. `-language-tint light` is
   refused naming `-scheme light`. `-scheme light` then `/scheme dark` reports
   `dark (saved)`. The state transitions are unit-tested as event sequences
   (reply before/after a choice, a duplicate reply, a late reply).
@@ -280,3 +327,16 @@ replaces); the OSC swallow is bounded byte-by-byte so Alt-] and Ctrl-C are
 unchanged; the scheme reaches painters as a parameter; the save-failure rule is
 `/bilingual`'s rather than a new one; dead renderers and test migrations are
 enumerated. DA1 dropped — it existed only to end a wait that no longer exists.
+
+Spec review, round 2: round 1 all resolved; four new. (1) Several copies of the
+scheme with nothing keeping them in step — the `deps.bilingual` precedent
+replaces a pointer in a by-value `deps`, so a sitting's reply would never reach
+the editor → ONE holder on the `deps.practiceHelp` precedent, and nothing holds
+a resolved copy: every screen and writer reads `effective()` at paint, so the
+only effect is repainting the active screen. (2) `KeyBackground` is a new key
+kind with four consumers, not two — the pointer router and the full-channel
+branch would have treated it as input. (3) The swallow grammar WAS the `rgb:`
+grammar, so any other reply format (`rgba:`) leaked as typing — and as ANSWERS
+in a sitting; now swallow-then-parse. (4) One-shot `/scheme` with no config dir
+refuses, as `/bilingual`'s does. Also: query goes to `rawSession.control`, never
+the screen; not sent under `-raw` or `TERM=dumb`; `asked` dropped (no reader).
