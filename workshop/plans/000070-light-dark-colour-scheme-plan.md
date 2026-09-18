@@ -642,7 +642,7 @@ func holderFor(s store.Scheme) *schemeHolder {
 - [x] `go test ./... -count=1`, `go test ./cmd/define -race -count=1`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `go test -tags conformance ./cmd/define -count=1` (report which tests skipped), `GOOS=linux go build ./...` — all green; quote the counts.
 - [x] `atlas/define.md`: rewrite the `-language-tint` line (~2270) and the `RenderOpts.Tint` row (~578) for the role/shade split; the `RenderOpts.Language` row (~577, "explicit mixed-source ranges take precedence") is false after Task 3 but `TestAtlasDescribesEveryRenderOpt` keeps the row mandatory — reword it "unread since #70 (residue; see the issue Log)"; `renderDefinitions` (~2256) is now a TEST helper — say so or drop it; add a short "The shade is a paint-time decision (#70)" paragraph under **The screen**: the holder, `attachScheme` before sharing, the once-per-frame read.
 - [x] Raise Task 3 Step 4's residue chain with the operator; on their yes, file it with `sdlc issue new` so it outlives the session (the Log names the tests that go with it).
-- [ ] `sdlc milestone-close --issue 70 --milestone M1` — read the verdict before ticking `M1`; fix Critical/Important first.
+- [x] `sdlc milestone-close --issue 70 --milestone M1` — read the verdict before ticking `M1`; fix Critical/Important first.
 
 ---
 
@@ -654,7 +654,7 @@ Docs in this chunk describe what M2 ships — flag, saved, dark — and do not m
 
 **Files:** Modify `cmd/define/store/scheme.go`; test `cmd/define/store/scheme_test.go`.
 
-- [ ] **Step 1: Failing tests** against `t.TempDir()`:
+- [x] **Step 1: Failing tests** against `t.TempDir()`:
   - missing file → `("", false, nil)`;
   - `WriteScheme(dir, SchemeLight)` into a `dir` that does not exist yet → `ReadScheme` gives `(SchemeLight, true, nil)`; the file is exactly `light\n`; `dir` holds exactly ONE entry afterwards (no `.tmp-*` left, the `bilingual_test.go:35-41` precedent);
   - `"  DARK \n"` → `SchemeDark`;
@@ -662,8 +662,8 @@ Docs in this chunk describe what M2 ships — flag, saved, dark — and do not m
   - THE CAP, with a valid word so only the cap can refuse it: `"light"` + 59 spaces (64 bytes) → `SchemeLight`; `"light"` + 60 spaces (65 bytes) → error (the `store/bilingual_test.go:45` pattern);
   - `ClearScheme` removes the file AND the now-empty `dir`; a second `ClearScheme` → nil; with a foreign file also in `dir`, only `scheme` goes and `dir` stays;
   - **a SYMLINKED `dir`** (a dotfile manager's `~/.config/define` → elsewhere, the target holding a foreign file): after `ClearScheme` the LINK still exists and the foreign file survives. `os.Remove` unlinks a symlink even when its target is full, so a bare `os.Remove(dir)` fails this.
-- [ ] **Step 2: Run — FAIL.** `go test ./cmd/define/store -run Scheme -count=1`
-- [ ] **Step 3: Implement** (imports: `errors`, `fmt`, `io`, `io/fs`, `os`, `path/filepath`, `strings`):
+- [x] **Step 2: Run — FAIL.** `go test ./cmd/define/store -run Scheme -count=1`
+- [x] **Step 3: Implement** (imports: `errors`, `fmt`, `io`, `io/fs`, `os`, `path/filepath`, `strings`):
 
 ```go
 const schemeFileName = "scheme"
@@ -721,7 +721,7 @@ func ClearScheme(dir string) error {
 	return nil
 }
 ```
-- [ ] **Step 4: PASS. Step 5: Commit** `#70 M2: store: the saved scheme, one word in the user's config directory`
+- [x] **Step 4: PASS. Step 5: Commit** `#70 M2: store: the saved scheme, one word in the user's config directory`
 - [ ] **Step 6: Mutations:** drop the `len(b) >` check → the 65-byte case reddens; drop `os.Remove(dir)` → the empty-dir case reddens; drop the `Lstat`/`IsDir` guard → the symlinked-dir case reddens; drop the path wrap → the names-the-file case reddens. Restore each. The class (cleanup removes only owned residue) has no other instance in #70: the only other removals are `t.TempDir()`s the tests own. `WriteScheme`'s atomic rename replaces a symlinked `scheme` FILE with a regular one — the store's behaviour for every setting (`bilingual.txt` too), noted in the Log rather than changed here.
 
 ### Task 8: The config-directory seam and the startup read
