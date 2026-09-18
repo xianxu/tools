@@ -74,7 +74,7 @@ func TestDictionaryMonolingualOriginAndDisabledTint(t *testing.T) {
 	// The per-fragment tint this test also asserted is gone (#70): production
 	// tints whole sections, pinned by TestDefinitionOutputUniformSections.
 	entry := ParseEntry("word | wərd | noun a spoken token: use a word. ORIGIN from German Wort.")
-	out, _ := Render(entry, RenderOpts{Color: false, Language: "en"})
+	out, _ := Render(entry, RenderOpts{Color: false})
 	if strings.Contains(out, "\x1b") {
 		t.Fatal("no-color emitted ANSI")
 	}
@@ -87,7 +87,7 @@ func TestDictionaryProjectionExactOccurrenceAndFallback(t *testing.T) {
 	}
 }
 
-func TestDictionaryDefinitionsRetainSourceAndRegions(t *testing.T) {
+func TestDictionaryDefinitionsSectionTintKeepsRegions(t *testing.T) {
 	records := &fakeRecordSource{installed: true, entries: map[string][]bilingualRecord{"red": bilingualFixture(t, "red")}}
 	dict := spanishDefinitions{Dictionary: monolingualDictionary{Dictionary: &definitionFake{}, language: "es"}, english: records}
 	set := definitionsFor(dict, "red", "red nombre femenino tejido", nil, true)
@@ -98,13 +98,13 @@ func TestDictionaryDefinitionsRetainSourceAndRegions(t *testing.T) {
 	out, regions := renderDefinitions(set, opt)
 	assertDictionaryTint(t, out, "subir a la red", false)
 	assertDictionaryTint(t, out, "to go up to", false)
-	english, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}})
+	english, _ := renderDefinitions(set, RenderOpts{Color: true, Tint: tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}})
 	assertDictionaryTint(t, english, "subir a la red", true)
 	assertDictionaryTint(t, english, "to go up to", true)
 	opt.Tint = tintPolicy{}
 	untinted, baseline := renderDefinitions(set, opt)
 	if !reflect.DeepEqual(regions, baseline) || stripEscapes(out) != stripEscapes(untinted) {
-		t.Fatal("provenance changed region behavior")
+		t.Fatal("tint changed region behavior")
 	}
 	for _, region := range regions {
 		if region.Kind == RegionWord && region.Text == "net" {
@@ -150,13 +150,13 @@ func TestDictionaryProjectionDoesNotJoinWords(t *testing.T) {
 func TestDictionaryUnprovenSectionAlignmentStaysNeutral(t *testing.T) {
 	source := languageText{text: "red noun other", spans: []languageSpan{{start: 0, end: 3, lang: "es"}}}
 	set := definitionSet{sections: []definitionSection{{err: ErrNoEntry}, {entries: []string{"red noun changed"}, source: []languageText{source}}}}
-	out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}})
+	out, _ := renderDefinitions(set, RenderOpts{Color: true, Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}})
 	if strings.Contains(out, languageDark) {
 		t.Fatal("mismatched record text retained ownership")
 	}
 }
 
-func TestDictionaryDuplicateRecordOwnershipIsDeterministic(t *testing.T) {
+func TestDictionaryDuplicateRecordSelectionIsDeterministic(t *testing.T) {
 	selected, err := selectedSpanishRecords(bilingualFixture(t, "red"), "red", "")
 	if err != nil {
 		t.Fatal(err)

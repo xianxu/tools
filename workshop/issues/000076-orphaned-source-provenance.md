@@ -98,9 +98,10 @@ written at 40% of its range, per v3.1:
   names every case.
 - **Task 2: `smaller-go-module`, design 0.** `parse.go` is a `git checkout` with
   an empty-diff check. `definitions.go` loses a handful of lines.
-- **Task 3: `cross-cutting-refactor`, impl at the top of its range.** Five
-  production files, the projection fold, and test edits under two tag sets, then
-  two mutation runs of about 135s each.
+- **Task 3: `cross-cutting-refactor`, impl at the top of its range.** Four
+  production files (`render.go`, `bilingual_layout.go` and `language_text.go`
+  edited, `dictionary_language.go` deleted), the projection fold, and test edits
+  under two tag sets, then two mutation runs of about 135s each.
 - **Task 4: `atlas-docs`.** Two atlas edits. The absence grep, the conformance
   run and the before/after binary diff are verification inside the same row.
 - **`milestone-review`** is the one `sdlc close` boundary review. It's
@@ -179,3 +180,13 @@ The tests the Problem section names, deleted here:
   restated as a requirement that `CHECK` observes. Recorded in the plan's
   `## Revisions`.
 - Estimate derived: v3.1 Method A, 1.92h (see `## Estimate`).
+- `change-code` gates: plan-quality round 3 was CLEAN, with PQ-4 addressed.
+  Estimate-quality returned INFO, which does not block. Its points are kept here
+  rather than re-costing the estimate after the gate:
+  - Task 4's verification (two binaries × 5 words, the conformance run) is not
+    priced in `atlas-docs`;
+  - the four per-commit `CHECK` runs (about 135s each, plus the pty re-runs) and
+    the risk of a guard-driven fix-and-recommit are not priced either;
+  - Task 3's basis said five production files. It is four, and the Estimate text
+    now says so.
+  If the actual overruns, these are the first place to look.
