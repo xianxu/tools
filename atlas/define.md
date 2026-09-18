@@ -500,6 +500,20 @@ is the RECORD rather than the live edge and is correctly left undimmed.
 The board’s bracketed active marking option is highlighted in cyan by
 `boardPrompt`; it clears dim for that span and restores dim for the instructions.
 
+**The shade is a paint-time decision** (#70). A row keeps only WHETHER it is tinted
+(`rowPaint.tinted`); `paintLanguageRow` takes the shade from the scheme — xterm 236 on a
+dark background, 254 on a light one, the one colour the terminal's own theme cannot
+remap, so the only one a scheme decides. ONE `schemeHolder` per process (`deps.scheme`,
+an `atomic.Pointer` to an immutable `schemeState`: an explicit choice — flag, saved or
+session — over what the terminal reported, over dark) is shared by the editor and every
+sitting it starts. `attachScheme` hands it to a screen in `newConsole` and
+`sittingInPlace`, BEFORE the router, the resize watcher or the throttle timer can see the
+screen. `layoutSelectionFrame` reads it ONCE per frame and `paintedTranscript` once, so a
+switch recolours history and the exit transcript, and no frame carries two shades. Its
+only writers are its transitions — `choose`, `forget`, `detect` — each reporting whether
+the painted shade changed. Writers with no screen (`serializeOutput`: one-shot, piped,
+answers) take the scheme at write time. The flag is `-scheme dark|light|auto`.
+
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —
 including the deferred wrap that lets a line clipped to exactly the width still
@@ -574,8 +588,8 @@ about how the entry looks:
 | `RenderOpts.Color` | whether the palette is emitted at all — `-no-color` makes the output a RECORD, and a record carries no escapes |
 | `RenderOpts.Width` | where prose wraps, in display cells. `0` means "do not wrap", which a pipe wants and a terminal under 20 columns also gets |
 | `RenderOpts.Vocab` | the deck words to highlight, resolved by `vocabularyFor` so no path can render against an empty set by forgetting to ask |
-| `RenderOpts.Language` | source language of primary dictionary prose; explicit mixed-source ranges take precedence |
-| `RenderOpts.Tint` | effective target language and invocation background profile, passed as data; zero policy disables tint |
+| `RenderOpts.Language` | unread since #70: it fed the per-fragment tint, which production never reached and #70 deleted — residue with #66's source-provenance chain, recorded in #70's Log |
+| `RenderOpts.Tint` | the target language and whether its sections are tinted (`on`), passed as data; the SHADE is not here — it resolves at paint (#70) |
 | `RenderOpts.Word` | the LOOKUP KEY — identity, not presentation. See "a shortcut must not re-derive its target" below; empty means "no click map wanted" |
 
 **A region is read out of the FINISHED output.** A position recorded while
@@ -2253,7 +2267,7 @@ ambiguous spelling such as Spanish `red` from selecting English `red` → `rojo`
 non-darwin sibling reports the unavailable capability. The stateful record fake
 and captured Oxford records exercise direction, malformed data and failures.
 
-`renderDefinitions` retains section language ownership through rendering and
+`renderDefinitionOutput` retains section language ownership through rendering and
 region offsets: English prose does not acquire Spanish deck-word actions.
 Ordinary lookup and the full post-answer `play.Choice` and `play.Cloze` reveals
 share this composition through `play_loop.go` and `cloze.go`.
@@ -2267,8 +2281,10 @@ answer exclusions through wrapping; `paintLanguageRow` fills every terminal cell
 including indentation, trailing cells and producer-owned blank rows. Screen history
 clips on resize and paints at the current width; selection uses the same composer
 but copies only original source cells. Foreground/emphasis and answer exclusions
-survive fill. `-language-tint=dark|light|off` uses xterm 236/254 (dark default), disabled
-by `-no-color`, redirected stdout or `TERM=dumb`. Completed output keeps its policy.
+survive fill. `-language-tint on|off` says WHETHER the target language is tinted; the
+SHADE is the colour scheme (see *The shade is a paint-time decision* under The screen).
+Disabled by `-no-color`, redirected stdout or `TERM=dumb`. Completed output keeps
+whether it is tinted; its shade follows the scheme in force when it is painted.
 
 Each dictionary section has one presentation role, distinct from source provenance.
 Verified primary sections use source language; Oxford explicitly supplies English
