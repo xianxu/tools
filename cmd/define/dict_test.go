@@ -67,13 +67,13 @@ func TestLockedDictionaryPreservesSupplementalCapability(t *testing.T) {
 	dict, _ := build("es", io.Discard)
 	text, err := dict.Lookup("red")
 	set := definitionsFor(dict, "red", text, err, true)
-	out, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}})
+	out, _ := renderDefinitions(set, RenderOpts{Color: true, Tint: tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}})
 	if !set.labeled || len(set.sections) != 2 {
 		t.Fatal("locking erased the optional supplemental capability")
 	}
 	assertDictionaryTint(t, out, "subir a la red", false)
 	assertDictionaryTint(t, out, "to go up to", false)
-	english, _ := renderDefinitions(set, RenderOpts{Color: true, Language: "es", Tint: tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}})
+	english, _ := renderDefinitions(set, RenderOpts{Color: true, Tint: tintPolicy{lang: "en", on: true, scheme: holderFor(store.SchemeDark)}})
 	assertDictionaryTint(t, english, "subir a la red", true)
 	assertDictionaryTint(t, english, "to go up to", true)
 	monoBuild := lockedDictionaries(func(store.Lang, io.Writer) (Dictionary, string) { return &overlapDict{}, "English" })

@@ -104,7 +104,7 @@ func TestOxfordNativeTreeAndLeafConservation(t *testing.T) {
 		}
 	}
 	walk(doc.root)
-	if at != len(doc.source.text) {
+	if at != len(doc.source) {
 		t.Fatal("unconsumed source leaves")
 	}
 }
@@ -162,9 +162,6 @@ func TestOxfordRejectsUnprovenRecords(t *testing.T) {
 			if _, err := parseBilingualDocument(r); err == nil {
 				t.Fatal("trusted invalid record")
 			}
-			if got := bilingualLanguageText(r); len(got.spans) != 0 || got.text != r.Text {
-				t.Fatal("fallback changed text or retained ownership")
-			}
 		})
 	}
 }
@@ -209,7 +206,7 @@ func FuzzOxfordDocument(f *testing.F) {
 		var walk func(*bilingualNode)
 		walk = func(n *bilingualNode) {
 			if n.tag == "" {
-				if n.start != at || n.end < n.start || n.end > len(doc.source.text) {
+				if n.start != at || n.end < n.start || n.end > len(doc.source) {
 					t.Fatal("invalid source leaf")
 				}
 				at = n.end
@@ -219,13 +216,8 @@ func FuzzOxfordDocument(f *testing.F) {
 			}
 		}
 		walk(doc.root)
-		if at != len(doc.source.text) {
+		if at != len(doc.source) {
 			t.Fatal("source not fully consumed")
-		}
-		for _, span := range doc.native.spans {
-			if span.start < 0 || span.end < span.start || span.end > len(text) {
-				t.Fatal("invalid native ownership")
-			}
 		}
 	})
 }

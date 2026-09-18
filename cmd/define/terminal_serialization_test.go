@@ -30,7 +30,7 @@ func TestTerminalSerializationPreservesOverlongDictionarySource(t *testing.T) {
 		sc   store.Scheme
 	}{{"dark", true, store.SchemeDark}, {"light", true, store.SchemeLight}, {"off", false, store.SchemeDark}} {
 		t.Run(profile.name, func(t *testing.T) {
-			output := renderDefinitionOutput(set, RenderOpts{Color: true, Width: 20, Language: "es", Word: word, Tint: tintPolicy{lang: "es", on: profile.on, scheme: holderFor(profile.sc)}})
+			output := renderDefinitionOutput(set, RenderOpts{Color: true, Width: 20, Word: word, Tint: tintPolicy{lang: "es", on: profile.on, scheme: holderFor(profile.sc)}})
 			got := serializeOutput(output, 20, profile.sc)
 			wantGlyphs := terminalSourceGlyphs(output.text)
 			if terminalSourceGlyphs(got) != wantGlyphs {

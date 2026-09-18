@@ -105,28 +105,3 @@ func TestBilingualNativeLimits(t *testing.T) {
 		t.Fatalf("embedded null: %v", err)
 	}
 }
-
-// Exercise the installed native source, not the committed capture, so changed
-// Apple HTML classes or Text normalization cannot silently disable ownership.
-func TestBilingualNativeLanguageOwnership(t *testing.T) {
-	source := bilingualNativeProbe(t)
-	records, err := source.Records("red")
-	if err != nil {
-		t.Fatal(err)
-	}
-	selected, err := selectedSpanishRecords(records, "red", "red")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, record := range selected {
-		entry := ParseEntry(record.Text)
-		entry.source = bilingualLanguageText(record)
-		if len(entry.source.spans) == 0 {
-			t.Fatal("installed Oxford record has no proven language ranges")
-		}
-		// The per-fragment tint this also rendered is gone (#70): production
-		// tints whole sections (TestBilingualNativeRendirLayout pins that on the
-		// installed source). What remains is the provenance the parser proves.
-		t.Logf("native red: %d source bytes, %d validated language ranges", len(record.Text), len(entry.source.spans))
-	}
-}

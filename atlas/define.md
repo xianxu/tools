@@ -635,7 +635,6 @@ about how the entry looks:
 | `RenderOpts.Color` | whether the palette is emitted at all — `-no-color` makes the output a RECORD, and a record carries no escapes |
 | `RenderOpts.Width` | where prose wraps, in display cells. `0` means "do not wrap", which a pipe wants and a terminal under 20 columns also gets |
 | `RenderOpts.Vocab` | the deck words to highlight, resolved by `vocabularyFor` so no path can render against an empty set by forgetting to ask |
-| `RenderOpts.Language` | unread since #70: it fed the per-fragment tint, which production never reached and #70 deleted — residue with #66's source-provenance chain, recorded in #70's Log |
 | `RenderOpts.Tint` | the target language and whether its sections are tinted (`on`), passed as data; the SHADE is not here — it resolves at paint (#70) |
 | `RenderOpts.Word` | the LOOKUP KEY — identity, not presentation. See "a shortcut must not re-derive its target" below; empty means "no click map wanted" |
 
@@ -2348,8 +2347,9 @@ ambiguous spelling such as Spanish `red` from selecting English `red` → `rojo`
 non-darwin sibling reports the unavailable capability. The stateful record fake
 and captured Oxford records exercise direction, malformed data and failures.
 
-`renderDefinitionOutput` retains section language ownership through rendering and
-region offsets: English prose does not acquire Spanish deck-word actions.
+`renderDefinitionOutput` offsets each section's click regions by its row and gives
+deck-word actions only to the primary section. Later sections render without
+`Vocab`, so English prose does not acquire Spanish deck-word actions.
 Ordinary lookup and the full post-answer `play.Choice` and `play.Cloze` reveals
 share this composition through `play_loop.go` and `cloze.go`.
 `TestBilingualPracticeReveal` and `TestBilingualClozeReveal` cover both reveal
@@ -2373,10 +2373,11 @@ explanations. With `/lang es`, the entire primary is tinted and Oxford stays neu
 including its Spanish examples. With `/lang en`, a shown Oxford section is uniformly
 tinted. Unknown all-active-dictionary fallback stays neutral.
 
-`parseBilingualDocument` consolidates bounded Oxford structure and ownership parsing:
-A/B/C grammatical groups, numbered/lettered senses, inline example/translation pairs,
-idioms, and emphasis retain source order. Native Text correspondence and identity are
-validated before ownership is trusted. Formatting failure preserves readable neutral
+`parseBilingualDocument` parses bounded Oxford structure: A/B/C grammatical groups,
+numbered/lettered senses, inline example/translation pairs, idioms, and emphasis
+retain source order. Identity and native Text correspondence are validated before
+the layout is trusted. It extracts no per-fragment language: #76 deleted that chain,
+whose only reader #70 had already removed. Formatting failure preserves readable neutral
 source text with a concise diagnostic. The exact native `rendir` fixture and strict
 conformance test defend this shape. `dictionarySourceLanguage` preserves verified
 metadata through dictionary locks and supplemental wrappers; display labels and study
