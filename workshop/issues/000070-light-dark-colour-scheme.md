@@ -396,3 +396,26 @@ byte range stated exactly; a Done-when for the one-shot refusal.
 Spec review, round 4: ✅ approved. Two advisories folded in — attach the holder
 before any painter goroutine can see the screen, and `/scheme` on a nil holder
 refuses rather than silently doing nothing.
+
+Plan written (`workshop/plans/000070-light-dark-colour-scheme-plan.md`) and
+reviewed per chunk by three code-verifying reviewers; all three found issues,
+fixed in one rewrite. The committed first draft had turned the suite RED: the
+repo's plan guards parse plans (`TestPlanTablesNameEntitiesThatExist` wants one
+symbol and one path per Core-concepts row; `TestPlanCitesTestsThatExist` reads a
+backticked `Test*` as a claim it exists; a `| deleted |` row asserts absence, so
+it lands with its deletion). Spec revisions the plan makes, recorded here
+because an issue cannot carry both `## Revisions` and `## Log`:
+- `/scheme`'s default report outside the raw editor says "detected only in a
+  full-screen session", not "an interactive session" — the piped loop is a
+  session and never detects.
+- Only the full-channel LENGTH-CHECK drop site is guarded for a report. The
+  `select`'s `default:` arm cannot see one (`readInput` is `out`'s only sender
+  and the length check diverts every non-pointer key first); a guard there
+  would be untestable.
+- "`projectDictionaryText` stays (live)" was wrong: once `styleLanguageText`
+  goes, a #66 source-provenance chain (`Entry.source`, `sourceAt`/`sourceKnown`,
+  `RenderOpts.Language`, `bilingualDocument.native`, `projectDictionaryText`)
+  loses its last reader. Recorded as residue and raised at the M1 boundary
+  rather than deleted here — separable, and it touches the parser.
+- Deletion runs BEFORE the role change; the flags move into the role commit
+  (every commit green); docs describe only what each milestone ships.
