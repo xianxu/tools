@@ -1,11 +1,12 @@
 ---
 id: 000077
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-18
 updated: 2026-09-18
 estimate_hours:
+started: 2026-09-18T11:29:09-07:00
 ---
 
 # define: confirm light detection in a real light terminal
