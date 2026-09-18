@@ -609,7 +609,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"In a session define prepares practice questions in the background, at\n"+
 			"start and every 10 lookups; DEFINE_NO_BACKGROUND=1 turns that off.\n\n"+
 			"-scheme light or dark picks the shade of the language tint to suit the\n"+
-			"terminal's background; -language-tint off turns the tint off.\n\n"+
+			"terminal's background; /scheme light saves it for every run, and\n"+
+			"-language-tint off turns the tint off.\n\n"+
 			"--version names the build; --llm-check reports whether the model seam is configured and reachable.\n"+
 			"Model features degrade silently by design, so this is where they are loud.\n\nFlags:\n")
 		fs.PrintDefaults()

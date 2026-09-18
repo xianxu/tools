@@ -211,6 +211,7 @@ Inside the session, everything besides looking a word up is a `/` command:
 | `/sound` | how many times to play a pronunciation |
 | `/lang` | the language this deck is in |
 | `/pron` | replay this word in its source language, once |
+| `/scheme` | light or dark terminal background |
 <!-- /command-list -->
 
 `/play` runs today's review without leaving the prompt. Answer the questions, or
@@ -228,6 +229,7 @@ To check additional help for commands, type `/help [command]`.
 - `/sound [N]` — With nothing, how many times each pronunciation plays. With N, play it N times for the rest of this session; 0 turns playback off, and 20 is the most.
 - `/lang [language]` — With nothing, the language in effect and the dictionary answering it. With a two-letter tag like es, switch to that language: saved when this directory is a deck, for this session otherwise.
 - `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
+- `/scheme [light|dark|auto]` — With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one.
 <!-- /command-usage -->
 
 > NOTE: while other languages are available, only English dictionary is well tested.
@@ -345,6 +347,14 @@ have when starting `define`:
 define -scheme light          # light terminal background
 define -language-tint off     # disable language backgrounds
 ```
+
+Or say it once: `/scheme light` (or `dark`) switches the running session —
+everything already on screen is repainted — and saves the choice for every
+later run, in `$XDG_CONFIG_HOME/define/scheme` (else `~/.config/define/scheme`).
+The scheme belongs to your terminal, not to a deck, so it is not stored in the
+deck directory. `/scheme auto` forgets the saved choice; `/scheme` alone says
+which scheme is in use and where it came from. The `-scheme` flag beats a saved
+choice for one run.
 
 `-no-color`, redirected output and `TERM=dumb` also disable the background.
 Vocabulary foreground colors remain visible, and answer markings take precedence.

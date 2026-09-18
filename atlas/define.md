@@ -1279,6 +1279,7 @@ until both pages catch up.
 | `/sound` | how many times to play a pronunciation |
 | `/lang` | the language this deck is in |
 | `/pron` | replay this word in its source language, once |
+| `/scheme` | light or dark terminal background |
 <!-- /command-list -->
 
 Argument forms stay out of the summary, because the summary is what a bare
@@ -1298,6 +1299,7 @@ list above is and pinned the same way:
 - `/sound [N]` — With nothing, how many times each pronunciation plays. With N, play it N times for the rest of this session; 0 turns playback off, and 20 is the most.
 - `/lang [language]` — With nothing, the language in effect and the dictionary answering it. With a two-letter tag like es, switch to that language: saved when this directory is a deck, for this session otherwise.
 - `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
+- `/scheme [light|dark|auto]` — With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one.
 <!-- /command-usage -->
 
 The usage flags are one list, `usageFlags`, answered once in `dispatchCommand`

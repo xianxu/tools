@@ -914,13 +914,13 @@ func describeScheme(s schemeState, fullScreen bool) string {
 }
 ```
 - [x] **Step 4: PASS. Step 5: Commit** `#70 M2: /scheme's transition persists first, and its report is always true`
-- [ ] **Step 6: Mutations:** `h.choose` moved before `p.save` → the failing-fake rows redden; the `p == nil && !session` case removed → the one-shot row reddens. Restore each.
+- [x] **Step 6: Mutations:** `h.choose` moved before `p.save` → the failing-fake rows redden; the `p == nil && !session` case removed → the one-shot row reddens. Restore each.
 
 ### Task 10: The `/scheme` command in all three contexts, with its docs
 
 **Files:** Create `cmd/define/scheme_cmd.go` (imports `fmt`, `strings`); modify `cmd/define/command.go` (registry, `commandCtx`, `newCommandCtx`), `cmd/define/replraw.go` (~691), `cmd/define/repl.go` (~419), `cmd/define/README.md` and `atlas/define.md` (the command-list and command-usage spans), `cmd/define/main.go` (`-h` prose); tests `cmd/define/scheme_cmd_test.go`.
 
-- [ ] **Step 1: Failing tests — every wiring gets a test driving the shell that supplies it** (lessons "Pin a loop shell's wiring…"). Editor tests use a console whose `view`/`stdout`/`stderr` is a real `newLiveScreen(&tty, 20, 60)` with `interval = -1`, as `bilingual_paths_test.go:34` does, and read frames with `lastFrame` (`screen_test.go:552`); the rig sets `d.scheme = newSchemeHolder(schemeState{})` and `attachScheme`s it; lookups need `opt.color`, `opt.tintOn` and a `tintSourceFixture` (`language_style_paths_test.go:28`) so rows are tinted at all.
+- [x] **Step 1: Failing tests — every wiring gets a test driving the shell that supplies it** (lessons "Pin a loop shell's wiring…"). Editor tests use a console whose `view`/`stdout`/`stderr` is a real `newLiveScreen(&tty, 20, 60)` with `interval = -1`, as `bilingual_paths_test.go:34` does, and read frames with `lastFrame` (`screen_test.go:552`); the rig sets `d.scheme = newSchemeHolder(schemeState{})` and `attachScheme`s it; lookups need `opt.color`, `opt.tintOn` and a `tintSourceFixture` (`language_style_paths_test.go:28`) so rows are tinted at all.
   1. **TestRawEditorSchemeRepaintsWhatIsOnScreen** — `d.configDir` → a temp dir; pre-write a tinted row (`l.WriteOutput(renderedOutput{text: "hola\n", rows: []rowPaint{{tinted: true}}})`); drive `runEditor` with `/scheme light⏎` then Ctrl-C. The last frame's `hola` row carries `languageLight` and no `languageDark`; `l.PaintedTranscript()` carries `languageLight`; `<tmp>/scheme` reads `light`; the output contains `scheme light (saved)`.
   2. **TestRawEditorSchemeWithNowhereToSave** — `configDir` nil → `light (session only; not saved)`; the repaint is light. (Pins `cc.session` in the editor.)
   3. **TestRawEditorSchemeWriteErrorChangesNothing** — `configDir` → a path under a regular FILE, so `MkdirAll` fails → stderr `define: /scheme:`, the shade stays dark, nothing says saved.
@@ -929,7 +929,7 @@ func describeScheme(s schemeState, fullScreen bool) string {
   5. **TestPipedSchemeSaves** — `replLines`: `/scheme light` → `scheme light (saved)`; a following lookup's tinted rows carry `languageLight`.
   6. **TestPipedSchemeWithNowhereToSave** — `replLines`, `configDir` nil → `light (session only; not saved)`, and a following lookup is light. (Pins the piped loop's `cc.session`.)
   7. **TestOneShotScheme** — `run([]string{"/scheme", "light"}, …)`: file written, exit 0; `run([]string{"/scheme"})` with the file → `light (saved)`; `configDir` nil → exit 2, stderr names `$XDG_CONFIG_HOME`; `run([]string{"-scheme", "light", "/scheme", "dark"})` → `dark (saved)`.
-- [ ] **Step 2: Run — FAIL. Step 3: Implement.**
+- [x] **Step 2: Run — FAIL. Step 3: Implement.**
 
 ```go
 // M2's wording. M3 adds "so define follows what the terminal reports" to auto.
@@ -961,7 +961,7 @@ func runScheme(c commandCtx, args []string) int {
 ```
   Registry: append `{name: "scheme", summary: "light or dark terminal background", args: "[light|dark|auto]", usage: schemeUsage, run: runScheme}` at the END of `commands` (the table has no order; `/help` and the docs list it in table order, the menu sorts). `commandCtx` fields, documented in the file's style: `scheme *schemeHolder`; `schemePersister schemePersister`; `session bool` ("a loop exists for a session-only choice to live in; false for the one-shot"); `fullScreen bool` ("the raw editor: the loop that asks the terminal for its background, from M3"). `newCommandCtx`: `scheme: d.scheme, schemePersister: d.schemePersister()`. Editor (`replraw.go`, beside `cc.setTimes`): `cc.session = true` and `cc.fullScreen = true` on SEPARATE lines — the existing `draw()` after dispatch repaints from the holder, which is the whole recolour. Piped loop (`repl.go`, beside `cc.setTimes`): `cc.session = true`.
   Docs, in this commit so it stays green: run `go test ./cmd/define -run 'TestDocs' -count=1` — `TestDocsQuoteTheCommandList` and `TestDocsQuoteTheCommandUsage` name the README and atlas spans to update; update them. Add a README "Light or dark" paragraph for M2 (the shade follows `-scheme`, then the saved `/scheme`, then dark; the file's location; `/scheme auto`), and one `-h` sentence naming `/scheme`.
-- [ ] **Step 4: PASS**, full package. **Step 5: Commit** `#70 M2: /scheme switches, saves, and repaints what is already on screen`
+- [x] **Step 4: PASS**, full package. **Step 5: Commit** `#70 M2: /scheme switches, saves, and repaints what is already on screen`
 - [ ] **Step 6: Mutations**, one at a time: delete the editor's `cc.session = true` → test 2 reddens; delete `cc.fullScreen = true` → test 4 reddens; delete the piped loop's `cc.session = true` → test 6 reddens; make `applyScheme` skip its `h.choose` → test 1 reddens (no repaint, no transcript change). Restore each.
 
 ### Task 11: Harness isolation

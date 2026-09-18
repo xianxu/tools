@@ -52,6 +52,7 @@ var commands = []command{
 	{name: "sound", summary: "how many times to play a pronunciation", args: "[N]", usage: soundUsage, run: runSound},
 	{name: "lang", summary: "the language this deck is in", args: "[language]", usage: langUsage, run: runLang},
 	{name: "pron", summary: "replay this word in its source language, once", args: "[language]", usage: pronUsage, run: runPron},
+	{name: "scheme", summary: "light or dark terminal background", args: "[light|dark|auto]", usage: schemeUsage, run: runScheme},
 }
 
 // helpUsage is /help's own row. Its argument is a command's NAME, with or
@@ -244,6 +245,17 @@ type commandCtx struct {
 	// have a command play in place. nil where there is no current word to
 	// replay, which is what lets /pron say so instead of playing silence.
 	replay func(store.Lang)
+	// scheme is the process's scheme holder and schemePersister its durable half
+	// (nil: nowhere to save), for /scheme (#70). A holder, not a setter: the
+	// transition lives in applyScheme, and every screen reads the same holder.
+	scheme          *schemeHolder
+	schemePersister schemePersister
+	// session says a loop exists for a session-only choice to live in; false for
+	// the one-shot, which then refuses a choice it could not keep.
+	session bool
+	// fullScreen marks the raw editor: the loop that asks the terminal for its
+	// background, from M3 — so "not reported" is the true default report there.
+	fullScreen bool
 }
 
 // newCommandCtx is the single construction point. Built at two call sites (both
@@ -265,6 +277,9 @@ func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 		// also re-derives the session; a one-shot keeps this one, which is why
 		// `define /lang es` still sets the directory's language.
 		setLang: d.persistLang,
+		// The one-shot's: no session, no full screen. Both loops override.
+		scheme:          d.scheme,
+		schemePersister: d.schemePersister(),
 	}
 }
 
