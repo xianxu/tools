@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-16
 updated: 2026-09-17
-estimate_hours:
+estimate_hours: 6.1
 started: 2026-09-17T17:20:31-07:00
 ---
 
@@ -320,6 +320,41 @@ Late replies, the whole class:
 - Every new test has been observed failing with its fix removed (mutation
   applied, compiled, run with `-count=1`).
 - README, `-h` and atlas are updated, and the doc-sync tests are green.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec              design=1.5  impl=0.1
+item: scope-pivot             design=0.35 impl=0.08
+item: smaller-go-module       design=0.05 impl=0.2
+item: cross-cutting-refactor  design=0.1  impl=0.2
+item: cross-cutting-refactor  design=0.1  impl=0.2
+item: atlas-docs              design=0.05 impl=0.08
+item: milestone-review        design=0.0  impl=0.2
+item: smaller-go-module       design=0.05 impl=0.2
+item: smaller-go-module       design=0.05 impl=0.2
+item: smaller-go-module       design=0.0  impl=0.12
+item: atlas-docs              design=0.05 impl=0.08
+item: milestone-review        design=0.0  impl=0.2
+item: greenfield-go-module    design=0.2  impl=0.3
+item: tui-screen              design=0.2  impl=0.3
+item: real-api-discovery      design=0.0  impl=0.2
+item: atlas-docs              design=0.05 impl=0.08
+item: milestone-review        design=0.0  impl=0.2
+design-buffer: 0.15
+total: 6.10
+```
+
+Derivation, row by row (v2 ranges; `impl=` written at 40% of them per v3.1):
+- **Design already spent** — `issue-spec` at the top of its range (1.5): the brainstorm, four spec review rounds, three plan review rounds and the plan gate. `scope-pivot` (mid of 0.2–0.5) for the redesign round 1 forced: blocking startup probe → reply read as a key event.
+- **M1** — `smaller-go-module` for `Scheme` + `schemeState`/holder + parsers (Tasks 1–2); two `cross-cutting-refactor`s, one for the dead-path deletion (Task 3) and one for the role type change with its ~155 test references and the flags (Tasks 4–5), each at the top of the impl range; `atlas-docs`; one `milestone-review`.
+- **M2** — `smaller-go-module` for the store functions + config seam + `applyScheme`/`describeScheme` (Tasks 7–9); another for `/scheme` in three contexts with its loop-shell tests (Task 10); a smaller one for the pty harness isolation (Task 11); `atlas-docs`; `milestone-review`.
+- **M3** — `greenfield-go-module` for the OSC decoder, colour parse and query (Tasks 13–15; Step 2.5: `termenv` can query OSC 11 but only blocking, which the spec rejects, so no halving); `tui-screen` for the four consumers in the two loops (Task 16); `real-api-discovery` for real terminals' replies (conformance + the manual three-terminal check); `atlas-docs`; `milestone-review` (+ close).
+- **Step 3** — the plan pre-resolves the M1–M3 design, so those primitives take ×0.2 design; hence the +15% buffer, not +30%. **Familiarity** 1.0: the same codebase and seams (`screen`, `readInput`, the command registry) as the last several issues.
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.* (The calibration doc is flagged stale by `sdlc estimate-source`; numbers provisional.)
 
 ## Plan
 
