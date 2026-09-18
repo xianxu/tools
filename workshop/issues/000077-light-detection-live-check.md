@@ -7,6 +7,7 @@ created: 2026-09-18
 updated: 2026-09-18
 estimate_hours:
 started: 2026-09-18T11:29:09-07:00
+flow: {kind: quick, provenance: inferred, spec: "9ca556cc", done: "c819ada4"}
 ---
 
 # define: confirm light detection in a real light terminal
@@ -37,7 +38,9 @@ detection bug or an unanswering terminal — record it and open the fix.
 
 ## Plan
 
-- [ ]
+- [ ] Record the operator's light-terminal check in the atlas's *Terminals
+  checked by hand*, and drop its "Owed" sentence.
+- [ ] Log the check here, stating exactly what was and was not reported.
 
 ## Log
 
