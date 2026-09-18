@@ -220,9 +220,23 @@ func TestSchemeHolder(t *testing.T) {
 	// A reply that DIFFERS from the one heard before, under a choice: nothing
 	// visible changes. (Repeating the earlier reply could not tell a choice that
 	// outranks a reply from one that does not.)
-	h.Store(h.Load().withChoice(store.SchemeDark, sourceSaved))
+	if !h.choose(store.SchemeDark, sourceSaved) {
+		t.Error("choosing dark over a detected light changes what is painted")
+	}
 	if h.detect(store.SchemeDark) || h.Scheme() != store.SchemeDark {
 		t.Error("with a choice in force a reply changes nothing visible")
+	}
+	if h.choose(store.SchemeDark, sourceFlag) {
+		t.Error("re-choosing the shade already in force changes nothing visible")
+	}
+	// The last reply was dark, so forgetting a dark choice paints nothing new...
+	if h.forget() || h.Scheme() != store.SchemeDark {
+		t.Error("forgetting a dark choice over a dark reply changes nothing painted")
+	}
+	// ...while forgetting a light choice reveals that dark reply.
+	h.choose(store.SchemeLight, sourceSession)
+	if !h.forget() || h.Scheme() != store.SchemeDark {
+		t.Error("forgetting a light choice must reveal the dark reply underneath")
 	}
 }
 
@@ -387,8 +401,25 @@ func (h *schemeHolder) Load() schemeState {
 	return schemeState{}
 }
 
-// Store must only be called on a non-nil holder, by the loop in force.
-func (h *schemeHolder) Store(s schemeState) { h.p.Store(&s) }
+// The holder's TRANSITIONS are its only writers (ARCH-ORDER structural
+// enforcement): choose, forget and detect, each applying one pure schemeState
+// transition and reporting whether the painted shade changed. set is their
+// shared step; nothing outside this file calls it. Callers run on the loop in
+// force, and a nil holder changes nothing.
+func (h *schemeHolder) set(next schemeState) bool {
+	a, _ := h.Load().effective()
+	h.p.Store(&next)
+	b, _ := next.effective()
+	return a != b
+}
+
+func (h *schemeHolder) choose(v store.Scheme, by schemeSource) bool {
+	return h != nil && h.set(h.Load().withChoice(v, by))
+}
+
+func (h *schemeHolder) forget() bool {
+	return h != nil && h.set(h.Load().withoutChoice())
+}
 
 // Scheme is the value to paint with now.
 func (h *schemeHolder) Scheme() store.Scheme {
@@ -399,15 +430,7 @@ func (h *schemeHolder) Scheme() store.Scheme {
 // detect applies a terminal report and says whether what is painted changed —
 // the only case worth a repaint.
 func (h *schemeHolder) detect(v store.Scheme) bool {
-	if h == nil {
-		return false
-	}
-	before := h.Load()
-	next := before.withDetected(v)
-	h.Store(next)
-	a, _ := before.effective()
-	b, _ := next.effective()
-	return a != b
+	return h != nil && h.set(h.Load().withDetected(v))
 }
 
 // schemeArg is what -scheme and /scheme accept: a scheme, or auto (no choice).
@@ -446,7 +469,7 @@ func parseTintFlag(s string) (bool, error) {
 
 - [ ] **Step 4: Run — PASS**, including `go test ./cmd/define -race -run TestSchemeHolderConcurrentReaders -count=1`; then `go vet ./cmd/define`.
 - [ ] **Step 5: Commit** `#70 M1: scheme state as an immutable value behind one atomic holder`
-- [ ] **Step 6: Mutations**, one at a time: (a) `effective()` checks `heard` before `chosenBy` → the "choice outranks" and holder cases redden; (b) `withoutChoice` leaves `chosenBy` → "clearing reveals" reddens; (c) `detect` returns `true` unconditionally → the "same reply twice" case reddens; (d) change the holder to a plain `*schemeState` field (no atomic) → `-race` on **TestSchemeHolderConcurrentReaders** reports a race; (e) `parseTintFlag` drops the `dark, light` case → the named-refusal assertion reddens. Restore each.
+- [ ] **Step 6: Mutations**, one at a time: (a) `effective()` checks `heard` before `chosenBy` → the "choice outranks" and holder cases redden; (b) `withoutChoice` leaves `chosenBy` → "clearing reveals" reddens; (c) `detect` returns `true` unconditionally → the "same reply twice" case reddens; (d) change the holder to a plain `*schemeState` field (no atomic) → `-race` on **TestSchemeHolderConcurrentReaders** reports a race; (f) `choose` returns `true` unconditionally → the holder test's "changes nothing visible" case reddens (add that assertion on `choose`'s result); (e) `parseTintFlag` drops the `dark, light` case → the named-refusal assertion reddens. Restore each.
 
 ### Task 3: Delete the tint paths production never reached
 
@@ -553,7 +576,7 @@ func TestAScreenRepaintsHistoryInTheCurrentScheme(t *testing.T) {
 	if err := l.WriteOutput(renderedOutput{text: "hola\n", rows: []rowPaint{{tinted: true}}}); err != nil {
 		t.Fatal(err)
 	}
-	h.Store(h.Load().withChoice(store.SchemeLight, sourceSession))
+	h.choose(store.SchemeLight, sourceSession)
 	tty.Reset()
 	l.Draw("› ", nil)
 	if !strings.Contains(tty.String(), languageLight) || strings.Contains(tty.String(), languageDark) {
@@ -622,7 +645,8 @@ Docs in this chunk describe what M2 ships — flag, saved, dark — and do not m
   - `"  DARK \n"` → `SchemeDark`;
   - `"sepia"` and `""` → `("", false, err)`, and the error names the file's path;
   - THE CAP, with a valid word so only the cap can refuse it: `"light"` + 59 spaces (64 bytes) → `SchemeLight`; `"light"` + 60 spaces (65 bytes) → error (the `store/bilingual_test.go:45` pattern);
-  - `ClearScheme` removes the file AND the now-empty `dir`; a second `ClearScheme` → nil; with a foreign file also in `dir`, only `scheme` goes and `dir` stays.
+  - `ClearScheme` removes the file AND the now-empty `dir`; a second `ClearScheme` → nil; with a foreign file also in `dir`, only `scheme` goes and `dir` stays;
+  - **a SYMLINKED `dir`** (a dotfile manager's `~/.config/define` → elsewhere, the target holding a foreign file): after `ClearScheme` the LINK still exists and the foreign file survives. `os.Remove` unlinks a symlink even when its target is full, so a bare `os.Remove(dir)` fails this.
 - [ ] **Step 2: Run — FAIL.** `go test ./cmd/define/store -run Scheme -count=1`
 - [ ] **Step 3: Implement** (imports: `errors`, `fmt`, `io`, `io/fs`, `os`, `path/filepath`, `strings`):
 
@@ -666,16 +690,24 @@ func WriteScheme(dir string, s Scheme) error {
 
 // ClearScheme forgets the saved scheme, then the directory if that left it
 // empty (ARCH-FUNERAL: the residue is at most this file and its directory).
+//
+// It removes only what is OURS to remove. The file is the saved choice itself,
+// link or not, so forgetting the choice removes it. The directory goes only if
+// it is a REAL directory that is now empty: os.Remove unlinks a symlink even
+// when its target is full, which would break a dotfile manager's link (stow,
+// chezmoi) — so Lstat first, and a non-empty real directory refuses on its own.
 func ClearScheme(dir string) error {
 	if err := os.Remove(filepath.Join(dir, schemeFileName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	_ = os.Remove(dir) // fails harmlessly when something else lives there
+	if fi, err := os.Lstat(dir); err == nil && fi.IsDir() {
+		_ = os.Remove(dir) // ENOTEMPTY when something else lives there: kept
+	}
 	return nil
 }
 ```
 - [ ] **Step 4: PASS. Step 5: Commit** `#70 M2: store: the saved scheme, one word in the user's config directory`
-- [ ] **Step 6: Mutations:** drop the `len(b) >` check → the 65-byte case reddens; drop `os.Remove(dir)` → the empty-dir case reddens; drop the path wrap → the names-the-file case reddens. Restore each.
+- [ ] **Step 6: Mutations:** drop the `len(b) >` check → the 65-byte case reddens; drop `os.Remove(dir)` → the empty-dir case reddens; drop the `Lstat`/`IsDir` guard → the symlinked-dir case reddens; drop the path wrap → the names-the-file case reddens. Restore each. The class (cleanup removes only owned residue) has no other instance in #70: the only other removals are `t.TempDir()`s the tests own. `WriteScheme`'s atomic rename replaces a symlinked `scheme` FILE with a regular one — the store's behaviour for every setting (`bilingual.txt` too), noted in the Log rather than changed here.
 
 ### Task 8: The config-directory seam and the startup read
 
@@ -824,27 +856,25 @@ func applyScheme(h *schemeHolder, arg schemeArg, p schemePersister, session bool
 	if h == nil {
 		return schemeState{}, errNoScheme
 	}
-	st := h.Load()
 	switch {
 	case p == nil && !session:
-		return st, errNowhereToSave
+		return h.Load(), errNowhereToSave
 	case p == nil && arg.auto:
-		st = st.withoutChoice()
+		h.forget()
 	case p == nil:
-		st = st.withChoice(arg.value, sourceSession)
+		h.choose(arg.value, sourceSession)
 	case arg.auto:
 		if err := p.clear(); err != nil {
 			return h.Load(), err
 		}
-		st = st.withoutChoice()
+		h.forget()
 	default:
 		if err := p.save(arg.value); err != nil {
 			return h.Load(), err
 		}
-		st = st.withChoice(arg.value, sourceSaved)
+		h.choose(arg.value, sourceSaved)
 	}
-	h.Store(st)
-	return st, nil
+	return h.Load(), nil
 }
 
 // describeScheme is /scheme's report, and every wording is TRUE of its state:
@@ -869,7 +899,7 @@ func describeScheme(s schemeState, fullScreen bool) string {
 }
 ```
 - [ ] **Step 4: PASS. Step 5: Commit** `#70 M2: /scheme's transition persists first, and its report is always true`
-- [ ] **Step 6: Mutations:** `h.Store` moved before `p.save` → the failing-fake rows redden; the `p == nil && !session` case removed → the one-shot row reddens. Restore each.
+- [ ] **Step 6: Mutations:** `h.choose` moved before `p.save` → the failing-fake rows redden; the `p == nil && !session` case removed → the one-shot row reddens. Restore each.
 
 ### Task 10: The `/scheme` command in all three contexts, with its docs
 
@@ -917,7 +947,7 @@ func runScheme(c commandCtx, args []string) int {
   Registry: append `{name: "scheme", summary: "light or dark terminal background", args: "[light|dark|auto]", usage: schemeUsage, run: runScheme}` at the END of `commands` (the table has no order; `/help` and the docs list it in table order, the menu sorts). `commandCtx` fields, documented in the file's style: `scheme *schemeHolder`; `schemePersister schemePersister`; `session bool` ("a loop exists for a session-only choice to live in; false for the one-shot"); `fullScreen bool` ("the raw editor: the loop that asks the terminal for its background, from M3"). `newCommandCtx`: `scheme: d.scheme, schemePersister: d.schemePersister()`. Editor (`replraw.go`, beside `cc.setTimes`): `cc.session = true` and `cc.fullScreen = true` on SEPARATE lines — the existing `draw()` after dispatch repaints from the holder, which is the whole recolour. Piped loop (`repl.go`, beside `cc.setTimes`): `cc.session = true`.
   Docs, in this commit so it stays green: run `go test ./cmd/define -run 'TestDocs' -count=1` — `TestDocsQuoteTheCommandList` and `TestDocsQuoteTheCommandUsage` name the README and atlas spans to update; update them. Add a README "Light or dark" paragraph for M2 (the shade follows `-scheme`, then the saved `/scheme`, then dark; the file's location; `/scheme auto`), and one `-h` sentence naming `/scheme`.
 - [ ] **Step 4: PASS**, full package. **Step 5: Commit** `#70 M2: /scheme switches, saves, and repaints what is already on screen`
-- [ ] **Step 6: Mutations**, one at a time: delete the editor's `cc.session = true` → test 2 reddens; delete `cc.fullScreen = true` → test 4 reddens; delete the piped loop's `cc.session = true` → test 6 reddens; make `applyScheme` skip its `h.Store` → test 1 reddens (no repaint, no transcript change). Restore each.
+- [ ] **Step 6: Mutations**, one at a time: delete the editor's `cc.session = true` → test 2 reddens; delete `cc.fullScreen = true` → test 4 reddens; delete the piped loop's `cc.session = true` → test 6 reddens; make `applyScheme` skip its `h.choose` → test 1 reddens (no repaint, no transcript change). Restore each.
 
 ### Task 11: Harness isolation
 
@@ -989,7 +1019,7 @@ func parseBackgroundColour(payload string) (store.Scheme, bool) {
 **Files:** Modify `cmd/define/key.go` (`KeyBackground` before the `numKeyKinds` sentinel; `Key.Background store.Scheme`; `case ']'` in `decodeEscape`), `cmd/define/play_loop.go` (`sittingKeyHandling` row only); tests `cmd/define/key_test.go`, the `readInput` tests.
 
 - [ ] **Step 1: Failing tests.**
-  - **TestDecodeBackgroundReply**: `"\x1b]11;rgb:ffff/ffff/ffff\x07"` → `KeyBackground`/light, consumed = len; the same with ST `"\x1b\\"`; EVERY strict prefix of each → `used == 0`.
+  - **TestDecodeBackgroundReply**: `"\x1b]11;rgb:ffff/ffff/ffff\x07"` → `KeyBackground`/light, consumed = len; the same with ST `"\x1b\\"` and with the 8-bit ST `"\x9c"`; EVERY strict prefix of each → `used == 0`.
   - **TestDecodeBackgroundReplyOtherFormats**: `rgba:…` and `#ffffff` payloads → ONE `KeyUnknown` consuming the whole reply.
   - **TestDecodeOSCAbortsAsToday**: `"\x1b]x"` → `KeyUnknown` (2 bytes), then `KeyRune 'x'`; `"\x1b]11;rgb\x03"` → `KeyUnknown` (2) and, decoding on, `KeyInterrupt` with nothing waiting; DEL (`0x7f`) and `0x80` in the payload abort; `ESC` then anything but `\` aborts.
   - **TestDecodeOSCCap**: a 64-byte reply cannot carry a valid `rgb:` payload, so assert the CONSUMED COUNT, not the kind: exactly 64 bytes is consumed whole (`n == 64`, `KeyUnknown`) with BEL and with ST; 65 bytes is refused with each (`n == 2`).
@@ -1010,8 +1040,11 @@ const maxOSCReply = 64
 // this program asks, and in two steps so no reply FORMAT can leak as typing — in
 // a sitting a leaked character is an answer:
 //
-//  1. swallow: ESC ] 11 ; then bytes in 0x20-0x7E up to BEL or ST (ESC \), at
-//     most maxOSCReply bytes in all. Any other byte — Ctrl-C, Enter, DEL, 0x80+,
+//  1. swallow: ESC ] 11 ; then bytes in 0x20-0x7E up to BEL, ST (ESC \) or the
+//     8-bit ST 0x9C (never legal inside a payload), at most maxOSCReply bytes in
+//     all. A sequence longer than that is not a reply (a real one is ~25 bytes),
+//     so it decodes as it always has — the one way past this rule, and it takes
+//     a terminal no one ships. Any other byte — Ctrl-C, Enter, DEL, 0x80+,
 //     an ESC not followed by \ — or the cap ABORTS, and the input decodes exactly
 //     as it always has: ESC ] as a 2-byte KeyUnknown, then the rest. So Alt-]
 //     with meta-sends-escape, then typing or Ctrl-C, behaves as before; a user
@@ -1037,7 +1070,7 @@ func decodeOSC(buf []byte) (Key, int) {
 			return abort()
 		}
 		switch c := buf[i]; {
-		case c == 0x07:
+		case c == 0x07 || c == 0x9c:
 			return backgroundKey(buf[len(oscBackgroundReply):i], buf[:i+1]), i + 1
 		case c == 0x1b:
 			if i+1 >= maxOSCReply {
@@ -1124,7 +1157,7 @@ func wantsBackground(opt options) bool { return opt.tty && opt.color && opt.tint
   2. **TestASittingIgnoresABackgroundReply**: `playSession` over `readInput` of `reply + "1"` (or the rig's first valid answer key) → exactly one answer recorded, the intended one; the sitting's screen repaints light. Repeat with `rgba:` → one answer, and the shade stays dark (no `languageLight` — the answer key itself repaints, so "no repaint" is not the observable).
   3. **TestAReplyDuringPlayReachesTheEditor**: through `newConsole` with `playRig` and the real `sittingInPlace` (`selection_nested_test.go:56` pattern), keys from a scripted channel (`scriptKeys`/`keySeq`) so the order is explicit: `/play⏎`, the decoded `KeyBackground` light, then Ctrl-C to end the sitting; after it ends, `/scheme` in the editor reports `light (detected)` and the editor's frame paints light.
   4. **TestAReplyMidDragKeepsTheSelection**: press + motion, then a `KeyBackground` through `route`, then release → the gesture still completes to a copy.
-  5. **TestADroppedReplyIsSilent**, deterministic on an `io.Pipe` (each write returns only when `readInput` reads again, i.e. after the previous chunk is decoded): write 256 × `x`; write the reply; write `y` (its return means the reply was fully processed); assert `selectionNotice == ""` (no notice for the reply); `waitFor` the "input full" notice (the dropped `y` posts it, so `saturated` was not set by the reply); close.
+  5. **TestADroppedReplyIsSilent**, deterministic on an `io.Pipe`: write 256 × `x`; write the reply; then a ZERO-LENGTH write as the barrier — `io.Pipe` delivers it as a `Read`, so its return proves `readInput` finished the reply chunk and came back for more; assert `selectionNotice == ""` (no notice for the reply); THEN write `y` and `waitFor` the "input full" notice (the dropped `y` posts it, so the reply did not set `saturated`); close. (Asserting after `y`'s write instead races `y`'s own drop notice.)
 - [ ] **Step 2: FAIL. Step 3: Implement.**
   - `runEditor`, first in `case k, open := <-keys:` after the `!open` check:
 
@@ -1159,6 +1192,6 @@ if k.Kind == KeyBackground {
 ### Task 18: M3 boundary and close
 
 - [ ] Full suite, `-race`, `go vet ./...`, `go vet -tags conformance ./cmd/define`, `GOOS=linux go build ./...`, conformance with `CONFORMANCE_STRICT=1`.
-- [ ] **Manual live conformance** (the real external dependency; record in the Log): in Terminal.app, iTerm2 and Ghostty, each in a light and a dark profile — `define`, `/lang es`, look up `red`; check the tint's shade and `/scheme`'s report; `/scheme light|dark|auto` and watch the repaint; quit and check the transcript's shade. Note any terminal that answers `rgba:` or nothing.
+- [ ] **Manual live conformance** (the real external dependency): in Terminal.app, iTerm2 and Ghostty, each in a light and a dark profile — `define`, `/lang es`, look up `red`; check the tint's shade and `/scheme`'s report; `/scheme light|dark|auto` and watch the repaint; quit and check the transcript's shade. Note any terminal that answers `rgba:` or nothing. RECORD the terminal × appearance matrix with the date in `atlas/define.md` (a short "Terminals checked" table beside the detection paragraph), and state there when it is re-run: when a terminal is added to the matrix, when a detection bug is reported, or when `decodeOSC`, `parseBackgroundColour` or `backgroundQuery` changes.
 - [ ] Walk every `## Done when` bullet and name the test (or manual check) that proves it.
 - [ ] `sdlc milestone-close --issue 70 --milestone M3`, read the verdict; then `sdlc close --issue 70 --verified '<evidence>'`.
