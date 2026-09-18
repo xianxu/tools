@@ -7,6 +7,7 @@ created: 2026-09-16
 updated: 2026-09-17
 estimate_hours: 6.1
 started: 2026-09-17T17:20:31-07:00
+flow: {kind: full, provenance: inferred}
 ---
 
 # define: switch between a light and a dark colour scheme
