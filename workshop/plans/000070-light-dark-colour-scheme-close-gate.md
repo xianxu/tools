@@ -79,6 +79,36 @@ rounds:
       boundary: M2
       recipe: milestone-review
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-18T00:00:08-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: 'Forward-looking and still true: the 2026-09-18 Revisions entry concedes Chunk 2''s code has drifted too, Chunk 3 still restates code, and no lessons.md rule records it. Minor, never blocks.'
+          round: 4
+        - id: BR-6
+          disposition: addressed
+          note: The Log now has an M2 entry covering the symlinked FILE (rename replaces the link; the directory is kept, see TestClearSchemeRemovesOnlyWhatIsOurs), the pty run (1338 passed, 1 skipped, 14 failed, the 14 being the pre-existing set from M1) and the per-task mutation list.
+          round: 4
+        - id: BR-7
+          disposition: not-addressed
+          note: 'Both named instances are fixed (schemeArg: empty = auto; loopKind). But the class sweep the fix commit claims was not done: schemeState.detected + heard (scheme.go:60-63) is a third pair, and heard=false with a detected value, or heard=true with an empty one, is representable. The spec says detected *scheme. Enumerated #70 structs (schemeState, schemeChoice, schemeArg, commandCtx, tintPolicy); this is the only remaining instance, so prevalence in #70 is 4. Fix: detected store.Scheme with empty meaning not heard, drop heard.'
+          round: 4
+        - id: BR-8
+          disposition: addressed
+          note: schemePersister.load plus the pure initialSchemeState(flag, persister, warn), used in run() at main.go:871. TestInitialSchemeState pins flag-beats-saved without a load and one warning for a garbled file, with no pty. Swapping the precedence in a scratch copy turned it red.
+          round: 4
+      findings:
+        - id: BR-9
+          severity: Minor
+          title: The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3
+          detail: 'This is the 2nd finding in this family (BR-4 at M1 was the 1st). atlas/define.md:1016-1017, added in a4ec10d, drops the "(from M3)" tag that the loopKind code comment keeps. Rule: a doc written at milestone N describes only what N ships, and anything from a later milestone carries that milestone inline. Sweep: grep the milestone''s doc diff for the later milestone''s words (for #70: detect, ask, report, query, OSC, KeyBackground). That sweep over atlas and README finds only this hit; prevalence in #70 is 2.'
+          family: docs-describe-unshipped-surface
+          round: 4
+      boundary: M2
+      recipe: milestone-review
+      blocked: false
 ---
 
 # Gate ledger — tools#70 (boundary-review)
@@ -122,6 +152,20 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-8** [Minor] `store-access-bypasses-its-seam` The startup read skips schemePersister, and the precedence order is tested only through a pty
   run() resolves d.configDir and calls store.ReadScheme inline, while deps.schemePersister resolves it again for save and clear (ARCH-DRY). The flag, then saved, then default order lives in run() glue; "flag beats saved" and "garbled file warns once" are pinned only by TestSavedSchemeGovernsALookup through a real pty (ARCH-PURE). Fix: add load() to schemePersister and extract a pure initialSchemeState(flag, persister, warn) that can be unit-tested without a pty.
 
+## Round 4 — 2026-09-18T00:00:08-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — not-addressed — Forward-looking and still true: the 2026-09-18 Revisions entry concedes Chunk 2's code has drifted too, Chunk 3 still restates code, and no lessons.md rule records it. Minor, never blocks.
+- BR-6 — addressed — The Log now has an M2 entry covering the symlinked FILE (rename replaces the link; the directory is kept, see TestClearSchemeRemovesOnlyWhatIsOurs), the pty run (1338 passed, 1 skipped, 14 failed, the 14 being the pre-existing set from M1) and the per-task mutation list.
+- BR-7 — not-addressed — Both named instances are fixed (schemeArg: empty = auto; loopKind). But the class sweep the fix commit claims was not done: schemeState.detected + heard (scheme.go:60-63) is a third pair, and heard=false with a detected value, or heard=true with an empty one, is representable. The spec says detected *scheme. Enumerated #70 structs (schemeState, schemeChoice, schemeArg, commandCtx, tintPolicy); this is the only remaining instance, so prevalence in #70 is 4. Fix: detected store.Scheme with empty meaning not heard, drop heard.
+- BR-8 — addressed — schemePersister.load plus the pure initialSchemeState(flag, persister, warn), used in run() at main.go:871. TestInitialSchemeState pins flag-beats-saved without a load and one warning for a garbled file, with no pty. Swapping the precedence in a scratch copy turned it red.
+
+### Raised
+
+- **BR-9** [Minor] `docs-describe-unshipped-surface` The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3
+  This is the 2nd finding in this family (BR-4 at M1 was the 1st). atlas/define.md:1016-1017, added in a4ec10d, drops the "(from M3)" tag that the loopKind code comment keeps. Rule: a doc written at milestone N describes only what N ships, and anything from a later milestone carries that milestone inline. Sweep: grep the milestone's doc diff for the later milestone's words (for #70: detect, ask, report, query, OSC, KeyBackground). That sweep over atlas and README finds only this hit; prevalence in #70 is 2.
+
 ## Open findings
 
 - **BR-1** [Minor] `plan-restates-code` The plan restates the diff: full implementations, test cases listed in prose, call sites by line number
@@ -129,6 +173,5 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-3** [Minor] `tests-pin-a-shadow-of-the-live-path` Two live-edge footer invariants are tested through the test-only boardFooter, not production's boardFooterOutput
 - **BR-4** [Minor] `docs-describe-unshipped-surface` The atlas paragraph on paint-time shade describes saved/session sources and detect/forget as live in M1
 - **BR-5** [Minor] `spec-done-when-drifts-from-delivery` Done-when says dead paths are deleted with tint assertions ported; the renderers were moved to test helpers and fragment-tint assertions dropped
-- **BR-6** [Important] `ticked-step-lacks-its-evidence` M2 plan steps are ticked but the issue Log has no M2 entry
 - **BR-7** [Minor] `state-shape-admits-illegal-combinations` commandCtx session/fullScreen and schemeArg auto/value allow combinations that mean nothing
-- **BR-8** [Minor] `store-access-bypasses-its-seam` The startup read skips schemePersister, and the precedence order is tested only through a pty
+- **BR-9** [Minor] `docs-describe-unshipped-surface` The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3

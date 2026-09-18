@@ -366,7 +366,7 @@ code, tests, mutation checks). Three review boundaries:
   `schemeState` + atomic `schemeHolder`, `rowPaint.tinted` resolved at paint,
   dead tint paths deleted (renderers moved to test helpers), `-scheme` and
   `-language-tint on|off` (plan Tasks 1–6)
-- [ ] M2 — `/scheme` and the saved choice: `store.Read/Write/ClearScheme`, the
+- [x] M2 — `/scheme` and the saved choice: `store.Read/Write/ClearScheme`, the
   `deps.configDir` seam, `applyScheme` (persist-then-switch) and
   `describeScheme`, the command in editor/piped/one-shot, pty harness
   isolation, docs (Tasks 7–12)
@@ -379,6 +379,7 @@ code, tests, mutation checks). Three review boundaries:
 ### 2026-09-16
 
 ### 2026-09-17
+- 2026-09-17: closed M2 — M2: /scheme (report | light|dark saves+repaints | auto forgets) in raw editor, piped loop and one-shot; saved file under $XDG_CONFIG_HOME/define via one schemePersister seam (load/save/clear; capped, enum-parsed; ClearScheme never removes a symlinked dir); persist-then-switch per /bilingual. Review round 1 fixed: M2 Log entry (BR-6), schemeArg one field, loopKind replaces session+fullScreen, pure initialSchemeState. go test ./... green outside sandbox; pty conformance incl. TestPTYSavedSchemeSurvivesARestart green on built binary; full tagged suite and -race fail only the pre-existing set. 19 mutations each applied, compiled, reddened.; review verdict: FIX-THEN-SHIP
 - 2026-09-17: closed M1 — M1: tint is a role (rowPaint.tinted), shade resolves at paint from one atomic schemeHolder attached in newConsole+sittingInPlace; -scheme dark|light|auto, -language-tint on|off. go test ./... green (pty tests outside sandbox); -race and tagged conformance: only failures reproduce on branch point 75370a2 (13 pty + live-LLM + a -race timing test) — logged; TestPTYLanguageTint/TestPTYNativeRendirSectionLayout green on the built binary. 27 mutations each applied, compiled and reddened their pin.; review verdict: SHIP
 
 Brainstorm. The only fixed colour a light terminal cannot remap is the language
@@ -564,3 +565,11 @@ zero value forgets instead of saving a blank line); `commandCtx`'s `session` +
 `fullScreen` became one `loopKind` {one-shot, piped, editor}; and the startup
 read goes through the same `schemePersister` seam as save and clear, as a pure
 `initialSchemeState` pinned by `TestInitialSchemeState` with no pty.
+
+M2 closed on review round 2 (FIX-THEN-SHIP, BR-6 and BR-8 disposed). Its two
+advisories fixed in the close commit: BR-7 — the state-shape family's third
+instance, `schemeState.detected` + `heard`, is now one field (empty = nothing
+heard); the #70 structs are enumerated (`schemeState`, `schemeChoice`,
+`schemeArg`, `commandCtx`, `tintPolicy`) and this was the last pair. And the
+atlas's `loopKind` sentence carries "(from M3)" again — a sweep of M2's doc diff
+for detect/ask/report/query/OSC/KeyBackground finds nothing else untagged.

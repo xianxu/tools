@@ -1014,7 +1014,8 @@ history in the new shade. `commandCtx` carries the holder and its
 read goes through it too, as the pure `initialSchemeState`) plus the `loopKind`
 that dispatched it — one-shot, piped or editor — from which `/scheme` derives both
 facts it needs: is there a session to keep a session-only choice in, and does this
-loop ask the terminal. One value, so the two cannot disagree; each loop's setting
+loop ask the terminal (from M3; until then "not reported" is simply true). One
+value, so the two cannot disagree; each loop's setting
 is pinned by a test that drives that loop. The file is untrusted input: capped at
 64 bytes, parsed into the closed enum, anything else one warning at startup and
 ignored.

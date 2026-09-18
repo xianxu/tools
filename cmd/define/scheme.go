@@ -54,20 +54,20 @@ type schemeChoice struct {
 //
 // IMMUTABLE: every transition returns a new value, and schemeHolder swaps it in.
 // Two independent facts, so their product is the legal state space: an explicit
-// choice (nil for none), and what the terminal last reported (heard). The
-// choice outranks the report; the report is kept underneath, so clearing the
-// choice reveals it.
+// choice (nil for none), and what the terminal last reported (empty for
+// nothing heard — one field, so "heard" and "what" cannot disagree). The choice
+// outranks the report; the report is kept underneath, so clearing the choice
+// reveals it.
 type schemeState struct {
 	choice   *schemeChoice
 	detected store.Scheme
-	heard    bool
 }
 
 func (s schemeState) effective() (store.Scheme, schemeSource) {
 	if s.choice != nil {
 		return s.choice.value, s.choice.by.source()
 	}
-	if s.heard {
+	if s.detected != "" {
 		return s.detected, sourceDetected
 	}
 	return store.SchemeDark, sourceDefault
@@ -86,7 +86,7 @@ func (s schemeState) withoutChoice() schemeState {
 }
 
 func (s schemeState) withDetected(v store.Scheme) schemeState {
-	s.detected, s.heard = v, true
+	s.detected = v
 	return s
 }
 

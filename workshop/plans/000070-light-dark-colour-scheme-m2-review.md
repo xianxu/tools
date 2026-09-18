@@ -103,3 +103,106 @@ findings:
     detail: |
       run() resolves d.configDir and calls store.ReadScheme inline, while deps.schemePersister resolves it again for save and clear (ARCH-DRY). The flag, then saved, then default order lives in run() glue; "flag beats saved" and "garbled file warns once" are pinned only by TestSavedSchemeGovernsALookup through a real pty (ARCH-PURE). Fix: add load() to schemePersister and extract a pure initialSchemeState(flag, persister, warn) that can be unit-tested without a pty.
 ```
+
+---
+
+## Re-review — 2026-09-18T00:00:08-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 70 — define: switch between a light and a dark colour scheme |
+| repo | tools |
+| issue file | workshop/issues/000070-light-dark-colour-scheme.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 4ae29a7278cd00310097a8ce66e253e8f0fde249..a4ec10df773eb07520f246cec2e89a1162b26da8 |
+| command | sdlc milestone-close --issue 70 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-09-18T00:00:08-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+M2 does what its plan says, and nothing blocks the boundary. Round 3 left two findings open that I checked against the code this round. BR-6: the M2 Log entry now exists. It covers the symlinked-file behaviour, gives the pty run as 1338 passed, 1 skipped and 14 failed (the 14 are the known pre-existing failures), and lists the mutations. BR-8: the startup read now goes through `schemePersister.load()` as a pure `initialSchemeState`. When I swapped the flag and saved cases in a scratch copy, `TestInitialSchemeState` failed. BR-7 is only partly fixed. Its two named instances are fixed, but the fix commit says it fixed "the rule rather than the instance", and it didn't sweep the rule. `schemeState` in the same file still stores `detected store.Scheme` and a separate `heard bool`, so a state with `heard=false` and a detected value set can exist, and so can `heard=true` with an empty value. The new lesson doesn't catch this, even though the lesson cites `schemeState` as its good example. The fix commit also added one atlas phrase that describes M3 behaviour as if it had shipped. Both remaining findings are Minor and quick to fix.
+
+**How I inspected it:** I ran the stat, name-status and full-diff commands on the pinned range. The full non-pty suite passed, `-race` on the scheme tests passed, `go vet` passed with and without the conformance tag, and `GOOS=linux go build ./...` built. I applied 4 mutations in a scratch copy made with `git archive`, and each one turned its test red:
+- swapping the order in `initialSchemeState`;
+- dropping `cc.loop = loopEditor`, which failed 2 editor tests;
+- dropping `cc.loop = loopPiped`, which failed the piped test;
+- the M1 wiring tests needed no mutation: I checked they still pin `newConsole`'s `attachScheme`.
+
+The scratch copy is deleted and the repo is untouched. **I could not run the pty tests.** This host has no pty devices: `pty.Open` fails with EPERM, and even Python's `os.openpty()` reports "out of pty devices". So `TestSavedSchemeGovernsALookup`, `TestLanguageTintInvocation`, `TestLanguagePromptStartup` and the `TestPTY*` changes were reviewed by reading only.
+
+### 1. Strengths
+- **`loopKind` is one value.** `command.go:258-267`: `/scheme` gets both facts it needs (is there a session, is this the full-screen editor) from one field, so they can't disagree. Its zero value is the one-shot, which refuses rather than claiming something false.
+- **`schemeArg{}` means auto** (`scheme.go:161-163`). A zero value now forgets the choice instead of saving a blank line, and `TestInitialSchemeState` checks this directly.
+- **The startup read has one seam.** `load`, `save` and `clear` all go through `schemePersister`. `initialSchemeState` is pure apart from the persister and warning writer it's given. `TestInitialSchemeState` also checks that "flag beats saved" never reads the file (`loads == 0`, with a garbled fake that would warn if read). That is a real behaviour, not a copy of the implementation.
+- **Save first, then switch** (`applyScheme`). A failed save and a failed clear each have a row showing the holder unchanged. The editor test puts the config directory under a regular file, which makes a real write fail.
+- **Harness isolation is complete.** Every binary launch goes through `startDefineBinary` (including the selection conformance test) or the layout test, and both set `XDG_CONFIG_HOME`. `testDeps` leaves `configDir` nil.
+
+### 2. Critical findings
+None.
+
+### 3. Important findings
+None.
+
+### 4. Minor findings
+- **BR-7 is still open: `schemeState.detected` and `heard` are two fields for one fact** (`scheme.go:60-63`, ARCH-ORDER). The spec says `detected *scheme`. Nothing reaches the bad states today, because `withDetected` sets both fields. The fix follows the `schemeArg` convention: keep `detected store.Scheme` with `""` meaning not heard, and delete `heard`.
+- **This is the 2nd finding in family `docs-describe-unshipped-surface`** (BR-4 at M1 was the 1st). `atlas/define.md:1016-1017` says `/scheme` derives from `loopKind` whether "this loop ask[s] the terminal". No loop asks until M3. The code comment on `loopKind` correctly says "(the raw editor, from M3)"; the atlas dropped that tag.
+  - **Rule:** at milestone N, a doc sentence about behaviour a later milestone ships must carry that milestone inline.
+  - **Sweep:** before the boundary, grep the milestone's doc diff for the later milestone's words. For #70 those are detect, ask, report, query, OSC and `KeyBackground`. I ran that sweep over `atlas/define.md` and `README.md` and this is the only hit. Lines 508-516 already label detection as M3.
+  - Measured prevalence in #70: 2 instances.
+- **BR-1 (plan restates code) is still open.** The new Revisions entry says "Chunk 2's code above shows the first shapes", so Chunk 2 has now drifted from the code the way Chunk 1 did. Chunk 3 (M3) still restates code in full.
+
+### 5. Test coverage notes
+- The in-process wiring is well pinned for all three shells, and the mutations above confirm it.
+- The one-shot `define /scheme auto` has no test through `run()`. It uses the same `applyScheme` path, which `TestApplyScheme` covers along with `ClearScheme`'s store test, so this is not a finding.
+- The pty-only pieces read correctly but I couldn't run them: the harness line, the `default` subtest, `TestPTYSavedSchemeSurvivesARestart`, and the pty half of `TestSavedSchemeGovernsALookup`. The M2 Log records them passing on the built binary.
+
+### 6. Architectural notes
+- **ARCH-DRY: passes.** The seam is single now (BR-8), and `runLookup` removes duplicated pty setup.
+- **ARCH-PURE: passes.** `configDirFrom`, `describeScheme` and `initialSchemeState` are pure, `applyScheme` gets its holder and persister injected, and `runScheme` is thin glue.
+- **ARCH-PURPOSE: flagged (Minor).** Every consumer of the saved choice derives from the one seam: startup, all three shells, the harness and the docs. But the fix that claimed to cover the whole state-shape family missed `schemeState` in the same file. I enumerated every #70 struct: `schemeState`, `schemeChoice`, `schemeArg`, `commandCtx`, `tintPolicy`. Only `detected`/`heard` remains.
+- **ARCH-MOCK: passes.** `fakePersister` keeps state and can fail. Production (`dirSchemePersister`) and the tests share one seam. The store tests run on `t.TempDir()`, and the pty tests run the real binary against a real temporary config directory.
+- **ARCH-CONSTRAINTS: passes.** Startup opens one file of at most 65 bytes, and skips it for `--version` and `--llm-check`. `/scheme` costs one small write and one repaint.
+- **ARCH-SECURE: passes.** Only absolute config bases count. The file is capped and parsed into a closed set, and the warning quotes its content. Test deps can't reach a real config.
+- **ARCH-ORDER: flagged (Minor, BR-7 above).** Every transition goes through the holder, and the save happens before the switch.
+- **ARCH-FUNERAL: passes.** At most one directory and one file of 6 bytes are left behind. `/scheme auto` removes them, and `ClearScheme` never unlinks a symlinked directory.
+- **For M3:** `describeScheme(fullScreen=true)` reads as "the terminal has not reported". That stays true under `-raw`, `TERM=dumb` and `-language-tint off`, where M3 won't send the query. Keep the wording "true whether pending, unsupported or never asked" rather than tying it to whether the query was sent.
+
+### 7. Plan revision recommendations
+- Add Core-concepts rows (additive, so the table stays the index): `initialSchemeState (M2) | cmd/define/scheme.go | new` under pure entities, and `loopKind (M2) | cmd/define/command.go | new`.
+- If `detected`/`heard` is collapsed, add a Revisions line: "`schemeState.detected`: `store.Scheme`, empty = not heard; `heard` removed".
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      Forward-looking and still true: the 2026-09-18 Revisions entry concedes Chunk 2's code has drifted too, Chunk 3 still restates code, and no lessons.md rule records it. Minor, never blocks.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      The Log now has an M2 entry covering the symlinked FILE (rename replaces the link; the directory is kept, see TestClearSchemeRemovesOnlyWhatIsOurs), the pty run (1338 passed, 1 skipped, 14 failed, the 14 being the pre-existing set from M1) and the per-task mutation list.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      Both named instances are fixed (schemeArg: empty = auto; loopKind). But the class sweep the fix commit claims was not done: schemeState.detected + heard (scheme.go:60-63) is a third pair, and heard=false with a detected value, or heard=true with an empty one, is representable. The spec says detected *scheme. Enumerated #70 structs (schemeState, schemeChoice, schemeArg, commandCtx, tintPolicy); this is the only remaining instance, so prevalence in #70 is 4. Fix: detected store.Scheme with empty meaning not heard, drop heard.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      schemePersister.load plus the pure initialSchemeState(flag, persister, warn), used in run() at main.go:871. TestInitialSchemeState pins flag-beats-saved without a load and one warning for a garbled file, with no pty. Swapping the precedence in a scratch copy turned it red.
+findings:
+  - id: new
+    severity: Minor
+    family: docs-describe-unshipped-surface
+    title: |
+      The atlas says /scheme's loopKind decides "does this loop ask the terminal", which no loop does until M3
+    detail: |
+      This is the 2nd finding in this family (BR-4 at M1 was the 1st). atlas/define.md:1016-1017, added in a4ec10d, drops the "(from M3)" tag that the loopKind code comment keeps. Rule: a doc written at milestone N describes only what N ships, and anything from a later milestone carries that milestone inline. Sweep: grep the milestone's doc diff for the later milestone's words (for #70: detect, ask, report, query, OSC, KeyBackground). That sweep over atlas and README finds only this hit; prevalence in #70 is 2.
+```
