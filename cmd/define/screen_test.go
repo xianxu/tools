@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -364,6 +365,10 @@ func readFrame(t *testing.T, frame string, cols int) frameGeometry {
 	}
 	rest := frame
 	for len(rest) > 0 {
+		if strings.HasPrefix(rest, "\x1b]") {
+			rest = rest[oscLen(rest):] // an OSC draws nothing
+			continue
+		}
 		if strings.HasPrefix(rest, "\x1b[") {
 			end := strings.IndexFunc(rest[2:], func(r rune) bool { return r >= 0x40 && r <= 0x7e })
 			if end < 0 {
@@ -541,7 +546,38 @@ var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 // be in — and every in-process assertion over a frame's text met escapes for the
 // first time. A second stripper beside this one is how they would come to
 // disagree about what counts as style.
-func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }
+func unstyled(s string) string { return sgr.ReplaceAllString(stripOSC(s), "") }
+
+// oscLen is how long the OSC sequence (ESC ] …) at the front of s is, through
+// its terminator — BEL, ST (ESC \) or the 8-bit ST — or all of s if it has none
+// yet. A real terminal consumes an OSC without drawing it; since #70 every raw
+// session's stream begins with one (backgroundQuery), so the tests' terminal
+// readers must consume it too rather than read it as cells.
+func oscLen(s string) int {
+	for i := 2; i < len(s); i++ {
+		switch {
+		case s[i] == 0x07 || s[i] == 0x9c:
+			return i + 1
+		case s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\':
+			return i + 2
+		}
+	}
+	return len(s)
+}
+
+// stripOSC removes every OSC sequence, as a terminal would not draw them.
+func stripOSC(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if strings.HasPrefix(s[i:], "\x1b]") {
+			i += oscLen(s[i:])
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
 
 // lastFrame is the most recent WHOLE frame in what a terminal received.
 //
@@ -1631,5 +1667,32 @@ func TestResumeDoesNotReviveAStoppedScreen(t *testing.T) {
 	l.Draw("prompt", nil)
 	if tty.Len() != 0 {
 		t.Errorf("a stopped screen painted after resume: %q", tty.String())
+	}
+}
+
+// The tests' terminal readers skip an OSC the way a terminal does (#70): a
+// stream that begins with backgroundQuery reads exactly like one without it.
+// No reader sees the query today — in-process tests write it to a separate
+// control stream, and a pty capture sends it before the first frame — so this
+// is the proof, not a regression pin.
+func TestReadersSkipOSC(t *testing.T) {
+	frame := cursorHome + eraseDown + "\x1b[1;36mhola\x1b[0m\r\n› "
+	with := backgroundQuery + frame
+	if got, want := readFrame(t, with, 20), readFrame(t, frame, 20); !reflect.DeepEqual(got, want) {
+		t.Errorf("readFrame read the query as cells: %+v vs %+v", got, want)
+	}
+	if got, want := unstyled(with), unstyled(frame); got != want {
+		t.Errorf("unstyled kept the query: %q vs %q", got, want)
+	}
+	row := "\x1b[48;5;236mhola\x1b[0m"
+	gotCells, gotEnd := rowTestCells(t, backgroundQuery+row, 10)
+	wantCells, wantEnd := rowTestCells(t, row, 10)
+	if !reflect.DeepEqual(gotCells, wantCells) || gotEnd != wantEnd {
+		t.Errorf("rowTestCells read the query as cells")
+	}
+	for _, osc := range []string{"\x1b]11;?\x07", "\x1b]11;?\x1b\\", "\x1b]11;?\x9c"} {
+		if n := oscLen(osc + "tail"); n != len(osc) {
+			t.Errorf("oscLen(%q) = %d, want %d", osc+"tail", n, len(osc))
+		}
 	}
 }

@@ -252,8 +252,8 @@ type commandCtx struct {
 	schemePersister schemePersister
 	// loop is which loop dispatched the command. /scheme derives both facts it
 	// needs from it — is there a session to keep a session-only choice in, and
-	// does this loop ask the terminal for its background (the raw editor, from
-	// M3) — so they cannot disagree. The zero value is the one-shot.
+	// does this loop ask the terminal for its background (the raw editor) — so
+	// they cannot disagree. The zero value is the one-shot.
 	loop loopKind
 }
 

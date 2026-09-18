@@ -26,6 +26,10 @@ func rowTestCells(t *testing.T, text string, width int) ([]rowTestCell, rowTestC
 	state := rowTestCell{bg: -1, fg: -1}
 	col := 0
 	for len(text) > 0 {
+		if strings.HasPrefix(text, "\x1b]") {
+			text = text[oscLen(text):] // an OSC draws nothing
+			continue
+		}
 		if strings.HasPrefix(text, "\x1b[") {
 			end := strings.IndexByte(text, 'm')
 			if end < 0 {

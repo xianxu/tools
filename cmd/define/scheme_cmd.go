@@ -5,9 +5,8 @@ import (
 	"strings"
 )
 
-// schemeUsage is /scheme's row in the registry. M2's wording: detection (M3)
-// adds "so define follows what the terminal reports" to auto.
-const schemeUsage = "With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one."
+// schemeUsage is /scheme's row in the registry.
+const schemeUsage = "With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice, so define follows what the terminal reports. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one."
 
 // runScheme is /scheme (#70): report, choose, or forget the colour scheme.
 func runScheme(c commandCtx, args []string) int {

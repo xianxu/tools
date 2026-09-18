@@ -198,6 +198,15 @@ It guarantees **fidelity, not completeness** — see Limits.
 
 ## The line editor (raw mode)
 
+**A terminal's REPLY is swallowed, bounded byte by byte** (#70). `decodeOSC` takes
+`ESC ] 11 ;` and then printable bytes up to BEL, ST or the 8-bit ST, at most 64 bytes in
+all; any other byte — Ctrl-C, Enter, DEL, 0x80+, an ESC not followed by `\` — aborts,
+and the input decodes exactly as before #70 (`ESC ]` a 2-byte unknown, then the rest),
+so Alt-] then typing or Ctrl-C is unchanged. Swallow and parse are two steps: only an
+`rgb:` payload becomes a `KeyBackground`; `rgba:`, `#hex` and garbage are swallowed with
+nothing detected — a leaked byte would be typing here and an ANSWER in a sitting. The
+colour is Rec. 601 luma on the encoded components, below 0.5 dark (`parseBackgroundColour`).
+
 `languagePrompt` supplies the effective session-language prefix at each render:
 English 🇺🇸, Spanish 🇪🇸, Italian 🇮🇹, plus the explicit fr/de/pt/zh/ja/ko
 mapping. Unknown valid tags use `[xx]`; malformed tags use `[??]`. The prefix
@@ -513,8 +522,24 @@ switch recolours history and the exit transcript, and no frame carries two shade
 only writers are its transitions — `choose`, `forget`, `detect` — each reporting whether
 the painted shade changed. Writers with no screen (`serializeOutput`: one-shot, piped,
 answers) take the scheme at write time. The choices are `-scheme dark|light|auto` and
-`/scheme` (see Command mode); a report from the terminal arrives with detection (M3),
-so until then `auto` means the saved choice, else dark.
+`/scheme` (see Command mode); `auto` means the saved choice, else what the terminal
+reported, else dark.
+
+**The terminal is ASKED, and nothing waits for the answer** (#70). Every raw session —
+the editor and `--play` — writes `backgroundQuery` (OSC 11) once, to
+`rawSession.control` beside the mode enables, never through a screen (whose escape
+scanner would paint the rest of an OSC as text), and only where a tint can appear
+(`wantsBackground`: colour on, `-language-tint on`, not `-raw`; `TERM=dumb` already
+turned the tint off). A `/play` sitting borrows the editor's session and does not ask
+again. The reply is input: `decodeOSC` turns it into a `KeyBackground` whenever it
+arrives, and every consumer of keys treats it as a report — the editor and the sitting
+apply it to the holder with `detect` and repaint only if the shade changed; the pointer
+router lets it pass a drag; a full input channel drops it silently. The first frame
+paints with the scheme as it stands, and a later answer is just a repaint. The one
+accepted limit: a session that ends within one round trip of starting (a fast quit over
+a slow link) leaves the answer to the shell, echoed, because the terminal is cooked
+again. `terminalQueries` lists every question, and `TestEveryEnabledInputModeIsDecoded`
+derives from it as it does from the modes.
 
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —
@@ -1014,8 +1039,7 @@ history in the new shade. `commandCtx` carries the holder and its
 read goes through it too, as the pure `initialSchemeState`) plus the `loopKind`
 that dispatched it — one-shot, piped or editor — from which `/scheme` derives both
 facts it needs: is there a session to keep a session-only choice in, and does this
-loop ask the terminal (from M3; until then "not reported" is simply true). One
-value, so the two cannot disagree; each loop's setting
+loop ask the terminal. One value, so the two cannot disagree; each loop's setting
 is pinned by a test that drives that loop. The file is untrusted input: capped at
 64 bytes, parsed into the closed enum, anything else one warning at startup and
 ignored.
@@ -1331,7 +1355,7 @@ list above is and pinned the same way:
 - `/sound [N]` — With nothing, how many times each pronunciation plays. With N, play it N times for the rest of this session; 0 turns playback off, and 20 is the most.
 - `/lang [language]` — With nothing, the language in effect and the dictionary answering it. With a two-letter tag like es, switch to that language: saved when this directory is a deck, for this session otherwise.
 - `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
-- `/scheme [light|dark|auto]` — With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one.
+- `/scheme [light|dark|auto]` — With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice, so define follows what the terminal reports. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one.
 <!-- /command-usage -->
 
 The usage flags are one list, `usageFlags`, answered once in `dispatchCommand`

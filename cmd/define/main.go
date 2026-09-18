@@ -536,7 +536,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	raw := fs.Bool("raw", false, "print the unparsed dictionary entry")
 	noColor := fs.Bool("no-color", false, "disable ANSI colour")
 	noFlags := fs.Bool("no-flags", false, "show language codes instead of flags in the prompt")
-	schemeFlag := fs.String("scheme", "auto", "terminal background: auto, dark, or light")
+	schemeFlag := fs.String("scheme", "auto", "terminal background: auto (ask the terminal), dark, or light")
 	languageTint := fs.String("language-tint", "on", "tint the target language's rows: on or off")
 	noAudio := fs.Bool("no-audio", false, "do not fetch or play the pronunciation")
 	sound := fs.Int("sound", 3, "how many times to play the pronunciation")

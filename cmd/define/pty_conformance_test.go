@@ -1503,3 +1503,141 @@ func TestPTYSavedSchemeSurvivesARestart(t *testing.T) {
 		}
 	})
 }
+
+// ptyScript starts define in dir with a known terminal type, waits until ready
+// holds over what the terminal has received, and returns it with a writer.
+func ptyScript(t *testing.T, dir string, env []string, args ...string) (func(func(string) bool) string, func(string), func()) {
+	t.Helper()
+	cmd, f := startDefineInDir(t, dir, append([]string{"TERM=xterm-256color", "DEFINE_NO_BACKGROUND=1", "DEFINE_NO_CAPTURE="}, env...), args...)
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 160, Cols: 160}); err != nil {
+		t.Fatal(err)
+	}
+	out := watch(f)
+	take := func(ready func(string) bool) string { t.Helper(); return awaitActivityPTY(t, out, ready) }
+	write := func(s string) {
+		t.Helper()
+		if _, err := f.WriteString(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	quit := func() {
+		// Ignored: a one-shot has already exited, and that is the same end.
+		_, _ = f.WriteString("\x04")
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("define did not exit")
+		}
+	}
+	return take, write, quit
+}
+
+// A session ASKS, the terminal ANSWERS, and the answer decides the shade (#70)
+// — a light terminal, a dark one, one that never answers, and an answer that
+// arrives after the entry is already on screen.
+func TestPTYBackgroundDetection(t *testing.T) {
+	bilingualNativeProbe(t)
+	for _, tc := range []struct {
+		name, reply, shade, report string
+	}{
+		{"light", "\x1b]11;rgb:ffff/ffff/ffff\x1b\\", languageLight, "scheme light (detected)"},
+		{"dark", "\x1b]11;rgb:0000/0000/0000\x07", languageDark, "scheme dark (detected)"},
+		{"silent", "", languageDark, "scheme dark (default: the terminal has not reported its background)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deck := t.TempDir()
+			if err := store.WriteLang(deck, "es"); err != nil {
+				t.Fatal(err)
+			}
+			take, write, quit := ptyScript(t, deck, nil, "--no-audio", "--no-flags")
+			// ONE predicate: awaitActivityPTY drains what it reads.
+			take(func(s string) bool {
+				return strings.Contains(s, backgroundQuery) && strings.Contains(unstyled(s), "[es] › ")
+			})
+			if tc.reply != "" {
+				write(tc.reply)
+			}
+			write("red\r")
+			spanish := take(func(s string) bool { return strings.Contains(unstyled(s), "clutches") })
+			other := languageLight
+			if tc.shade == languageLight {
+				other = languageDark
+			}
+			if !strings.Contains(spanish, tc.shade) || strings.Contains(spanish, other) {
+				t.Fatalf("the entry is not in the %q shade", tc.shade)
+			}
+			write("/scheme\r")
+			take(func(s string) bool { return strings.Contains(unstyled(s), tc.report) })
+			quit()
+		})
+	}
+	t.Run("late", func(t *testing.T) {
+		deck := t.TempDir()
+		if err := store.WriteLang(deck, "es"); err != nil {
+			t.Fatal(err)
+		}
+		take, write, quit := ptyScript(t, deck, nil, "--no-audio", "--no-flags")
+		take(func(s string) bool { return strings.Contains(unstyled(s), "[es] › ") })
+		write("red\r")
+		take(func(s string) bool { return strings.Contains(unstyled(s), "clutches") })
+		write("\x1b]11;rgb:ffff/ffff/ffff\x1b\\")
+		take(func(s string) bool { return strings.Contains(s, languageLight) })
+		quit()
+	})
+}
+
+// The query goes out only where a tint can appear (#70). No Oxford dictionary
+// needed: this watches the terminal stream, not the entry. Pins the callers'
+// wantsBackground(opt) arguments — replRaw's AND runPlay's.
+func TestPTYNoQueryWithoutATint(t *testing.T) {
+	prompt := func(s string) bool { return strings.Contains(unstyled(s), "› ") }
+	for _, tc := range []struct {
+		name  string
+		env   []string
+		args  []string
+		asked bool
+	}{
+		{"editor, by default", nil, []string{"--no-audio"}, true},
+		{"editor, -language-tint off", nil, []string{"--no-audio", "--language-tint=off"}, false},
+		{"editor, TERM=dumb", []string{"TERM=dumb"}, []string{"--no-audio"}, false},
+		{"editor, -raw", nil, []string{"--no-audio", "-raw"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deck := t.TempDir()
+			if err := store.WriteLang(deck, "en"); err != nil { // a deck, so no question
+				t.Fatal(err)
+			}
+			take, _, quit := ptyScript(t, deck, tc.env, tc.args...)
+			got := take(prompt)
+			if strings.Contains(got, backgroundQuery) != tc.asked {
+				t.Fatalf("asked=%v, want %v: %q", !tc.asked, tc.asked, got)
+			}
+			quit()
+		})
+	}
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		asked bool
+	}{
+		{"--play, by default", []string{"--play", "--no-audio"}, true},
+		{"--play, -language-tint off", []string{"--play", "--no-audio", "--language-tint=off"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deck := t.TempDir()
+			// A due word, written by a real lookup: -here makes the directory a
+			// deck without the question a script cannot answer.
+			seedTake, _, seedQuit := ptyScript(t, deck, nil, "--no-audio", "--here", "sycophantic")
+			seedTake(func(s string) bool { return strings.Contains(s, "sikəˈfan(t)ik") })
+			seedQuit()
+			take, _, quit := ptyScript(t, deck, nil, tc.args...)
+			got := take(func(s string) bool { return strings.Contains(unstyled(s), "sycophantic") })
+			if strings.Contains(got, backgroundQuery) != tc.asked {
+				t.Fatalf("asked=%v, want %v: %q", !tc.asked, tc.asked, got)
+			}
+			quit()
+		})
+	}
+}

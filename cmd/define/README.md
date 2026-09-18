@@ -229,7 +229,7 @@ To check additional help for commands, type `/help [command]`.
 - `/sound [N]` — With nothing, how many times each pronunciation plays. With N, play it N times for the rest of this session; 0 turns playback off, and 20 is the most.
 - `/lang [language]` — With nothing, the language in effect and the dictionary answering it. With a two-letter tag like es, switch to that language: saved when this directory is a deck, for this session otherwise.
 - `/pron [language]` — Replay this word once in another language. With nothing, it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.
-- `/scheme [light|dark|auto]` — With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one.
+- `/scheme [light|dark|auto]` — With nothing, the colour scheme in use and where it came from. light or dark sets it and saves it for every session; auto forgets the saved choice, so define follows what the terminal reports. The scheme picks the shade of the language tint: dark grey on a dark background, light grey on a light one.
 <!-- /command-usage -->
 
 > NOTE: while other languages are available, only English dictionary is well tested.
@@ -355,6 +355,13 @@ The scheme belongs to your terminal, not to a deck, so it is not stored in the
 deck directory. `/scheme auto` forgets the saved choice; `/scheme` alone says
 which scheme is in use and where it came from. The `-scheme` flag beats a saved
 choice for one run.
+
+With nothing chosen, a full-screen session asks the terminal for its background
+colour and follows the answer — Terminal.app, iTerm2, Ghostty and most modern
+terminals reply — repainting if the answer arrives after something is already on
+screen. A one-shot lookup (`define word`) never asks: it uses `-scheme`, then the
+saved choice, then dark. If you quit within a moment of starting over a slow link,
+the terminal's answer can land in your shell as stray characters.
 
 `-no-color`, redirected output and `TERM=dumb` also disable the background.
 Vocabulary foreground colors remain visible, and answer markings take precedence.
