@@ -111,7 +111,9 @@ func TestLanguageRowStylesAndExclusions(t *testing.T) {
 			t.Errorf("column %d background %d, want %d", col, c.bg, want[col])
 		}
 	}
-	if cells[0].fg != 31 || cells[1].fg != 31 || cells[2].fg != -1 {
+	// The producer's red stays its own; uncoloured text on the tint takes the
+	// tint's paired ink (#70), where it used to keep the terminal default.
+	if cells[0].fg != 31 || cells[1].fg != 31 || cells[2].fg != 235 {
 		t.Errorf("foreground changed: %+v", cells)
 	}
 	if !cells[4].inverse || cells[5].inverse || cells[6].inverse {
@@ -172,5 +174,41 @@ func TestATintedRowTakesTheShadeOfTheSchemeItIsPaintedIn(t *testing.T) {
 	}
 	if got := paintLanguageRow("hola", rowPaint{}, 6, store.SchemeLight); got != "hola" {
 		t.Errorf("an untinted row is untouched: %q", got)
+	}
+}
+
+// A fixed background needs a fixed text colour (#70, from the operator's light
+// screenshot): the terminal's DEFAULT foreground is chosen for the terminal's
+// background, not for our tint, so text with no colour of its own gets the
+// tint's paired ink — near-black on the light tint, near-white on the dark —
+// exactly as the mark pairs 24 with 231. A producer's own colour still wins.
+func TestATintedRowCarriesItsOwnTextColour(t *testing.T) {
+	for _, tc := range []struct {
+		sc     store.Scheme
+		bg, fg int
+	}{{store.SchemeLight, 254, 235}, {store.SchemeDark, 236, 252}} {
+		// Plain text, and dimmed text (dim sets no colour), take the ink.
+		row := paintLanguageRow("hola \x1b[2mref\x1b[0m", rowPaint{tinted: true}, 12, tc.sc)
+		cells, end := rowTestCells(t, row, 12)
+		for col, c := range cells {
+			if c.bg != tc.bg || (c.glyph != ' ' && c.glyph != 0 && c.fg != tc.fg) {
+				t.Fatalf("%s col %d: bg %d fg %d, want bg %d fg %d: %q", tc.sc, col, c.bg, c.fg, tc.bg, tc.fg, row)
+			}
+		}
+		if end.bg != -1 || end.fg != -1 {
+			t.Fatalf("%s: the row leaks its paint past its end: %+v", tc.sc, end)
+		}
+		// A producer's own foreground wins over the ink, and the ink resumes
+		// after the producer resets.
+		row = paintLanguageRow("\x1b[36mhola\x1b[0m mundo", rowPaint{tinted: true}, 12, tc.sc)
+		cells, _ = rowTestCells(t, row, 12)
+		for col, want := range map[int]int{0: 36, 3: 36, 5: tc.fg, 9: tc.fg} {
+			if cells[col].fg != want {
+				t.Errorf("%s col %d fg %d, want %d: %q", tc.sc, col, cells[col].fg, want, row)
+			}
+		}
+	}
+	if got := paintLanguageRow("hola", rowPaint{}, 6, store.SchemeLight); got != "hola" {
+		t.Errorf("an untinted row takes no ink: %q", got)
 	}
 }

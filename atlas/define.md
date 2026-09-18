@@ -511,8 +511,13 @@ The board’s bracketed active marking option is highlighted in cyan by
 
 **The shade is a paint-time decision** (#70). A row keeps only WHETHER it is tinted
 (`rowPaint.tinted`); `paintLanguageRow` takes the shade from the scheme — xterm 236 on a
-dark background, 254 on a light one, the one colour the terminal's own theme cannot
-remap, so the only one a scheme decides. ONE `schemeHolder` per process (`deps.scheme`,
+dark background, 254 on a light one, the one background the terminal's own theme cannot
+remap. **A fixed background carries a fixed ink**: text on a tinted row with no colour of
+its own takes `schemeInk` — 252 on the dark tint, 235 on the light — exactly as the mark
+pairs 24 with 231, because the terminal's default foreground is chosen for the
+terminal's background, not for ours (a light tint in a dark theme was white on light
+grey). A producer's own colour still wins: `sourceColours` tracks the producer's
+background and foreground from one parse, and the ink steps aside for either. ONE `schemeHolder` per process (`deps.scheme`,
 an `atomic.Pointer` to an immutable `schemeState`: an explicit choice — flag, saved or
 session — over what the terminal reported, over dark) is shared by the editor and every
 sitting it starts. `attachScheme` hands it to a screen in `newConsole` and

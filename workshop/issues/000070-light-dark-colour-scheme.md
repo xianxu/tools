@@ -573,3 +573,19 @@ heard); the #70 structs are enumerated (`schemeState`, `schemeChoice`,
 `schemeArg`, `commandCtx`, `tintPolicy`) and this was the last pair. And the
 atlas's `loopKind` sentence carries "(from M3)" again — a sweep of M2's doc diff
 for detect/ask/report/query/OSC/KeyBackground finds nothing else untagged.
+
+2026-09-18 — M3 manual check, first result, and a design change. The operator's
+screenshot: light tint (254) with the terminal's DEFAULT text colour white — body
+text and the dimmed syllables almost invisible, coloured text fine. Cause: a saved
+`light` (their own `/scheme light` at 07:25, not yet `/scheme auto`'d) over a
+terminal whose default foreground is white. Root cause, not the setting: the tint
+is a FIXED background drawn under the terminal's DEFAULT foreground, which is
+chosen for the terminal's background, not ours — so any scheme/terminal mismatch
+is unreadable. Operator decision: pair it like the mark. Spec revision (approach A
+said foregrounds belong to the terminal's theme): text with NO colour of its own on
+a tinted row now takes `schemeInk` — 235 on the light tint, 252 on the dark;
+producer colours (headword, IPA, examples, deck words) keep theirs.
+`sourceColours` replaces `sourceBackground`'s parse with one that tracks both, so
+the ink steps aside for a producer's foreground as the tint does for its
+background. Pinned by `TestATintedRowCarriesItsOwnTextColour` and
+`TestSourceColoursTracksTheProducersForeground`.

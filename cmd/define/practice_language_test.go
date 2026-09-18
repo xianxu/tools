@@ -12,7 +12,7 @@ func TestPracticePresentationTintAndEnglishNeutral(t *testing.T) {
 	q.SetHelp([]string{"red color"})
 	policy := tintPolicy{lang: "es", on: true, scheme: holderFor(store.SchemeDark)}
 	got := renderPracticePresentation(q.PromptPresentation(), "es", "es", policy, nil, surfaceProse, "")
-	if !strings.Contains(got, "\x1b[48;5;236mrojo") {
+	if !strings.Contains(got, languageDark+inkOnDark+"rojo") { // the tint and its paired ink (#70)
 		t.Fatalf("missing target tint: %q", got)
 	}
 	if !strings.Contains(got, "   red color") || strings.Contains(got, "\x1b[2m") {

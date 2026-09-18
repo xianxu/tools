@@ -69,3 +69,27 @@ func TestTintForGatesOnColour(t *testing.T) {
 		}
 	}
 }
+
+// sourceColours tracks the producer's background AND foreground from one parse
+// of each SGR, so paintLanguageRow knows when its paired ink must step aside.
+func TestSourceColoursTracksTheProducersForeground(t *testing.T) {
+	for _, tc := range []struct {
+		name, seq string
+		before    bool
+		want      bool
+	}{
+		{"basic foreground", "\x1b[36m", false, true},
+		{"bright foreground", "\x1b[92m", false, true},
+		{"256-colour foreground", "\x1b[38;5;208m", false, true},
+		{"bold sets no colour", "\x1b[1m", false, false},
+		{"dim sets no colour", "\x1b[2m", false, false},
+		{"reset", "\x1b[0m", true, false},
+		{"default foreground", "\x1b[39m", true, false},
+		{"bold and cyan", "\x1b[1;36m", false, true},
+		{"a background's 36 is a payload", "\x1b[48;5;36m", false, false},
+	} {
+		if _, got := sourceColours(tc.seq, false, tc.before); got != tc.want {
+			t.Errorf("%s: fg after %q = %v, want %v", tc.name, tc.seq, got, tc.want)
+		}
+	}
+}
