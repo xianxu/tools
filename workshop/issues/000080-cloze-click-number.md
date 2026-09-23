@@ -1,11 +1,12 @@
 ---
 id: 000080
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-09-23
 estimate_hours:
+started: 2026-09-23T16:48:56-07:00
 ---
 
 # define: click a cloze option's number to answer it
@@ -168,17 +169,79 @@ Each row names the test that pins it.
   not ask for it* with cloze as the second asker, and records the number-answers /
   word-speaks split and why the target excludes the word.
 
+### Design (brainstorm, 2026-09-23)
+
+Operator decisions: **brackets** — options draw `[1] keel`, the number not
+underlined (the underline stays "click = pronounce"); **multiple-choice
+included** — it shares `optionSet`/`optionLine`, so it is the same code, not a
+widening; **a hint** — the keys line says `1-4 or click = pick …`.
+
+The fork resolves to #67's precedent, which already solved hazard 1 for passages:
+**a region for the coordinates, an absolute buffer range for identity.**
+
+- **Producer (pure, `play`).** `promptBuilder.option` records each option's
+  number span (`[k] `, byte offsets + index) as it writes it, the way `help`
+  records help lines — one producer of "where the numbers are" (ARCH-DRY), so
+  no consumer re-parses the prompt. Carried out on `Presentation` beside
+  `Spans`. `optionLine` becomes `[k] ` and `OptionIndent` 4; `isOptionLine`
+  (`playbar.go`) derives its prefix test from `optionLine` rather than
+  restating the shape.
+- **Region.** New `RegionOption` kind, `Region.Option` = index (set on that
+  kind only, like `Lang`). `writePrompt` turns the presentation's option spans
+  into regions and passes them with the rest to `writePracticePresentation`, so
+  `renderPracticeOutput`'s existing wrap re-pointing covers them (hazard 4).
+  `regionUnderlines(RegionOption)` = false. `regionPlaysAudio` generalises to a
+  declared action per kind (audio / mark / answer) so
+  `TestEveryRegionKindIsActionable` keeps deriving its set from
+  `numRegionKinds` and checks each kind in the loop that owns its action.
+- **Identity (loop).** The sitting records the buffer range its current prompt
+  was written into (`BufferLines()` before/after `writePrompt`, reset on each
+  new `written`). `formCell` stays the one "does this click answer the form"
+  decision and learns the second shape: a `RegionOption` hit whose absolute
+  `hit.line` is inside the current range → `InputMark{Cell: option}`; any other
+  hit (an older question, the reveal's `you chose [2] …`) is ordinary text.
+- **Session (ARCH-ORDER).** `Apply(InputMark)` on a `Graded` question →
+  `OutcomeNone` (hazard 2 — refused in the machine, not only by the loop's
+  range). The case asks a new `Marker{ Mark(i) (Verdict, bool) }` capability,
+  which `Grid` embeds; `optionSet.Mark(i)` is the pick `Grade` already makes
+  for digit i (Grade calls it), so key and click cannot disagree on verdict,
+  `chosen`, or `unaidedNow`. State between events is exactly `Session`
+  (`Index`, `Revealed`, `Graded`) plus the loop's prompt range, which is keyed
+  to `written` and replaced whenever a new prompt is written.
+- N/A: ARCH-MOCK (no external dependency), ARCH-SECURE (input is the local
+  terminal's mouse report, already parsed by `pointer.resolve`), ARCH-FUNERAL
+  (regions already live for the buffer's life; nothing new persists),
+  ARCH-CONSTRAINTS (one keystroke-path lookup, O(regions on a line)).
+
+**#75** has no plan yet. Its gesture targets stem words; this targets
+`[k] ` on option rows — disjoint lines, so the three-way map (stem → mark,
+option word → speak, number → answer) holds by target. Noted on #75 at close.
+
+**Risk to measure, not assume:** `1-4 or click = pick the word, ? = bad
+question, d = remove from deck, Ctrl-C to stop` is 84 columns — it wraps at 80.
+The prompt row is measured (`displayRows`), so it is correct either way; if the
+wrap is judged ugly, shorten the reserved tail, not the hint, and say so in the
+Log.
+
 ## Plan
 
-- [ ] brainstorm — the (A)/(B) fork first, since it decides where identity lives;
-      then open questions 1–3; `sdlc issue sync --issue 80` when it lands
-- [ ] check #75's plan for the cloze click map before fixing region kinds
-- [ ] `sdlc start-plan`, then the durable plan in `workshop/plans/`
-- [ ] tests first: the stale-digit row, the reveal row, the boundary column pair
-- [ ] the form-side "which option is here" and the loop dispatch to `InputMark`-like
-      input
-- [ ] the prompt hint, if question 2 says it needs one
-- [ ] atlas, then `sdlc close`
+- [x] brainstorm — (A)/(B) fork, open questions 1–3 (above)
+- [x] check #75's plan for the cloze click map — none yet; disjoint by target
+- [ ] tests first (red): stale digit on screen answers nothing; post-answer
+      click on the option list and on the reveal's `you chose` line does
+      nothing and does not advance; boundary pair (`[k] ` last column answers,
+      word's first column pronounces); wrapped stem at a narrow width; colour off;
+      key-vs-click same verdict + same recorded review (pty,
+      `TestPTYPlayBoardIsDrawnAndClickable` shape) for cloze and multiple-choice
+- [ ] `play`: `optionLine` → `[k] `, `OptionIndent` 4, option spans on
+      `Presentation`, `Marker` + `optionSet.Mark`, `Apply` Graded refusal;
+      fix `isOptionLine`, option-wrap tests, README option blocks
+- [ ] loop: `RegionOption` (+ String/identifier/actions registry), regions
+      from `writePrompt`, prompt range, `formCell` second shape
+- [ ] keys hint `1-4 or click = pick …`; README quotes; width check
+- [ ] atlas `define.md`: second asker of "a click never answers a form that did
+      not ask for it", number-answers / word-speaks, why the target excludes the
+      word; then `sdlc close`
 
 ## Log
 
@@ -196,3 +259,12 @@ the wrong question, and a post-answer click advancing the sitting — and neithe
 tested yet. They are the reason the Done-when carries explicit rows for both.
 
 Not claimed and not started — the request was to file the task.
+
+### 2026-09-23
+
+Claimed. Brainstorm settled with the operator (brackets, multiple-choice in,
+hint on the keys line); design recorded under `### Design`. The deciding read
+was #67's `passageSpanAt(hit.line, …)` — the absolute-buffer-line identity check
+is already the house answer to "regions are never pruned", so the fork's (A)/(B)
+tension dissolves: region for coordinates, loop-held range for identity,
+`Graded` refusal in `Apply` for post-answer clicks.
