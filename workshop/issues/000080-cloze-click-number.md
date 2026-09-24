@@ -1,13 +1,14 @@
 ---
 id: 000080
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-20
 updated: 2026-09-23
 estimate_hours:
 started: 2026-09-23T16:48:56-07:00
-flow: {kind: quick, provenance: inferred, spec: "1f554c7f", done: "37b5d6fb"}
+flow: {kind: full, provenance: inferred}
+actual_hours: 5.15
 ---
 
 # define: click a cloze option's number to answer it
@@ -210,6 +211,8 @@ tested yet. They are the reason the Done-when carries explicit rows for both.
 Not claimed and not started — the request was to file the task.
 
 ### 2026-09-23
+- 2026-09-23: closed — play: 4 new rows (click=digit for both forms cold+peeked, graded refuses, out-of-range, spans on prompt only), mutations caught (Graded refusal: 12 fails; advance-vs-graded: 4). loop: stale/post-answer/boundary/wrap/no-colour rows, 4 wiring mutations caught. pty TestPTYPlayClickingAnOptionNumberAnswers green, red without option regions. go test ./cmd/define/... ./internal/... ok. 11 TestPTY rows fail identically on main (first-run deck prompt), 2 previously failing now green.; review verdict: SHIP
+- 2026-09-23: flow upgraded quick → full — 249 added lines in code files (limit 100)
 
 Claimed. Brainstorm settled with the operator (brackets, multiple-choice in,
 hint on the keys line); design recorded under `### Design`. The deciding read
