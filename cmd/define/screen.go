@@ -942,11 +942,38 @@ func (d diagnostics) Write(p []byte) (int, error) {
 	defer l.mu.Unlock()
 	// Idempotent on a pinned screen, where writeBuffer wraps again: a line that
 	// already fits is returned untouched.
-	if err := l.writeBuffer(wrapWritten(string(p), l.cols)); err != nil {
+	if err := l.writeBuffer(wrapDiagnostic(string(p), l.cols)); err != nil {
 		return 0, err
 	}
 	l.throttledPaint()
 	return len(p), nil
+}
+
+// wrapDiagnostic is wrapWritten plus a HARD BREAK for what a word wrap cannot
+// fit: a URL or a run of JSON wider than the terminal. wrapText keeps a word
+// whole, which is right for a definition and wrong here — the unbroken token of an
+// error is the provider's message, and clipping it is #81 again one level down.
+// The break is the screen's own soft-wrap boundary (selectionPhysicalRows), so
+// styling resumes on every row it produces.
+//
+// CRLF is normalised first: the word wrap drops a `\r` it treats as whitespace
+// while a line that fits keeps it, and a writer's line ending should not depend
+// on its length.
+func wrapDiagnostic(text string, width int) string {
+	text = wrapWritten(strings.ReplaceAll(text, "\r\n", "\n"), width)
+	if width < minWrapWidth {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if strings.Contains(line, eraseLine) || visibleCells(line) <= width {
+			continue
+		}
+		if rows := selectionPhysicalRows(line, width); rows != nil {
+			lines[i] = strings.Join(rows, "\n")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // writeBuffer is the ONE way text reaches the buffer, and the wrap lives here so

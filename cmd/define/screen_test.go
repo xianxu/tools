@@ -1696,3 +1696,35 @@ func TestReadersSkipOSC(t *testing.T) {
 		}
 	}
 }
+
+// Every row a diagnostic produces fits the screen, including a token no word
+// wrap can break, and nothing is lost on the way (#81).
+func TestDiagnosticsFitTheScreenAndLoseNothing(t *testing.T) {
+	const cols = 40
+	token := strings.Repeat("x", 3*cols+7)
+	msg := "define: llm: bad request: POST \"http://127.0.0.1:8317/v1/messages\": 400 " + token + " tail-marker\r\n"
+	for _, colour := range []bool{false, true} {
+		text := msg
+		if colour {
+			text = "\x1b[31m" + msg + "\x1b[0m"
+		}
+		l := newLiveScreen(io.Discard, 24, cols)
+		if _, err := fmt.Fprint(l.Diagnostics(), text); err != nil {
+			t.Fatal(err)
+		}
+		var joined strings.Builder
+		for i, line := range l.s.lines {
+			if n := visibleCells(line); n > cols {
+				t.Errorf("colour=%v: buffer line %d is %d cells in a %d-column screen: %q", colour, i, n, cols, line)
+			}
+			if strings.HasSuffix(line, "\r") {
+				t.Errorf("colour=%v: buffer line %d kept a CR: %q", colour, i, line)
+			}
+			joined.WriteString(unstyled(line))
+		}
+		flat := strings.ReplaceAll(joined.String(), " ", "")
+		if !strings.Contains(flat, token) || !strings.Contains(flat, "tail-marker") {
+			t.Errorf("colour=%v: the message lost text on the way to the buffer: %q", colour, l.s.lines)
+		}
+	}
+}

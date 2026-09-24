@@ -71,3 +71,16 @@ Pre-existing, not this issue: 13 other `TestPTY*` rows fail identically with
 this change stashed. The failures read as the first-run "not a deck yet.
 Create one here?" prompt eating the tests' first line of input (the new test
 had to decline it explicitly). Worth its own issue.
+
+Close review round 1 (FIX-THEN-SHIP): BR-1 a token wider than the terminal
+was still clipped — `wrapDiagnostic` now hard-breaks what the word wrap
+cannot fit, via the screen's own `selectionPhysicalRows`; BR-2 no in-process
+width test — `TestDiagnosticsFitTheScreenAndLoseNothing` (plain + coloured,
+overlong token, no CR kept, no text lost), mutation-checked red against the
+bare `wrapWritten`. Minor CR finding folded in (CRLF normalised first).
+
+## Revisions
+
+- 2026-09-23 — close review: diagnostics HARD-BREAK tokens wider than the
+  screen (unlike `wrapText`'s keep-words-whole policy for definitions), and
+  Done-when 2 is pinned by an in-process test rather than the pty row alone.
