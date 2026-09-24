@@ -96,7 +96,7 @@ func (c *Cloze) render() promptBuilder {
 	}
 	p.text("\n\n")
 	for i, o := range c.options {
-		p.option(i, o.Word, Target)
+		p.pickable(i, o.Word, Target)
 		if i < len(c.options)-1 {
 			p.text("\n")
 		}

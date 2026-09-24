@@ -110,7 +110,7 @@ func TestClozeGradesDigitsAndIgnoresStrays(t *testing.T) {
 	}
 	// The keys line names the flag too: `?` documented nowhere is `?` nobody
 	// presses, and the learner has no other source for it.
-	if got := c.Keys(); got != "1-3 = pick the word, ? = bad question" {
+	if got := c.Keys(); got != "1-3 or click = pick the word, ? = bad question" {
 		t.Errorf("Keys() = %q, want the digits AND the flag", got)
 	}
 }
@@ -268,24 +268,24 @@ func TestClozeHelpLine(t *testing.T) {
 			width:     80,
 			blanked:   "La niña comió ___ en el restaurante japonés (寿司屋).",
 			help:      "The girl ate ___ at the Japanese restaurant (寿司屋).",
-			plain:     "La niña comió ___ en el restaurante japonés (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
-			helped:    "La niña comió ___ en el restaurante japonés (寿司屋).\nThe girl ate ___ at the Japanese restaurant (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			plain:     "La niña comió ___ en el restaurante japonés (寿司屋).\n\n[1] sushi\n[2] mañana\n[3] árbol",
+			helped:    "La niña comió ___ en el restaurante japonés (寿司屋).\nThe girl ate ___ at the Japanese restaurant (寿司屋).\n\n[1] sushi\n[2] mañana\n[3] árbol",
 			helpLines: []int{1},
 		},
 		{
 			width:     40,
 			blanked:   "La niña comió ___ en el restaurante\njaponés (寿司屋).",
 			help:      "The girl ate ___ at the Japanese\nrestaurant (寿司屋).",
-			plain:     "La niña comió ___ en el restaurante\njaponés (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
-			helped:    "La niña comió ___ en el restaurante\njaponés (寿司屋).\nThe girl ate ___ at the Japanese\nrestaurant (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			plain:     "La niña comió ___ en el restaurante\njaponés (寿司屋).\n\n[1] sushi\n[2] mañana\n[3] árbol",
+			helped:    "La niña comió ___ en el restaurante\njaponés (寿司屋).\nThe girl ate ___ at the Japanese\nrestaurant (寿司屋).\n\n[1] sushi\n[2] mañana\n[3] árbol",
 			helpLines: []int{2, 3},
 		},
 		{
 			width:     20,
 			blanked:   "La niña comió ___ en\nel restaurante\njaponés (寿司屋).",
 			help:      "The girl ate ___ at\nthe Japanese\nrestaurant (寿司屋).",
-			plain:     "La niña comió ___ en\nel restaurante\njaponés (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
-			helped:    "La niña comió ___ en\nel restaurante\njaponés (寿司屋).\nThe girl ate ___ at\nthe Japanese\nrestaurant (寿司屋).\n\n1  sushi\n2  mañana\n3  árbol",
+			plain:     "La niña comió ___ en\nel restaurante\njaponés (寿司屋).\n\n[1] sushi\n[2] mañana\n[3] árbol",
+			helped:    "La niña comió ___ en\nel restaurante\njaponés (寿司屋).\nThe girl ate ___ at\nthe Japanese\nrestaurant (寿司屋).\n\n[1] sushi\n[2] mañana\n[3] árbol",
 			helpLines: []int{3, 4, 5},
 		},
 	} {
@@ -321,7 +321,7 @@ func TestClozeHelpLine(t *testing.T) {
 		}
 
 		// NOTHING ANSWERED MOVED: keys, flag, verdicts and the reveal.
-		if got := c.Keys(); got != "1-3 = pick the word, ? = bad question" {
+		if got := c.Keys(); got != "1-3 or click = pick the word, ? = bad question" {
 			t.Errorf("width %d: Keys() = %q with help", tc.width, got)
 		}
 		hw, hok := c.Flag(FlagKey)
@@ -341,7 +341,7 @@ func TestClozeHelpLine(t *testing.T) {
 			}
 		}
 		c.Grade('2')
-		wantReveal := "La niña comió sushi en el restaurante japonés (寿司屋).\n\nyou chose\n2  mañana\n\nsushi: plato japonés de arroz"
+		wantReveal := "La niña comió sushi en el restaurante japonés (寿司屋).\n\nyou chose\n[2] mañana\n\nsushi: plato japonés de arroz"
 		if got := c.Reveal(); got != wantReveal {
 			t.Errorf("width %d: Reveal with help =\n%s\nwant\n%s", tc.width, got, wantReveal)
 		}

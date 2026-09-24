@@ -326,6 +326,26 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 
 	case InputMark:
+		// AN ANSWERED QUESTION IS NOT RE-ANSWERED BY A CLICK (#80 hazard 2), and
+		// it does not advance either. "Any key = next word" is a rule about KEYS;
+		// a click on a number still on screen — the option list above the reveal,
+		// or the reveal's own `you chose` line — is pointing at text, and must do
+		// what pointing at text does: nothing. A board is never Graded.
+		if s.Graded {
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
+		// A form of NUMBERED OPTIONS answers a click on a number exactly as it
+		// answers the digit — the same tail, so the same verdict, the same record
+		// and the same reveal. Not InputRune forged by the loop: that would make
+		// this machine unable to tell a key from a pointer, which the Graded
+		// refusal above depends on.
+		if p, ok := q.(Picker); ok {
+			verdict, ok := p.Pick(in.Cell)
+			if !ok {
+				return s, []Outcome{{Kind: OutcomeNone}}
+			}
+			return graded(s, q, verdict)
+		}
 		// The cell was resolved by the FORM before this — the loop asked
 		// Grid.CellAt where the click landed, because the form is the only thing
 		// that knows where it drew its words. This lands the mark and records it
@@ -424,49 +444,56 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 		if !ok {
 			return s, []Outcome{{Kind: OutcomeNone}} // a key this form does not use
 		}
-		if s.Revealed || verdict != Wrong {
-			// Nothing left to show: the answer is already on screen, or the
-			// learner had it and does not need it.
-			//
-			// GRADING BEFORE A REVEAL IS THE NORMAL PATH, and it used to be
-			// refused here on the grounds that "a learner cannot rate what they
-			// have not seen". That is true of a recognition test and false of a
-			// RECALL test, which is what form 2.1 was: the learner rated their own
-			// recall, which they know before they check, and the definition is
-			// FEEDBACK rather than stimulus. Getting it backwards put a mandatory
-			// keystroke in front of every correct answer (#24).
-			// COMPUTED HERE, while s.Revealed still holds its real value.
-			// advance() zeroes it before it builds the outcome, so reading it
-			// there would mark EVERY correct answer unaided — the feature would
-			// look like it worked while running the ladder at double speed.
-			// TestARevealDisqualifiesUnaided is the pin.
-			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
-			return next, []Outcome{out}
-		}
-		// A form holding many words has no hidden word to reveal — its marks are
-		// self-report over a grid — so a Wrong mark is an ordinary graded answer.
-		// Falling through to the branch below would set Graded, and the next
-		// keystroke would then mean "any key = next word": the form would freeze
-		// after its first No.
-		if batchOf(q) != nil {
-			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
-			return next, []Outcome{out}
-		}
-		// A MISS on a hidden word earns the definition, and earns it WITHOUT
-		// advancing — moving on would scroll the answer past unread, which is the
-		// entire reason for showing it.
-		//
-		// Scored here rather than by advance, because we are not advancing. The
-		// first draft of this branch recorded the event and left the tally alone,
-		// so a session of three misses ended "0 right, 0 wrong" (PQ-1).
-		s.Revealed, s.Graded = true, true
-		s = score(s, verdict)
-		return s, []Outcome{
-			{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict, Axis: missedAxis(q)},
-			{Kind: OutcomeReveal, Word: q.Word()},
-		}
+		return graded(s, q, verdict)
 	}
 	return s, []Outcome{{Kind: OutcomeNone}}
+}
+
+// graded is what a verdict the FORM just gave does to the session: the tail a
+// graded key and a picked option share (#80), so the two cannot come to mean
+// different things.
+func graded(s Session, q Question, verdict Verdict) (Session, []Outcome) {
+	if s.Revealed || verdict != Wrong {
+		// Nothing left to show: the answer is already on screen, or the
+		// learner had it and does not need it.
+		//
+		// GRADING BEFORE A REVEAL IS THE NORMAL PATH, and it used to be
+		// refused here on the grounds that "a learner cannot rate what they
+		// have not seen". That is true of a recognition test and false of a
+		// RECALL test, which is what form 2.1 was: the learner rated their own
+		// recall, which they know before they check, and the definition is
+		// FEEDBACK rather than stimulus. Getting it backwards put a mandatory
+		// keystroke in front of every correct answer (#24).
+		// COMPUTED HERE, while s.Revealed still holds its real value.
+		// advance() zeroes it before it builds the outcome, so reading it
+		// there would mark EVERY correct answer unaided — the feature would
+		// look like it worked while running the ladder at double speed.
+		// TestARevealDisqualifiesUnaided is the pin.
+		next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
+		return next, []Outcome{out}
+	}
+	// A form holding many words has no hidden word to reveal — its marks are
+	// self-report over a grid — so a Wrong mark is an ordinary graded answer.
+	// Falling through to the branch below would set Graded, and the next
+	// keystroke would then mean "any key = next word": the form would freeze
+	// after its first No.
+	if batchOf(q) != nil {
+		next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
+		return next, []Outcome{out}
+	}
+	// A MISS on a hidden word earns the definition, and earns it WITHOUT
+	// advancing — moving on would scroll the answer past unread, which is the
+	// entire reason for showing it.
+	//
+	// Scored here rather than by advance, because we are not advancing. The
+	// first draft of this branch recorded the event and left the tally alone,
+	// so a session of three misses ended "0 right, 0 wrong" (PQ-1).
+	s.Revealed, s.Graded = true, true
+	s = score(s, verdict)
+	return s, []Outcome{
+		{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict, Axis: missedAxis(q)},
+		{Kind: OutcomeReveal, Word: q.Word()},
+	}
 }
 
 // score is what a verdict does to the tally, and the only place that decides it.
@@ -737,4 +764,18 @@ func unaidedNow(s Session, q Question, v Verdict) bool {
 	}
 	sr, ok := q.(SelfRated)
 	return !ok || !sr.IsSelfRated()
+}
+
+// Picker is implemented by forms answered by choosing one of numbered options,
+// whose NUMBERS a click can choose (#80).
+//
+// Sixth of its kind beside Grid, and deliberately not Grid: a board's click
+// lands a mark and moves on, while a picked option is graded exactly as its
+// digit is — a miss earns the reveal without advancing. The two answer to
+// different tails, so they are different capabilities. The forms decide where
+// their numbers are drawn (Presentation.Options); this is what one means.
+type Picker interface {
+	// Pick answers with option i, counted from 0. False for an index that is
+	// not an option, which changes nothing.
+	Pick(i int) (Verdict, bool)
 }

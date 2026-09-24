@@ -1029,6 +1029,16 @@ func TestEveryRegionKindIsActionable(t *testing.T) {
 	// "these are all the kinds" — so a third kind was never exercised and this
 	// guard could not fire for the case it exists to catch.
 	for kind := RegionKind(0); kind < numRegionKinds; kind++ {
+		// A kind that ANSWERS acts in a sitting, not here (#80), and each such
+		// kind needs a sitting row that drives it — so this names them rather
+		// than letting a future answering kind skip every guard at once.
+		if regionAnswers(kind) {
+			if kind != RegionOption {
+				t.Errorf("RegionKind %d answers, and no sitting row drives it "+
+					"(TestAClickOnAnOptionNumberAnswersOnlyTheQuestionBeingAsked covers RegionOption)", kind)
+			}
+			continue
+		}
 		// A fresh rig per kind, so each count starts from zero rather than from
 		// whatever the previous kind left behind.
 		rig, opt, finish := editorRig(t, "sycophantic", true)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -2186,7 +2187,7 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry, offset, offered := view.FooterRowAt(tc.row)
-			got, ok := formCell(tc.q, pointerClick{point: selectionPoint{tc.row, tc.col}, footer: offered, footerEntry: entry, footerOffset: offset})
+			got, ok := formCell(tc.q, pointerClick{point: selectionPoint{tc.row, tc.col}, footer: offered, footerEntry: entry, footerOffset: offset}, lineRange{})
 			if ok != tc.wantOK || (ok && got != tc.want) {
 				t.Errorf("formCell = (%d, %v), want (%d, %v)", got, ok, tc.want, tc.wantOK)
 			}
@@ -4467,6 +4468,186 @@ func TestEveryKeyKindIsDecidedForASitting(t *testing.T) {
 			t.Errorf("KeyKind %d (%v): toInput ok=%v, declared=%v — toInput and its "+
 				"declaration disagree, which is how a key comes to do nothing with nobody noticing",
 				kind, kind, ok, want)
+		}
+	}
+}
+
+// clozeSitting is two cloze questions over askableRig's deck, built directly so
+// the test knows which option is right without reading it back (#80).
+func clozeSitting(t *testing.T) (deps, options, []play.Question, *sittingDeck, *store.Mem) {
+	t.Helper()
+	d, opt, _, held, st := askableRigStore(t, "sycophantic")
+	// The deck's vocabulary, which startup loads and this rig does not: without
+	// it no option WORD is a click target, and the word-speaks half is vacuous.
+	d.vocab = deckOf("sycophantic", "quokka", "parrot", "mesa")
+	qs := []play.Question{
+		play.NewCloze("sycophantic", "Her ___ praise fooled no one.", "Her sycophantic praise fooled no one.", "sycophantic: flattering",
+			[]play.Option{{Word: "sycophantic", Correct: true}, {Word: "quokka"}, {Word: "parrot"}}),
+		play.NewCloze("mesa", "They climbed the ___ at dawn.", "They climbed the mesa at dawn.", "mesa: a flat-topped hill",
+			[]play.Option{{Word: "quokka"}, {Word: "mesa", Correct: true}, {Word: "parrot"}}),
+	}
+	return d, opt, qs, held, st
+}
+
+// optionRow is the LAST transcript line that begins with option k's number —
+// found the way a reader's eye would, not computed.
+func optionRow(t *testing.T, live *liveScreen, k int, after int) int {
+	t.Helper()
+	prefix := fmt.Sprintf("[%d] ", k+1)
+	for i, line := range strings.Split(live.Transcript(), "\n") {
+		if i >= after && strings.HasPrefix(unstyled(line), prefix) {
+			return i
+		}
+	}
+	t.Fatalf("no %q line after %d:\n%s", prefix, after, live.Transcript())
+	return -1
+}
+
+// THE NUMBER ANSWERS, THE WORD SPEAKS, AND ONLY THE QUESTION BEING ASKED (#80).
+//
+// One sitting walks every hazard in the order a learner meets them, and the
+// store is the witness — a click that answered when it must not would be a
+// review event, which is the damage this whole issue is about.
+func TestAClickOnAnOptionNumberAnswersOnlyTheQuestionBeingAsked(t *testing.T) {
+	d, opt, qs, held, st := clozeSitting(t)
+	player := audible(&d, &opt)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, opt.width)
+	pointer := newPointerRouter(live, nil)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: live, pointer: pointer, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+	waitFor(t, func() bool { return strings.Contains(live.Transcript(), "Her ___ praise") })
+	events := func() int { return len(reviewEvents(t, st)) }
+	// The channel is UNBUFFERED and the loop is one goroutine, so a send
+	// completes only once everything before it was handled. A click on the blank
+	// first row is ordinary text — it does nothing — which makes it the probe.
+	settle := func() { keys <- completedPointerClick(t, pointer, 0, 0) }
+
+	// 1. The WORD's first column speaks and answers nothing.
+	wrong := optionRow(t, live, 1, 0) // quokka
+	keys <- completedPointerClick(t, pointer, wrong, play.OptionIndent)
+	waitFor(t, func() bool { return player.count() > 0 })
+	settle()
+	if n := events(); n != 0 {
+		t.Fatalf("a click on the option WORD recorded %d reviews", n)
+	}
+
+	// 2. The column BEFORE it — the gap in `[2] ` — answers, wrongly.
+	keys <- completedPointerClick(t, pointer, wrong, play.OptionIndent-1)
+	waitFor(t, func() bool { return strings.Contains(livePromptOf(live), "any key = next word") })
+	if n := events(); n != 1 {
+		t.Fatalf("a click on the number recorded %d reviews, want 1", n)
+	}
+
+	// 3. After the answer, no number answers or advances: the question's own
+	// list, and the reveal's `you chose` line.
+	keys <- completedPointerClick(t, pointer, optionRow(t, live, 0, 0), 1)
+	keys <- completedPointerClick(t, pointer, optionRow(t, live, 1, wrong+1), 1)
+	settle()
+	if n := events(); n != 1 || !strings.Contains(livePromptOf(live), "any key = next word") {
+		t.Fatalf("a click after the answer changed the sitting: %d reviews, prompt %q", n, livePromptOf(live))
+	}
+
+	// 4. A key moves on; the OLD question's numbers are still on screen.
+	keys <- Key{Kind: KeyRune, Rune: 'x'}
+	waitFor(t, func() bool { return strings.Contains(live.Transcript(), "They climbed the ___") })
+	stem := strings.Count(live.Transcript()[:strings.Index(live.Transcript(), "They climbed")], "\n")
+	keys <- completedPointerClick(t, pointer, optionRow(t, live, 1, 0), 1) // the first question's [2]
+	settle()
+	if n := events(); n != 1 {
+		t.Fatalf("a click on the PREVIOUS question's number answered the current one: %d reviews", n)
+	}
+
+	// 5. The current question's own number answers it.
+	keys <- completedPointerClick(t, pointer, optionRow(t, live, 1, stem), 0)
+	if code := <-done; code != 0 {
+		t.Errorf("the sitting exited %d: %s", code, errb.String())
+	}
+	got := reviewEvents(t, st)
+	if len(got) != 2 || got[0].Word != "sycophantic" || got[0].Correct || got[1].Word != "mesa" || !got[1].Correct {
+		t.Fatalf("reviews = %+v, want sycophantic wrong then mesa right", got)
+	}
+}
+
+// A CLICK AND A KEY RECORD THE SAME REVIEW — the fields the log keeps, from the
+// same fixture reached both ways.
+func TestAPickedNumberRecordsWhatItsDigitRecords(t *testing.T) {
+	record := func(click bool) store.ReviewEvent {
+		d, opt, qs, held, st := clozeSitting(t)
+		qs = qs[:1]
+		tty := &syncBuf{}
+		live := newPinnedScreen(tty, 200, opt.width)
+		pointer := newPointerRouter(live, nil)
+		live.interval = -1
+		var errb bytes.Buffer
+		keys := make(chan Key)
+		done := make(chan int, 1)
+		go func() {
+			done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+				console{view: live, pointer: pointer, finish: func() {}, stdout: live, stderr: &errb})
+		}()
+		waitFor(t, func() bool { return strings.Contains(live.Transcript(), "Her ___ praise") })
+		if click {
+			keys <- completedPointerClick(t, pointer, optionRow(t, live, 2, 0), 0)
+		} else {
+			keys <- Key{Kind: KeyRune, Rune: '3'}
+		}
+		waitFor(t, func() bool { return len(reviewEvents(t, st)) == 1 })
+		keys <- Key{Kind: KeyInterrupt}
+		<-done
+		e := reviewEvents(t, st)[0]
+		e.At = time.Time{}
+		return e
+	}
+	if byKey, byClick := record(false), record(true); !reflect.DeepEqual(byKey, byClick) {
+		t.Errorf("the digit recorded %+v, the click %+v", byKey, byClick)
+	}
+}
+
+// A WRAPPED STEM LEAVES EVERY NUMBER POINTING AT ITS OWN OPTION, with colour on
+// and off (#80 hazard 4; #46's no-colour rule). Written through writePrompt
+// into a pinned screen, the door a sitting uses, at a width that wraps the stem.
+func TestOptionNumbersSurviveAWrappedStemAndNoColour(t *testing.T) {
+	const cols = 24
+	for _, colour := range []bool{true, false} {
+		d, opt, qs, _, _ := clozeSitting(t)
+		opt.color, opt.width = colour, cols
+		live := newPinnedScreen(io.Discard, 60, cols)
+		writePrompt(live, qs[0], d, opt)
+		lines := strings.Split(live.Transcript(), "\n")
+		if strings.Count(live.Transcript(), "\n") < 7 {
+			t.Fatalf("fixture: the stem did not wrap at %d columns:\n%s", cols, live.Transcript())
+		}
+		seen := 0
+		for i, line := range lines {
+			plain := unstyled(line)
+			if len(plain) < play.OptionIndent || plain[0] != '[' {
+				continue
+			}
+			want := int(plain[1] - '1')
+			for col := 0; col < play.OptionIndent; col++ {
+				r, ok := live.s.RegionAt(i, col)
+				if !ok || r.Kind != RegionOption || r.Option != want {
+					t.Errorf("colour=%v line %d col %d: region %+v %v, want option %d", colour, i, col, r, ok, want)
+				}
+			}
+			if r, ok := live.s.RegionAt(i, play.OptionIndent); ok && r.Kind == RegionOption {
+				t.Errorf("colour=%v line %d: the option number's target reaches the word", colour, i)
+			}
+			if strings.Contains(line[:strings.Index(line, "]")+1], "\x1b[4m") {
+				t.Errorf("colour=%v line %d: the number is underlined: %q", colour, i, line)
+			}
+			seen++
+		}
+		if seen != 3 {
+			t.Errorf("colour=%v: %d option lines on screen, want 3:\n%s", colour, seen, live.Transcript())
 		}
 	}
 }

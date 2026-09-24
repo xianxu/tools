@@ -259,6 +259,9 @@ func TestPassageWordsAreNotUnderlined(t *testing.T) {
 	if regionUnderlines(RegionPassageWord) {
 		t.Error("passage words are underlined; in a passage that marks every word and reads as noise")
 	}
+	if regionUnderlines(RegionOption) {
+		t.Error("an option number is underlined; the underline beside it means \"click to hear\" (#80)")
+	}
 	for _, k := range []RegionKind{RegionHeadword, RegionOriginLang, RegionWord} {
 		if !regionUnderlines(k) {
 			t.Errorf("%v lost its underline, so its affordance is invisible", k)

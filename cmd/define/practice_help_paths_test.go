@@ -119,7 +119,7 @@ func TestColdCachePreparesOnceBeforeTheFirstQuestion(t *testing.T) {
 				t.Fatalf("option %q has no English", o.Gloss)
 			}
 		}
-		if !strings.Contains(c.Prompt(), "\n   english ") {
+		if !strings.Contains(c.Prompt(), "\n"+strings.Repeat(" ", play.OptionIndent)+"english ") {
 			t.Fatalf("the prompt does not show its English:\n%s", c.Prompt())
 		}
 	}

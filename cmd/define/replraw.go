@@ -836,7 +836,18 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 // does not". In a passage every word is clickable, so underlining them all
 // carries no information and makes the passage hard to read — which is what the
 // first version did.
-func regionUnderlines(k RegionKind) bool { return k != RegionPassageWord }
+//
+// An option NUMBER is not underlined either (#80): it is drawn as `[2]`, a
+// button like a board cell, and the underline beside it on the option word
+// means "click to hear" — two gestures that must not look like one.
+func regionUnderlines(k RegionKind) bool { return k != RegionPassageWord && k != RegionOption }
+
+// regionAnswers declares the kinds whose click ANSWERS the question on screen,
+// which only a sitting has. Declared for the reason regionPlaysAudio is: the
+// guards derive every kind from numRegionKinds and ask these, so a kind that is
+// neither heard, nor marked, nor an answer reddens rather than drawing a target
+// that does nothing. The sitting's formCell owns the action.
+func regionAnswers(k RegionKind) bool { return k == RegionOption }
 
 // regionPlaysAudio declares which region kinds the AUDIO registry answers for.
 //
@@ -857,6 +868,9 @@ func regionPlaysAudio(k RegionKind) bool {
 	case RegionPassageWord:
 		// A passage word is read, not heard. Clicking it marks it — the question
 		// you are about to ask — and the editor's KeyClick branch owns that.
+		return false
+	case RegionOption:
+		// An option number answers; see regionAnswers.
 		return false
 	}
 	return false
