@@ -26,6 +26,31 @@ rounds:
           round: 1
       recipe: small-diff-review
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-23T17:18:09-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: wrapDiagnostic hard-breaks via selectionPhysicalRows; removing that loop turns TestDiagnosticsFitTheScreenAndLoseNothing red (2 over-width rows).
+          round: 2
+        - id: BR-2
+          disposition: addressed
+          note: Pure in-process TestDiagnosticsFitTheScreenAndLoseNothing asserts every row fits 40 cols plus no text lost, plain and coloured, overlong token included.
+          round: 2
+        - id: BR-3
+          disposition: withdrawn
+          note: 'Mistaken premise: screen.Write (screen.go:127,160) already turns CRLF into LF and drops bare CR, so a fitting line never kept its CR in the buffer.'
+          round: 2
+      findings:
+        - id: BR-4
+          severity: Minor
+          title: CRLF normalisation in wrapDiagnostic duplicates screen.Write and its comment claim is false
+          detail: '2nd finding in the family. Rule: CR handling belongs to the buffer boundary (screen.Write:127,160); no upstream writer should normalise. Instances in the window: the ReplaceAll at screen.go:963, the comment at screen.go:959-961 ("a line that fits keeps it"), and the CR assertion at screen_test.go:1720, which stays green with the normalisation removed. Delete all three, or keep the assertion only as a documented invariant of the buffer.'
+          family: wrap-drops-carriage-return
+          round: 2
+      recipe: small-diff-review
+      blocked: false
 ---
 
 # Gate ledger — tools#81 (boundary-review)
@@ -43,8 +68,19 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   The only test is darwin+conformance tagged and checks tail presence only. Add a pure newLiveScreen test writing a long message through Diagnostics() and asserting every buffer row is at most cols cells, including an overlong-token case.
 - **BR-3** [Minor] `wrap-drops-carriage-return` Wrapping a CRLF-terminated diagnostic drops its trailing CR while fitting lines keep it
 
+## Round 2 — 2026-09-23T17:18:09-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — addressed — wrapDiagnostic hard-breaks via selectionPhysicalRows; removing that loop turns TestDiagnosticsFitTheScreenAndLoseNothing red (2 over-width rows).
+- BR-2 — addressed — Pure in-process TestDiagnosticsFitTheScreenAndLoseNothing asserts every row fits 40 cols plus no text lost, plain and coloured, overlong token included.
+- BR-3 — withdrawn — Mistaken premise: screen.Write (screen.go:127,160) already turns CRLF into LF and drops bare CR, so a fitting line never kept its CR in the buffer.
+
+### Raised
+
+- **BR-4** [Minor] `wrap-drops-carriage-return` CRLF normalisation in wrapDiagnostic duplicates screen.Write and its comment claim is false
+  2nd finding in the family. Rule: CR handling belongs to the buffer boundary (screen.Write:127,160); no upstream writer should normalise. Instances in the window: the ReplaceAll at screen.go:963, the comment at screen.go:959-961 ("a line that fits keeps it"), and the CR assertion at screen_test.go:1720, which stays green with the normalisation removed. Delete all three, or keep the assertion only as a documented invariant of the buffer.
+
 ## Open findings
 
-- **BR-1** [Important] `wrap-leaves-overlong-token-clipped` Diagnostic tokens wider than the terminal are still clipped (wrapText never breaks a word)
-- **BR-2** [Important] `done-when-clause-untested` No in-process test for Diagnostics; clause 2 (every row fits width) is never asserted
-- **BR-3** [Minor] `wrap-drops-carriage-return` Wrapping a CRLF-terminated diagnostic drops its trailing CR while fitting lines keep it
+- **BR-4** [Minor] `wrap-drops-carriage-return` CRLF normalisation in wrapDiagnostic duplicates screen.Write and its comment claim is false

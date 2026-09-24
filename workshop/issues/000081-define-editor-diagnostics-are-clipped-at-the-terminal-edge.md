@@ -1,6 +1,6 @@
 ---
 id: 000081
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-23
@@ -8,6 +8,7 @@ updated: 2026-09-23
 estimate_hours:
 started: 2026-09-23T16:58:08-07:00
 flow: {kind: quick, provenance: inferred, spec: "da43ce69", done: "253f1ad1"}
+actual_hours: 0.36
 ---
 
 # define: editor diagnostics are clipped at the terminal edge
@@ -60,6 +61,7 @@ would break words at chunk edges. Diagnostics are written as whole messages
 ## Log
 
 ### 2026-09-23
+- 2026-09-23: closed — pty TestPTYAWideDiagnosticIsWrappedNotClipped red→green at 80 cols; TestDiagnosticsFitTheScreenAndLoseNothing (overlong token, colour, CR) mutation-checked red vs bare wrapWritten; go test ./cmd/define/... ok; 13 other TestPTY rows fail identically on main (pre-existing first-run deck prompt). No atlas: bugfix inside an existing seam.; review verdict: SHIP
 
 Filed from the operator's report while diagnosing the proxy 400 (the proxy
 advertises `claude-opus-5-5` and then refuses it; separate matter).

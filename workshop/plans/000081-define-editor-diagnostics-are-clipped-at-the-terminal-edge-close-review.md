@@ -73,3 +73,88 @@ findings:
     title: |
       Wrapping a CRLF-terminated diagnostic drops its trailing CR while fitting lines keep it
 ```
+
+---
+
+## Re-review — 2026-09-23T17:18:09-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 81 — define: editor diagnostics are clipped at the terminal edge |
+| repo | tools |
+| issue file | workshop/issues/000081-define-editor-diagnostics-are-clipped-at-the-terminal-edge.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 1236de2a5e303b3626d8f6bbded85d845bee6752..42dfcfb67aca98e39916ce34204ec9c183ab2cb3 |
+| command | sdlc close --issue 81 |
+| reviewer | claude |
+| timestamp | 2026-09-23T17:18:09-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+Both Important findings from round 1 are fixed, and I confirmed each fix by reverting it in a scratch copy. `wrapDiagnostic` (`cmd/define/screen.go:962-977`) first uses the existing `wrapWritten` word wrap, then hard-breaks any line that still doesn't fit using the screen's own soft-wrap splitter, `selectionPhysicalRows`. With the hard-break loop removed, `TestDiagnosticsFitTheScreenAndLoseNothing` fails: the overlong line exceeds 40 cells in both the plain and coloured cases. The new test is pure and runs under plain `go test`, so Done-when clause 2 no longer depends on a conformance-tagged pty test. One leftover remains. BR-3's premise was wrong: the buffer's own `Write` already turns CRLF into LF and drops any bare `\r` (`screen.go:127`, `:160`). That makes the new CRLF normalisation redundant, and the comment that justifies it is false. This is Minor and doesn't block.
+
+1. **Strengths**
+   - The hard break reuses `selectionPhysicalRows` (`screen.go:715`) instead of building a new splitter, so styling carries over onto continuation rows. The coloured case of the test exercises that path (ARCH-DRY).
+   - The erase gesture exemption and the sub-20-column policy match `wrapWritten` exactly (`screen.go:966-970`), so this path follows the same rules as the pinned-screen wrap.
+   - The test checks three things together: every row fits, no text is lost (joined with spaces removed), and both plain and coloured styling. That catches both clipping and dropped fragments.
+   - The claim that wrapping twice on a pinned screen is harmless holds. Rows from the hard break already fit, so `wrapWritten` in `writeBuffer` leaves them unchanged.
+
+2. **Critical:** none.
+
+3. **Important:** none.
+
+4. **Minor**
+   - **The CRLF normalisation in `wrapDiagnostic` repeats what `screen.Write` already does, and its comment is false.** This is the 2nd finding in family `wrap-drops-carriage-return`.
+     - **The rule:** `\r` handling belongs to the buffer boundary, which is `screen.Write`. No writer upstream of it should normalise line endings.
+     - **Evidence:** I removed the `ReplaceAll` in a scratch copy. The test stayed green, and a fitting `"short\r\n"` still reached the buffer as `"short"`.
+     - **Every instance in the window:**
+       - the `ReplaceAll` at `screen.go:963`
+       - the comment paragraph at `:959-961`, which claims "a line that fits keeps it"
+       - the test's "kept a CR" assertion at `screen_test.go:1720`, which cannot fail.
+     - **Fix:** delete all three, or keep the assertion only as a documented invariant of the buffer rather than of this fix.
+   - A partial write, meaning text with no trailing newline followed by another write, is wrapped one piece at a time. I measured a 43-cell row in a 40-column screen. Today every editor stderr call site writes a whole line (`replraw.go:28,395,663,798`, `main.go:1307`), so this is only a premise the doc comment states. Noted from round 1; no action needed.
+   - Rows produced by the hard break start at column 0 and don't keep the line's hanging indent. That's acceptable for diagnostics.
+
+5. **Test coverage notes:**
+   - `go test -run TestDiagnostics ./cmd/define` passes.
+   - The hard-break mutation turns it red, which confirms the fix for BR-1 and BR-2.
+   - The CR mutation stays green (see Minor).
+   - I did not re-run the pty conformance test, because it needs an unsandboxed pty.
+
+6. **Architectural notes**
+   - ARCH-DRY: pass for the wrap and the hard break. Minor flag for the CRLF normalisation, which duplicates `screen.Write:127`.
+   - ARCH-PURE: pass. `wrapDiagnostic` is a pure function, and `diagnostics.Write` is a thin wrapper around it that takes the lock.
+   - ARCH-PURPOSE: pass. Tokens wider than the screen, the case the operator actually hit, now reach the screen whole.
+
+7. **Plan revision recommendations:** None needed. The existing Revisions entry already records the hard-break policy and the in-process test. If the CRLF normalisation is removed, the Log line "Minor CR finding folded in" should say BR-3 was withdrawn, because the buffer already drops `\r`.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      wrapDiagnostic hard-breaks via selectionPhysicalRows; removing that loop turns TestDiagnosticsFitTheScreenAndLoseNothing red (2 over-width rows).
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Pure in-process TestDiagnosticsFitTheScreenAndLoseNothing asserts every row fits 40 cols plus no text lost, plain and coloured, overlong token included.
+  - id: BR-3
+    disposition: withdrawn
+    note: |
+      Mistaken premise: screen.Write (screen.go:127,160) already turns CRLF into LF and drops bare CR, so a fitting line never kept its CR in the buffer.
+findings:
+  - id: new
+    severity: Minor
+    family: wrap-drops-carriage-return
+    title: |
+      CRLF normalisation in wrapDiagnostic duplicates screen.Write and its comment claim is false
+    detail: |
+      2nd finding in the family. Rule: CR handling belongs to the buffer boundary (screen.Write:127,160); no upstream writer should normalise. Instances in the window: the ReplaceAll at screen.go:963, the comment at screen.go:959-961 ("a line that fits keeps it"), and the CR assertion at screen_test.go:1720, which stays green with the normalisation removed. Delete all three, or keep the assertion only as a documented invariant of the buffer.
+```
