@@ -1594,7 +1594,6 @@ func emptyQueueReason(deckSize, budget int) string {
 	}
 }
 
-
 // lineRange is a half-open range of buffer lines.
 type lineRange struct{ from, to int }
 

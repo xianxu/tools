@@ -492,7 +492,7 @@ is written as it happens, not at the end.
 | `1`–`4`, or click `[1]`–`[4]` | multiple choice: pick the definition, or on a cloze pick the word |
 | `?` | on a cloze: bad question — records it with the options you were shown, and moves on without marking you wrong |
 | `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
-| click | board: mark that word. Anywhere else, a click plays the word — the headword, a language named in the ORIGIN, or any word already in your deck, wherever it appears |
+| click | board: mark that word. On a question's `[1]`–`[4]`: pick that option. Anywhere else, a click plays the word — the headword, a language named in the ORIGIN, or any word already in your deck, wherever it appears |
 | Tab | board: cycle what a mark means — yes, no, then drop |
 | Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
 | space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |

@@ -1146,9 +1146,9 @@ func TestPlayARevealedDefinitionCarriesItsRegions(t *testing.T) {
 func TestAWrapMovesTheClickMapRatherThanDroppingIt(t *testing.T) {
 	const width = 20
 	// Line 0 is a short headword; line 1 is a gloss that must wrap.
-	text := "word\n1  " + strings.Repeat("gloss ", 8) + "\ntail\n"
+	text := "word\n[1] " + strings.Repeat("gloss ", 8) + "\ntail\n"
 	head := Region{Kind: RegionHeadword, Text: "word", Word: "word", Line: 0, Col: 0, Width: 4}
-	inGloss := Region{Kind: RegionHeadword, Text: "gloss", Word: "gloss", Line: 1, Col: 3, Width: 5}
+	inGloss := Region{Kind: RegionHeadword, Text: "gloss", Word: "gloss", Line: 1, Col: 4, Width: 5}
 	onTail := Region{Kind: RegionHeadword, Text: "tail", Word: "tail", Line: 2, Col: 0, Width: 4}
 
 	got := wrapMovedRegions(text, []Region{head, inGloss, onTail}, width)
@@ -1160,7 +1160,7 @@ func TestAWrapMovesTheClickMapRatherThanDroppingIt(t *testing.T) {
 		t.Errorf("the headword moved to line %d, want 0 — nothing above it wrapped", got[0].Line)
 	}
 	// The tail moved DOWN by however many rows the gloss became.
-	rows := strings.Count(wrapWritten("1  "+strings.Repeat("gloss ", 8), width), "\n") + 1
+	rows := strings.Count(wrapWritten("[1] "+strings.Repeat("gloss ", 8), width), "\n") + 1
 	if want := 1 + rows; got[1].Line != want {
 		t.Errorf("the tail is on line %d, want %d — a region below a wrap moves by the rows it added",
 			got[1].Line, want)
