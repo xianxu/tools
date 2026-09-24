@@ -49,8 +49,8 @@ would break words at chunk edges. Diagnostics are written as whole messages
 
 ## Plan
 
-- [ ] pty test, red
-- [ ] `liveScreen.Diagnostics()` writer wrapping with `wrapWritten` at `l.cols`;
+- [x] pty test, red
+- [x] `liveScreen.Diagnostics()` writer wrapping with `wrapWritten` at `l.cols`;
       `replraw.go` wires `stderr` to it
 - [ ] green; `go test ./cmd/define/...`; `sdlc close`
 
@@ -60,3 +60,14 @@ would break words at chunk edges. Diagnostics are written as whole messages
 
 Filed from the operator's report while diagnosing the proxy 400 (the proxy
 advertises `claude-opus-5-5` and then refuses it; separate matter).
+
+Red then green: `TestPTYAWideDiagnosticIsWrappedNotClipped` (conformance tag,
+needs a real pty — the sandbox refuses one, so run unsandboxed) showed the line
+cut at `400 Bad Req` at 80 columns before the fix, and the full provider
+message after. Fix is `liveScreen.Diagnostics()` reusing `wrapWritten`
+(ARCH-DRY), wired as the editor's stderr in `replraw.go`.
+
+Pre-existing, not this issue: 13 other `TestPTY*` rows fail identically with
+this change stashed. The failures read as the first-run "not a deck yet.
+Create one here?" prompt eating the tests' first line of input (the new test
+had to decline it explicitly). Worth its own issue.

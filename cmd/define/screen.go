@@ -923,6 +923,32 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Diagnostics is the screen as the EDITOR's stderr: Write, wrapped at the
+// screen's own width whether or not it is pinned (#81).
+//
+// The editor's stdout stays unwrapped because its writers pre-wrap — Render, and
+// answerWrapWriter, which carries word boundaries across streamed chunks that a
+// per-write wrap would break. Diagnostics have no such writer: each is one whole
+// `Fprintf`, the premise the pinned screen's wrap already rests on. Unwrapped,
+// Paint clipped them at the terminal edge, and the clipped tail of an error is
+// the provider's message — the part that says what went wrong.
+func (l *liveScreen) Diagnostics() io.Writer { return diagnostics{l} }
+
+type diagnostics struct{ l *liveScreen }
+
+func (d diagnostics) Write(p []byte) (int, error) {
+	l := d.l
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	// Idempotent on a pinned screen, where writeBuffer wraps again: a line that
+	// already fits is returned untouched.
+	if err := l.writeBuffer(wrapWritten(string(p), l.cols)); err != nil {
+		return 0, err
+	}
+	l.throttledPaint()
+	return len(p), nil
+}
+
 // writeBuffer is the ONE way text reaches the buffer, and the wrap lives here so
 // that is true of every path rather than of the one anybody thought about.
 //
