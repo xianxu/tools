@@ -45,7 +45,10 @@ would break words at chunk edges. Diagnostics are written as whole messages
 - A pty test at 80 columns scripts a 400 from the model fake and asks a
   question; the provider's message (the tail past column 80) is on screen.
   Red before the fix.
-- Every buffer row written through the editor's stderr fits the screen width.
+- Every buffer row written through the editor's stderr fits the screen width —
+  including a token wider than the screen (a URL, a run of JSON), which is
+  hard-broken rather than clipped — and no text is lost
+  (`TestDiagnosticsFitTheScreenAndLoseNothing`).
 
 ## Plan
 
