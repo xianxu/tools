@@ -4525,14 +4525,25 @@ func TestAClickOnAnOptionNumberAnswersOnlyTheQuestionBeingAsked(t *testing.T) {
 	}()
 	waitFor(t, func() bool { return strings.Contains(live.Transcript(), "Her ___ praise") })
 	events := func() int { return len(reviewEvents(t, st)) }
+	// Every send is BOUNDED: a click that wrongly answers the last question ends
+	// the sitting, and an unbounded send would then hang the suite instead of
+	// failing the row.
+	send := func(k Key) {
+		t.Helper()
+		select {
+		case keys <- k:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("the sitting stopped reading keys — something ended it early; reviews: %+v", reviewEvents(t, st))
+		}
+	}
 	// The channel is UNBUFFERED and the loop is one goroutine, so a send
 	// completes only once everything before it was handled. A click on the blank
 	// first row is ordinary text — it does nothing — which makes it the probe.
-	settle := func() { keys <- completedPointerClick(t, pointer, 0, 0) }
+	settle := func() { send(completedPointerClick(t, pointer, 0, 0)) }
 
 	// 1. The WORD's first column speaks and answers nothing.
 	wrong := optionRow(t, live, 1, 0) // quokka
-	keys <- completedPointerClick(t, pointer, wrong, play.OptionIndent)
+	send(completedPointerClick(t, pointer, wrong, play.OptionIndent))
 	waitFor(t, func() bool { return player.count() > 0 })
 	settle()
 	if n := events(); n != 0 {
@@ -4540,7 +4551,7 @@ func TestAClickOnAnOptionNumberAnswersOnlyTheQuestionBeingAsked(t *testing.T) {
 	}
 
 	// 2. The column BEFORE it — the gap in `[2] ` — answers, wrongly.
-	keys <- completedPointerClick(t, pointer, wrong, play.OptionIndent-1)
+	send(completedPointerClick(t, pointer, wrong, play.OptionIndent-1))
 	waitFor(t, func() bool { return strings.Contains(livePromptOf(live), "any key = next word") })
 	if n := events(); n != 1 {
 		t.Fatalf("a click on the number recorded %d reviews, want 1", n)
@@ -4548,25 +4559,25 @@ func TestAClickOnAnOptionNumberAnswersOnlyTheQuestionBeingAsked(t *testing.T) {
 
 	// 3. After the answer, no number answers or advances: the question's own
 	// list, and the reveal's `you chose` line.
-	keys <- completedPointerClick(t, pointer, optionRow(t, live, 0, 0), 1)
-	keys <- completedPointerClick(t, pointer, optionRow(t, live, 1, wrong+1), 1)
+	send(completedPointerClick(t, pointer, optionRow(t, live, 0, 0), 1))
+	send(completedPointerClick(t, pointer, optionRow(t, live, 1, wrong+1), 1))
 	settle()
 	if n := events(); n != 1 || !strings.Contains(livePromptOf(live), "any key = next word") {
 		t.Fatalf("a click after the answer changed the sitting: %d reviews, prompt %q", n, livePromptOf(live))
 	}
 
 	// 4. A key moves on; the OLD question's numbers are still on screen.
-	keys <- Key{Kind: KeyRune, Rune: 'x'}
+	send(Key{Kind: KeyRune, Rune: 'x'})
 	waitFor(t, func() bool { return strings.Contains(live.Transcript(), "They climbed the ___") })
 	stem := strings.Count(live.Transcript()[:strings.Index(live.Transcript(), "They climbed")], "\n")
-	keys <- completedPointerClick(t, pointer, optionRow(t, live, 1, 0), 1) // the first question's [2]
+	send(completedPointerClick(t, pointer, optionRow(t, live, 1, 0), 1)) // the first question's [2]
 	settle()
 	if n := events(); n != 1 {
 		t.Fatalf("a click on the PREVIOUS question's number answered the current one: %d reviews", n)
 	}
 
 	// 5. The current question's own number answers it.
-	keys <- completedPointerClick(t, pointer, optionRow(t, live, 1, stem), 0)
+	send(completedPointerClick(t, pointer, optionRow(t, live, 1, stem), 0))
 	if code := <-done; code != 0 {
 		t.Errorf("the sitting exited %d: %s", code, errb.String())
 	}
