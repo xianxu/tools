@@ -52,7 +52,7 @@ would break words at chunk edges. Diagnostics are written as whole messages
 - [x] pty test, red
 - [x] `liveScreen.Diagnostics()` writer wrapping with `wrapWritten` at `l.cols`;
       `replraw.go` wires `stderr` to it
-- [ ] green; `go test ./cmd/define/...`; `sdlc close`
+- [x] green; `go test ./cmd/define/...`; `sdlc close`
 
 ## Log
 
