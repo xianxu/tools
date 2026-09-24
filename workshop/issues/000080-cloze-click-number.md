@@ -228,19 +228,19 @@ Log.
 
 - [x] brainstorm — (A)/(B) fork, open questions 1–3 (above)
 - [x] check #75's plan for the cloze click map — none yet; disjoint by target
-- [ ] tests first (red): stale digit on screen answers nothing; post-answer
+- [x] tests first (red): stale digit on screen answers nothing; post-answer
       click on the option list and on the reveal's `you chose` line does
       nothing and does not advance; boundary pair (`[k] ` last column answers,
       word's first column pronounces); wrapped stem at a narrow width; colour off;
       key-vs-click same verdict + same recorded review (pty,
       `TestPTYPlayBoardIsDrawnAndClickable` shape) for cloze and multiple-choice
-- [ ] `play`: `optionLine` → `[k] `, `OptionIndent` 4, option spans on
+- [x] `play`: `optionLine` → `[k] `, `OptionIndent` 4, option spans on
       `Presentation`, `Marker` + `optionSet.Mark`, `Apply` Graded refusal;
       fix `isOptionLine`, option-wrap tests, README option blocks
-- [ ] loop: `RegionOption` (+ String/identifier/actions registry), regions
+- [x] loop: `RegionOption` (+ String/identifier/actions registry), regions
       from `writePrompt`, prompt range, `formCell` second shape
-- [ ] keys hint `1-4 or click = pick …`; README quotes; width check
-- [ ] atlas `define.md`: second asker of "a click never answers a form that did
+- [x] keys hint `1-4 or click = pick …`; README quotes; width check
+- [x] atlas `define.md`: second asker of "a click never answers a form that did
       not ask for it", number-answers / word-speaks, why the target excludes the
       word; then `sdlc close`
 
@@ -269,3 +269,46 @@ was #67's `passageSpanAt(hit.line, …)` — the absolute-buffer-line identity c
 is already the house answer to "regions are never pruned", so the fork's (A)/(B)
 tension dissolves: region for coordinates, loop-held range for identity,
 `Graded` refusal in `Apply` for post-answer clicks.
+
+Implemented. What the tests pin, and what each mutation proved:
+
+- `play`: `TestAPickedOptionIsGradedExactlyAsItsDigit` (both forms, every
+  option, cold and after a peek), `TestAClickOnAnAnsweredQuestionNeitherAnswersNorAdvances`,
+  `TestAPickPastTheOptionsIsNothing`, `TestPromptOptionsLocateTheNumbersAndTheRevealHasNone`.
+  Mutations: dropping the Graded refusal → 12 failures; routing a pick through
+  the board's `advance` instead of `graded` → 4.
+- loop: `TestAClickOnAnOptionNumberAnswersOnlyTheQuestionBeingAsked` walks the
+  word column (speaks, no review), the gap column (answers), post-answer clicks
+  on the list and on `you chose`, and the previous question's stale `[2]`;
+  `TestAPickedNumberRecordsWhatItsDigitRecords`;
+  `TestOptionNumbersSurviveAWrappedStemAndNoColour` (24 columns, colour on/off).
+  Mutations caught: range check removed, range widened to the buffer top,
+  option regions not written, number span extended onto the word.
+- pty: `TestPTYPlayClickingAnOptionNumberAnswers` — real SGR click on a real
+  form 2.3; red with the option regions removed.
+
+Found on the way: the sitting row hung rather than failed under the range
+mutation (a wrongly-ended sitting stops reading keys) — its sends are now
+bounded. **side-quest:** `seedDeckN` never passed `--here`, so every `--play`
+pty row read an empty deck; fixing it exposed that the board's pty click sent a
+press without a release, which #67's gesture machine never treats as a click.
+Both fixed; the two rows are green. 11 other `TestPTY*` rows still fail on main
+for the first-run deck prompt — separate issue.
+
+The keys line is 84 columns (`1-4 or click = pick the word, ? = bad question,
+d = remove from deck, Ctrl-C to stop`) and wraps to two rows at 80. The prompt
+row is measured (`displayRows`), so it is drawn correctly; left as is and
+flagged to the operator rather than trimming shared reserved text.
+
+## Revisions
+
+- 2026-09-23 — implementation: the capability is `play.Picker{Pick(i)}`, not a
+  `Marker` embedded in `Grid`. A picked option goes through `graded` — the tail
+  the digit uses, where a miss reveals without advancing — while a board mark
+  advances, so the two are different capabilities. The prompt range is a
+  plain `lineRange` (`asking`) with no question index: `show()` rewrites it for
+  every new prompt before the next key, and a board (which writes none) is not
+  a Picker, so an index check could never fire. `regionAnswers` declares the
+  answering kind beside `regionPlaysAudio`; the editor's actionable guard
+  defers it to the sitting row by name.
+
