@@ -21,6 +21,7 @@ type LanguageSpan struct {
 	Role         LanguageRole
 	AnswerStyled bool
 }
+
 // PresentationRegion marks a byte range and whether its rows are tinted. A
 // role, not a colour: the shade is main's business, resolved at paint (#70).
 type PresentationRegion struct {
@@ -28,13 +29,28 @@ type PresentationRegion struct {
 	Tinted     bool
 }
 
+// PresentationOption is an option NUMBER a click can answer with (#80): the
+// bytes of its `[k] ` prefix in Presentation.Text, and which option it picks.
+//
+// Recorded by the form as it writes the prompt, because the form is the only
+// thing that knows where it drew its numbers — main re-finding them by shape
+// would be a second owner of optionLine's layout. Only a PROMPT carries these:
+// a reveal repeats option lines, and a click there must answer nothing.
+type PresentationOption struct {
+	Start, End int
+	Index      int
+}
+
 type Presentation struct {
 	Regions []PresentationRegion
 	Text    string
 	Spans   []LanguageSpan
+	Options []PresentationOption
 }
 
-func (p promptBuilder) presentation() Presentation { return Presentation{Text: p.s, Spans: p.spans} }
+func (p promptBuilder) presentation() Presentation {
+	return Presentation{Text: p.s, Spans: p.spans, Options: p.picks}
+}
 func (p *promptBuilder) owned(s string, role LanguageRole, answerStyled bool) {
 	start := len(p.s)
 	p.text(s)
@@ -45,6 +61,15 @@ func (p *promptBuilder) owned(s string, role LanguageRole, answerStyled bool) {
 func (p *promptBuilder) option(i int, s string, role LanguageRole) {
 	p.text(optionLine(i, ""))
 	p.owned(s, role, false)
+}
+
+// pickable is option() on a PROMPT: the same line, with its number recorded as
+// something a click answers with. The number's span stops before the option's
+// text, so a click on the word is never an answer (#80 hazard 3).
+func (p *promptBuilder) pickable(i int, s string, role LanguageRole) {
+	start := len(p.s)
+	p.option(i, s, role)
+	p.picks = append(p.picks, PresentationOption{Start: start, End: start + OptionIndent, Index: i})
 }
 func (p *promptBuilder) blanked(s string) {
 	start := 0

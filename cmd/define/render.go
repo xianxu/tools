@@ -274,6 +274,13 @@ const (
 	// the passage lives in the BUFFER, and the buffer's click map is how anything
 	// in it is reached.
 	RegionPassageWord
+	// RegionOption is the NUMBER of an option on a question's prompt, `[2] `
+	// (#80). Clicking it ANSWERS with that option — the one kind whose action is
+	// the session's rather than the screen's, which is why the loop asks the
+	// form before acting on it and why it is honoured only on the prompt of the
+	// question being asked (formCell). Not underlined: the option WORD beside it
+	// is underlined when it is a deck word, and a click there speaks it.
+	RegionOption
 	// numRegionKinds is NOT a kind: it is the registry's extent, so every guard
 	// DERIVES the set rather than restating it. A test that loops to
 	// RegionOriginLang by name is a second copy of "these are all the kinds",
@@ -298,6 +305,8 @@ func (k RegionKind) String() string {
 		return "deck word"
 	case RegionPassageWord:
 		return "passage word"
+	case RegionOption:
+		return "option number"
 	}
 	return fmt.Sprintf("RegionKind(%d)", int(k))
 }
@@ -319,6 +328,8 @@ func (k RegionKind) identifier() string {
 		return "RegionWord"
 	case RegionPassageWord:
 		return "RegionPassageWord"
+	case RegionOption:
+		return "RegionOption"
 	}
 	return fmt.Sprintf("RegionKind(%d)", int(k))
 }
@@ -340,11 +351,14 @@ type Region struct {
 	// headword. It travels on the region because a click can land on an entry
 	// the session has long since scrolled past, and the session keeps only the
 	// current one.
-	Word  string
-	Lang  store.Lang // RegionOriginLang only
-	Line  int
-	Col   int
-	Width int
+	Word string
+	Lang store.Lang // RegionOriginLang only
+	// Option is which option a click answers with, counted from 0. RegionOption
+	// only.
+	Option int
+	Line   int
+	Col    int
+	Width  int
 }
 
 // regionsIn finds the actionable spans IN THE RENDERED OUTPUT, rather than

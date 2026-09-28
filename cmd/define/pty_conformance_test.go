@@ -875,7 +875,10 @@ func seedDeckN(t *testing.T, words ...string) string {
 	t.Helper()
 	deck := t.TempDir()
 	for _, w := range words {
-		_, seed := startDefineInDir(t, deck, nil, "--no-audio", w)
+		// --here: a fresh directory is "not a deck yet", and without it the
+		// binary asks, the seed declines by EOF, and nothing is saved — which
+		// left every --play row below reading an empty deck.
+		_, seed := startDefineInDir(t, deck, nil, "--here", "--no-audio", w)
 		got := watch(seed).take(3 * time.Second)
 		if !strings.Contains(got, "adjective") && !strings.Contains(got, "noun") {
 			conformance.SkipOrFail(t, fmt.Sprintf("seeding %q did not resolve:\n%q", w, got), nil)
@@ -907,7 +910,7 @@ func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
 	if strings.Contains(first, "y = got it") {
 		t.Errorf("a multiple-choice question printed form 2.1's keys — a learner would press a dead key:\n%q", first)
 	}
-	for _, n := range []string{"1  ", "2  "} {
+	for _, n := range []string{"[1] ", "[2] "} {
 		if !strings.Contains(first, n) {
 			t.Errorf("no option line %q on screen:\n%q", n, first)
 		}
@@ -1032,8 +1035,8 @@ func twiceNumberedOption(frame string) byte {
 	seen := map[byte]int{}
 	for _, line := range strings.Split(frame, "\n") {
 		l := strings.TrimLeft(line, " \t")
-		if len(l) > 3 && l[0] >= '1' && l[0] <= '9' && l[1] == ' ' && l[2] == ' ' {
-			seen[l[0]]++
+		if len(l) > 4 && l[0] == '[' && l[1] >= '1' && l[1] <= '9' && l[2] == ']' && l[3] == ' ' {
+			seen[l[1]]++
 		}
 	}
 	// The LOWEST matching digit, in order — not whatever a map range yields
@@ -1047,6 +1050,60 @@ func twiceNumberedOption(frame string) byte {
 		}
 	}
 	return 0
+}
+
+// AN OPTION'S NUMBER ANSWERS ON A REAL TERMINAL (#80). SGR mouse reporting,
+// the frame the paint drew, the click map and the loop's prompt range are four
+// things the in-process rows stand in for; this is the one row where all four
+// are the real ones. Multiple choice rather than cloze because a pty deck cannot
+// author sentences, and the two forms share every step of the click's path.
+func TestPTYPlayClickingAnOptionNumberAnswers(t *testing.T) {
+	deck := seedDeckN(t, "sycophantic", "quokka", "mesa", "parrot", "concrete")
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 40, Cols: 100}); err != nil {
+		conformance.SkipOrFail(t, "cannot size the pty on this platform", err)
+	}
+	out := watch(f)
+	first := unstyled(out.take(4 * time.Second))
+	if !strings.Contains(first, "or click = pick the definition") {
+		t.Fatalf("form 2.3 was not offered with its click hint:\n%q", first)
+	}
+	rows := strings.Split(lastFrame(first), "\r\n")
+	row := -1
+	for i, r := range rows {
+		if strings.HasPrefix(r, "[1] ") {
+			row = i
+		}
+	}
+	if row < 0 {
+		t.Fatalf("no [1] option row in the frame:\n%q", lastFrame(first))
+	}
+	click := func(col int) string {
+		fmt.Fprintf(f, "\x1b[<0;%d;%dM\x1b[<0;%d;%dm", col+1, row+1, col+1, row+1)
+		return unstyled(out.take(2 * time.Second))
+	}
+
+	// The GLOSS beside it is text: a click there answers nothing.
+	if after := click(play.OptionIndent + 1); strings.Contains(after, "any key = next word") || strings.Contains(after, "1 of 5") {
+		t.Fatalf("a click on the option's text answered:\n%q", lastFrame(after))
+	}
+	// The NUMBER answers: either the miss's reveal, or the next question.
+	after := click(1)
+	if !strings.Contains(after, "any key = next word") && !strings.Contains(after, "1 of 5") {
+		t.Fatalf("a click on [1] did not answer:\n%q", lastFrame(after))
+	}
+	f.WriteString("\x03")
+	out.take(time.Second)
+	events, err := os.ReadFile(latestEventFile(t, deck))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(events), "kind: reviewed"); n != 1 {
+		t.Errorf("%d reviews recorded after one number click, want 1:\n%s", n, events)
+	}
+	if !strings.Contains(string(events), "form: meaning") {
+		t.Errorf("the review does not name the form that asked:\n%s", events)
+	}
 }
 
 // pageUp is what a terminal sends for the key, decoded by key.go.
@@ -1160,7 +1217,10 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 	if col < 0 {
 		t.Fatalf("no third cell on the grid row %q", rows[gridRow])
 	}
-	fmt.Fprintf(f, "\x1b[<0;%d;%dM", col+1, gridRow+1)
+	// Press AND release: a press alone is the start of a gesture that could
+	// still become a drag (#67's selectionStep), and only the release decides
+	// it was a click. A terminal always sends both.
+	fmt.Fprintf(f, "\x1b[<0;%d;%dM\x1b[<0;%d;%dm", col+1, gridRow+1, col+1, gridRow+1)
 	raw := out.take(2 * time.Second)
 	afterClick := unstyled(raw)
 

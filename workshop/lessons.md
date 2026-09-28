@@ -23,6 +23,12 @@ leave incident transcripts and one-off details in their owning issue or plan.
   tuned to the happy path proves only the fixture.
 - Verify the mutation applied and compiled. A no-op replacement, wrong flag, or
   filtered suite must fail loudly rather than report a plausible zero.
+- Bound every blocking step in a test — channel sends, waits for output. A
+  mutation that ends the loop early must fail the row, not hang the suite; an
+  unbounded send turns the most important mutation into a timeout nobody reads.
+- Drive input the way the real device sends it: a terminal click is press AND
+  release. A fixture that sends half a gesture tests a state no user produces,
+  and it rots silently once the gesture machine gets stricter.
 
 ## Contracts and ownership
 

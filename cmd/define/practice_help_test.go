@@ -172,7 +172,7 @@ func TestPracticeHelpApply(t *testing.T) {
 			t.Fatalf("missed = %d, want 0", missed)
 		}
 		for _, e := range []string{"furniture with a flat top", "a seat with a back", "a container to drink from", "a place where you sleep"} {
-			if !strings.Contains(c.Prompt(), "\n   "+e) {
+			if !strings.Contains(c.Prompt(), "\n"+strings.Repeat(" ", play.OptionIndent)+e) {
 				t.Fatalf("choice prompt lacks %q:\n%s", e, c.Prompt())
 			}
 		}

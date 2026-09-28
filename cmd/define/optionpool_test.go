@@ -494,7 +494,7 @@ func TestWrapWrittenLeavesFittingLinesAlone(t *testing.T) {
 	// it, or the table above passes for a function that does nothing. Both kinds, each under its own indent: an
 	// option line hangs under the gloss, a body line under its own indentation.
 	for _, tc := range []struct{ name, in, wantIndent string }{
-		{"an option line hangs under the gloss", "1  " + strings.Repeat("word ", 10), strings.Repeat(" ", play.OptionIndent)},
+		{"an option line hangs under the gloss", "[1] " + strings.Repeat("word ", 10), strings.Repeat(" ", play.OptionIndent)},
 		{"a body line hangs under its own indent", "      " + strings.Repeat("word ", 10), "      "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -132,7 +132,7 @@ func (c *Choice) render() promptBuilder {
 	p.owned(c.word, Target, false)
 	p.text("\n\n")
 	for i, o := range c.options {
-		p.option(i, o.Gloss, DictionarySource)
+		p.pickable(i, o.Gloss, DictionarySource)
 		if o.Help != "" {
 			p.text("\n")
 			p.help(indentHelp(o.Help))
@@ -182,18 +182,24 @@ func (c *Choice) SetHelp(help []string) bool {
 // terminal then scrolls every placed row (screen.go's whole budget). So an
 // unwrapped gloss stopped being ugly and started being missing.
 //
-// A constant rather than a 3 in main: the prefix's width is this form's fact,
+// A constant rather than a 4 in main: the prefix's width is this form's fact,
 // and two owners of it would drift the day a form numbers past nine.
 // TestOptionLineStartsAtOptionIndent is the pin.
-const OptionIndent = 3
+const OptionIndent = 4
 
 // optionLine numbers one option. `byte('0'+n)` rather than fmt: this package
 // imports nothing, and one digit does not need a formatter (D5a).
 //
+// BRACKETED, `[1] keel`, because the number is a BUTTON (#80): a click on it
+// answers, the way a board's `[0] word` cell does. The option word beside it is
+// underlined by main when it is a deck word, and a click there SPEAKS it — so
+// the number is drawn as a target of its own rather than underlined too, which
+// would make the two gestures look like one.
+//
 // The gloss arrives already wrapped to OptionIndent, so its continuation lines
 // carry their own padding and this only has to place the number.
 func optionLine(i int, gloss string) string {
-	return string(rune('0'+i+1)) + "  " + gloss
+	return "[" + string(rune('0'+i+1)) + "] " + gloss
 }
 
 // indentHelp puts OptionIndent in front of EVERY line of an English help, so it
@@ -224,6 +230,9 @@ type promptBuilder struct {
 	spans []LanguageSpan
 	line  int // the 0-based line the next byte lands on
 	helps []int
+	// picks is where each ANSWERABLE option number was written, recorded as it
+	// is written for the reason helps is (#80).
+	picks []PresentationOption
 }
 
 // text appends question text: anything that is not help.

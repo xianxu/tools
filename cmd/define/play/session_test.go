@@ -1,6 +1,9 @@
 package play
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func rune_(r rune) Input { return Input{Kind: InputRune, Rune: r} }
 
@@ -720,14 +723,17 @@ func (m *fakeModed) Toggle() {
 }
 
 // AND IT NEVER ANSWERS A FORM THAT DID NOT ASK FOR IT. #38's invariant, in the
-// form it takes once one form does ask: every other form declines the kind, so
-// its row stays green untouched.
-func TestAClickDoesNotAnswerANonGridForm(t *testing.T) {
+// form it takes once forms do ask: the board (Grid) and the numbered-option
+// forms (Picker, #80) — every other form declines the kind, so its row stays
+// green untouched.
+func TestAClickDoesNotAnswerAFormThatDidNotAskForIt(t *testing.T) {
 	for _, q := range []Question{
 		&fakeForm{word: "keel", reveal: "the bottom of a ship"},
-		NewChoice("keel", "", []Option{{Gloss: "the bottom of a ship", Correct: true}, {Gloss: "a flat-topped hill"}}),
 		newFakeBatch("alpha", "beta"), // holds many words, but draws no cells
 	} {
+		if _, asks := q.(Picker); asks {
+			t.Fatalf("%T is a Picker; this row needs forms that did not ask", q)
+		}
 		s := NewSession([]Question{q, &fakeForm{word: "mesa", reveal: "a flat-topped hill"}})
 		s, outs := Apply(s, Input{Kind: InputMark, Cell: 0})
 		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
@@ -928,6 +934,109 @@ func TestEveryInputKindIsAnsweredForABatchForm(t *testing.T) {
 		}
 		if moved := next.Index != 0 || next.Done; moved != exp.advances {
 			t.Errorf("kind %d advanced=%v, want %v (index %d done %v)", k, moved, exp.advances, next.Index, next.Done)
+		}
+	}
+}
+
+// THE NUMBERED-OPTION FORMS, both of them (#80): what a click can pick, and
+// what it cannot.
+func pickerForms() []func() Question {
+	opts := func() []Option {
+		return []Option{{Word: "keel", Gloss: "the bottom of a ship", Correct: true}, {Word: "mesa", Gloss: "a flat-topped hill"}, {Word: "quokka", Gloss: "a small wallaby"}}
+	}
+	return []func() Question{
+		func() Question {
+			return NewCloze("keel", "the ship's ___ scraped", "the ship's keel scraped", "keel: bottom", opts())
+		},
+		func() Question { return NewChoice("keel", "keel: bottom", opts()) },
+	}
+}
+
+// A PICKED OPTION IS ITS DIGIT: the same outcomes and the same session, for
+// every option, cold and after a reveal — so a right pick advances, a wrong one
+// records and reveals without advancing, and Unaided means the same thing.
+func TestAPickedOptionIsGradedExactlyAsItsDigit(t *testing.T) {
+	for _, build := range pickerForms() {
+		for i := range 3 {
+			for _, peek := range []bool{false, true} {
+				byKey := NewSession([]Question{build(), &fakeForm{word: "next"}})
+				byClick := NewSession([]Question{build(), &fakeForm{word: "next"}})
+				if peek {
+					byKey, _ = Apply(byKey, Input{Kind: InputReveal})
+					byClick, _ = Apply(byClick, Input{Kind: InputReveal})
+				}
+				byKey, keyOuts := Apply(byKey, Input{Kind: InputRune, Rune: rune('1' + i)})
+				byClick, clickOuts := Apply(byClick, Input{Kind: InputMark, Cell: i})
+				if !reflect.DeepEqual(keyOuts, clickOuts) {
+					t.Errorf("%T option %d peek=%v: key gave %+v, click gave %+v", byKey.Questions[0], i, peek, keyOuts, clickOuts)
+				}
+				byKey.Questions, byClick.Questions = nil, nil
+				if !reflect.DeepEqual(byKey, byClick) {
+					t.Errorf("option %d peek=%v: key left %+v, click left %+v", i, peek, byKey, byClick)
+				}
+			}
+		}
+	}
+}
+
+// A CLICK ON AN ANSWERED QUESTION DOES NOTHING (#80 hazard 2). After a wrong
+// pick the reveal is on screen with option numbers above it and in its `you
+// chose` line; a key there means "next word", a click must not.
+func TestAClickOnAnAnsweredQuestionNeitherAnswersNorAdvances(t *testing.T) {
+	for _, build := range pickerForms() {
+		s := NewSession([]Question{build(), &fakeForm{word: "next"}})
+		s, _ = Apply(s, Input{Kind: InputRune, Rune: '2'}) // wrong: graded, revealed, not advanced
+		if !s.Graded || s.Index != 0 {
+			t.Fatalf("fixture: a wrong digit left %+v, want graded on the same question", s)
+		}
+		for _, cell := range []int{0, 1, 2, 7, -1} {
+			after, outs := Apply(s, Input{Kind: InputMark, Cell: cell})
+			if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+				t.Errorf("%T: a click on %d after the answer produced %+v", s.Questions[0], cell, outs)
+			}
+			if after.Index != 0 || after.Right != s.Right || after.Wrong != s.Wrong || !after.Graded {
+				t.Errorf("%T: a click on %d after the answer moved the session: %+v", s.Questions[0], cell, after)
+			}
+		}
+	}
+}
+
+// A NUMBER THAT IS NOT AN OPTION PICKS NOTHING, as a stray digit does.
+func TestAPickPastTheOptionsIsNothing(t *testing.T) {
+	for _, build := range pickerForms() {
+		for _, cell := range []int{-1, 3, 9} {
+			s := NewSession([]Question{build()})
+			after, outs := Apply(s, Input{Kind: InputMark, Cell: cell})
+			if len(outs) != 1 || outs[0].Kind != OutcomeNone || after.Index != 0 || after.Graded || after.Revealed {
+				t.Errorf("%T: pick %d gave %+v and left %+v", s.Questions[0], cell, outs, after)
+			}
+		}
+	}
+}
+
+// THE FORM SAYS WHERE ITS NUMBERS ARE, and only on the PROMPT (#80): each span
+// is exactly the `[k] ` optionLine wrote, never the option's text, and the
+// reveal — which repeats option lines — offers none.
+func TestPromptOptionsLocateTheNumbersAndTheRevealHasNone(t *testing.T) {
+	type presenter interface {
+		PromptPresentation() Presentation
+		RevealPresentation() Presentation
+	}
+	for _, build := range pickerForms() {
+		q := build()
+		p := q.(presenter).PromptPresentation()
+		if len(p.Options) != 3 {
+			t.Fatalf("%T: %d option spans, want 3: %+v", q, len(p.Options), p.Options)
+		}
+		for i, o := range p.Options {
+			if o.Index != i || p.Text[o.Start:o.End] != optionLine(i, "") {
+				t.Errorf("%T: span %d = %+v covering %q, want index %d over %q", q, i, o, p.Text[o.Start:o.End], i, optionLine(i, ""))
+			}
+		}
+		s := NewSession([]Question{q})
+		Apply(s, Input{Kind: InputRune, Rune: '2'}) // a wrong pick: the reveal names it
+		if r := q.(presenter).RevealPresentation(); len(r.Options) != 0 {
+			t.Errorf("%T: the reveal offers option numbers to click: %+v", q, r.Options)
 		}
 	}
 }

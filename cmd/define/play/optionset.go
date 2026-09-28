@@ -51,7 +51,14 @@ func (o *optionSet) Options() []Option { return o.options }
 // The session RESERVES Enter, space, `d` and Ctrl-C (question.go:74-77), and
 // digits collide with none of them.
 func (o *optionSet) Grade(k rune) (Verdict, bool) {
-	i := int(k - '1')
+	return o.Pick(int(k - '1'))
+}
+
+// Pick answers with option i, counted from 0 — what the digit `i+1` means, and
+// what a click on that option's number means (#80). Grade is this with a key's
+// arithmetic in front, so a key and a click cannot disagree about the verdict
+// or about what the reveal says was chosen.
+func (o *optionSet) Pick(i int) (Verdict, bool) {
 	if i < 0 || i >= len(o.options) {
 		return Skipped, false
 	}
@@ -97,7 +104,12 @@ func (o *optionSet) wrongPick() int {
 
 func (o *optionSet) keysPresentation(what string) Presentation {
 	var p promptBuilder
-	p.text("1-" + string(rune('0'+len(o.options))) + " = ")
+	// "or click": the option numbers answer a click (#80), and the board's keys
+	// line says the same of its cells. Said unconditionally, like the board's —
+	// no terminal can be asked whether it will report a mouse.
+	p.text("1-" + string(rune('0'+len(o.options))) + " ")
+	p.owned("or click", English, false)
+	p.text(" = ")
 	p.owned(what, English, false)
 	return p.presentation()
 }

@@ -167,6 +167,11 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// question's index, and -1 means none — the state is one int, and it lives
 	// here because "perform the outcomes" already does.
 	written := -1
+	// asking is where the CURRENT question's prompt sits in the buffer (#80).
+	// Replaced whenever a prompt is written, which show() does for every new
+	// question before the next key is read; a board writes none, and a board
+	// is not a Picker, so a stale range never meets a form that would use it.
+	var asking lineRange
 	// THE CHROME'S PALETTE, resolved once for the sitting. From `main`, because
 	// `main` owns the terminal's colours — the same seam `boardPalette` sits on,
 	// and the same reason: a form or a formatter choosing its own escape
@@ -233,7 +238,12 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
 			//
+			// WHERE IT LANDED is kept, because the prompt's option numbers are
+			// click targets and the click map is never pruned (#80): a number
+			// answers only inside the range of the question being asked.
+			from := view.BufferLines()
 			writePrompt(stdout, q, d, opt)
+			asking = lineRange{from, view.BufferLines()}
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -359,9 +369,12 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			if !valid {
 				continue
 			}
-			cell, marks := formCell(s.Current(), hit)
+			cell, marks := formCell(s.Current(), hit, asking)
 			if !marks {
-				if hit.hasRegion {
+				// Only a kind that is HEARD plays here. A number that answers
+				// nothing — an older question's, or one after the answer — is
+				// pointing at text, and says nothing (#80).
+				if hit.hasRegion && regionPlaysAudio(hit.region.Kind) {
 					r := hit.region
 					// The indicator is playRegion's own now (#44). It used to be
 					// passed, and this site passed `defaultIndicator` under a
@@ -816,7 +829,19 @@ func fitsABoard(termRows, boardRows, promptRows int) bool {
 //
 // False for every form that is not a grid, which is every form but the board,
 // and false is what leaves #38's behaviour exactly as it was.
-func formCell(q play.Question, hit pointerClick) (int, bool) {
+//
+// A form of NUMBERED OPTIONS answers too (#80), and it is the second shape: its
+// numbers are buffer text, reached through the click map as RegionOption. The
+// map is never pruned, so a region alone cannot say which question it belongs
+// to — the absolute line can, the way a passage's does (#67). `prompt` is the
+// buffer range of the question being asked, and a number outside it is text.
+func formCell(q play.Question, hit pointerClick, prompt lineRange) (int, bool) {
+	if _, ok := q.(play.Picker); ok {
+		if !hit.hasRegion || hit.region.Kind != RegionOption || !prompt.holds(hit.line) {
+			return 0, false
+		}
+		return hit.region.Option, true
+	}
 	g, ok := q.(play.Grid)
 	if !ok {
 		// Also the nil case, at the end of a queue: a nil Question is not a Grid.
@@ -1317,7 +1342,9 @@ func (sd *sittingDeck) marksIn(word, written string) []Region {
 // render. With one q there is nothing to swap.
 func writePrompt(w io.Writer, q play.Question, d deps, opt options) {
 	if p, ok := q.(practicePresenter); ok {
-		writePracticePresentation(w, p.PromptPresentation(), promptRegions(q), d, opt, surfaceOf(q.Form()), q.Word(), "")
+		pres := p.PromptPresentation()
+		rs := append(promptRegions(q), optionRegions(pres)...)
+		writePracticePresentation(w, pres, rs, d, opt, surfaceOf(q.Form()), q.Word(), "")
 		return
 	}
 	// Plain \n: the screen places every row, so nothing here decides where a
@@ -1360,6 +1387,27 @@ func writeHelped(w io.Writer, text string, rs []Region, help map[int]bool, d dep
 		}
 	}
 	writeRendered(w, strings.Join(lines, "\n"), rs)
+}
+
+// optionRegions turns the option NUMBERS a form recorded on its prompt into
+// click targets (#80). The form located them as it wrote them, so this only
+// converts bytes to cells — in the coordinates promptRegions uses, where the
+// write leads with a blank line.
+func optionRegions(p play.Presentation) []Region {
+	var out []Region
+	for _, o := range p.Options {
+		if o.Start < 0 || o.End > len(p.Text) || o.Start >= o.End {
+			continue
+		}
+		lineStart := strings.LastIndexByte(p.Text[:o.Start], '\n') + 1
+		out = append(out, Region{
+			Kind: RegionOption, Text: p.Text[o.Start:o.End], Option: o.Index,
+			Line:  1 + strings.Count(p.Text[:o.Start], "\n"),
+			Col:   visibleCells(p.Text[lineStart:o.Start]),
+			Width: visibleCells(p.Text[o.Start:o.End]),
+		})
+	}
+	return out
 }
 
 // promptRegions is what a form's PROMPT offers to a click.
@@ -1545,3 +1593,8 @@ func emptyQueueReason(deckSize, budget int) string {
 		return "define: nothing due today"
 	}
 }
+
+// lineRange is a half-open range of buffer lines.
+type lineRange struct{ from, to int }
+
+func (r lineRange) holds(line int) bool { return line >= r.from && line < r.to }

@@ -35,10 +35,10 @@ Both mean "excessively flattering," but the motive and the method differ.
 
 epithelial
 
-1  not covered with varnish.
-2  adjective based on the first impression; accepted as correct until proved otherwise
-3  a person who refuses to strike or to join a labor union or who takes over the job responsibilities of a striking worker.
-4  relating to or denoting the thin tissue forming the outer layer of a body's surface and lining the alimentary canal and other hollow structures
+[1] not covered with varnish.
+[2] adjective based on the first impression; accepted as correct until proved otherwise
+[3] a person who refuses to strike or to join a labor union or who takes over the job responsibilities of a striking worker.
+[4] relating to or denoting the thin tissue forming the outer layer of a body's surface and lining the alimentary canal and other hollow structures
 
 0 right, 0 wrong
 ~18 reviews/day · 0.2 new words/day at 20 a sitting
@@ -397,18 +397,19 @@ so; the sitting itself is unchanged.
 ### The sentence, once a word has one
 
 The word's own sentence with the word blanked out, and four words to choose
-from. 
+from. Press its number, or click the `[2]` in front of it — a click on the
+word itself only says it aloud.
 
 ```
 Judge Mehta noted that securities fraud claims lay outside his ___ and
 transferred that portion of the case to the Southern District of New York.
 
-1  defenestrate
-2  bailiwick
-3  ephemeral
-4  obsequious
+[1] defenestrate
+[2] bailiwick
+[3] ephemeral
+[4] obsequious
 
-1-4 = pick the word, ? = bad question, d = remove from deck, Ctrl-C to stop
+1-4 or click = pick the word, ? = bad question, d = remove from deck, Ctrl-C to stop
 ```
 
 **If a question is bad, press `?`.** That records it — with the four options you
@@ -428,12 +429,12 @@ The word appears with up to four definitions, one of them right.
 ```
 sycophantic
 
-1  an isolated flat-topped hill with steep sides
-2  behaving or done in an obsequious way in order to gain advantage
-3  a small short-tailed wallaby with a short face
-4  an official report of the proceedings of a court
+[1] an isolated flat-topped hill with steep sides
+[2] behaving or done in an obsequious way in order to gain advantage
+[3] a small short-tailed wallaby with a short face
+[4] an official report of the proceedings of a court
 
-1-4 = pick the definition, d = remove from deck, Ctrl-C to stop
+1-4 or click = pick the definition, d = remove from deck, Ctrl-C to stop
 ```
 
 Once you have answered, the prompt changes:
@@ -488,10 +489,10 @@ is written as it happens, not at the end.
 <!-- review-keys -->
 | key | does |
 |---|---|
-| `1`–`4` | multiple choice: pick the definition, or on a cloze pick the word |
+| `1`–`4`, or click `[1]`–`[4]` | multiple choice: pick the definition, or on a cloze pick the word |
 | `?` | on a cloze: bad question — records it with the options you were shown, and moves on without marking you wrong |
 | `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
-| click | board: mark that word. Anywhere else, a click plays the word — the headword, a language named in the ORIGIN, or any word already in your deck, wherever it appears |
+| click | board: mark that word. On a question's `[1]`–`[4]`: pick that option. Anywhere else, a click plays the word — the headword, a language named in the ORIGIN, or any word already in your deck, wherever it appears |
 | Tab | board: cycle what a mark means — yes, no, then drop |
 | Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
 | space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |

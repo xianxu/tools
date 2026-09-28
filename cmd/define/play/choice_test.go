@@ -28,8 +28,8 @@ func TestChoicePromptKeepsTheWordAloneOnLineOne(t *testing.T) {
 	if lines[1] != "" {
 		t.Errorf("line 1 = %q, want a blank between the word and the options", lines[1])
 	}
-	for i, want := range []string{"1", "2", "3", "4"} {
-		if got := lines[2+i]; len(got) < 2 || got[:1] != want {
+	for i := range 4 {
+		if got, want := lines[2+i], optionLine(i, ""); !strings.HasPrefix(got, want) {
 			t.Errorf("option line %d = %q, want it to start with %q", i, got, want)
 		}
 	}
@@ -111,7 +111,7 @@ func TestOptionLineStartsAtOptionIndent(t *testing.T) {
 		t.Errorf("optionLine puts %d columns before the gloss, and OptionIndent says %d — "+
 			"main wraps to the constant, so the difference is clipped off every option", got, OptionIndent)
 	}
-	if line[:OptionIndent] != "1  " {
+	if line[:OptionIndent] != "[1] " {
 		t.Errorf("prefix = %q, want the option number and two spaces", line[:OptionIndent])
 	}
 }
@@ -138,67 +138,70 @@ func TestChoiceHelpLines(t *testing.T) {
 			glosses: [3]string{"que dura poco tiempo; pasajero", "año en que se cosecha la uva de un vino", "plato japonés de arroz, como el 寿司"},
 			helps:   [3]string{"lasting a very short time; fleeting", "the year a wine's grapes were harvested", "a Japanese rice dish, such as 寿司"},
 			plain: "efímero\n\n" +
-				"1  que dura poco tiempo; pasajero\n" +
-				"2  año en que se cosecha la uva de un vino\n" +
-				"3  plato japonés de arroz, como el 寿司",
+				"[1] que dura poco tiempo; pasajero\n" +
+				"[2] año en que se cosecha la uva de un vino\n" +
+				"[3] plato japonés de arroz, como el 寿司",
 			helped: "efímero\n\n" +
-				"1  que dura poco tiempo; pasajero\n" +
-				"   lasting a very short time; fleeting\n" +
-				"2  año en que se cosecha la uva de un vino\n" +
-				"   the year a wine's grapes were harvested\n" +
-				"3  plato japonés de arroz, como el 寿司\n" +
-				"   a Japanese rice dish, such as 寿司",
+				"[1] que dura poco tiempo; pasajero\n" +
+				"    lasting a very short time; fleeting\n" +
+				"[2] año en que se cosecha la uva de un vino\n" +
+				"    the year a wine's grapes were harvested\n" +
+				"[3] plato japonés de arroz, como el 寿司\n" +
+				"    a Japanese rice dish, such as 寿司",
 			helpLines: []int{3, 5, 7},
 		},
 		{
 			width:   40,
-			glosses: [3]string{"que dura poco tiempo; pasajero", "año en que se cosecha la uva de un\n   vino", "plato japonés de arroz, como el 寿司"},
+			glosses: [3]string{"que dura poco tiempo; pasajero", "año en que se cosecha la uva de un\n    vino", "plato japonés de arroz, como el 寿司"},
 			helps:   [3]string{"lasting a very short time; fleeting", "the year a wine's grapes were\nharvested", "a Japanese rice dish, such as 寿司"},
 			plain: "efímero\n\n" +
-				"1  que dura poco tiempo; pasajero\n" +
-				"2  año en que se cosecha la uva de un\n" +
-				"   vino\n" +
-				"3  plato japonés de arroz, como el 寿司",
+				"[1] que dura poco tiempo; pasajero\n" +
+				"[2] año en que se cosecha la uva de un\n" +
+				"    vino\n" +
+				"[3] plato japonés de arroz, como el 寿司",
 			helped: "efímero\n\n" +
-				"1  que dura poco tiempo; pasajero\n" +
-				"   lasting a very short time; fleeting\n" +
-				"2  año en que se cosecha la uva de un\n" +
-				"   vino\n" +
-				"   the year a wine's grapes were\n" +
-				"   harvested\n" +
-				"3  plato japonés de arroz, como el 寿司\n" +
-				"   a Japanese rice dish, such as 寿司",
+				"[1] que dura poco tiempo; pasajero\n" +
+				"    lasting a very short time; fleeting\n" +
+				"[2] año en que se cosecha la uva de un\n" +
+				"    vino\n" +
+				"    the year a wine's grapes were\n" +
+				"    harvested\n" +
+				"[3] plato japonés de arroz, como el 寿司\n" +
+				"    a Japanese rice dish, such as 寿司",
 			helpLines: []int{3, 6, 7, 9},
 		},
 		{
 			width:   20,
-			glosses: [3]string{"que dura poco\n   tiempo; pasajero", "año en que se\n   cosecha la uva de\n   un vino", "plato japonés de\n   arroz, como el 寿司"},
-			helps:   [3]string{"lasting a very\nshort time;\nfleeting", "the year a wine's\ngrapes were\nharvested", "a Japanese rice\ndish, such as 寿司"},
+			glosses: [3]string{"que dura poco\n    tiempo; pasajero", "año en que se\n    cosecha la uva\n    de un vino", "plato japonés de\n    arroz, como el\n    寿司"},
+			helps:   [3]string{"lasting a very\nshort time;\nfleeting", "the year a\nwine's grapes\nwere harvested", "a Japanese rice\ndish, such as\n寿司"},
 			plain: "efímero\n\n" +
-				"1  que dura poco\n" +
-				"   tiempo; pasajero\n" +
-				"2  año en que se\n" +
-				"   cosecha la uva de\n" +
-				"   un vino\n" +
-				"3  plato japonés de\n" +
-				"   arroz, como el 寿司",
+				"[1] que dura poco\n" +
+				"    tiempo; pasajero\n" +
+				"[2] año en que se\n" +
+				"    cosecha la uva\n" +
+				"    de un vino\n" +
+				"[3] plato japonés de\n" +
+				"    arroz, como el\n" +
+				"    寿司",
 			helped: "efímero\n\n" +
-				"1  que dura poco\n" +
-				"   tiempo; pasajero\n" +
-				"   lasting a very\n" +
-				"   short time;\n" +
-				"   fleeting\n" +
-				"2  año en que se\n" +
-				"   cosecha la uva de\n" +
-				"   un vino\n" +
-				"   the year a wine's\n" +
-				"   grapes were\n" +
-				"   harvested\n" +
-				"3  plato japonés de\n" +
-				"   arroz, como el 寿司\n" +
-				"   a Japanese rice\n" +
-				"   dish, such as 寿司",
-			helpLines: []int{4, 5, 6, 10, 11, 12, 15, 16},
+				"[1] que dura poco\n" +
+				"    tiempo; pasajero\n" +
+				"    lasting a very\n" +
+				"    short time;\n" +
+				"    fleeting\n" +
+				"[2] año en que se\n" +
+				"    cosecha la uva\n" +
+				"    de un vino\n" +
+				"    the year a\n" +
+				"    wine's grapes\n" +
+				"    were harvested\n" +
+				"[3] plato japonés de\n" +
+				"    arroz, como el\n" +
+				"    寿司\n" +
+				"    a Japanese rice\n" +
+				"    dish, such as\n" +
+				"    寿司",
+			helpLines: []int{4, 5, 6, 10, 11, 12, 16, 17, 18},
 		},
 	} {
 		options := func() []Option {
@@ -270,7 +273,7 @@ func TestChoiceHelpLines(t *testing.T) {
 				t.Errorf("width %d: option %d is %+v with help, want %+v plus help %q", tc.width, i, o, want, tc.helps[i])
 			}
 		}
-		if got := c.Keys(); got != "1-3 = pick the definition" {
+		if got := c.Keys(); got != "1-3 or click = pick the definition" {
 			t.Errorf("width %d: Keys() = %q with help", tc.width, got)
 		}
 		for _, k := range []rune{'1', '2', '3', '4', 'd', ' '} {
@@ -285,7 +288,7 @@ func TestChoiceHelpLines(t *testing.T) {
 		}
 		// ...and the reveal is the deck's language alone.
 		c.Grade('2')
-		wantReveal := "1  " + tc.glosses[0] + "\n\nyou chose\n2  " + tc.glosses[1] + "\n\n" + definition
+		wantReveal := "[1] " + tc.glosses[0] + "\n\nyou chose\n[2] " + tc.glosses[1] + "\n\n" + definition
 		if got := c.Reveal(); got != wantReveal {
 			t.Errorf("width %d: Reveal with help =\n%s\nwant\n%s", tc.width, got, wantReveal)
 		}

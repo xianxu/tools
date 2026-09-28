@@ -152,8 +152,8 @@ func wrapWritten(text string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// isOptionLine reports whether a line is one `optionLine` wrote: a digit, then
-// the rest of `play.OptionIndent` in spaces, then the gloss.
+// isOptionLine reports whether a line is one `optionLine` wrote: `[`, a digit,
+// `] ` — `play.OptionIndent` columns — then the gloss.
 //
 // A shape test rather than a parser, and it exists because an option line is the
 // one kind whose hanging indent is NOT its own leading whitespace — it has none,
@@ -162,10 +162,10 @@ func wrapWritten(text string, width int) string {
 // line-breaking in the package whose whole point is that the caller owns
 // formatting.
 func isOptionLine(line string) bool {
-	if len(line) <= play.OptionIndent || line[0] < '1' || line[0] > '9' {
+	if len(line) <= play.OptionIndent || line[0] != '[' || line[1] < '1' || line[1] > '9' {
 		return false
 	}
-	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
+	return line[2:play.OptionIndent] == "] "
 }
 
 // minWrapWidth is the narrowest terminal worth breaking lines for: below it a

@@ -20,7 +20,7 @@ func TestPresentationOwnsLiteralPromptAndReveal(t *testing.T) {
 			roles = append(roles, s.Role)
 		}
 	}
-	if want := []string{"rojo", "color vivo", "   bright color", "otro", "   other"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"rojo", "color vivo", "    bright color", "otro", "    other"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("owned text %q want %q", got, want)
 	}
 	if !reflect.DeepEqual(roles, []LanguageRole{Target, DictionarySource, English, DictionarySource, English}) {
@@ -28,7 +28,7 @@ func TestPresentationOwnsLiteralPromptAndReveal(t *testing.T) {
 	}
 	c.Grade('2')
 	r := c.RevealPresentation()
-	if r.Text != "1  color vivo\n\nyou chose\n2  otro\n\nentry" {
+	if r.Text != "[1] color vivo\n\nyou chose\n[2] otro\n\nentry" {
 		t.Fatalf("reveal %q", r.Text)
 	}
 	found := false

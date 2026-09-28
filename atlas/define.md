@@ -626,6 +626,16 @@ fails for a kind that draws, invites a click and does nothing.
   click on one of its words is the question you are about to ask about it. That
   made `regionPlaysAudio` necessary — the split is declared, and both actionability
   guards consult it, so a kind wired into neither reddens.
+- **`RegionOption`** — ANSWER with this option (`#80`): the `[2] ` in front of a
+  cloze or multiple-choice option, carrying the option's index. The first kind
+  whose action is the session's: `regionAnswers` declares it, the sitting's
+  `formCell` owns it, and `TestEveryRegionKindIsActionable` leaves it to the
+  sitting rows. Not underlined (`regionUnderlines`): the option WORD beside it is
+  underlined when it is a deck word, and a click there speaks — **the number
+  answers, the word speaks**, and the two must not look like one gesture. The
+  form records the number spans as it writes the prompt
+  (`Presentation.Options`, via `promptBuilder.pickable`); a reveal repeats option
+  lines and records none.
 
 **`RenderOpts` is what a caller decides**, and its lookup key is not
 about how the entry looks:
@@ -3199,6 +3209,20 @@ invariant survives restated honestly: *a click never answers a form that did not
 ask for it*, and its row is green untouched, which is the proof the seam widened
 rather than branched.
 
+**The numbered-option forms are the second askers** (`#80`, cloze and multiple
+choice, `play.Picker`). Their numbers are buffer text, not footer cells, so
+`formCell` has two shapes: a Grid resolves a footer entry; a Picker takes a
+`RegionOption` hit only when its ABSOLUTE buffer line is inside the prompt of the
+question being asked (`asking`, recorded around `writePrompt`) — the click map
+is never pruned, so an older question's `[2]` is still on screen and must answer
+nothing, the same identity rule a passage uses (`#67`). A pick reaches `Apply`
+as `InputMark` and goes through `graded`, the tail the digit key uses, so a click
+and a key give the same verdict, record and reveal. `Apply` refuses `InputMark`
+on a Graded question: after a wrong pick the reveal is up with numbers above it
+and in its `you chose` line, and "any key = next word" is a rule about keys. The
+target is `[k] ` and stops before the word, so a click a column right of the
+number speaks rather than answers — an answer cannot be undone.
+
 **The board is self-rated**, so a `yes` can never earn the ladder's two-rung
 promotion — structure rather than a rule anyone must remember. The `unsure` mark
 the first draft designed, along with a `store.EventUnsure` kind and a `Fold`
@@ -3376,8 +3400,10 @@ with no row there draws an underline that does nothing, which
   `Choice.Reveal` names the right option and the learner's pick first — so the
   loop locates the render in the reveal rather than counting from a formula,
   which would be a second copy of a layout the form owns.
-- **A click never answers** (D8). It stops before `toInput`, beside the viewport
-  gestures, so `play.Apply` never learns a mouse exists. A click that recorded a
+- **A click never answers** (D8) — a form that did not ask for it. It stops
+  before `toInput`, beside the viewport gestures, so `play.Apply` never learns a
+  mouse exists; the board (`#40`) and the numbered-option forms (`#80`) ask, and
+  reach `Apply` as `InputMark` rather than a forged key. A click that recorded a
   review would corrupt the schedule silently, which is the worst kind of bug
   here: the damage is to data the learner cannot see.
 - **A wrap MOVES the click map, and the screen is what moves it.** `#41` put a
