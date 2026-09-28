@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-20
 updated: 2026-09-20
 estimate_hours:
+card_mirror: '01e796012025666a8a72aa0d561ebaff5eca1111' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # define: top up cloze items per word so a question stops repeating

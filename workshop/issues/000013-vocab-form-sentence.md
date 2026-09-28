@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-20
 updated: 2026-08-20
 estimate_hours:
+card_mirror: 'd5d4da69f64867dd9d2c90ccb7367f829dbd8c4e' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # review form 2.4: free sentence graded by the model

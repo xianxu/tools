@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-28
 updated: 2026-08-28
 estimate_hours:
+card_mirror: '2528a61a7335a0fa7bd4d114fef222c7f393a930' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # reflect: eight carried Minors from #17's close

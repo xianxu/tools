@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-14
 updated: 2026-09-14
 estimate_hours:
+card_mirror: '4fb1d6533a3d2578d7022034acf73243ad53a6a4' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # define: multilingual babel pronunciation row

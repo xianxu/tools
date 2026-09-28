@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-17
 updated: 2026-09-17
 estimate_hours:
+card_mirror: '102331a2d81f342be1ab8390092f99ffaa20a441' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # define: mark unknown words inside a cloze question

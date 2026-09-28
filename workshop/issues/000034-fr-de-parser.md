@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-29
 updated: 2026-08-29
 estimate_hours:
+card_mirror: 'fb2e87cfb069f6d84fb38a11b65894ebe1adbc4b' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # French and German need parser work before curating: the entry collapses into one blob

@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-17
 updated: 2026-09-17
 estimate_hours:
+card_mirror: 'a9e5cf050a9caaad1082f69680ffcc24b058b176' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # define: record a failed authoring attempt and stop re-asking for it

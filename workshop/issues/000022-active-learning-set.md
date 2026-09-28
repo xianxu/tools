@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-26
 updated: 2026-08-26
 estimate_hours:
+card_mirror: '06bc11c5bfc4750722c86a7bdb7d058b8fe65132' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # active learning set: words graduate out of highlighting

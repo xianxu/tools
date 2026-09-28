@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-27
 updated: 2026-09-27
 estimate_hours:
+card_mirror: '0f7de70e5dbb004cd5daa9eacd7ecfecbfc4204d' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # define: 11 pty conformance rows fail on main — first-run deck prompt eats their input

@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-29
 updated: 2026-08-29
 estimate_hours:
+card_mirror: 'd4f08cb77b1af096506b91245a5c3e272e4fbb1d' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # reportVoice writes a bare newline to a raw terminal, and the seam is where it should be fixed

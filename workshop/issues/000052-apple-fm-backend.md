@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-12
 updated: 2026-09-12
 estimate_hours:
+card_mirror: '4737284c826600ba4111643e3fc1e76ec76102a5' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # run the model on this Mac: an Apple fm backend for macOS 27

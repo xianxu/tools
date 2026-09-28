@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-17
 updated: 2026-09-17
 estimate_hours:
+card_mirror: 'dddd14ed9576e86f46ff22eb014addd957d2f280' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # define: a deck word is a set of senses, not one word

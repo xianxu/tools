@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-03
 updated: 2026-09-03
 estimate_hours:
+card_mirror: '1ef50a3fc416ede4972fc11814a786a86965cdda' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # Play pronunciation without blocking the UI

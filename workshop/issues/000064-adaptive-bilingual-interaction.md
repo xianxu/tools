@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-15
 updated: 2026-09-15
 estimate_hours:
+card_mirror: 'fac67d1c61f8f2d8c571ee75f5fd9d49feb5b94f' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # define: adaptive bilingual interaction level, learned or instructed, remembered per deck

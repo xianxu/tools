@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-29
 updated: 2026-08-29
 estimate_hours:
+card_mirror: '0aaf69d82f70e622d79c4e887a4420bf5b926749' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # the plan-status guard checks rows against the tree but not the tree against rows

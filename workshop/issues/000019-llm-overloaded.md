@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-23
 updated: 2026-08-23
 estimate_hours:
+card_mirror: '06f21bd7180f4f6e202f346b74f42fdf1adb2fc8' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # an overloaded upstream reads as our bug: 200 with an error body classifies as ErrRequest

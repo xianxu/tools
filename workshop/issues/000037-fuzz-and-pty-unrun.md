@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-30
 updated: 2026-08-30
 estimate_hours:
+card_mirror: '08a9d28faa0726894d1d2b1da33757279cf70822' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # fuzz targets and pty rows run in nothing automated, so the tests that would catch a Critical never do

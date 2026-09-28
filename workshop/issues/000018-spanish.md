@@ -6,6 +6,7 @@ github_issue:
 created: 2026-08-22
 updated: 2026-08-22
 estimate_hours:
+card_mirror: '0e98ffbb4280899b800ca742e00f21e90da4002a' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # Spanish support: pronunciation locale, language-aware deck and agreement-safe distractors

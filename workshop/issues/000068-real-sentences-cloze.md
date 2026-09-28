@@ -7,6 +7,7 @@ created: 2026-09-16
 updated: 2026-09-17
 estimate_hours:
 started: 2026-09-17T10:56:31-07:00
+card_mirror: '19fbded122fa4338d0a1ee80d07535ba41774bfe' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # define: use real sentences as cloze material — finish the `usage/` thread

@@ -6,6 +6,7 @@ github_issue:
 created: 2026-09-07
 updated: 2026-09-07
 estimate_hours:
+card_mirror: 'edfdd0cf5ed6f5c0898f98307c887eec61eced93' # card fields mirrored from issue-cards; edit via sdlc
 ---
 
 # activity heat map: a year of use in one grid
