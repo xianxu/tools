@@ -82,3 +82,77 @@ findings:
     detail: |
       Self-consistent so it still passes, but no longer the shape optionLine writes.
 ```
+
+---
+
+## Re-review — 2026-09-27T22:14:01-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 80 — define: click a cloze option's number to answer it |
+| repo | tools |
+| issue file | workshop/issues/000080-cloze-click-number.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 1ea9c78d0004c8190d170e111bb71bfa04ec6d31..eec1eef69f56fca5fbe382194db0e2fa510ecdb7 |
+| command | sdlc close --issue 80 |
+| reviewer | claude |
+| timestamp | 2026-09-27T22:14:01-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+All three findings from the last round are fixed and I found nothing new; this is ready to ship. The design follows the plan: clicking an option's number goes through the same code path as pressing its digit, so a click and a key can't give different results. A click on an old question's number does nothing, because it only counts if it lands inside the lines of the question currently being asked (the same check passages already use). The unit tests pass. The two main real-terminal tests (`TestPTYPlayClickingAnOptionNumberAnswers`, `TestPTYPlayBoardIsDrawnAndClickable`) pass when built with `-tags conformance` and run outside the sandbox. `go vet` is clean.
+
+**1. Strengths**
+- **One shared path for keys and clicks.** `optionSet.Grade` is now just `Pick` with key arithmetic in front (`play/optionset.go:54`). Both go through the new `graded` helper (`play/session.go`), so there is one copy of the reveal/record logic, not two.
+- **Clicks after answering are blocked where the state lives.** `Apply` checks `if s.Graded` at the top of the `InputMark` case, so a click on the option list or on the `you chose` line after an answer does nothing. The loop never fakes a keypress for a click, so this check has something to act on.
+- **The form records where it drew its own numbers.** `promptBuilder.pickable` → `Presentation.Options`, so `main` doesn't guess the layout. Only prompts record these spans, so the numbers repeated in a reveal can never be click targets.
+- **Clicks on old questions are handled safely.** `formCell` only accepts a click inside the current prompt's line range (`asking`), captured around `writePrompt`. Because `show()` rewrites that range before the next key is read, it can't go stale.
+- The region-kind registry changes (`String`, `identifier`, `regionAnswers`, `regionUnderlines`) keep the existing kind-by-kind guards working. The atlas restates the "a click never answers a form that did not ask for it" rule (D8) with the numbered-option forms as the second asker.
+
+**2. Critical:** none.
+
+**3. Important:** none.
+
+**4. Minor**
+- `play_loop.go:377`: sitting clicks now play audio only for kinds where `regionPlaysAudio` is true. That applies to every kind, not just `RegionOption`. It's correct and it's the intended behaviour, but it isn't mentioned in the Log.
+- `cmd/define/selection_paths_test.go` isn't gofmt-clean. It was already that way at the base commit and isn't in this window, so I haven't raised it as a new finding.
+
+**5. Test coverage**
+- The play tests cover both forms, every option, both before and after a peek.
+- The mutations recorded in the Log (removing the Graded check, sending picks through `advance`, removing or widening the line-range check, letting the number's span reach the word) cover the kinds of bug this change could ship.
+- The real-terminal row checks an actual mouse click.
+
+**6. Architecture**
+- **ARCH-DRY:** pass. Keys and clicks share `graded`, and `Grade` delegates to `Pick`.
+- **ARCH-PURE:** pass. `play` still has no terminal concepts; `optionRegions` is a pure function.
+- **ARCH-PURPOSE:** pass. Both cloze and multiple choice are delivered, and every Done-when row maps to a test.
+- **ARCH-MOCK:** pass. The real-terminal conformance row covers the terminal boundary.
+- **ARCH-CONSTRAINTS:** pass. The keys line wrapping to two rows at 80 columns is measured and was flagged to the operator.
+- **ARCH-SECURE:** not applicable. No untrusted input or secrets are involved; the byte-span bounds are still checked in `optionRegions`.
+- **ARCH-ORDER:** pass. The asked / graded / advanced states go through `Apply`, and the click-after-answer and click-on-old-question sequences are tested.
+- **ARCH-FUNERAL:** pass. Nothing durable is created; `asking` lives only in memory and is overwritten for each question.
+
+**7. Plan revisions:** none. The existing Revisions entry already matches the code (`Picker`, `lineRange`, `regionAnswers`).
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      cf62eee removed the blank line; gofmt -l no longer lists play_loop.go (only selection_paths_test.go, which predates the base).
+  - id: BR-2
+    disposition: addressed
+    note: |
+      README click row now says "On a question's [1]-[4]: pick that option" before "Anywhere else".
+  - id: BR-3
+    disposition: addressed
+    note: |
+      play_loop_test.go wrap fixture now uses the "[1] " prefix that optionLine writes.
+```

@@ -4,11 +4,11 @@ status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-20
-updated: 2026-09-23
+updated: 2026-09-27
 estimate_hours:
 started: 2026-09-23T16:48:56-07:00
 flow: {kind: full, provenance: inferred}
-actual_hours: 5.15
+actual_hours: 5.31
 ---
 
 # define: click a cloze option's number to answer it
@@ -195,6 +195,8 @@ Each row names the test that pins it.
 
 ## Log
 
+
+- 2026-09-27: closed — Re-close after post-close minors (README click row, gofmt, [k] fixture) and merging origin/main (#81 landed). go test ./cmd/define/... ok on the merged tree; pty TestPTYPlayClickingAnOptionNumberAnswers, TestPTYPlayBoardIsDrawnAndClickable, TestPTYAWideDiagnosticIsWrappedNotClipped green together.; review verdict: SHIP
 ### 2026-09-20
 
 Filed from an operator request the same session as #79. Read before writing:
