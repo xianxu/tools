@@ -1,1 +1,0 @@
-../../../ariadne/scripts/merge-checks.d/40-duplicate-issue-id.sh
