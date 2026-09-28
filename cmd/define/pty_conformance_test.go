@@ -417,6 +417,44 @@ func TestPTYCtrlCMidAnswerKeepsTheSession(t *testing.T) {
 	}
 }
 
+// A diagnostic wider than the terminal is WRAPPED, not clipped (#81).
+//
+// The editor's stderr is the screen, and Paint cuts a buffer line at the
+// terminal's width — so an unwrapped error kept its first eighty columns and
+// lost the provider's message, the part that says what went wrong. The observable
+// is the tail of the message reaching the terminal at all.
+func TestPTYAWideDiagnosticIsWrappedNotClipped(t *testing.T) {
+	fake := llmtest.NewFake(t)
+	fake.Script("", llmtest.Reply{Status: 400})
+
+	_, f := startDefineWithEnv(t, []string{
+		"DEFINE_LLM_BASE_URL=" + fake.URL,
+		"DEFINE_LLM_API_KEY=pty-conformance",
+		"DEFINE_LLM_MODEL=claude-opus-5",
+	}, "--no-audio")
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+		conformance.SkipOrFail(t, "cannot size the pty on this platform", err)
+	}
+	out := watch(f)
+	out.take(300 * time.Millisecond)
+	// Decline the "not a deck yet" question: it reads the first line typed, and
+	// the lookup still works without a deck.
+	f.WriteString("\r")
+	out.take(500 * time.Millisecond)
+
+	f.WriteString("?why\r")
+	got := unstyled(out.take(2 * time.Second))
+	if !strings.Contains(got, "bad request") {
+		t.Fatalf("the scripted 400 never surfaced; the seam may be misconfigured:\n%q", got)
+	}
+	// The fake's body ends `"message":"scripted 400"}}`, well past column 80
+	// of the line the error starts on.
+	if !strings.Contains(got, "scripted 400") {
+		t.Errorf("the error's tail was clipped at the terminal edge:\n%q", got)
+	}
+	f.WriteString("\x03")
+}
+
 // --play renders every line at COLUMN 0 on a real terminal.
 //
 // This is the check that was missing when --play shipped, and its absence is the

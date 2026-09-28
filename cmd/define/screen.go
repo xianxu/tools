@@ -923,6 +923,59 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Diagnostics is the screen as the EDITOR's stderr: Write, wrapped at the
+// screen's own width whether or not it is pinned (#81).
+//
+// The editor's stdout stays unwrapped because its writers pre-wrap — Render, and
+// answerWrapWriter, which carries word boundaries across streamed chunks that a
+// per-write wrap would break. Diagnostics have no such writer: each is one whole
+// `Fprintf`, the premise the pinned screen's wrap already rests on. Unwrapped,
+// Paint clipped them at the terminal edge, and the clipped tail of an error is
+// the provider's message — the part that says what went wrong.
+func (l *liveScreen) Diagnostics() io.Writer { return diagnostics{l} }
+
+type diagnostics struct{ l *liveScreen }
+
+func (d diagnostics) Write(p []byte) (int, error) {
+	l := d.l
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	// Idempotent on a pinned screen, where writeBuffer wraps again: a line that
+	// already fits is returned untouched.
+	if err := l.writeBuffer(wrapDiagnostic(string(p), l.cols)); err != nil {
+		return 0, err
+	}
+	l.throttledPaint()
+	return len(p), nil
+}
+
+// wrapDiagnostic is wrapWritten plus a HARD BREAK for what a word wrap cannot
+// fit: a URL or a run of JSON wider than the terminal. wrapText keeps a word
+// whole, which is right for a definition and wrong here — the unbroken token of an
+// error is the provider's message, and clipping it is #81 again one level down.
+// The break is the screen's own soft-wrap boundary (selectionPhysicalRows), so
+// styling resumes on every row it produces.
+//
+// CRLF is normalised first: the word wrap drops a `\r` it treats as whitespace
+// while a line that fits keeps it, and a writer's line ending should not depend
+// on its length.
+func wrapDiagnostic(text string, width int) string {
+	text = wrapWritten(strings.ReplaceAll(text, "\r\n", "\n"), width)
+	if width < minWrapWidth {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if strings.Contains(line, eraseLine) || visibleCells(line) <= width {
+			continue
+		}
+		if rows := selectionPhysicalRows(line, width); rows != nil {
+			lines[i] = strings.Join(rows, "\n")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // writeBuffer is the ONE way text reaches the buffer, and the wrap lives here so
 // that is true of every path rather than of the one anybody thought about.
 //
