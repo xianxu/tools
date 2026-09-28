@@ -125,7 +125,8 @@ func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
 		// screen it is a buffer line like any other, and survives to the exit
 		// transcript, where it would otherwise simply be gone. The one-shot and
 		// piped paths keep the real stderr (D6), so a script's `2>` is untouched.
-		stdout: live, stderr: live,
+		// Wrapped, because Paint clips a buffer line at the terminal edge (#81).
+		stdout: live, stderr: live.Diagnostics(),
 	}
 	// newSitting builds a console for a full-screen sitting on THIS terminal.
 	//
