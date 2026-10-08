@@ -16,6 +16,7 @@ tracker:
         source_path: workshop/issues/000083-castcut-record-annotate-and-cut-terminal-demos.md
         source_blob: 32155b8ddf7f4bbf444946a26e1cec72196cb78c
         destination: workshop/issues/000083-castcut-record-annotate-and-cut-terminal-demos.md
+        main_commit: 4c1444f900957224cb3a10cc5bfeb9542988f2cf
 ---
 
 # castcut: record, annotate and cut terminal demos
