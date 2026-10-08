@@ -439,3 +439,21 @@ M1 Task 1–4 rows are struck. The atlas states the measured envelope (2×10⁵ 
 - BR-12 (demoted past the round cap, fixed anyway): derived durations obey the same bound — `Cut`
   refuses when caption holds push the view past `maxSeconds` (tiny `--wps`), so castcut never
   writes a cast it would itself refuse to read.
+
+### 2026-10-08 — M2 boundary review (BR-13, BR-14)
+
+- **BR-13 — record's status comes from the take, not from asciinema's exit code.** The
+  recorded command's status is the take's final `x` event (asciinema writes it, `"0"` on
+  success). No parseable `x` → `asciinema <exit> without finishing the take; <out> is
+  incomplete`, exit 1, no "saved" claim. Rule: a status line names a cause only from evidence
+  castcut read. The fake gains a failure mode (header only, EPERM, exit 1); verified live too
+  (sandboxed asciinema EPERM → the incomplete message).
+- **BR-14 — the in-browser viewer check moves to M3**, folded into the couch end-to-end take
+  (play, Alt+T twice, edit, reload → notes persist from the sidecar, then `annotate` on the cut
+  → header captions overlaid). Reason: this session has no browser to drive; the server side is
+  covered by handler tests and the real-binary smoke run, the JS by `node --check`. M3's close
+  evidence must name this check explicitly.
+- Minors folded in: the notes textarea stays disabled until `GET /notes` succeeds (a failed
+  read never becomes an empty draft that autosave writes back); the sidecar keeps its mode
+  (0644 for a new one) through the atomic write; annotate sweeps its own stale `.tmp` leftovers
+  at start.

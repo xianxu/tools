@@ -50,7 +50,7 @@
       <button id="stamp" title="Alt+T">Insert time (Alt+T)</button>
       <button id="download">Download notes</button>
     </div>
-    <textarea id="notes" spellcheck="true" placeholder="~0:05  The app installs its plugins on first launch.&#10;~0:42  Branch off to ask a side question."></textarea>
+    <textarea id="notes" disabled spellcheck="true" placeholder="~0:05  The app installs its plugins on first launch.&#10;~0:42  Branch off to ask a side question."></textarea>
     <span class="hint">Alt+T pauses and adds a ~m:ss.s line. Notes save to <span id="notes-name"></span> beside the take as you type; castcut cut reads that file.</span>
     <span id="save-status" role="status"></span>
   </aside>
@@ -190,7 +190,10 @@
       $('src').textContent = session.cast;
       $('notes-name').textContent = session.notes;
       document.title = session.cast + ' — castcut annotate';
+      // Editing starts only once the saved notes are in: a failed read must
+      // never become an empty draft that autosave writes back over them.
       $('notes').value = await (await get('/notes')).text();
+      $('notes').disabled = false;
       castData = await (await get('/cast')).text();
       load();
     } catch (e) {

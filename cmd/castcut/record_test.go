@@ -84,6 +84,10 @@ while [ $# -gt 1 ]; do
 done
 out=$1
 [ -e "$out" ] && { echo "file exists" >&2; exit 1; }
+if [ -n "$CASTCUT_FAKE_FAIL" ]; then
+  printf '{"version":3,"term":{"cols":1,"rows":1}}\n' > "$out"   # header only, as when asciinema dies
+  echo "Error: EPERM: Operation not permitted" >&2; exit 1
+fi
 text=$(sh -c "$cmd"); code=$?
 printf '{"version":3,"term":{"cols":%s,"rows":%s}}\n[0.1, "o", "%s"]\n[0.1, "x", "%s"]\n' "${size%x*}" "${size#*x}" "$text" "$code" > "$out"
 [ $ret = 1 ] && exit $code
@@ -152,6 +156,29 @@ func TestRecordDefaultsToTheNextTake(t *testing.T) {
 	}
 	if _, err := os.Stat("recordings/take-03.cast"); err != nil {
 		t.Error(err)
+	}
+}
+
+// When asciinema itself fails, castcut says so rather than reporting the
+// failure as the command's status or the take as saved.
+func TestRecordReportsAsciinemaFailure(t *testing.T) {
+	installFake(t)
+	t.Setenv("CASTCUT_FAKE_FAIL", "1")
+	out := filepath.Join(t.TempDir(), "t.cast")
+	code, _, stderr := runCLI(t, "record", "-o", out, "--", "sh", "-c", "exit 3")
+	if code != 1 || !strings.Contains(stderr, "castcut: asciinema exit status 1 without finishing the take; "+out+" is incomplete") {
+		t.Errorf("exit %d\n%s", code, stderr)
+	}
+	if strings.Contains(stderr, "take saved") {
+		t.Error("claims a failed take was saved")
+	}
+}
+
+func TestRecordSuccessExitsZero(t *testing.T) {
+	installFake(t)
+	out := filepath.Join(t.TempDir(), "t.cast")
+	if code, _, stderr := runCLI(t, "record", "-o", out, "--", "true"); code != 0 || !strings.Contains(stderr, "take saved to "+out) {
+		t.Errorf("exit %d\n%s", code, stderr)
 	}
 }
 

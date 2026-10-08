@@ -91,6 +91,15 @@ func writeAtomic(path string, data []byte) error {
 		return err
 	}
 	defer os.Remove(tmp.Name()) // no-op after the rename
+	// Keep the sidecar readable like any file the operator made; CreateTemp is 0600.
+	mode := os.FileMode(0o644)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return err
@@ -126,6 +135,13 @@ func runAnnotate(args []string, stdout, stderr io.Writer) error {
 	}
 	if _, err := parseCast(castPath, data); err != nil {
 		return err
+	}
+	// A temp file survives only if a previous annotate died mid-write; the
+	// sidecar itself was never touched, so the leftovers are garbage.
+	if stale, _ := filepath.Glob(filepath.Join(filepath.Dir(castPath), "."+filepath.Base(sidecarPath(castPath))+".*.tmp")); len(stale) > 0 {
+		for _, f := range stale {
+			os.Remove(f)
+		}
 	}
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
 	if err != nil {

@@ -182,6 +182,41 @@ rounds:
       boundary: M1
       recipe: milestone-review
       blocked: false
+    - "n": 6
+      timestamp: "2026-10-08T14:11:27-07:00"
+      agent: claude
+      findings:
+        - id: BR-13
+          severity: Important
+          title: record reports asciinema's own failure as the command's status and claims the take was saved
+          detail: 'record.go:132-138 maps any asciinema non-zero exit to exitCode and prints "take saved" if the file exists. Reproduced: asciinema EPERM printed "take saved to t.cast" and exited 1; a signal gives 255 silently. Rule: a status line names a cause only from evidence castcut read. Derive status and the saved claim from parseCast plus the take''s x event, else report "asciinema failed; out is incomplete". Add a fake failure mode as the regression test.'
+          family: error-message-misstates-cause
+          round: 6
+        - id: BR-14
+          severity: Important
+          title: Plan Task 6 manual in-browser check of the viewer not done and not revised in the plan
+          detail: The Log defers play/Alt+T/reload-persists/overlay to M3 but the plan has no Revisions entry; the viewer JS was only node --check'ed. Run the check now or record the move to M3 in Revisions.
+          family: verification-deferred-past-boundary
+          round: 6
+        - id: BR-15
+          severity: Minor
+          title: viewer autosaves before GET /notes succeeds, so a failed load can overwrite the sidecar
+          detail: '6th finding in this family. Rule: a failed read never becomes a default that is later written back. Keep the textarea disabled until the notes load succeeds.'
+          family: untrusted-input-fabricated-output
+          round: 6
+        - id: BR-16
+          severity: Minor
+          title: castcut --version has no test, which Plan Task 7 called for
+          family: plan-test-row-missing
+          round: 6
+        - id: BR-17
+          severity: Minor
+          title: writeAtomic resets sidecar mode to 0600 and leaves a .tmp file if the process dies mid-write
+          family: artifact-without-removal-path
+          round: 6
+      boundary: M2
+      recipe: milestone-review
+      blocked: true
 ---
 
 # Gate ledger — tools#83 (boundary-review)
@@ -264,7 +299,25 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-12** [Important] `untrusted-input-fabricated-output` Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
   5th finding in this family. Reproduced: --wps 1e-300 exits 0 with end and gap near 2e300; --wps 5e-324 exits 1 with "json: unsupported value: NaN". Rule: castcut's output must pass castcut's own input checks. Fix: Cut refuses when !inRange(view) or !inRange(warp(view)), and FuzzCut fuzzes Timing and asserts parseCast(encodeCast(out)) succeeds.
 
+## Round 6 — 2026-10-08T14:11:27-07:00 (claude) — BLOCKED
+
+### Raised
+
+- **BR-13** [Important] `error-message-misstates-cause` record reports asciinema's own failure as the command's status and claims the take was saved
+  record.go:132-138 maps any asciinema non-zero exit to exitCode and prints "take saved" if the file exists. Reproduced: asciinema EPERM printed "take saved to t.cast" and exited 1; a signal gives 255 silently. Rule: a status line names a cause only from evidence castcut read. Derive status and the saved claim from parseCast plus the take's x event, else report "asciinema failed; out is incomplete". Add a fake failure mode as the regression test.
+- **BR-14** [Important] `verification-deferred-past-boundary` Plan Task 6 manual in-browser check of the viewer not done and not revised in the plan
+  The Log defers play/Alt+T/reload-persists/overlay to M3 but the plan has no Revisions entry; the viewer JS was only node --check'ed. Run the check now or record the move to M3 in Revisions.
+- **BR-15** [Minor] `untrusted-input-fabricated-output` viewer autosaves before GET /notes succeeds, so a failed load can overwrite the sidecar
+  6th finding in this family. Rule: a failed read never becomes a default that is later written back. Keep the textarea disabled until the notes load succeeds.
+- **BR-16** [Minor] `plan-test-row-missing` castcut --version has no test, which Plan Task 7 called for
+- **BR-17** [Minor] `artifact-without-removal-path` writeAtomic resets sidecar mode to 0600 and leaves a .tmp file if the process dies mid-write
+
 ## Open findings
 
 - **BR-11** [Minor] `error-message-misstates-cause` Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
 - **BR-12** [Important] `untrusted-input-fabricated-output` Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
+- **BR-13** [Important] `error-message-misstates-cause` record reports asciinema's own failure as the command's status and claims the take was saved
+- **BR-14** [Important] `verification-deferred-past-boundary` Plan Task 6 manual in-browser check of the viewer not done and not revised in the plan
+- **BR-15** [Minor] `untrusted-input-fabricated-output` viewer autosaves before GET /notes succeeds, so a failed load can overwrite the sidecar
+- **BR-16** [Minor] `plan-test-row-missing` castcut --version has no test, which Plan Task 7 called for
+- **BR-17** [Minor] `artifact-without-removal-path` writeAtomic resets sidecar mode to 0600 and leaves a .tmp file if the process dies mid-write

@@ -45,7 +45,8 @@ func do(t *testing.T, method, url, body string, mod func(*http.Request)) (int, s
 
 func TestAnnotateServesTheTakeAndItsNotes(t *testing.T) {
 	base, castPath := serveTake(t)
-	if code, body := do(t, "GET", base+"/", "", nil); code != 200 || !strings.Contains(body, "fetch('/notes', { method: 'PUT'") {
+	if code, body := do(t, "GET", base+"/", "", nil); code != 200 || !strings.Contains(body, "fetch('/notes', { method: 'PUT'") ||
+		!strings.Contains(body, `<textarea id="notes" disabled`) {
 		t.Errorf("GET /: %d", code)
 	}
 	if code, body := do(t, "GET", base+"/cast", "", nil); code != 200 || body != string(mustRead(t, castPath)) {
@@ -70,6 +71,9 @@ func TestAnnotateServesTheTakeAndItsNotes(t *testing.T) {
 	// What annotate saves, cut reads.
 	if _, err := parseCaptions("", mustRead(t, sidecarPath(castPath))); err != nil {
 		t.Errorf("saved notes do not parse as captions: %v", err)
+	}
+	if fi, _ := os.Stat(sidecarPath(castPath)); fi.Mode().Perm() != 0o644 {
+		t.Errorf("sidecar mode %v, want 0644", fi.Mode().Perm())
 	}
 	entries, _ := os.ReadDir(filepath.Dir(castPath))
 	for _, e := range entries {

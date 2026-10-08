@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -132,17 +133,45 @@ func runRecord(args []string, stdout, stderr io.Writer) error {
 		shellJoin(cmd), out, o.Cols, o.Rows)
 	c := exec.Command(bin, recordArgs(out, o, cmd)...)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, stdout, stderr
-	err = c.Run()
+	runErr := c.Run()
 	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		if _, statErr := os.Stat(out); statErr == nil {
-			fmt.Fprintf(stderr, "castcut: take saved to %s\n", out)
-		}
-		return exitCode(ee.ExitCode())
+	if runErr != nil && !errors.As(runErr, &ee) {
+		return runErr // asciinema did not start
 	}
-	if err != nil {
-		return err
+	// Only the take says how the command ended: asciinema writes an `x` event
+	// with its status. Without one, asciinema itself failed and the take is
+	// not a recording of the command, whatever exit code it left.
+	status, ok := takeStatus(out)
+	if !ok {
+		why := "exited 0"
+		if ee != nil {
+			why = ee.String()
+		}
+		return fmt.Errorf("asciinema %s without finishing the take; %s is incomplete", why, out)
 	}
 	fmt.Fprintf(stderr, "castcut: take saved to %s\nnext: castcut annotate %s\n", out, out)
+	if status != 0 {
+		return exitCode(status)
+	}
 	return nil
+}
+
+// takeStatus reads the recorded command's exit status from a finished take:
+// its last event is `x` with the status as data.
+func takeStatus(path string) (int, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	c, err := parseCast(path, data)
+	if err != nil {
+		return 0, false
+	}
+	last := c.Events[len(c.Events)-1]
+	var s string
+	if last.Kind != "x" || json.Unmarshal(last.Data, &s) != nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	return n, err == nil
 }
