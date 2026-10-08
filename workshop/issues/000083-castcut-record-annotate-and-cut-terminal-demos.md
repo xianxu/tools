@@ -5,8 +5,8 @@ deps: []
 github_issue:
 created: 2026-10-08
 updated: 2026-10-08
-estimate_hours:
-card_mirror: '39a124af87abd9ad9cd4ab6aa42bf7bae15a52f5' # card fields mirrored from issue-cards; edit via sdlc
+estimate_hours: 4.5
+card_mirror: 'beb7cfd83f897cb45dfb3dc09f3e3da04886cb2c' # card fields mirrored from issue-cards; edit via sdlc
 started: 2026-10-08T12:16:32-07:00
 claimant:
     operator: Xian Xu
@@ -15,6 +15,7 @@ claimant:
     workspace: tools:0
     worktree: /Users/xianxu/workspace/tools
     repository: github.com/xianxu/tools
+flow: {kind: full, provenance: inferred}
 ---
 
 # castcut: record, annotate and cut terminal demos
@@ -67,6 +68,34 @@ Per-app parts stay in each app repo: the isolated demo launcher (e.g.
   byte-identity, no Python.)
 - The parley.nvim demo README points at `castcut`, and its `cut.py`/`viewer.html` are removed (follow-up in parley.nvim).
 - A couch broadcast take is recorded, annotated and cut end to end with `castcut`.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec                design=0.5 impl=0.04
+item: greenfield-go-module      design=0.5 impl=0.24
+item: smaller-go-module         design=0.1 impl=0.12
+item: smaller-go-module         design=0.1 impl=0.12
+item: greenfield-go-module      design=0.5 impl=0.24
+item: skill-or-dispatcher       design=0.3 impl=0.08
+item: real-api-discovery        design=0.0 impl=0.16
+item: milestone-review          design=0.0 impl=0.14
+item: milestone-review          design=0.0 impl=0.14
+item: milestone-review          design=0.0 impl=0.14
+item: atlas-docs                design=0.1 impl=0.04
+item: scope-pivot               design=0.3 impl=0.08
+item: cross-repo-refactor-small design=0.1 impl=0.08
+design-buffer: 0.15
+total: 4.50
+```
+
+Items in order: spec; cut timing model (greenfield); cast+captions parse; record; annotate server + viewer
+(greenfield); `--help` as agent instructions; asciinema discovery; M1–M3 reviews; atlas; the byte-identity
+drop; homebrew tap + parley.nvim follow-up. Design 2.5 × 1.15 = 2.875, impl 1.62.
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
 
 ## Plan
 
