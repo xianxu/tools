@@ -35,12 +35,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "cut":
 		err = runCut(args[1:], stdout, stderr)
+	case "record":
+		err = runRecord(args[1:], stdout, stderr)
 	default:
 		err = fmt.Errorf("unknown command %q (castcut --help lists them)", args[0])
 	}
+	var code exitCode
 	switch {
 	case err == nil:
 		return 0
+	case errors.As(err, &code):
+		// The recorded command's own status; asciinema already showed why.
+		return int(code)
 	case errors.Is(err, flag.ErrHelp):
 		return 0
 	case errors.Is(err, errUsage):
