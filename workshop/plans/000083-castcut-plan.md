@@ -166,17 +166,17 @@ cmd/castcut/
 
 #### Task 1: oracle and fixture
 
-- [ ] Copy `../parley.nvim/demo/cut.py` → `cmd/castcut/testdata/cut_reference.py`; record parley.nvim `git rev-parse HEAD` in `testdata/README.md` with the regen command:
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Copy `../parley.nvim/demo/cut.py` → `cmd/castcut/testdata/cut_reference.py`; record parley.nvim `git rev-parse HEAD` in `testdata/README.md` with the regen command:
       `python3 cut_reference.py raw.cast captions.txt -o cut.golden.cast > cut.golden.stdout` (run in `testdata/`, so the printed path is the bare name; the golden test runs `run()` with the same relative `-o` from a temp dir holding copies).
-- [ ] Hand-write `raw.cast` (≈30 events) exercising every row of the contract table: header with nested `term` object, int `timestamp`, float `idle_time_limit: 2.0`, a duplicate key, `env`; gaps above the cap; `o` data with ESC, `\r\n`, `\u0007`, `é→✓`, `"`, `\\`, U+2028; one `r` and one `i` event; an event whose output time collides with a caption start (marker-before-output ordering); a gap that yields a sub-1e-4 delta (exponent repr).
-- [ ] `captions.txt`: unsorted lines, one without `~`, two overlapping, one long (> 4 s of words), one with `\x1f` padding, blank lines.
-- [ ] Generate the goldens; eyeball that the golden contains `e-05`-style numbers and a `"captions"` header. Commit `#83 M1: castcut: cut.py oracle and fixture`.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Hand-write `raw.cast` (≈30 events) exercising every row of the contract table: header with nested `term` object, int `timestamp`, float `idle_time_limit: 2.0`, a duplicate key, `env`; gaps above the cap; `o` data with ESC, `\r\n`, `\u0007`, `é→✓`, `"`, `\\`, U+2028; one `r` and one `i` event; an event whose output time collides with a caption start (marker-before-output ordering); a gap that yields a sub-1e-4 delta (exponent repr).
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ `captions.txt`: unsorted lines, one without `~`, two overlapping, one long (> 4 s of words), one with `\x1f` padding, blank lines.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Generate the goldens; eyeball that the golden contains `e-05`-style numbers and a `"captions"` header. Commit `#83 M1: castcut: cut.py oracle and fixture`.
 
 #### Task 2: pyjson (TDD)
 
-- [ ] Write `pyjson_test.go` table: decode→encode round trips (`{"b": 1, "a": [1.50, -0, 1e3, "x"]}` → `{"b": 1, "a": [1.5, 0, 1000.0, "x"]}`, duplicate keys, nested empty `{}`/`[]`, strings with every escape class); `pyFloat` rows (`0.0`, `-0.0`, `2.0`, `0.1`, `1e-05`, `0.0001`, `1e+16`, `1234567890123456.0`, `5e-324`); `pyRound` rows (`round(0.0078125,6)`→`0.007812`, `round(2.675,2)`→`2.67`, `round(-1e-9,6)`→`-0.0`). Expected strings come from running the noted Python one-liners.
-- [ ] Run `go test ./cmd/castcut/ -run PyJSON` → FAIL (undefined).
-- [ ] Implement:
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Write `pyjson_test.go` table: decode→encode round trips (`{"b": 1, "a": [1.50, -0, 1e3, "x"]}` → `{"b": 1, "a": [1.5, 0, 1000.0, "x"]}`, duplicate keys, nested empty `{}`/`[]`, strings with every escape class); `pyFloat` rows (`0.0`, `-0.0`, `2.0`, `0.1`, `1e-05`, `0.0001`, `1e+16`, `1234567890123456.0`, `5e-324`); `pyRound` rows (`round(0.0078125,6)`→`0.007812`, `round(2.675,2)`→`2.67`, `round(-1e-9,6)`→`-0.0`). Expected strings come from running the noted Python one-liners.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Run `go test ./cmd/castcut/ -run PyJSON` → FAIL (undefined).
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Implement:
 
 ```go
 // pyFloat is Python's repr(float): shortest round-trip digits, fixed notation
@@ -235,23 +235,23 @@ func pyRound(x float64, n int) float64 {
   `encodeValue(*bytes.Buffer, pyValue)`: `json.Number` without `.eE` → int text
   (normalize `-0`), else `pyFloat(ParseFloat)`; `float64` → `pyFloat`; strings via the
   ensure_ascii=False escaper (`\u%04x` lowercase).
-- [ ] Tests green. Commit `#83 M1: castcut: Python-compatible JSON`.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Tests green. Commit `#83 M1: castcut: Python-compatible JSON`.
 
 #### Task 3: cast + captions parse (TDD)
 
-- [ ] Tests: v2 header → `expected asciicast v3`; blank lines skipped; 2-element event → error; caption regex rows (`~1:02.5  hi` → 62.5, `0:05 x`, `1:2` no text → error with cut.py's message text), sort by (time, text), `pySpace` strip, `sidecarPath`.
-- [ ] Implement `parseCast(path string, data []byte)` and `parseCaptions(path string, data []byte)` (regex `^~?(\d+):(\d+(?:\.\d+)?)\s+(.+)` on the stripped line; `At = m1*60 + m2` in that order).
-- [ ] Green; commit `#83 M1: castcut: cast and captions parsing`.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Tests: v2 header → `expected asciicast v3`; blank lines skipped; 2-element event → error; caption regex rows (`~1:02.5  hi` → 62.5, `0:05 x`, `1:2` no text → error with cut.py's message text), sort by (time, text), `pySpace` strip, `sidecarPath`.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Implement `parseCast(path string, data []byte)` and `parseCaptions(path string, data []byte)` (regex `^~?(\d+):(\d+(?:\.\d+)?)\s+(.+)` on the stripped line; `At = m1*60 + m2` in that order).
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Green; commit `#83 M1: castcut: cast and captions parsing`.
 
 #### Task 4: the cut (TDD) and CLI wiring
 
-- [ ] `cut_test.go` pure rows: no captions → header gains `"captions": []`, all gaps squeezed by `min(1, idle/fast)/speed`; one caption → its window plays at rate 1 and the marker lands at `round(warp(start),3)`; overlapping captions start at the previous end; caption past the end → `caption at 9.9s is past the end of the recording (5.0s): <text>`.
-- [ ] Port `plan_windows`, `build_segments` (cut set = sorted unique `{prev, t, bounds in (prev,t)}`), `warp`, and `main`'s assembly line by line; `idle_time_limit` popped before encoding.
-- [ ] `main.go`: `run(args []string, stdout, stderr io.Writer) int`; `cut` flags via `flag.FlagSet` (`-o/--out` required, `--speed --idle --lead --min-hold --wps --beat`); flags may follow positionals (parse positionals out first, as argparse does). Errors → `castcut: <msg>` on stderr, exit 1. Summary lines exactly as cut.py prints.
-- [ ] `cut_golden_test.go`: copy fixture into `t.TempDir()`, `chdir`, `run([]string{"cut","raw.cast","captions.txt","-o","cut.golden.cast"})`, compare file bytes and stdout to goldens; on mismatch print the first differing line. Mutation check: flip marker priority in the sort → test goes red; revert.
-- [ ] `cut_diff_test.go` (`//go:build conformance`): 200 seeded random casts/captions (random gaps incl. 0 and > cap, random unicode/control data, random caption times incl. duplicates, random flag values), each written to temp, run via `python3 cut_reference.py` and via `run()`; byte-compare. `python3` missing → `conformance.SkipOrFail`.
-- [ ] `go test ./cmd/castcut/` and `CONFORMANCE_STRICT=1 go test -tags conformance ./cmd/castcut/` (unsandboxed) green.
-- [ ] Atlas: `atlas/castcut.md` (map: pipeline, byte-identity seam, file list) + link in `atlas/index.md`. Commit; `sdlc milestone-close --issue 83 --milestone M1`.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ `cut_test.go` pure rows: no captions → header gains `"captions": []`, all gaps squeezed by `min(1, idle/fast)/speed`; one caption → its window plays at rate 1 and the marker lands at `round(warp(start),3)`; overlapping captions start at the previous end; caption past the end → `caption at 9.9s is past the end of the recording (5.0s): <text>`.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Port `plan_windows`, `build_segments` (cut set = sorted unique `{prev, t, bounds in (prev,t)}`), `warp`, and `main`'s assembly line by line; `idle_time_limit` popped before encoding.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ `main.go`: `run(args []string, stdout, stderr io.Writer) int`; `cut` flags via `flag.FlagSet` (`-o/--out` required, `--speed --idle --lead --min-hold --wps --beat`); flags may follow positionals (parse positionals out first, as argparse does). Errors → `castcut: <msg>` on stderr, exit 1. Summary lines exactly as cut.py prints.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ `cut_golden_test.go`: copy fixture into `t.TempDir()`, `chdir`, `run([]string{"cut","raw.cast","captions.txt","-o","cut.golden.cast"})`, compare file bytes and stdout to goldens; on mismatch print the first differing line. Mutation check: flip marker priority in the sort → test goes red; revert.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ `cut_diff_test.go` (`//go:build conformance`): 200 seeded random casts/captions (random gaps incl. 0 and > cap, random unicode/control data, random caption times incl. duplicates, random flag values), each written to temp, run via `python3 cut_reference.py` and via `run()`; byte-compare. `python3` missing → `conformance.SkipOrFail`.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ `go test ./cmd/castcut/` and `CONFORMANCE_STRICT=1 go test -tags conformance ./cmd/castcut/` (unsandboxed) green.
+- [x] ~~superseded 2026-10-08 (see Revisions)~~ Atlas: `atlas/castcut.md` (map: pipeline, byte-identity seam, file list) + link in `atlas/index.md`. Commit; `sdlc milestone-close --issue 83 --milestone M1`.
 
 ### M2 — `record`, `annotate`, `--help`
 
@@ -427,3 +427,12 @@ readability, not fidelity). `cut.py`'s odd edges are free to change: caption par
   example row uses speed 1 to make the tie exact and is mutation-checked.
 - **No rounding drift:** event intervals are differences of rounded absolute times.
 - `encodeCast` uses `marshalNoEscape`; a missing default sidecar names `castcut annotate`.
+
+### 2026-10-08 — M1 boundary review rounds 2–3 (BR-6, BR-8: one rule, not three fixes)
+
+The same family surfaced three times (NaN output, int-overflowing stamp minutes, NaN-blind
+re-check). The rule now lives in one predicate: `inRange(x) = x >= 0 && x <= maxSeconds`
+(positive comparison, so NaN fails), used by every boundary — event interval and cumulative
+length in `parseCast`, `idle_time_limit`, caption stamps (minutes bounded before multiplying),
+every timing flag, and `Cut`'s re-check of each gap, the take length and each caption. Superseded
+M1 Task 1–4 rows are struck. The atlas states the measured envelope (2×10⁵ events), not 10⁶.

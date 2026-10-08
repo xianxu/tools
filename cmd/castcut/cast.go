@@ -30,6 +30,10 @@ type Event struct {
 // demo and far inside float64.
 const maxSeconds = 7 * 24 * 3600
 
+// inRange is the one range check for every duration castcut reads. Written as
+// a positive comparison so NaN fails it.
+func inRange(x float64) bool { return x >= 0 && x <= maxSeconds }
+
 // splitLines splits on \n, \r\n and a lone \r, the line endings an editor or
 // another tool may leave behind.
 func splitLines(data []byte) []string {
@@ -60,10 +64,10 @@ func parseCast(path string, data []byte) (Cast, error) {
 			return Cast{}, fmt.Errorf("%s: expected an event [interval, kind, data]", at)
 		}
 		var e Event
-		if json.Unmarshal(raw[0], &e.Gap) != nil || e.Gap < 0 {
-			return Cast{}, fmt.Errorf("%s: event interval is not a non-negative number", at)
+		if json.Unmarshal(raw[0], &e.Gap) != nil || !inRange(e.Gap) {
+			return Cast{}, fmt.Errorf("%s: event interval is not a number of seconds in [0, %d]", at, maxSeconds)
 		}
-		if total += e.Gap; total > maxSeconds {
+		if total += e.Gap; !inRange(total) {
 			return Cast{}, fmt.Errorf("%s: recording runs past %d hours; not a take", at, maxSeconds/3600)
 		}
 		if json.Unmarshal(raw[1], &e.Kind) != nil {
@@ -93,10 +97,10 @@ func (c *Cast) idleLimit() (float64, error) {
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return 0, fmt.Errorf("idle_time_limit is not a number: %s", raw)
 	}
-	if v == nil || *v <= 0 {
+	if v == nil || *v == 0 {
 		return 0, nil
 	}
-	if *v > maxSeconds {
+	if !inRange(*v) {
 		return 0, fmt.Errorf("idle_time_limit %v is past %d hours", *v, maxSeconds/3600)
 	}
 	return *v, nil

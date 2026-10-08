@@ -13,7 +13,7 @@ func TestParseCastRejects(t *testing.T) {
 		{"empty", "\n \n", "empty file"},
 		{"two-element event", `{"version": 3}` + "\n[0, \"o\"]\n", "t.cast:2: expected an event"},
 		{"trailing data", `{"version": 3}` + "\n[0, \"o\", \"x\"] 1\n", "t.cast:2: expected an event"},
-		{"negative gap", `{"version": 3}` + "\n[-1, \"o\", \"x\"]\n", "non-negative"},
+		{"negative gap", `{"version": 3}` + "\n[-1, \"o\", \"x\"]\n", "not a number of seconds"},
 		{"kind not string", `{"version": 3}` + "\n[0, 1, \"x\"]\n", "kind is not a string"},
 		{"overflowing duration", `{"version": 3}` + "\n[1e308, \"o\", \"a\"]\n[1e308, \"o\", \"b\"]\n", "t.cast:2: recording runs past 168 hours"},
 		{"header not object", "[1]\n[0, \"o\", \"x\"]\n", "header is not a JSON object"},

@@ -35,7 +35,7 @@ func parseCaptions(path string, data []byte) ([]Caption, error) {
 		// Bounded at the door, like every duration castcut reads (maxSeconds).
 		min, err := strconv.Atoi(m[1])
 		sec, _ := strconv.ParseFloat(m[2], 64)
-		if err != nil || min > maxSeconds/60 || float64(min*60)+sec > maxSeconds {
+		if err != nil || min > maxSeconds/60 || !inRange(float64(min*60)+sec) {
 			return nil, fmt.Errorf("%s:%d: stamp %s:%s is past %d hours", path, i+1, m[1], m[2], maxSeconds/3600)
 		}
 		caps = append(caps, Caption{At: float64(min*60) + sec, Text: strings.TrimSpace(m[3])})

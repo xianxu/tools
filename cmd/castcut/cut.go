@@ -25,11 +25,11 @@ var defaultTiming = Timing{Speed: 5, Idle: 1, Lead: 1, MinHold: 4, WPS: 3.5, Bea
 
 // validate bounds every flag, so window ends and rates stay finite.
 func (t Timing) validate() error {
-	if !(t.Speed > 0 && t.Speed <= maxSeconds) || !(t.WPS > 0 && t.WPS <= maxSeconds) {
+	if !(inRange(t.Speed) && t.Speed > 0) || !(inRange(t.WPS) && t.WPS > 0) {
 		return fmt.Errorf("--speed and --wps must be positive and at most %d", maxSeconds)
 	}
 	for _, v := range []float64{t.Idle, t.Lead, t.MinHold, t.Beat} {
-		if !(v >= 0 && v <= maxSeconds) {
+		if !inRange(v) {
 			return fmt.Errorf("--idle, --lead, --min-hold and --beat must be between 0 and %d seconds", maxSeconds)
 		}
 	}
@@ -187,9 +187,17 @@ func Cut(c Cast, caps []Caption, t Timing) (Cast, Summary, error) {
 		return Cast{}, Summary{}, err
 	}
 
+	// parseCast and parseCaptions already enforce these ranges; a Cast or
+	// caption built in code goes through the same check here.
+	if len(c.Events) == 0 {
+		return Cast{}, Summary{}, fmt.Errorf("no events")
+	}
 	times := make([]float64, len(c.Events))
 	tm := 0.0
 	for i, e := range c.Events {
+		if !inRange(e.Gap) {
+			return Cast{}, Summary{}, fmt.Errorf("event %d: interval %v is not in [0, %d]", i, e.Gap, maxSeconds)
+		}
 		gap := e.Gap
 		if limit > 0 {
 			gap = math.Min(gap, limit)
@@ -198,11 +206,11 @@ func Cut(c Cast, caps []Caption, t Timing) (Cast, Summary, error) {
 		times[i] = tm
 	}
 	last := times[len(times)-1]
-	if last > maxSeconds { // parseCast refuses these; a hand-built Cast must too
+	if !inRange(last) {
 		return Cast{}, Summary{}, fmt.Errorf("recording runs past %d hours; not a take", maxSeconds/3600)
 	}
 	for _, cp := range caps {
-		if cp.At < 0 || math.IsNaN(cp.At) {
+		if !inRange(cp.At) {
 			return Cast{}, Summary{}, fmt.Errorf("caption at %v is not a time in the recording: %s", cp.At, cp.Text)
 		}
 		if cp.At > last {
