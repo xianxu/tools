@@ -303,3 +303,112 @@ findings:
     detail: |
       2nd finding in this family. Rule: superseded plan rows are struck or ticked when a revision supersedes them. The line-5 banner points at Revisions, but grep for unchecked boxes still reports stale work.
 ```
+
+---
+
+## Re-review — 2026-10-08T14:00:15-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 83 — castcut: record, annotate and cut terminal demos |
+| repo | tools |
+| issue file | workshop/issues/000083-castcut-record-annotate-and-cut-terminal-demos.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 4c1444f900957224cb3a10cc5bfeb9542988f2cf..a8bef03eb806a5d6541f7d0ae6a8b1fbddf21d24 |
+| command | sdlc milestone-close --issue 83 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-10-08T14:00:15-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The fix for BR-8 is correct, but it broke the test suite. Commit a8bef03 now runs every number castcut reads through one range check, `inRange` (`cmd/castcut/cast.go:35`), which correctly rejects NaN, at every input boundary and again inside `Cut`. The trouble is that each event's interval is now checked before the running total. So the `overflowing duration` row in `TestParseCastRejects` stops at the per-event check and never reaches the "recording runs past 168 hours" check it was written for. `go test ./cmd/castcut/` fails at HEAD:
+
+```
+--- FAIL: TestParseCastRejects (0.00s)
+    cast_test.go:23: overflowing duration: err = t.cast:2: event interval is not a number of seconds in [0, 604800], want "t.cast:2: recording runs past 168 hours"
+FAIL	github.com/xianxu/tools/cmd/castcut
+```
+
+The boundary can't be crossed while the suite is red. The fix is small: change that one test row (see below) and re-run.
+
+**1. Strengths**
+- **One shared range check.** `inRange` (`cast.go:35`) is written as `x >= 0 && x <= max`, so NaN fails it by construction. It is now used by `parseCast`, `idleLimit`, `parseCaptions`, `Timing.validate` and `Cut`. That is the right answer to a family of findings that kept recurring.
+- **`Cut` re-checks inputs built in code** (`cut.go:190-216`). It rejects empty events, NaN, negative and infinite intervals, and caption times out of range. `TestCutRejects` (`cut_test.go:148-157`) has a row for each case. The `{1, -1}` row only passes because of the new per-event check, so that test really guards the fix.
+- **Pure core, thin shell.** `Cut`, `planWindows`, `buildSegments` and the warp step are pure. `runCut` only reads files, writes the output and prints.
+- **Property tests are real.** `checkCut` states properties (a)–(e) on their own terms rather than restating the implementation, and the 200k-event envelope test measures speed against a 3-second budget.
+
+**2. Critical**
+- **`cmd/castcut/cast_test.go:19`: the test suite is red at HEAD.** The `overflowing duration` row feeds an interval of `1e308`, which the per-event check now rejects first, so the total check is no longer tested.
+  - Fix: use intervals that are each in range but add up to more than the limit, e.g. `[4e5, "o", "a"]` then `[4e5, "o", "b"]`, and expect `t.cast:3: recording runs past 168 hours`. Keep a separate row for a `1e308` interval expecting `not a number of seconds`.
+  - Then re-run `go test ./cmd/castcut/` before `milestone-close`.
+  - Add a lesson to `workshop/lessons.md`: a commit that tightens a check must run the package's tests before it is committed.
+
+**3. Important**
+- None new.
+
+**4. Minor**
+- **`cast.go:100-104`: a negative `idle_time_limit` gets the wrong error message.** Changing `*v <= 0` to `*v == 0` means a negative limit, which used to mean "no limit", is now rejected as "idle_time_limit -1 is past 168 hours". Rejecting it is reasonable, but the message names the wrong cause, the behaviour change isn't recorded anywhere, and no test covers it. Say "not in [0, …]" instead, and add a row to `TestCutBoundsIdleLimit`.
+- **Plan line 7 still says the goal is "byte-identical".** The Core concepts table (lines 74-75) still lists `pyjson.go`. The banner on line 5 covers this, so it's only worth noting.
+
+**5. Test coverage notes**
+- The hint printed when the default sidecar file is missing (`main.go:113-115`) is never exercised by a test. See BR-5 below.
+- The fix for output-time drift (BR-3) has no test that would fail without it. The property checks allow 2e-3 of error, which would hide drift of about 1e-7.
+
+**6. Architecture**
+
+| Marker | Result | Note |
+|---|---|---|
+| ARCH-DRY | pass | `inRange` is single-sourced. `parseCast` and `Cut` each loop over the events, but share the same check. |
+| ARCH-PURE | pass | |
+| ARCH-PURPOSE | pass | M1 delivers `cut`, with the scope as revised. |
+| ARCH-MOCK | N/A | M1 calls no external binary. M2's asciinema seam is the place to apply it. |
+| ARCH-CONSTRAINTS | pass | The 200k-event, 3-second budget is measured by a test. |
+| ARCH-SECURE | pass | Every number read is bounded at parsing, and errors are visible. The only gap is the idle-limit message above. |
+| ARCH-ORDER | pass | Nothing persists between events: `Cut` is a single-shot transform. |
+| ARCH-FUNERAL | pass | The tool writes only the file the operator names with `-o`. The untracked `c.txt`, `o.cast` and `t.cast` in the working tree are outside the review window, but should be cleaned up. |
+
+**7. Plan revision recommendations**
+- Add a `## Revisions` entry saying a negative `idle_time_limit` is now refused rather than treated as "no limit".
+- Optionally strike the stale goal line (line 7) and the `pyjson` rows in the Core concepts table.
+
+```findings
+dispose:
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      Structurally fixed (prev is now the rounded absolute time, cut.go:252-258) but no test fails without it; checkCut eps 2e-3 cannot see 1e-7 drift. Add: sum of out gaps equals round(w.warp(view),6) within 1e-9 on the 200k take.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      Sidecar hint exists in main.go:113-115 but no CLI test runs cut without a sidecar and asserts the castcut annotate hint; the README part stays scheduled for M2 Task 7.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      inRange shared by parseCast/idleLimit/parseCaptions/validate/Cut; TestCutRejects rows NaN, {1,-1}, +Inf, {} — the {1,-1} row goes red without the per-gap check.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      Superseded M1 rows are now ticked and struck with a pointer to Revisions (plan lines 169-254).
+findings:
+  - id: new
+    severity: Critical
+    family: untrusted-input-fabricated-output
+    title: |
+      go test ./cmd/castcut/ is red at HEAD: TestParseCastRejects overflowing-duration row now hits the per-gap check
+    detail: |
+      a8bef03 made the per-gap inRange reject 1e308 before the total check, so cast_test.go:19 fails and the total-overflow path is untested. This is the 4th in the family but a regression in the family rule's own fix, not a new instance; the rule (one inRange at every boundary) holds. Fix: row with [4e5],[4e5] expecting t.cast:3 recording runs past 168 hours, plus a 1e308 row expecting not a number of seconds; run the tests before committing.
+  - id: new
+    severity: Minor
+    family: error-message-misstates-cause
+    title: |
+      Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
+    detail: |
+      Previously a negative limit meant no limit. Say not in [0, max], add a TestCutBoundsIdleLimit row, and record the change in Revisions.
+```

@@ -169,8 +169,13 @@ func TestCutRejects(t *testing.T) {
 }
 
 func TestCutBoundsIdleLimit(t *testing.T) {
-	if _, _, err := Cut(castOf(1e9, 1), nil, defaultTiming); err == nil || !strings.Contains(err.Error(), "idle_time_limit") {
-		t.Errorf("err = %v", err)
+	// A negative limit was "no limit" in the prototype; castcut refuses it.
+	for _, limit := range []string{"1e9", "-1"} {
+		c := castOf(0, 1)
+		c.Header["idle_time_limit"] = json.RawMessage(limit)
+		if _, _, err := Cut(c, nil, defaultTiming); err == nil || !strings.Contains(err.Error(), "idle_time_limit "+limit+" is not in [0,") {
+			t.Errorf("limit %s: err = %v", limit, err)
+		}
 	}
 }
 

@@ -101,7 +101,7 @@ func (c *Cast) idleLimit() (float64, error) {
 		return 0, nil
 	}
 	if !inRange(*v) {
-		return 0, fmt.Errorf("idle_time_limit %v is past %d hours", *v, maxSeconds/3600)
+		return 0, fmt.Errorf("idle_time_limit %v is not in [0, %d] seconds", *v, maxSeconds)
 	}
 	return *v, nil
 }

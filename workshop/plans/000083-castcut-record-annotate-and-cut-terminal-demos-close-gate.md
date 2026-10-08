@@ -116,6 +116,42 @@ rounds:
       boundary: M1
       recipe: milestone-review
       blocked: true
+    - "n": 4
+      timestamp: "2026-10-08T14:00:15-07:00"
+      agent: claude
+      dispose:
+        - id: BR-3
+          disposition: not-addressed
+          note: 'Structurally fixed (prev is now the rounded absolute time, cut.go:252-258) but no test fails without it; checkCut eps 2e-3 cannot see 1e-7 drift. Add: sum of out gaps equals round(w.warp(view),6) within 1e-9 on the 200k take.'
+          round: 4
+        - id: BR-5
+          disposition: not-addressed
+          note: Sidecar hint exists in main.go:113-115 but no CLI test runs cut without a sidecar and asserts the castcut annotate hint; the README part stays scheduled for M2 Task 7.
+          round: 4
+        - id: BR-8
+          disposition: addressed
+          note: inRange shared by parseCast/idleLimit/parseCaptions/validate/Cut; TestCutRejects rows NaN, {1,-1}, +Inf, {} — the {1,-1} row goes red without the per-gap check.
+          round: 4
+        - id: BR-9
+          disposition: addressed
+          note: Superseded M1 rows are now ticked and struck with a pointer to Revisions (plan lines 169-254).
+          round: 4
+      findings:
+        - id: BR-10
+          severity: Critical
+          title: 'go test ./cmd/castcut/ is red at HEAD: TestParseCastRejects overflowing-duration row now hits the per-gap check'
+          detail: 'a8bef03 made the per-gap inRange reject 1e308 before the total check, so cast_test.go:19 fails and the total-overflow path is untested. This is the 4th in the family but a regression in the family rule''s own fix, not a new instance; the rule (one inRange at every boundary) holds. Fix: row with [4e5],[4e5] expecting t.cast:3 recording runs past 168 hours, plus a 1e308 row expecting not a number of seconds; run the tests before committing.'
+          family: untrusted-input-fabricated-output
+          round: 4
+        - id: BR-11
+          severity: Minor
+          title: Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
+          detail: Previously a negative limit meant no limit. Say not in [0, max], add a TestCutBoundsIdleLimit row, and record the change in Revisions.
+          family: error-message-misstates-cause
+          round: 4
+      boundary: M1
+      recipe: milestone-review
+      blocked: true
 ---
 
 # Gate ledger — tools#83 (boundary-review)
@@ -168,9 +204,25 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-9** [Minor] `docs-surface-gap` Plan M1 Tasks 1-4 still read byte-identical with unchecked pyjson boxes
   2nd finding in this family. Rule: superseded plan rows are struck or ticked when a revision supersedes them. The line-5 banner points at Revisions, but grep for unchecked boxes still reports stale work.
 
+## Round 4 — 2026-10-08T14:00:15-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-3 — not-addressed — Structurally fixed (prev is now the rounded absolute time, cut.go:252-258) but no test fails without it; checkCut eps 2e-3 cannot see 1e-7 drift. Add: sum of out gaps equals round(w.warp(view),6) within 1e-9 on the 200k take.
+- BR-5 — not-addressed — Sidecar hint exists in main.go:113-115 but no CLI test runs cut without a sidecar and asserts the castcut annotate hint; the README part stays scheduled for M2 Task 7.
+- BR-8 — addressed — inRange shared by parseCast/idleLimit/parseCaptions/validate/Cut; TestCutRejects rows NaN, {1,-1}, +Inf, {} — the {1,-1} row goes red without the per-gap check.
+- BR-9 — addressed — Superseded M1 rows are now ticked and struck with a pointer to Revisions (plan lines 169-254).
+
+### Raised
+
+- **BR-10** [Critical] `untrusted-input-fabricated-output` go test ./cmd/castcut/ is red at HEAD: TestParseCastRejects overflowing-duration row now hits the per-gap check
+  a8bef03 made the per-gap inRange reject 1e308 before the total check, so cast_test.go:19 fails and the total-overflow path is untested. This is the 4th in the family but a regression in the family rule's own fix, not a new instance; the rule (one inRange at every boundary) holds. Fix: row with [4e5],[4e5] expecting t.cast:3 recording runs past 168 hours, plus a 1e308 row expecting not a number of seconds; run the tests before committing.
+- **BR-11** [Minor] `error-message-misstates-cause` Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
+  Previously a negative limit meant no limit. Say not in [0, max], add a TestCutBoundsIdleLimit row, and record the change in Revisions.
+
 ## Open findings
 
 - **BR-3** [Minor] `rounding-drift` Event gaps rounded against unrounded prev, so cumulative output time drifts from the true times (about sqrt(N)*3e-7)
 - **BR-5** [Minor] `docs-surface-gap` README has no castcut entry yet (scheduled for M2 Task 7); missing sidecar error gives no hint to run annotate or pass captions.txt
-- **BR-8** [Important] `untrusted-input-fabricated-output` Cut's re-check of a code-built Cast is NaN-blind and ignores negative gaps, so NaN gaps produce a NaN cast with no error
-- **BR-9** [Minor] `docs-surface-gap` Plan M1 Tasks 1-4 still read byte-identical with unchecked pyjson boxes
+- **BR-10** [Critical] `untrusted-input-fabricated-output` go test ./cmd/castcut/ is red at HEAD: TestParseCastRejects overflowing-duration row now hits the per-gap check
+- **BR-11** [Minor] `error-message-misstates-cause` Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
