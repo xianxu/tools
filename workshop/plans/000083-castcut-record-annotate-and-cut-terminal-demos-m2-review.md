@@ -112,3 +112,87 @@ findings:
     title: |
       writeAtomic resets sidecar mode to 0600 and leaves a .tmp file if the process dies mid-write
 ```
+
+---
+
+## Re-review — 2026-10-08T14:14:28-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 83 — castcut: record, annotate and cut terminal demos |
+| repo | tools |
+| issue file | workshop/issues/000083-castcut-record-annotate-and-cut-terminal-demos.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | d48faad3b1d5c37234c80956aaaaf92ecfcc83cf..c272027a39f8409e46b4b473a74053ae36a5ac91 |
+| command | sdlc milestone-close --issue 83 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-10-08T14:14:28-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: medium
+```
+
+M2 is ready to ship. The fix for BR-13 is real and correct. `runRecord` now takes the command's status only from the take's final `x` event, which is read through `parseCast`, so it inherits that function's guarantee that a take has at least one event. When the take has no parseable `x` event, it reports `asciinema <exit> without finishing the take; <out> is incomplete` and does not claim the take was saved. `TestRecordReportsAsciinemaFailure` covers this through a failure mode in the fake (writes only the header, prints EPERM, exits 1). That test can only pass with the fix in place, because the message it checks exists only in the fix. BR-14 has a Revisions entry in the plan that moves the browser check to M3. BR-15 is fixed in the viewer. BR-16 was a mistaken finding. BR-17 is half-tested. Nothing blocks the gate.
+
+One limit on what I could check: in this review environment, the live conformance test `-tags conformance TestRecordThroughRealAsciinema` fails, both inside and outside the sandbox. The real asciinema exits with `Error: EPERM: Operation not permitted`, which means the review process itself is confined. So I could not re-check the "verified live" claim. The output does show the BR-13 path working against the real binary: castcut reported `asciinema exit status 1 without finishing the take; … is incomplete` and exited 1 instead of claiming the take was saved. The operator should run the conformance test once on the host before close.
+
+1. **Strengths**
+   - `record.go:142-155`: the status line rests only on evidence castcut read from the take. The message differs for "asciinema did not start" and "asciinema exited without an `x` event".
+   - `record_test.go` `fakeAsciinema`: the fake keeps state across the call (it writes the cast and honours `--return`), and `recordContract` runs the same contract against both the fake and the real binary (ARCH-MOCK).
+   - `annotate.go:29-90`: the handler pins the exact `Host`, checks `Origin` on writes and caps uploads at `MaxBytesReader`. This is a sound local-server security posture (ARCH-SECURE).
+   - `viewer.html:184-196`: `get` throws on `!r.ok`, and the textarea stays disabled until the notes load succeeds. A failed read can no longer turn into an empty draft that autosave writes back.
+   - `go test ./...` and `go vet` pass on both darwin and `GOOS=linux`.
+
+2. **Critical:** none.
+
+3. **Important:** none.
+
+4. **Minor**
+   - `annotate.go:146-151`: the stale `.tmp` cleanup deletes every matching temp file, including the one a second `annotate` on the same take is writing at that moment. That process's rename then fails with ENOENT and returns a 500. It is a rare case, but the cleanup has no test either (see BR-17 below).
+   - `main.go:49`: the comment says "asciinema already showed why". When the command exits non-zero, castcut prints nothing about the status, and nothing confirms that asciinema does.
+
+5. **Test coverage**
+   - The BR-13 regression test is in place and reachable.
+   - The sidecar mode is tested only for a newly created file (0644). Keeping an existing non-default mode is not tested, and neither is the temp-file cleanup.
+   - The `--version` test was already at `main_test.go:101` at the base commit.
+
+6. **Architecture**
+   - ARCH-DRY: pass.
+   - ARCH-PURE: pass. `recordArgs`, `shellJoin` and `nextTake` are tested directly; `runRecord` is a thin layer around them.
+   - ARCH-PURPOSE: pass.
+   - ARCH-MOCK: pass. It uses a stateful fake plus a live conformance test. The live run could not be done here because of the environment.
+   - ARCH-CONSTRAINTS: pass. Notes uploads are capped at 1 MiB.
+   - ARCH-SECURE: pass.
+   - ARCH-ORDER: pass. The viewer's save path allows at most one PUT in flight, and the server holds no state between requests beyond the sidecar.
+   - ARCH-FUNERAL: pass. Takes and sidecars are artifacts the operator owns, and leftover temp files now have a removal path.
+
+7. **Plan revisions:** none beyond the 2026-10-08 entry that was added. M3's close evidence has to name the browser check, as that entry says.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: addressed
+    note: |
+      Status and the saved claim now come only from the take's x event via parseCast; TestRecordReportsAsciinemaFailure (fake EPERM mode) only passes with the fix; the real asciinema EPERM here produced the incomplete-take message.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Plan Revisions 2026-10-08 moves the in-browser check to M3 with a reason and requires M3 close evidence to name it.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      The textarea ships disabled and is enabled only after get('/notes') succeeds; get throws on !r.ok; the handler test checks for the disabled attribute.
+  - id: BR-16
+    disposition: withdrawn
+    note: |
+      The --version test already existed at base, main_test.go:101.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      New-sidecar mode 0644 is tested in TestAnnotateServesTheTakeAndItsNotes. The stale-tmp cleanup at annotate start has no test and can delete a concurrent annotate's in-flight temp file; minor, non-blocking.
+```

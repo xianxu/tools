@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 //go:embed viewer.html
@@ -136,10 +137,12 @@ func runAnnotate(args []string, stdout, stderr io.Writer) error {
 	if _, err := parseCast(castPath, data); err != nil {
 		return err
 	}
-	// A temp file survives only if a previous annotate died mid-write; the
-	// sidecar itself was never touched, so the leftovers are garbage.
-	if stale, _ := filepath.Glob(filepath.Join(filepath.Dir(castPath), "."+filepath.Base(sidecarPath(castPath))+".*.tmp")); len(stale) > 0 {
-		for _, f := range stale {
+	// A temp file outlives its write only if an annotate died mid-write; the
+	// sidecar itself was never touched, so old leftovers are garbage. A
+	// write takes milliseconds, so a minute spares another annotate's.
+	stale, _ := filepath.Glob(filepath.Join(filepath.Dir(castPath), "."+filepath.Base(sidecarPath(castPath))+".*.tmp"))
+	for _, f := range stale {
+		if fi, err := os.Stat(f); err == nil && time.Since(fi.ModTime()) > time.Minute {
 			os.Remove(f)
 		}
 	}

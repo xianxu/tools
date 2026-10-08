@@ -102,12 +102,13 @@ drop; homebrew tap + parley.nvim follow-up. Design 2.5 × 1.15 = 2.875, impl 1.6
 Durable plan: [workshop/plans/000083-castcut-plan.md](../plans/000083-castcut-plan.md) (decisions D1–D7 there).
 
 - [x] M1 — `castcut cut`: the timing model (pure, property + fuzz tests), stdlib JSON, CLI wiring
-- [ ] M2 — `castcut record` (fake asciinema on PATH), `castcut annotate` (localhost server, notes sidecar), `castcut --help` as agent instructions
+- [x] M2 — `castcut record` (fake asciinema on PATH), `castcut annotate` (localhost server, notes sidecar), `castcut --help` as agent instructions
 - [ ] M3 — Homebrew formula + tag (operator-confirmed), parley.nvim follow-up issue, couch broadcast end-to-end take
 
 ## Log
 
 ### 2026-10-08
+- 2026-10-08: closed M2 — go test -count=1 ./cmd/castcut green; BR-13: record status from the take x event — fake failure mode test + mutation red, live asciinema 3.2.1 strict conformance green, sandboxed EPERM repro reports incomplete take exit 1; BR-14: in-browser check moved to M3 in plan Revisions (no browser driver here; server via handler tests + real-binary smoke, JS node --check); minors (disabled-until-loaded, sidecar mode, stale tmp sweep) fixed. actual = measured 1.12h - 0.74h M1 measurement.; review verdict: SHIP
 - 2026-10-08: closed M1 — go test -count=1 ./cmd/castcut green at HEAD c48afec (run alone, not piped); BR-10 fixed (rows split: per-gap vs cumulative); negative idle_time_limit refusal recorded + tested; one inRange predicate at every duration boundary, guards mutation-checked; 500 property takes, 2e5 envelope, naive-warp ref, CLI wiring; FuzzCut 30s clean; review verdict: FIX-THEN-SHIP
 
 - Claimed; plan drafted. asciinema 3.2.1 installed (`--window-size`, `--capture-input`, v3 default). Byte-identity was first planned (Python-compatible JSON seam), then dropped by the operator: castcut is a new tool grown from the prototype (see Revisions).

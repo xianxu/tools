@@ -217,6 +217,33 @@ rounds:
       boundary: M2
       recipe: milestone-review
       blocked: true
+    - "n": 7
+      timestamp: "2026-10-08T14:14:28-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: addressed
+          note: Status and the saved claim now come only from the take's x event via parseCast; TestRecordReportsAsciinemaFailure (fake EPERM mode) only passes with the fix; the real asciinema EPERM here produced the incomplete-take message.
+          round: 7
+        - id: BR-14
+          disposition: addressed
+          note: Plan Revisions 2026-10-08 moves the in-browser check to M3 with a reason and requires M3 close evidence to name it.
+          round: 7
+        - id: BR-15
+          disposition: addressed
+          note: The textarea ships disabled and is enabled only after get('/notes') succeeds; get throws on !r.ok; the handler test checks for the disabled attribute.
+          round: 7
+        - id: BR-16
+          disposition: withdrawn
+          note: The --version test already existed at base, main_test.go:101.
+          round: 7
+        - id: BR-17
+          disposition: addressed
+          note: New-sidecar mode 0644 is tested in TestAnnotateServesTheTakeAndItsNotes. The stale-tmp cleanup at annotate start has no test and can delete a concurrent annotate's in-flight temp file; minor, non-blocking.
+          round: 7
+      boundary: M2
+      recipe: milestone-review
+      blocked: false
 ---
 
 # Gate ledger — tools#83 (boundary-review)
@@ -312,12 +339,17 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-16** [Minor] `plan-test-row-missing` castcut --version has no test, which Plan Task 7 called for
 - **BR-17** [Minor] `artifact-without-removal-path` writeAtomic resets sidecar mode to 0600 and leaves a .tmp file if the process dies mid-write
 
+## Round 7 — 2026-10-08T14:14:28-07:00 (claude) — passed
+
+### Disposed
+
+- BR-13 — addressed — Status and the saved claim now come only from the take's x event via parseCast; TestRecordReportsAsciinemaFailure (fake EPERM mode) only passes with the fix; the real asciinema EPERM here produced the incomplete-take message.
+- BR-14 — addressed — Plan Revisions 2026-10-08 moves the in-browser check to M3 with a reason and requires M3 close evidence to name it.
+- BR-15 — addressed — The textarea ships disabled and is enabled only after get('/notes') succeeds; get throws on !r.ok; the handler test checks for the disabled attribute.
+- BR-16 — withdrawn — The --version test already existed at base, main_test.go:101.
+- BR-17 — addressed — New-sidecar mode 0644 is tested in TestAnnotateServesTheTakeAndItsNotes. The stale-tmp cleanup at annotate start has no test and can delete a concurrent annotate's in-flight temp file; minor, non-blocking.
+
 ## Open findings
 
 - **BR-11** [Minor] `error-message-misstates-cause` Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
 - **BR-12** [Important] `untrusted-input-fabricated-output` Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
-- **BR-13** [Important] `error-message-misstates-cause` record reports asciinema's own failure as the command's status and claims the take was saved
-- **BR-14** [Important] `verification-deferred-past-boundary` Plan Task 6 manual in-browser check of the viewer not done and not revised in the plan
-- **BR-15** [Minor] `untrusted-input-fabricated-output` viewer autosaves before GET /notes succeeds, so a failed load can overwrite the sidecar
-- **BR-16** [Minor] `plan-test-row-missing` castcut --version has no test, which Plan Task 7 called for
-- **BR-17** [Minor] `artifact-without-removal-path` writeAtomic resets sidecar mode to 0600 and leaves a .tmp file if the process dies mid-write
