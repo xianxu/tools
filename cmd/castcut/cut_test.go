@@ -170,7 +170,7 @@ func TestCutRejects(t *testing.T) {
 
 func TestCutBoundsIdleLimit(t *testing.T) {
 	// A negative limit was "no limit" in the prototype; castcut refuses it.
-	for _, limit := range []string{"1e9", "-1"} {
+	for _, limit := range []string{"999999", "-1"} {
 		c := castOf(0, 1)
 		c.Header["idle_time_limit"] = json.RawMessage(limit)
 		if _, _, err := Cut(c, nil, defaultTiming); err == nil || !strings.Contains(err.Error(), "idle_time_limit "+limit+" is not in [0,") {
