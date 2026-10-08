@@ -279,3 +279,42 @@ func pyRound(x float64, n int) float64 {
 - [ ] File parley.nvim follow-up issue (D7) with the README replacement text drafted in it.
 - [ ] End to end on couch broadcast (operator drives the take and annotation): `castcut record -- couch …` → `castcut annotate recordings/take-01.cast` → `castcut cut recordings/take-01.cast -o couch-v1.cast` → `castcut annotate couch-v1.cast` shows the captions. Record commands + durations in `## Log`.
 - [ ] `sdlc close --issue 83 --verified '…'`.
+
+## Revisions
+
+### 2026-10-08 — fresh-eyes plan review (byte identity, record exit code)
+
+Reason: the reviewer tested the contract against Python 3.14.5 / asciinema 3.2.1. `pyFloat`/`pyRound`
+sketches matched on 300k random floats; these deltas fix what did not.
+
+- **`sum()` is compensated.** CPython ≥ 3.12 `sum()` over floats is Neumaier-compensated
+  (`sum([0.1]*10) == 1.0`). New pure entity `pySum` in `pyjson.go` porting CPython's
+  algorithm (running sum + compensation `c`, `c` added at the end when non-zero and finite); used for
+  `fast` in `buildSegments`. Test row: `[0.1]*10 → 1.0`, plus 1k random lists vs pasted Python output.
+  `testdata/README.md` records the oracle's Python version; the differential test requires
+  `python3 ≥ 3.12` (older → `SkipOrFail` with that reason).
+- **Whitespace is one set.** `pySpace` is the single source for strip, split, *and* the caption
+  regex's `\s` — the regex is built from the same class (`[\t-\r\x1c-\x20\x85\xa0\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`),
+  with a test asserting the class and the predicate agree on every rune ≤ U+3000.
+- **Universal newlines** for captions.txt: split on `\r\n`, `\r`, `\n` (line numbers in errors follow).
+  Cast files keep `\n` splitting (cut.py uses `splitlines`, which also splits `\r`; asciinema never
+  writes raw `\r` outside JSON strings, so split casts on `\r\n|\r|\n` too — same helper).
+- **Version check is numeric** (`3.0` accepted, as in cut.py).
+- **Decoder strictness:** reject trailing data after a line's JSON value; accept `NaN`/`Infinity`/`-Infinity`
+  number tokens by pre-scanning (Python accepts them) — if this costs more than a few lines, declare it instead.
+- **`pyRepr`** joins the pure-entity table (Python `str.__repr__`: prefer `'`, switch to `"` when the text
+  has `'` and no `"`; escape `\\`, the quote, `\n\r\t`, other non-printables as `\xNN`/`\uNNNN`/`\UNNNNNNNN`,
+  printability via `unicode.IsPrint` with spaces other than U+0020 non-printable). Rows for each branch.
+- **Declared divergences, corrected list:** argparse unique-prefix flags (`--sp 2`) and glued `-oFILE` are
+  not accepted (exact long flags, `-o FILE`, `--out=FILE`); `--speed`/`--wps` ≤ 0 are rejected up front
+  (Python raises ZeroDivisionError) and the random-flag generator stays positive; non-ASCII digits in stamps
+  (Python *accepts* them via `int('١')`; Go rejects).
+- **Assembly details made explicit:** markers sort on the *rounded* caption start, output events on the
+  unrounded warp; caption time is `float64(m1*60 in int) + m2`; no output file is created on any error;
+  `ParseFloat` ErrRange → ±Inf (encodes `Infinity`); fixture gains a JSON `true`.
+- **record:** `recordArgs` always adds `--return` so the recorded command's exit status propagates
+  (asciinema 3 exits 0 otherwise). `nextTake` uses `%02d` as a minimum width, so `take-100` follows `take-99`.
+- **annotate:** the handler is built after `Listen` with the bound port; the Origin check is an exact match
+  on `http://127.0.0.1:N`; printed/opened URL is always `127.0.0.1`; the jsDelivr tags gain SRI
+  `integrity` hashes; captions render via `textContent`.
+- **Close evidence:** the parley.nvim Done-when bullet is satisfied by *filing* the follow-up issue; `--verified` says so.
