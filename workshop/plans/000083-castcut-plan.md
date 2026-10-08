@@ -414,3 +414,16 @@ readability, not fidelity). `cut.py`'s odd edges are free to change: caption par
   edits during a request set a dirty flag and the latest text is sent when it returns (latest body
   wins, no reordering). The server writes atomically, so a second tab on the same take is
   last-writer-wins at whole-file granularity — stated in `--help`.
+
+### 2026-10-08 — M1 boundary review (BR-1 and minors)
+
+- **Durations are bounded at the door.** `maxSeconds` (one week) caps a take's cumulative
+  length in `parseCast` (line-naming error) and in `Cut` (for hand-built casts), and every timing
+  flag in `Timing.validate` (finite, within range). Two 1e308 gaps used to produce `[NaN, …]` with
+  exit 0; `FuzzCut` no longer skips huge gaps — it carries that input as a seed and asserts the
+  properties for anything accepted.
+- **Property (f) is an example row, deliberately.** Marker times are rounded to 3 decimals, so a
+  generic "marker precedes output at the same instant" property is either vacuous or flaky; the
+  example row uses speed 1 to make the tie exact and is mutation-checked.
+- **No rounding drift:** event intervals are differences of rounded absolute times.
+- `encodeCast` uses `marshalNoEscape`; a missing default sidecar names `castcut annotate`.

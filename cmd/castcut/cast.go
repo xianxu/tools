@@ -25,6 +25,11 @@ type Event struct {
 	Data json.RawMessage
 }
 
+// maxSeconds bounds every duration castcut accepts — a take's length and each
+// timing flag — so the timing arithmetic stays finite. A week is far beyond any
+// demo and far inside float64.
+const maxSeconds = 7 * 24 * 3600
+
 // splitLines splits on \n, \r\n and a lone \r, the line endings an editor or
 // another tool may leave behind.
 func splitLines(data []byte) []string {
@@ -34,7 +39,7 @@ func splitLines(data []byte) []string {
 
 func parseCast(path string, data []byte) (Cast, error) {
 	var c Cast
-	n := 0
+	n, total := 0, 0.0
 	for i, line := range splitLines(data) {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -57,6 +62,9 @@ func parseCast(path string, data []byte) (Cast, error) {
 		var e Event
 		if json.Unmarshal(raw[0], &e.Gap) != nil || e.Gap < 0 {
 			return Cast{}, fmt.Errorf("%s: event interval is not a non-negative number", at)
+		}
+		if total += e.Gap; total > maxSeconds {
+			return Cast{}, fmt.Errorf("%s: recording runs past %d hours; not a take", at, maxSeconds/3600)
 		}
 		if json.Unmarshal(raw[1], &e.Kind) != nil {
 			return Cast{}, fmt.Errorf("%s: event kind is not a string", at)
@@ -95,11 +103,12 @@ func (c *Cast) idleLimit() (float64, error) {
 // line per event, in asciinema's own spacing.
 func encodeCast(c Cast) ([]byte, error) {
 	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(c.Header); err != nil {
+	header, err := marshalNoEscape(c.Header)
+	if err != nil {
 		return nil, err
 	}
+	b.Write(header)
+	b.WriteByte('\n')
 	for _, e := range c.Events {
 		kind, _ := json.Marshal(e.Kind)
 		b.WriteByte('[')

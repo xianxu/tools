@@ -113,6 +113,9 @@ func runCut(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if data, err = os.ReadFile(capsPath); err != nil {
+		if len(pos) == 1 && errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("no captions at %s: stamp them with `castcut annotate %s`, or name a captions file", capsPath, castPath)
+		}
 		return err
 	}
 	caps, err := parseCaptions(capsPath, data)

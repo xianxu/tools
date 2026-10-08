@@ -145,7 +145,10 @@ func TestCutRejects(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "caption at 2.5s is past the end of the recording (2.0s): too late") {
 		t.Errorf("past end: err = %v", err)
 	}
-	for _, tm := range []Timing{{Speed: 0, WPS: 1}, {Speed: 1, WPS: -1}, {Speed: 1, WPS: 1, Idle: -1}} {
+	for _, tm := range []Timing{
+		{Speed: 0, WPS: 1}, {Speed: 1, WPS: -1}, {Speed: 1, WPS: 1, Idle: -1},
+		{Speed: math.NaN(), WPS: 1}, {Speed: 1, WPS: 1, MinHold: 1e308}, {Speed: 1, WPS: 1, Lead: math.Inf(1)},
+	} {
 		if _, _, err := Cut(castOf(0, 1), nil, tm); err == nil {
 			t.Errorf("%+v accepted", tm)
 		}

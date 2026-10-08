@@ -247,6 +247,7 @@ func FuzzCut(f *testing.F) {
 	f.Add([]byte(`{"version": 3, "idle_time_limit": 2}`+"\n[0.5, \"o\", \"a\"]\n[9, \"o\", \"b\"]\n[0, \"o\", \"c\"]\n"),
 		[]byte("~0:01  one two three\n~0:01  dup\n~0:02.5  at the end\n"))
 	f.Add([]byte(`{"version": 3}`+"\n[0, \"o\", \"a\"]\n"), []byte(""))
+	f.Add([]byte(`{"version": 3}`+"\n[1e308, \"o\", \"a\"]\n[1e308, \"o\", \"b\"]\n"), []byte("~0:00  x\n"))
 	f.Fuzz(func(t *testing.T, castData, capsData []byte) {
 		c, err := parseCast("f.cast", castData)
 		if err != nil {
@@ -259,11 +260,6 @@ func FuzzCut(f *testing.F) {
 		out, _, err := Cut(c, caps, defaultTiming)
 		if err != nil {
 			return
-		}
-		for _, e := range c.Events {
-			if math.IsInf(e.Gap, 0) || e.Gap > 1e9 {
-				return // beyond any real take; float error swamps the bounds
-			}
 		}
 		checkCut(t, c, caps, defaultTiming, out)
 	})

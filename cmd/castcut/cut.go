@@ -23,12 +23,15 @@ type Timing struct {
 
 var defaultTiming = Timing{Speed: 5, Idle: 1, Lead: 1, MinHold: 4, WPS: 3.5, Beat: 1}
 
+// validate bounds every flag, so window ends and rates stay finite.
 func (t Timing) validate() error {
-	if t.Speed <= 0 || t.WPS <= 0 {
-		return fmt.Errorf("--speed and --wps must be positive")
+	if !(t.Speed > 0 && t.Speed <= maxSeconds) || !(t.WPS > 0 && t.WPS <= maxSeconds) {
+		return fmt.Errorf("--speed and --wps must be positive and at most %d", maxSeconds)
 	}
-	if t.Idle < 0 || t.Lead < 0 || t.MinHold < 0 || t.Beat < 0 {
-		return fmt.Errorf("--idle, --lead, --min-hold and --beat must not be negative")
+	for _, v := range []float64{t.Idle, t.Lead, t.MinHold, t.Beat} {
+		if !(v >= 0 && v <= maxSeconds) {
+			return fmt.Errorf("--idle, --lead, --min-hold and --beat must be between 0 and %d seconds", maxSeconds)
+		}
 	}
 	return nil
 }
@@ -195,6 +198,9 @@ func Cut(c Cast, caps []Caption, t Timing) (Cast, Summary, error) {
 		times[i] = tm
 	}
 	last := times[len(times)-1]
+	if last > maxSeconds { // parseCast refuses these; a hand-built Cast must too
+		return Cast{}, Summary{}, fmt.Errorf("recording runs past %d hours; not a take", maxSeconds/3600)
+	}
 	for _, cp := range caps {
 		if cp.At > last {
 			return Cast{}, Summary{}, fmt.Errorf("caption at %.1fs is past the end of the recording (%.1fs): %s", cp.At, last, cp.Text)
@@ -237,13 +243,16 @@ func Cut(c Cast, caps []Caption, t Timing) (Cast, Summary, error) {
 		return Cast{}, Summary{}, err
 	}
 
+	// Intervals are differences of rounded absolute times, so rounding never
+	// accumulates along the stream.
 	out := Cast{Header: header, Events: make([]Event, len(stream))}
 	prev := 0.0
 	for i, it := range stream {
 		e := it.e
-		e.Gap = round(it.at-prev, 6)
+		at := round(it.at, 6)
+		e.Gap = round(at-prev, 6)
 		out.Events[i] = e
-		prev = it.at
+		prev = at
 	}
 	return out, sum, nil
 }
