@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -134,9 +136,11 @@ func runAnnotate(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if _, err := parseCast(castPath, data); err != nil {
+	take, err := parseCast(castPath, data)
+	if err != nil {
 		return err
 	}
+	_, isCut := take.Header["captions"]
 	// A temp file outlives its write only if an annotate died mid-write; the
 	// sidecar itself was never touched, so old leftovers are garbage. A
 	// write takes milliseconds, so a minute spares another annotate's.
@@ -152,8 +156,8 @@ func runAnnotate(args []string, stdout, stderr io.Writer) error {
 	}
 	bound := ln.Addr().(*net.TCPAddr).Port
 	url := fmt.Sprintf("http://127.0.0.1:%d/", bound)
-	fmt.Fprintf(stderr, "castcut: serving %s at %s\n  notes save to %s\n  the page loads asciinema-player from cdn.jsdelivr.net\n  Ctrl-C to stop\n",
-		castPath, url, sidecarPath(castPath))
+	fmt.Fprintf(stderr, "castcut: serving %s at %s\n  notes save to %s\n  the page loads asciinema-player from cdn.jsdelivr.net\n  Ctrl-C to stop\n\n%s",
+		castPath, url, sidecarPath(castPath), annotateNext(castPath, isCut, true))
 	fmt.Fprintln(stdout, url)
 	if !*noOpen && runtime.GOOS == "darwin" {
 		if err := exec.Command("open", url).Run(); err != nil {
@@ -167,5 +171,22 @@ func runAnnotate(args []string, stdout, stderr io.Writer) error {
 	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	notes, _ := os.ReadFile(sidecarPath(castPath))
+	fmt.Fprintf(stderr, "\ncastcut: stopped.\n%s", annotateNext(castPath, isCut, len(bytes.TrimSpace(notes)) > 0))
 	return nil
+}
+
+// annotateNext tells the operator what to run after annotating. A raw take
+// goes to cut; a cut (it already carries header captions) goes to embedding.
+func annotateNext(castPath string, isCut, haveNotes bool) string {
+	if isCut {
+		return "next: embed it — castcut --help, section EMBEDDING\n" +
+			"      (or re-cut the raw take after editing its captions)\n"
+	}
+	cut := strings.TrimSuffix(castPath, filepath.Ext(castPath)) + "-cut.cast"
+	if !haveNotes {
+		return fmt.Sprintf("next: stamp captions with Alt+T; they save to %s\n", sidecarPath(castPath))
+	}
+	return fmt.Sprintf("next: castcut cut %s -o %s\n"+
+		"      then castcut annotate %s to preview the captions as viewers will see them\n", castPath, cut, cut)
 }

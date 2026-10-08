@@ -129,3 +129,18 @@ func TestAnnotateCLIRefusesWhatCutCouldNotRead(t *testing.T) {
 		t.Errorf("no take: exit %d", code)
 	}
 }
+
+func TestAnnotateNext(t *testing.T) {
+	for _, tc := range []struct {
+		isCut, notes bool
+		want         string
+	}{
+		{false, true, "next: castcut cut rec/take-01.cast -o rec/take-01-cut.cast\n      then castcut annotate rec/take-01-cut.cast"},
+		{false, false, "next: stamp captions with Alt+T; they save to rec/take-01.captions.txt"},
+		{true, true, "next: embed it — castcut --help, section EMBEDDING"},
+	} {
+		if got := annotateNext("rec/take-01.cast", tc.isCut, tc.notes); !strings.HasPrefix(got, tc.want) {
+			t.Errorf("annotateNext(cut=%v, notes=%v) = %q\nwant prefix %q", tc.isCut, tc.notes, got, tc.want)
+		}
+	}
+}

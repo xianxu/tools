@@ -54,7 +54,8 @@ THE FLOW
    caption press Alt+T: the player pauses and a `~m:ss.s  ` line is inserted
    at the cursor. Type the caption after it. Notes save as you type to
    recordings/take-03.captions.txt, beside the take; "Download notes" saves a
-   copy. Ctrl-C stops the server.
+   copy. Ctrl-C stops the server. annotate prints the next command when it
+   starts and again when it stops (the cut, or embedding if this is a cut).
 
    The captions file is plain text, one caption per line, blank lines
    ignored, any order:
