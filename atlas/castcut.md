@@ -33,7 +33,7 @@ holds the final frame with one trailing empty `o` event.
 
 Linear in events: segments are built with cursors over sorted times and window
 bounds, and `warper` answers each lookup by binary search over cumulative
-output time. Envelope: ~10⁶ events; 2×10⁵ events + 10³ captions cut in < 1 s.
+output time. Measured: 2×10⁵ events + 10³ captions cut in under 1 s (`TestCutStaysInsideItsEnvelope`, 3 s budget); a 30-minute nvim take is ~10⁵ events.
 
 ## Output contract
 

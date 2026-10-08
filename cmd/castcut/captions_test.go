@@ -27,6 +27,18 @@ func TestParseCaptionsNamesTheBadLine(t *testing.T) {
 	}
 }
 
+func TestParseCaptionsBoundsStamps(t *testing.T) {
+	for _, line := range []string{"~153722867280912931:00  overflow", "~99999999999999999999:00  too big", "~10081:00  past a week", "~10080:00.5  just past"} {
+		_, err := parseCaptions("c.txt", []byte(line+"\n"))
+		if err == nil || !strings.Contains(err.Error(), "c.txt:1: stamp") {
+			t.Errorf("%q: err = %v", line, err)
+		}
+	}
+	if caps, err := parseCaptions("c.txt", []byte("~10080:00  a week exactly\n")); err != nil || caps[0].At != maxSeconds {
+		t.Errorf("a week: %v %v", caps, err)
+	}
+}
+
 func TestSidecarPath(t *testing.T) {
 	for in, want := range map[string]string{
 		"recordings/take-01.cast": "recordings/take-01.captions.txt",

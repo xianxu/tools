@@ -32,11 +32,12 @@ func parseCaptions(path string, data []byte) ([]Caption, error) {
 		if m == nil {
 			return nil, fmt.Errorf("%s:%d: expected `~m:ss.s  text`, got %q", path, i+1, line)
 		}
+		// Bounded at the door, like every duration castcut reads (maxSeconds).
 		min, err := strconv.Atoi(m[1])
-		if err != nil {
-			return nil, fmt.Errorf("%s:%d: minutes out of range: %s", path, i+1, m[1])
-		}
 		sec, _ := strconv.ParseFloat(m[2], 64)
+		if err != nil || min > maxSeconds/60 || float64(min*60)+sec > maxSeconds {
+			return nil, fmt.Errorf("%s:%d: stamp %s:%s is past %d hours", path, i+1, m[1], m[2], maxSeconds/3600)
+		}
 		caps = append(caps, Caption{At: float64(min*60) + sec, Text: strings.TrimSpace(m[3])})
 	}
 	sort.SliceStable(caps, func(i, j int) bool {

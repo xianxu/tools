@@ -145,6 +145,11 @@ func TestCutRejects(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "caption at 2.5s is past the end of the recording (2.0s): too late") {
 		t.Errorf("past end: err = %v", err)
 	}
+	for _, at := range []float64{-1, math.NaN()} {
+		if _, _, err := Cut(castOf(0, 1, 1), []Caption{{at, "bad"}}, defaultTiming); err == nil || !strings.Contains(err.Error(), "not a time") {
+			t.Errorf("caption at %v: err = %v", at, err)
+		}
+	}
 	if _, _, err := Cut(castOf(0, 1e308, 1e308), nil, defaultTiming); err == nil || !strings.Contains(err.Error(), "past 168 hours") {
 		t.Errorf("overflowing take: err = %v", err)
 	}
@@ -155,6 +160,12 @@ func TestCutRejects(t *testing.T) {
 		if _, _, err := Cut(castOf(0, 1), nil, tm); err == nil {
 			t.Errorf("%+v accepted", tm)
 		}
+	}
+}
+
+func TestCutBoundsIdleLimit(t *testing.T) {
+	if _, _, err := Cut(castOf(1e9, 1), nil, defaultTiming); err == nil || !strings.Contains(err.Error(), "idle_time_limit") {
+		t.Errorf("err = %v", err)
 	}
 }
 

@@ -202,6 +202,9 @@ func Cut(c Cast, caps []Caption, t Timing) (Cast, Summary, error) {
 		return Cast{}, Summary{}, fmt.Errorf("recording runs past %d hours; not a take", maxSeconds/3600)
 	}
 	for _, cp := range caps {
+		if cp.At < 0 || math.IsNaN(cp.At) {
+			return Cast{}, Summary{}, fmt.Errorf("caption at %v is not a time in the recording: %s", cp.At, cp.Text)
+		}
 		if cp.At > last {
 			return Cast{}, Summary{}, fmt.Errorf("caption at %.1fs is past the end of the recording (%.1fs): %s", cp.At, last, cp.Text)
 		}

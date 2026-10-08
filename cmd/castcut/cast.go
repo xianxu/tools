@@ -96,6 +96,9 @@ func (c *Cast) idleLimit() (float64, error) {
 	if v == nil || *v <= 0 {
 		return 0, nil
 	}
+	if *v > maxSeconds {
+		return 0, fmt.Errorf("idle_time_limit %v is past %d hours", *v, maxSeconds/3600)
+	}
 	return *v, nil
 }
 
