@@ -2,6 +2,8 @@
 
 > **For agentic workers:** Consult AGENTS.md Section 3 (Subagent Strategy) to determine the appropriate execution approach: use superpowers-subagent-driven-development (if subagents are suitable per AGENTS.md) or superpowers-executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Read the `## Revisions` at the end first:** byte-identity, `pyjson` and the Python oracle are superseded (2026-10-08); the M1 tasks there replace Tasks 1–4.
+
 **Goal:** One `castcut` binary that records (via asciinema), annotates (embedded browser viewer) and cuts (Go port of parley.nvim's `demo/cut.py`, byte-identical) captioned terminal demos, with `castcut --help` written as agent instructions.
 
 **Architecture:** `cmd/castcut/` only — no `internal/` package (first consumer; not an external-service transport). The cut is a pure pipeline: parse cast → plan caption windows → piecewise rate segments → warp times → encode, with a small Python-compatible JSON encoder as the byte-identity seam. `record` builds an asciinema argv (pure) and execs it; `annotate` is a localhost-only `net/http` server over an embedded `viewer.html` and a notes sidecar file.
@@ -374,3 +376,41 @@ readability, not fidelity). `cut.py`'s odd edges are free to change: caption par
   `parseCast` of the output yields the header captions `CastEmbed.astro` reads (`header.captions`
   array of `{start,end,text}` numbers/strings).
 - [ ] Atlas `atlas/castcut.md` + index link; `sdlc milestone-close --issue 83 --milestone M1`.
+
+### 2026-10-08 — plan-quality round (PQ-1…PQ-6)
+
+- **PQ-1 — a window past the end holds the last frame.** The prototype truncated a caption
+  stamped near the end (segments stop at the last event). castcut extends the view timeline to
+  `max(last event, last window end)` and, when a window ends after the last event, appends one
+  `[gap, "o", ""]` event at that window's output end so the player keeps showing the final frame
+  for the whole caption. Properties (c) and (e) then hold unconditionally; property (a) becomes
+  "input events preserved in order, plus at most one trailing empty `o` hold event". Example row:
+  caption 1 s before the end with a 4 s hold → output ends at the window end, last event is the hold.
+- **PQ-2 — workload envelope and linear passes.** Envelope: a take is up to ~10⁶ events
+  (~100 MB; a 30-minute nvim take is ~10⁵), captions ≤ 10³; `cut` targets < 1 s for 10⁵ events
+  and stays O(N + W log W) in memory and time. `warp` is applied as one monotone pass with a
+  segment cursor over the already-sorted view times (and the sorted window bounds), never a scan
+  from 0 per event; the "is this piece inside a window" check uses a window cursor, since windows
+  are sorted and non-overlapping. Property tests include a seeded 2×10⁵-event cast asserting the
+  properties plus a generous wall-clock bound (< 3 s under `-race`-free `go test`), and a unit row
+  pinning the cursor `warp` against a naive reference `warp` on random inputs (the naive one lives
+  only in the test).
+- **PQ-3 — live conformance for the asciinema fake.** `record_conformance_test.go`
+  (`//go:build conformance`) runs the real binary through `run([]string{"record", "--no-tty"…})`
+  — concretely `asciinema rec --headless --return --output-format asciicast-v3 --window-size 95x36
+  --command 'printf hi; exit 3' <tmp>/t.cast` as built by `recordArgs` (plus `--headless`, which
+  `record` exposes as a hidden `--headless` flag for this and for CI) — and asserts exit code 3 and
+  that `parseCast` accepts the output with `term.cols == 95`. asciinema absent →
+  `conformance.SkipOrFail`. The fake's state model (argv log + minimal v3 file + exit code from an
+  env var) is checked against the same assertions, so fake and real satisfy one table.
+- **PQ-4 —** pointer added under the Goal.
+- **PQ-5 — test strategy per risky function, not case lists.** `parseCast` and `parseCaptions`:
+  `FuzzParseCast` / `FuzzParseCaptions` seeded with the example rows and malformed lines (truncated
+  JSON, 2-element events, non-numeric times, stamps without text); invariant: error or a value whose
+  re-encode re-parses equal. `Cut`: Task 3's properties + `FuzzCut`. `recordArgs`: one table (it is
+  argv construction; enumeration is the spec). `annotateHandler`: route table + the Host/Origin/size
+  guards, each mutation-checked (drop the Host check → its row red).
+- **PQ-6 — notes writes are serialized.** The viewer keeps at most one `PUT /notes` in flight;
+  edits during a request set a dirty flag and the latest text is sent when it returns (latest body
+  wins, no reordering). The server writes atomically, so a second tab on the same take is
+  last-writer-wins at whole-file granularity — stated in `--help`.
