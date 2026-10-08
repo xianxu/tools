@@ -1,12 +1,20 @@
 ---
 id: 000083
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-10-08
 updated: 2026-10-08
 estimate_hours:
-card_mirror: 'd026bad11e0353558f16f8cdabf70d1f45bb5996' # card fields mirrored from issue-cards; edit via sdlc
+card_mirror: '39a124af87abd9ad9cd4ab6aa42bf7bae15a52f5' # card fields mirrored from issue-cards; edit via sdlc
+started: 2026-10-08T12:16:32-07:00
+claimant:
+    operator: Xian Xu
+    machine: 4716879978a7b90f6b583da1716fd0e9
+    machine_name: MacBook Pro
+    workspace: tools:0
+    worktree: /Users/xianxu/workspace/tools
+    repository: github.com/xianxu/tools
 ---
 
 # castcut: record, annotate and cut terminal demos
@@ -60,8 +68,14 @@ Per-app parts stay in each app repo: the isolated demo launcher (e.g.
 
 ## Plan
 
-- [ ]
+Durable plan: [workshop/plans/000083-castcut-plan.md](../plans/000083-castcut-plan.md) (decisions D1–D7 there).
+
+- [ ] M1 — `castcut cut`, byte-identical to cut.py (pyjson seam, fixture + golden, python3 differential under `-tags conformance`)
+- [ ] M2 — `castcut record` (fake asciinema on PATH), `castcut annotate` (localhost server, notes sidecar), `castcut --help` as agent instructions
+- [ ] M3 — Homebrew formula + tag (operator-confirmed), parley.nvim follow-up issue, couch broadcast end-to-end take
 
 ## Log
 
 ### 2026-10-08
+
+- Claimed; plan drafted. asciinema 3.2.1 installed (`--window-size`, `--capture-input`, v3 default). Byte-identity needs a Python-`json`/`repr`/`round` emulation seam — fixture rows enumerated in the plan.
