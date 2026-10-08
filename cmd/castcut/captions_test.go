@@ -39,6 +39,12 @@ func TestParseCaptionsBoundsStamps(t *testing.T) {
 	}
 }
 
+func TestCutPath(t *testing.T) {
+	if got := cutPath("recordings/take-01.cast"); got != "recordings/take-01-cut.cast" {
+		t.Errorf("cutPath = %q", got)
+	}
+}
+
 func TestSidecarPath(t *testing.T) {
 	for in, want := range map[string]string{
 		"recordings/take-01.cast": "recordings/take-01.captions.txt",

@@ -49,6 +49,12 @@ func parseCaptions(path string, data []byte) ([]Caption, error) {
 	return caps, nil
 }
 
+// cutPath is where cut writes by default: take.cast → take-cut.cast, beside
+// the take. Re-cutting overwrites it; the take and its captions are inputs only.
+func cutPath(cast string) string {
+	return strings.TrimSuffix(cast, filepath.Ext(cast)) + "-cut.cast"
+}
+
 // sidecarPath is where annotate keeps a take's notes and where cut looks for
 // captions by default: take.cast → take.captions.txt.
 func sidecarPath(cast string) string {

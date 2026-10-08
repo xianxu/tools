@@ -79,8 +79,10 @@ func TestCutCLIExplicitCaptionsAndErrors(t *testing.T) {
 		t.Error("an output file was written for a failed cut")
 	}
 
+	if code, _, stderr := runCLI(t, "cut", take, "-o", take); code != 1 || !strings.Contains(stderr, "would overwrite an input") {
+		t.Errorf("-o onto the take: exit %d %q", code, stderr)
+	}
 	for _, args := range [][]string{
-		{"cut", take},                              // no -o
 		{"cut", "-o", out},                         // no take
 		{"cut", take, late, "extra", "-o", out},    // too many
 		{"cut", take, "-o", out, "--no-such-flag"}, // unknown flag
@@ -94,6 +96,24 @@ func TestCutCLIExplicitCaptionsAndErrors(t *testing.T) {
 	}
 	if code, _, stderr := runCLI(t, "frobnicate"); code != 1 || !strings.Contains(stderr, "unknown command") {
 		t.Errorf("unknown command: exit %d %q", code, stderr)
+	}
+}
+
+func TestCutCLIDefaultsTheOutputBesideTheTake(t *testing.T) {
+	dir := copyFixture(t)
+	take := filepath.Join(dir, "take.cast")
+	code, stdout, stderr := runCLI(t, "cut", take)
+	want := filepath.Join(dir, "take-cut.cast")
+	if code != 0 || !strings.HasPrefix(stdout, want+": ") {
+		t.Fatalf("exit %d\n%s%s", code, stdout, stderr)
+	}
+	first := mustRead(t, want)
+	// Re-cutting overwrites the default output; it is derived, not a take.
+	if code, _, stderr := runCLI(t, "cut", take, "--speed", "2"); code != 0 {
+		t.Fatalf("re-cut: exit %d %s", code, stderr)
+	}
+	if bytes.Equal(first, mustRead(t, want)) {
+		t.Error("re-cut with other pacing did not replace the default output")
 	}
 }
 

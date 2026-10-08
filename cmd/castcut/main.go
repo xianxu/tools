@@ -85,13 +85,14 @@ func runCut(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("castcut cut", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprint(stderr, "usage: castcut cut <take.cast> [captions.txt] -o <cut.cast> [flags]\n\n"+
-			"captions default to <take>.captions.txt, the file castcut annotate saves.\n\n")
+		fmt.Fprint(stderr, "usage: castcut cut <take.cast> [captions.txt] [-o cut.cast] [flags]\n\n"+
+			"captions default to <take>.captions.txt, the file castcut annotate saves;\n"+
+			"the cut defaults to <take>-cut.cast beside the take.\n\n")
 		fs.PrintDefaults()
 	}
 	var out string
 	t := defaultTiming
-	fs.StringVar(&out, "o", "", "output cast (required)")
+	fs.StringVar(&out, "o", "", "output cast (default <take>-cut.cast)")
 	fs.StringVar(&out, "out", "", "same as -o")
 	fs.Float64Var(&t.Speed, "speed", t.Speed, "playback speed between captions")
 	fs.Float64Var(&t.Idle, "idle", t.Idle, "max idle seconds per gap before speeding up")
@@ -103,11 +104,17 @@ func runCut(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) < 1 || len(pos) > 2 || out == "" {
+	if len(pos) < 1 || len(pos) > 2 {
 		fs.Usage()
 		return errUsage
 	}
 	castPath, capsPath := pos[0], sidecarPath(pos[0])
+	if out == "" {
+		out = cutPath(castPath)
+	}
+	if out == castPath || out == capsPath {
+		return fmt.Errorf("-o %s would overwrite an input", out)
+	}
 	if len(pos) == 2 {
 		capsPath = pos[1]
 	}

@@ -15,7 +15,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 )
 
@@ -183,10 +182,10 @@ func annotateNext(castPath string, isCut, haveNotes bool) string {
 		return "next: embed it — castcut --help, section EMBEDDING\n" +
 			"      (or re-cut the raw take after editing its captions)\n"
 	}
-	cut := strings.TrimSuffix(castPath, filepath.Ext(castPath)) + "-cut.cast"
+	cut := cutPath(castPath)
 	if !haveNotes {
 		return fmt.Sprintf("next: stamp captions with Alt+T; they save to %s\n", sidecarPath(castPath))
 	}
-	return fmt.Sprintf("next: castcut cut %s -o %s\n"+
+	return fmt.Sprintf("next: castcut cut %s          (writes %s)\n"+
 		"      then castcut annotate %s to preview the captions as viewers will see them\n", castPath, cut, cut)
 }

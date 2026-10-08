@@ -135,7 +135,7 @@ func TestAnnotateNext(t *testing.T) {
 		isCut, notes bool
 		want         string
 	}{
-		{false, true, "next: castcut cut rec/take-01.cast -o rec/take-01-cut.cast\n      then castcut annotate rec/take-01-cut.cast"},
+		{false, true, "next: castcut cut rec/take-01.cast          (writes rec/take-01-cut.cast)\n      then castcut annotate rec/take-01-cut.cast"},
 		{false, false, "next: stamp captions with Alt+T; they save to rec/take-01.captions.txt"},
 		{true, true, "next: embed it — castcut --help, section EMBEDDING"},
 	} {

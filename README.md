@@ -80,7 +80,7 @@ around them.
 ```sh
 castcut record -- ./my-app --demo          # → recordings/take-01.cast
 castcut annotate recordings/take-01.cast   # Alt+T stamps; notes → take-01.captions.txt
-castcut cut recordings/take-01.cast -o demo.cast
+castcut cut recordings/take-01.cast        # → recordings/take-01-cut.cast
 ```
 
 `castcut --help` is the whole manual — the flow, the timing flags, the

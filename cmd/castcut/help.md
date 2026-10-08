@@ -9,7 +9,7 @@ USAGE
 
   castcut record [-o take.cast] [--capture-input] [--idle-time-limit S] -- <command> [args...]
   castcut annotate [--port N] [--no-open] <take.cast>
-  castcut cut <take.cast> [captions.txt] -o <cut.cast> [timing flags]
+  castcut cut <take.cast> [captions.txt] [-o cut.cast] [timing flags]
   castcut --version
   castcut <command> -h        flags of one command
 
@@ -72,10 +72,12 @@ THE FLOW
 
 3. Cut it.
 
-     castcut cut recordings/take-03.cast -o demo.cast
+     castcut cut recordings/take-03.cast
 
-   Reads take-03.captions.txt unless a captions file is named. Prints the cut
-   length and each caption's place in it.
+   Reads take-03.captions.txt unless a captions file is named, and writes
+   recordings/take-03-cut.cast unless -o names another file (re-cutting
+   overwrites it; the take and captions are never written). Prints the cut
+   length and each caption's place in it. The cut is the file you publish.
 
    Timing (defaults in brackets):
      --lead S      real time starts S before each stamp [1]
@@ -132,7 +134,7 @@ FILES AND THEIR LIFETIMES
 
   recordings/take-NN.cast        record writes; you delete takes you are done with
   recordings/take-NN.captions.txt annotate writes; dies with its take
-  <cut>.cast                     cut writes the -o path only; you publish it
+  recordings/take-NN-cut.cast    cut writes (or the -o path); you publish it
 
   castcut deletes nothing.
 
