@@ -20,7 +20,10 @@ record ──► take.cast ──► annotate ──► take.captions.txt ──
 | `cast.go` | asciicast v3 parse/encode; header kept as raw fields so unknown keys pass through |
 | `captions.go` | `~m:ss.s  text` parsing, the `<take>.captions.txt` sidecar name |
 | `cut.go` | the timing model: `planWindows` → `buildSegments` → `warper` → `Cut` |
-| `help.md` | embedded manual (`castcut --help`) |
+| `record.go` | asciinema argv (`recordArgs`, always `--return`), `take-NN` numbering, exec |
+| `annotate.go` | 127.0.0.1 server: `/` viewer, `/session`, `/cast`, `GET`/`PUT /notes` → sidecar (atomic write) |
+| `viewer.html` | embedded viewer (asciinema-player 3.17.0 from jsDelivr, SRI-pinned); Alt+T stamps; one PUT in flight |
+| `help.md` | embedded manual (`castcut --help`); `help_test.go` derives every flag from each command's `-h` |
 
 ## The timing model (`cut.go`)
 
@@ -41,6 +44,17 @@ asciicast v3; header gains `captions: [{start, end, text}]` in output seconds
 (3 decimals) and loses `idle_time_limit`; one `m` marker per caption at `start`,
 sorted before output at the same instant. Consumer:
 `xianxu.dev/src/components/blog/CastEmbed.astro`.
+
+## Seams
+
+- **asciinema** (`record`): `record_test.go`'s fake runs `--command` through `sh`
+  and honours `--return`/`--window-size`; `record_conformance_test.go`
+  (`-tags conformance`, unsandboxed) holds real asciinema to the same
+  `recordContract`.
+- **browser** (`annotate`): the handler answers only `Host: 127.0.0.1:<port>`
+  (DNS rebinding), writes only from that origin or none (CORS preflight blocks
+  cross-origin PUTs anyway), caps notes at 1 MiB. Tests run the real handler on a
+  real listener; the viewer's JS is checked by hand (no browser in CI).
 
 ## Tests
 
