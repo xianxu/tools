@@ -35,6 +35,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "cut":
 		err = runCut(args[1:], stdout, stderr)
+	case "annotate":
+		err = runAnnotate(args[1:], stdout, stderr)
 	case "record":
 		err = runRecord(args[1:], stdout, stderr)
 	default:
