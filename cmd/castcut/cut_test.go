@@ -158,6 +158,11 @@ func TestCutRejects(t *testing.T) {
 	if _, _, err := Cut(castOf(0, 4e5, 4e5), nil, defaultTiming); err == nil || !strings.Contains(err.Error(), "past 168 hours") {
 		t.Errorf("overflowing take: err = %v", err)
 	}
+	slow := defaultTiming
+	slow.WPS = 1e-9
+	if _, _, err := Cut(castOf(0, 1, 1), []Caption{{1, "one word too slow"}}, slow); err == nil || !strings.Contains(err.Error(), "hold the cut past") {
+		t.Errorf("tiny --wps: err = %v", err)
+	}
 	for _, tm := range []Timing{
 		{Speed: 0, WPS: 1}, {Speed: 1, WPS: -1}, {Speed: 1, WPS: 1, Idle: -1},
 		{Speed: math.NaN(), WPS: 1}, {Speed: 1, WPS: 1, MinHold: 1e308}, {Speed: 1, WPS: 1, Lead: math.Inf(1)},

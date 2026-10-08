@@ -222,6 +222,11 @@ func Cut(c Cast, caps []Caption, t Timing) (Cast, Summary, error) {
 	if len(ws) > 0 && ws[len(ws)-1].End > view {
 		view = ws[len(ws)-1].End
 	}
+	// Derived durations obey the same bound as read ones: a cut castcut
+	// itself would refuse to read is never written.
+	if !inRange(view) {
+		return Cast{}, Summary{}, fmt.Errorf("captions hold the cut past %d hours; check --wps, --min-hold and --beat", maxSeconds/3600)
+	}
 	w := newWarper(buildSegments(append(times, view), ws, t))
 
 	type item struct {

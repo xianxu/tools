@@ -412,3 +412,99 @@ findings:
     detail: |
       Previously a negative limit meant no limit. Say not in [0, max], add a TestCutBoundsIdleLimit row, and record the change in Revisions.
 ```
+
+---
+
+## Re-review — 2026-10-08T14:02:03-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 83 — castcut: record, annotate and cut terminal demos |
+| repo | tools |
+| issue file | workshop/issues/000083-castcut-record-annotate-and-cut-terminal-demos.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 4c1444f900957224cb3a10cc5bfeb9542988f2cf..c48afecc34d8a8c506233653f387904b169d2f6f |
+| command | sdlc milestone-close --issue 83 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-10-08T14:02:03-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All four open findings were checked against the code at the pinned head. `go test -count=1 ./cmd/castcut/` and `go vet` are both green. BR-10 is fixed: there are now separate rows for a huge interval (`1e308`, rejected by the per-gap check) and an overlong take (two gaps of `400000`, rejected by the total check at `t.cast:3`), so both checks are tested again. BR-3 is fixed because event gaps are now differences of absolute times that are already rounded. BR-5's missing-sidecar hint is in place, and its README half is scheduled for M2 Task 7. BR-11 has its new message and a `-1` test row, but the behaviour change was never recorded in Revisions.
+
+One new problem needs fixing first. `inRange` checks every number castcut reads, but nothing checks the numbers it writes. A tiny `--wps` value produces a cast whose durations are around 10^300 seconds. castcut's own `parseCast` would reject that file, yet the command exits 0. A slightly smaller value fails instead, with the unhelpful message `json: unsupported value: NaN`. Both outcomes were reproduced with the built binary.
+
+1. **Strengths**
+   - `cast.go:35`: `inRange` is the single range check, written as a positive comparison so NaN fails. Every input boundary uses it: each gap, the cumulative length, `idle_time_limit`, caption stamps, the flags, and `Cut`'s re-check.
+   - `cut.go:268-276`: gaps come from rounded absolute times, so rounding cannot accumulate along the stream.
+   - `Cut` is pure, and `main.go` is a thin IO shell. Cut works on a copy of the header, and `TestCutDoesNotMutateItsInput` checks that.
+   - `FuzzParseCast` checks that the encoder's output parses back to the same events.
+
+2. **Critical:** none.
+
+3. **Important**
+   - `cut.go:48-58` and `cut.go:28` (`planWindows`, `validate`): the time a caption is held on screen (`words/WPS + Beat`) is never bounded.
+     - `castcut cut x.cast -o y.cast --wps 1e-300` exits 0. Its header has `"end":1.9999999999999998e+300`, and its last event has a gap of about 2e300, which castcut's own `parseCast` refuses.
+     - `--wps 5e-324` exits 1 with `json: unsupported value: NaN`.
+     - **This is the 5th finding in family `untrusted-input-fabricated-output`.** Do not fix this instance on its own. The rule that covers the whole family: *castcut's output must pass castcut's own input checks.* In code, that means:
+       - after `view` is computed, `Cut` refuses with a clear message if `!inRange(view)` or `!inRange(w.warp(view))`;
+       - `FuzzCut` fuzzes the `Timing` fields as well, and asserts that `parseCast(encodeCast(out))` succeeds.
+
+     That one check at the output covers every value derived from the flags, so there is no need to add bounds to each derived value separately.
+
+4. **Minor**
+   - BR-11 is still open: the change that makes a negative `idle_time_limit` an error instead of "no limit" is not recorded in the plan's Revisions. The plan table at line 57 still describes only null and 0.
+   - The working tree has untracked scratch files (`c.txt`, `o.cast`, `t.cast`). They are outside the review window; delete them before closing.
+
+5. **Test coverage**
+   - The parse rejection rows, the idle-limit bounds, the flag bounds and the property tests (a)–(e) are solid.
+   - The one gap is that `FuzzCut` only runs with `defaultTiming`, so flag values never vary. That is why it missed the finding above.
+
+6. **Architecture**
+   - ARCH-DRY passes: `inRange`, `splitLines` and `marshalNoEscape` are each defined once and shared.
+   - ARCH-PURE passes.
+   - ARCH-PURPOSE passes for M1, which covers the cut path; record and annotate are M2.
+   - ARCH-MOCK is N/A: M1 makes no external calls. The asciinema seam arrives in M2, and that plan should name its fake.
+   - ARCH-CONSTRAINTS passes: the atlas states the measured envelope (2×10⁵ events).
+   - ARCH-SECURE is flagged, for the Important finding above.
+   - ARCH-ORDER is N/A: `cut` keeps no state between events because it is a single transformation from input to output.
+   - ARCH-FUNERAL is N/A: the only durable thing it creates is the output file the operator names with `-o`.
+
+7. **Plan revisions to add**
+   - A Revisions entry: "negative `idle_time_limit` is refused (`not in [0, max]`); the prototype treated it as no limit."
+   - Another entry once the fix lands: "a cut's output passes `parseCast` — `Cut` refuses a view/total outside `inRange`, and `FuzzCut` fuzzes `Timing`."
+
+```findings
+dispose:
+  - id: BR-3
+    disposition: addressed
+    note: |
+      cut.go:268-276 diffs rounded absolute times (prev = at), so cumulative output time cannot drift.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      main.go missing-sidecar error now names castcut annotate; README stays scheduled in M2 Task 7 (plan:275).
+  - id: BR-10
+    disposition: addressed
+    note: |
+      cast_test.go has a 1e308 row (per-gap check) and a 400000+400000 row (t.cast:3 total check); go test -count=1 green.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      Message and the -1 test row landed (cut_test.go:171-180); the Revisions entry recording the change is still missing.
+findings:
+  - id: new
+    severity: Important
+    family: untrusted-input-fabricated-output
+    title: |
+      Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
+    detail: |
+      5th finding in this family. Reproduced: --wps 1e-300 exits 0 with end and gap near 2e300; --wps 5e-324 exits 1 with "json: unsupported value: NaN". Rule: castcut's output must pass castcut's own input checks. Fix: Cut refuses when !inRange(view) or !inRange(warp(view)), and FuzzCut fuzzes Timing and asserts parseCast(encodeCast(out)) succeeds.
+```

@@ -436,3 +436,6 @@ re-check). The rule now lives in one predicate: `inRange(x) = x >= 0 && x <= max
 length in `parseCast`, `idle_time_limit`, caption stamps (minutes bounded before multiplying),
 every timing flag, and `Cut`'s re-check of each gap, the take length and each caption. Superseded
 M1 Task 1–4 rows are struck. The atlas states the measured envelope (2×10⁵ events), not 10⁶.
+- BR-12 (demoted past the round cap, fixed anyway): derived durations obey the same bound — `Cut`
+  refuses when caption holds push the view past `maxSeconds` (tiny `--wps`), so castcut never
+  writes a cast it would itself refuse to read.

@@ -152,6 +152,36 @@ rounds:
       boundary: M1
       recipe: milestone-review
       blocked: true
+    - "n": 5
+      timestamp: "2026-10-08T14:02:03-07:00"
+      agent: claude
+      dispose:
+        - id: BR-3
+          disposition: addressed
+          note: cut.go:268-276 diffs rounded absolute times (prev = at), so cumulative output time cannot drift.
+          round: 5
+        - id: BR-5
+          disposition: addressed
+          note: main.go missing-sidecar error now names castcut annotate; README stays scheduled in M2 Task 7 (plan:275).
+          round: 5
+        - id: BR-10
+          disposition: addressed
+          note: cast_test.go has a 1e308 row (per-gap check) and a 400000+400000 row (t.cast:3 total check); go test -count=1 green.
+          round: 5
+        - id: BR-11
+          disposition: not-addressed
+          note: Message and the -1 test row landed (cut_test.go:171-180); the Revisions entry recording the change is still missing.
+          round: 5
+      findings:
+        - id: BR-12
+          severity: Important
+          title: Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
+          detail: '5th finding in this family. Reproduced: --wps 1e-300 exits 0 with end and gap near 2e300; --wps 5e-324 exits 1 with "json: unsupported value: NaN". Rule: castcut''s output must pass castcut''s own input checks. Fix: Cut refuses when !inRange(view) or !inRange(warp(view)), and FuzzCut fuzzes Timing and asserts parseCast(encodeCast(out)) succeeds.'
+          family: untrusted-input-fabricated-output
+          round: 5
+      boundary: M1
+      recipe: milestone-review
+      blocked: false
 ---
 
 # Gate ledger — tools#83 (boundary-review)
@@ -220,9 +250,21 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-11** [Minor] `error-message-misstates-cause` Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
   Previously a negative limit meant no limit. Say not in [0, max], add a TestCutBoundsIdleLimit row, and record the change in Revisions.
 
+## Round 5 — 2026-10-08T14:02:03-07:00 (claude) — passed
+
+### Disposed
+
+- BR-3 — addressed — cut.go:268-276 diffs rounded absolute times (prev = at), so cumulative output time cannot drift.
+- BR-5 — addressed — main.go missing-sidecar error now names castcut annotate; README stays scheduled in M2 Task 7 (plan:275).
+- BR-10 — addressed — cast_test.go has a 1e308 row (per-gap check) and a 400000+400000 row (t.cast:3 total check); go test -count=1 green.
+- BR-11 — not-addressed — Message and the -1 test row landed (cut_test.go:171-180); the Revisions entry recording the change is still missing.
+
+### Raised
+
+- **BR-12** [Important] `untrusted-input-fabricated-output` Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
+  5th finding in this family. Reproduced: --wps 1e-300 exits 0 with end and gap near 2e300; --wps 5e-324 exits 1 with "json: unsupported value: NaN". Rule: castcut's output must pass castcut's own input checks. Fix: Cut refuses when !inRange(view) or !inRange(warp(view)), and FuzzCut fuzzes Timing and asserts parseCast(encodeCast(out)) succeeds.
+
 ## Open findings
 
-- **BR-3** [Minor] `rounding-drift` Event gaps rounded against unrounded prev, so cumulative output time drifts from the true times (about sqrt(N)*3e-7)
-- **BR-5** [Minor] `docs-surface-gap` README has no castcut entry yet (scheduled for M2 Task 7); missing sidecar error gives no hint to run annotate or pass captions.txt
-- **BR-10** [Critical] `untrusted-input-fabricated-output` go test ./cmd/castcut/ is red at HEAD: TestParseCastRejects overflowing-duration row now hits the per-gap check
 - **BR-11** [Minor] `error-message-misstates-cause` Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
+- **BR-12** [Important] `untrusted-input-fabricated-output` Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
