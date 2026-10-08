@@ -318,3 +318,59 @@ sketches matched on 300k random floats; these deltas fix what did not.
   on `http://127.0.0.1:N`; printed/opened URL is always `127.0.0.1`; the jsDelivr tags gain SRI
   `integrity` hashes; captions render via `textContent`.
 - **Close evidence:** the parley.nvim Done-when bullet is satisfied by *filing* the follow-up issue; `--verified` says so.
+
+### 2026-10-08 — drop byte-identity: castcut is a new tool, not a port (supersedes)
+
+Reason (operator): `cut.py` was a quick prototype; castcut is a brand-new feature built from
+it. Matching its bytes buys nothing a player can see and costs ~100 lines of Python emulation
+plus a Python test dependency.
+
+**Superseded:** the "Byte-identity contract" section, the declared-divergences list, the
+previous revision's `pySum`/`pyRepr`/whitespace-set/universal-newline/decoder-strictness items,
+the `pyjson` entity, the `cut_reference.py` oracle, `cut.golden.*`, and `cut_diff_test.go`.
+The previous revision's `record` (`--return`, `nextTake` width) and `annotate` items stand.
+
+**What `cut` is now.** Same timing model and flags as the prototype (`--speed --idle --lead
+--min-hold --wps --beat`, same defaults), same output *contract*: asciicast v3, header
+`captions: [{start, end, text}]` in output seconds, one `m` marker per caption at `start`
+sorting before output at the same instant, `idle_time_limit` removed from the header. Encoding
+is stdlib: `encoding/json` with `SetEscapeHTML(false)`; header kept as
+`map[string]json.RawMessage` so unknown fields pass through untouched (key order is not part
+of the contract); event times rounded to 6 decimals, caption bounds to 3 (file size and
+readability, not fidelity). `cut.py`'s odd edges are free to change: caption parse uses Go's
+`strings.TrimSpace`/`strings.Fields`; `--speed`/`--wps` ≤ 0 are rejected; no output file on error.
+
+**Pure entities (replaces the table's pyjson/Cast/Caption/Cut rows):**
+
+| Name | Lives in | Status |
+|------|----------|--------|
+| `Cast` / `Event` / `parseCast` / `encodeCast` | `cmd/castcut/cast.go` | new |
+| `Caption` / `parseCaptions` / `sidecarPath` | `cmd/castcut/captions.go` | new |
+| `Timing` / `window` / `segment` / `planWindows` / `buildSegments` / `warp` / `Cut` | `cmd/castcut/cut.go` | new |
+
+**M1 tasks (replace Tasks 1–4):**
+
+- [ ] Task 1 — cast + captions parse (TDD): non-v3 rejected; blank lines skipped; event not a
+  3-element `[number, string, value]` → error naming the line; header round-trips unknown fields
+  (`env`, `term`, a `true`); caption rows (`~1:02.5  hi` → 62.5, missing `~` ok, no text → error
+  with path:line, sort by (time, text)); `sidecarPath`.
+- [ ] Task 2 — the timing model (TDD), example rows: no captions → `"captions": []` and every gap
+  squeezed to `min(1, idle/fast)/speed`; one caption → window at rate 1, marker at the window start;
+  overlapping captions start at the previous end; caption past the end → error.
+- [ ] Task 3 — properties (`cut_prop_test.go`, `testing/quick` or seeded random over gaps incl. 0
+  and > idle cap, caption sets incl. duplicates/overlaps, flag values > 0), each a separate assertion:
+  (a) event count and kinds/data preserved in order, markers = captions; (b) output times
+  non-decreasing; (c) each window's output length equals its hold within 1e-6 (real time); (d) outside
+  windows, any input gap maps to ≤ `idle/speed` + rounding; (e) captions sorted, non-overlapping,
+  each `end − start ≥ min-hold − 1e-3`; (f) a marker precedes any output event at the same instant.
+  Plus `FuzzCut` over raw bytes → never panics, either error or a cast satisfying (a)–(f).
+  Mutation checks: drop the `prev_end` clamp → (e) red; sort markers after output → (f) red;
+  ignore `idle` → (d) red. Revert each.
+- [ ] Task 4 — CLI wiring: `run(args, stdout, stderr) int`; `castcut cut <take.cast> [captions.txt]
+  -o out.cast` (captions default to the sidecar, D4); flags may follow positionals; summary on
+  stdout (`out: 42.0s (view 180.3s), 5 captions` + one line per caption); errors `castcut: …` on
+  stderr, exit 1, no output file. Wiring test drives `run` on a small checked-in `testdata/take.cast`
+  + `take.captions.txt` and asserts the produced file parses and satisfies the properties — and that
+  `parseCast` of the output yields the header captions `CastEmbed.astro` reads (`header.captions`
+  array of `{start,end,text}` numbers/strings).
+- [ ] Atlas `atlas/castcut.md` + index link; `sdlc milestone-close --issue 83 --milestone M1`.

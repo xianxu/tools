@@ -60,9 +60,11 @@ Per-app parts stay in each app repo: the isolated demo launcher (e.g.
 ## Done when
 
 - `castcut record|annotate|cut` and `castcut --help` exist. `brew install xianxu/tools/castcut` installs it.
-- `castcut cut` output is byte-identical to `cut.py` on a small fixture cast plus
-  captions (golden produced by `cut.py` and checked in; the parley-nvim-v1 raw take
-  no longer exists).
+- `castcut cut` produces an asciicast v3 whose `captions` header and `m` markers satisfy
+  the contract `CastEmbed.astro` reads, and its timing model is pinned by property tests:
+  each caption window plays in real time, idle between captions is squeezed and sped up,
+  event order and count are preserved. (`cut.py` was the prototype, not a spec; no
+  byte-identity, no Python.)
 - The parley.nvim demo README points at `castcut`, and its `cut.py`/`viewer.html` are removed (follow-up in parley.nvim).
 - A couch broadcast take is recorded, annotated and cut end to end with `castcut`.
 
@@ -70,7 +72,7 @@ Per-app parts stay in each app repo: the isolated demo launcher (e.g.
 
 Durable plan: [workshop/plans/000083-castcut-plan.md](../plans/000083-castcut-plan.md) (decisions D1–D7 there).
 
-- [ ] M1 — `castcut cut`, byte-identical to cut.py (pyjson seam, fixture + golden, python3 differential under `-tags conformance`)
+- [ ] M1 — `castcut cut`: the timing model (pure, property + fuzz tests), stdlib JSON, CLI wiring
 - [ ] M2 — `castcut record` (fake asciinema on PATH), `castcut annotate` (localhost server, notes sidecar), `castcut --help` as agent instructions
 - [ ] M3 — Homebrew formula + tag (operator-confirmed), parley.nvim follow-up issue, couch broadcast end-to-end take
 
@@ -79,3 +81,11 @@ Durable plan: [workshop/plans/000083-castcut-plan.md](../plans/000083-castcut-pl
 ### 2026-10-08
 
 - Claimed; plan drafted. asciinema 3.2.1 installed (`--window-size`, `--capture-input`, v3 default). Byte-identity needs a Python-`json`/`repr`/`round` emulation seam — fixture rows enumerated in the plan.
+
+## Revisions
+
+### 2026-10-08 — castcut is a new tool, not a port
+
+Reason (operator): `cut.py` was a quick prototype; castcut is a new feature built from it. Delta:
+"Done when" byte-identity bullet replaced by a contract + timing-property bullet; M1 no longer
+carries the Python-compatible JSON seam or a python3 oracle. Plan revision of the same date has the detail.
