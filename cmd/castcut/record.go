@@ -16,7 +16,6 @@ import (
 
 // recordOpts are the knobs castcut passes through to asciinema.
 type recordOpts struct {
-	Cols, Rows   int
 	CaptureInput bool
 	IdleLimit    float64 // 0 = none
 	Headless     bool    // no terminal: CI and the live conformance check
@@ -24,9 +23,10 @@ type recordOpts struct {
 
 // recordArgs is the asciinema argv for one take. --return makes asciinema exit
 // with the recorded command's status; without it asciinema 3 always exits 0.
+// There is no size: the take is the terminal's own, so the operator sizes the
+// window before recording.
 func recordArgs(out string, o recordOpts, cmd []string) []string {
-	args := []string{"rec", "--return", "--output-format", "asciicast-v3",
-		"--window-size", fmt.Sprintf("%dx%d", o.Cols, o.Rows)}
+	args := []string{"rec", "--return", "--output-format", "asciicast-v3"}
 	if o.CaptureInput {
 		args = append(args, "--capture-input")
 	}
@@ -89,9 +89,7 @@ func runRecord(args []string, stdout, stderr io.Writer) error {
 	var out string
 	fs.StringVar(&out, "o", "", "output cast (default recordings/take-NN.cast)")
 	fs.StringVar(&out, "out", "", "same as -o")
-	fs.IntVar(&o.Cols, "cols", 95, "terminal columns the command sees")
-	fs.IntVar(&o.Rows, "rows", 36, "terminal rows the command sees")
-	fs.BoolVar(&o.CaptureInput, "capture-input", false, "also record keystrokes as `i` events (passwords too)")
+	fs.BoolVar(&o.CaptureInput, "capture-input", false, "also record keystrokes as i events (passwords too)")
 	fs.Float64Var(&o.IdleLimit, "idle-time-limit", 0, "cap idle gaps in the take itself (seconds; 0 keeps them; cut squeezes idle anyway)")
 	fs.BoolVar(&o.Headless, "headless", false, "record without a terminal (CI, tests)")
 	// Everything after `--` is the command, untouched by flag parsing.
@@ -108,7 +106,7 @@ func runRecord(args []string, stdout, stderr io.Writer) error {
 		}
 		return errUsage
 	}
-	if fs.NArg() > 0 || len(cmd) == 0 || o.Cols <= 0 || o.Rows <= 0 || !inRange(o.IdleLimit) {
+	if fs.NArg() > 0 || len(cmd) == 0 || !inRange(o.IdleLimit) {
 		fs.Usage()
 		return errUsage
 	}
@@ -129,8 +127,8 @@ func runRecord(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("asciinema not found on PATH (brew install asciinema)")
 	}
-	fmt.Fprintf(stderr, "castcut: recording %s to %s with asciinema (%dx%d); exit the command to stop\n",
-		shellJoin(cmd), out, o.Cols, o.Rows)
+	fmt.Fprintf(stderr, "castcut: recording %s to %s with asciinema at this terminal's size; exit the command to stop\n",
+		shellJoin(cmd), out)
 	c := exec.Command(bin, recordArgs(out, o, cmd)...)
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, stdout, stderr
 	runErr := c.Run()

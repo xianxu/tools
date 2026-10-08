@@ -7,7 +7,7 @@ by an agent driving one.
 
 USAGE
 
-  castcut record [-o take.cast] [--cols 95 --rows 36] [--capture-input] [--idle-time-limit S] -- <command> [args...]
+  castcut record [-o take.cast] [--capture-input] [--idle-time-limit S] -- <command> [args...]
   castcut annotate [--port N] [--no-open] <take.cast>
   castcut cut <take.cast> [captions.txt] -o <cut.cast> [timing flags]
   castcut --version
@@ -25,8 +25,9 @@ THE FLOW
 
      castcut record -- ./parley_app --demo
 
-   Runs the command under asciinema with a 95x36 terminal (readable when a
-   blog column scales it down; --cols/--rows to change). Exit the command to
+   Runs the command under asciinema at the terminal's own size: size the
+   window before recording (smaller reads better when a blog column scales
+   it down; around 95x36 worked for the parley post). Exit the command to
    stop. The take goes to recordings/take-NN.cast under the current directory
    (the next free number) unless -o names a file; an existing file is never
    overwritten. castcut exits with the recorded command's status.

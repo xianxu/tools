@@ -457,3 +457,13 @@ M1 Task 1–4 rows are struck. The atlas states the measured envelope (2×10⁵ 
   read never becomes an empty draft that autosave writes back); the sidecar keeps its mode
   (0644 for a new one) through the atomic write; annotate sweeps its own stale `.tmp` leftovers
   at start.
+
+### 2026-10-08 — operator: a take is the terminal's own size
+
+Reason (operator, first couch take): 95x36 was too small; "it should use full terminal window
+available. if I want to record smaller window, I'll resize the window to that size before
+starting." Delta: `--cols`/`--rows` are deleted (not defaulted differently) and `recordArgs`
+passes no `--window-size`, so asciinema records the terminal as it is. Tests assert the argv
+carries no size and that any positive recorded size satisfies the contract; live conformance
+(headless, so asciinema's own default size) still green. `--help` tells the operator to size the
+window first. Supersedes D1's `--cols 95 --rows 36`.

@@ -14,10 +14,10 @@ func TestRecordArgs(t *testing.T) {
 		cmd  []string
 		want string
 	}{
-		{recordOpts{Cols: 95, Rows: 36}, []string{"./parley_app", "--demo"},
-			"rec --return --output-format asciicast-v3 --window-size 95x36 --command ./parley_app --demo out.cast"},
-		{recordOpts{Cols: 80, Rows: 24, CaptureInput: true, IdleLimit: 1.5, Headless: true}, []string{"couch", "a b", "it's"},
-			"rec --return --output-format asciicast-v3 --window-size 80x24 --capture-input --idle-time-limit 1.5 --headless --command couch 'a b' 'it'\\''s' out.cast"},
+		{recordOpts{}, []string{"./parley_app", "--demo"},
+			"rec --return --output-format asciicast-v3 --command ./parley_app --demo out.cast"},
+		{recordOpts{CaptureInput: true, IdleLimit: 1.5, Headless: true}, []string{"couch", "a b", "it's"},
+			"rec --return --output-format asciicast-v3 --capture-input --idle-time-limit 1.5 --headless --command couch 'a b' 'it'\\''s' out.cast"},
 	} {
 		got := recordArgs("out.cast", tc.o, tc.cmd)
 		// --command is one argv element: the joined, quoted command.
@@ -66,7 +66,8 @@ func TestNextTake(t *testing.T) {
 }
 
 // fakeAsciinema models asciinema 3's `rec` closely enough to stand in for it:
-// it runs --command through sh, writes a v3 cast with the window size, an `o`
+// it runs --command through sh, writes a v3 cast with a terminal size (80x24
+// unless --window-size says otherwise, as headless asciinema does), an `o`
 // event and an `x` exit event, logs its argv, and exits with the command's
 // status only under --return (asciinema 3 exits 0 otherwise).
 const fakeAsciinema = `#!/bin/sh
@@ -104,12 +105,13 @@ func recordContract(t *testing.T, dir string, extra ...string) {
 	if code != 3 {
 		t.Fatalf("exit %d, want the command's 3\n%s", code, stderr)
 	}
-	if !strings.Contains(stderr, "castcut: recording sh -c 'printf hi; exit 3' to "+out+" with asciinema (95x36)") {
+	if !strings.Contains(stderr, "castcut: recording sh -c 'printf hi; exit 3' to "+out+" with asciinema at this terminal's size") {
 		t.Errorf("does not say what it is doing:\n%s", stderr)
 	}
 	c := mustParse(t, out)
 	var term struct{ Cols, Rows int }
-	if err := json.Unmarshal(c.Header["term"], &term); err != nil || term.Cols != 95 || term.Rows != 36 {
+	// The size is the terminal's: castcut passes none, so any positive size is right.
+	if err := json.Unmarshal(c.Header["term"], &term); err != nil || term.Cols <= 0 || term.Rows <= 0 {
 		t.Errorf("term = %s (%v)", c.Header["term"], err)
 	}
 	var text string
@@ -139,7 +141,7 @@ func TestRecordThroughTheFake(t *testing.T) {
 	log := installFake(t)
 	recordContract(t, t.TempDir())
 	argv := strings.Split(strings.TrimSpace(string(mustRead(t, log))), "\n")
-	if argv[0] != "rec" || indexOf(argv, "--return") < 0 || argv[indexOf(argv, "--command")+1] != "sh -c 'printf hi; exit 3'" {
+	if argv[0] != "rec" || indexOf(argv, "--return") < 0 || indexOf(argv, "--window-size") >= 0 || argv[indexOf(argv, "--command")+1] != "sh -c 'printf hi; exit 3'" {
 		t.Errorf("argv = %q", argv)
 	}
 }
@@ -184,7 +186,7 @@ func TestRecordSuccessExitsZero(t *testing.T) {
 
 func TestRecordUsageAndMissingAsciinema(t *testing.T) {
 	for _, args := range [][]string{
-		{"record"}, {"record", "--"}, {"record", "stray", "--", "true"}, {"record", "--cols", "0", "--", "true"},
+		{"record"}, {"record", "--"}, {"record", "stray", "--", "true"}, {"record", "--cols", "95", "--", "true"},
 	} {
 		if code, _, _ := runCLI(t, args...); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)

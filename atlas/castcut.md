@@ -48,7 +48,7 @@ sorted before output at the same instant. Consumer:
 ## Seams
 
 - **asciinema** (`record`): `record_test.go`'s fake runs `--command` through `sh`
-  and honours `--return`/`--window-size`; `record_conformance_test.go`
+  and honours `--return` (castcut passes no size: a take is the terminal's own); `record_conformance_test.go`
   (`-tags conformance`, unsandboxed) holds real asciinema to the same
   `recordContract`.
 - **browser** (`annotate`): the handler answers only `Host: 127.0.0.1:<port>`
