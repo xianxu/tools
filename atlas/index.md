@@ -7,6 +7,7 @@ workflow layer. This is a map, not a changelog — history lives in
 ## Binaries
 
 - [define](define.md) — word lookup in the current language's own dictionary, with Google-style IPA and spoken pronunciation.
+- [castcut](castcut.md) — record, annotate and cut captioned terminal demos (asciinema in, captioned asciicast v3 out).
 
 ## Libraries
 

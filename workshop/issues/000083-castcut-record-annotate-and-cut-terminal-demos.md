@@ -109,7 +109,10 @@ Durable plan: [workshop/plans/000083-castcut-plan.md](../plans/000083-castcut-pl
 
 ### 2026-10-08
 
-- Claimed; plan drafted. asciinema 3.2.1 installed (`--window-size`, `--capture-input`, v3 default). Byte-identity needs a Python-`json`/`repr`/`round` emulation seam — fixture rows enumerated in the plan.
+- Claimed; plan drafted. asciinema 3.2.1 installed (`--window-size`, `--capture-input`, v3 default). Byte-identity was first planned (Python-compatible JSON seam), then dropped by the operator: castcut is a new tool grown from the prototype (see Revisions).
+- Plan-quality round: windows past the take's end now hold the last frame (prototype truncated them); warp is O(log S) per lookup via cumulative output + binary search instead of the prototype's scan-from-zero (the plan said cursor; binary search is stateless and meets the same envelope).
+- M1: property tests over 500 random takes + 2e5-event envelope (0.85 s) + naive-warp reference; fuzz 20 s × 3 targets clean. Mutation checks, each red then reverted: drop overlap clamp → (c)/(e); markers after output → marker example row (first attempt was vacuous: speed 5 made the tie unreachable through rounding — fixed with speed 1); ignore idle → (d); no hold event → late-caption row; window rate ≠ 1 → (c); HTML escaping on → CLI row.
+- Side note: a heredoc turned `\u003c` in a Go raw string into `<`, so the no-escape assertion first checked the wrong thing; caught because the test failed on correct output.
 
 ## Revisions
 

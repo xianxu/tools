@@ -1,0 +1,5 @@
+~0:03.0  The shell starts in the demo directory.
+
+0:12.5  Listing shows <two> files & nothing else.
+~0:13.0  Overlapping caption starts when the previous ends.
+~0:34.0  The last caption outlasts the take, so the final frame holds.
