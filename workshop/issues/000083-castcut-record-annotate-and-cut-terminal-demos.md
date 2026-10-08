@@ -125,3 +125,4 @@ Durable plan: [workshop/plans/000083-castcut-plan.md](../plans/000083-castcut-pl
 Reason (operator): `cut.py` was a quick prototype; castcut is a new feature built from it. Delta:
 "Done when" byte-identity bullet replaced by a contract + timing-property bullet; M1 no longer
 carries the Python-compatible JSON seam or a python3 oracle. Plan revision of the same date has the detail.
+- M3 started: `../homebrew-tools/Formula/castcut.rb` drafted (uncommitted; sha256 pending the v0.1.8 tag), `ruby -c` OK, its test-block expectation checked against the real cut output. `make install` links `castcut` into ~/.local/bin for the couch take. Waiting on the operator for the couch take and for each outward step (PR/merge, tag, tap push, parley.nvim issue).
