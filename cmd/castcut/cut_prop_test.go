@@ -244,11 +244,14 @@ func TestCutStaysInsideItsEnvelope(t *testing.T) {
 }
 
 func FuzzCut(f *testing.F) {
+	d := defaultTiming
 	f.Add([]byte(`{"version": 3, "idle_time_limit": 2}`+"\n[0.5, \"o\", \"a\"]\n[9, \"o\", \"b\"]\n[0, \"o\", \"c\"]\n"),
-		[]byte("~0:01  one two three\n~0:01  dup\n~0:02.5  at the end\n"))
-	f.Add([]byte(`{"version": 3}`+"\n[0, \"o\", \"a\"]\n"), []byte(""))
-	f.Add([]byte(`{"version": 3}`+"\n[1e308, \"o\", \"a\"]\n[1e308, \"o\", \"b\"]\n"), []byte("~0:00  x\n"))
-	f.Fuzz(func(t *testing.T, castData, capsData []byte) {
+		[]byte("~0:01  one two three\n~0:01  dup\n~0:02.5  at the end\n"), d.Speed, d.WPS, d.MinHold, d.Idle)
+	f.Add([]byte(`{"version": 3}`+"\n[0, \"o\", \"a\"]\n"), []byte(""), d.Speed, d.WPS, d.MinHold, d.Idle)
+	f.Add([]byte(`{"version": 3}`+"\n[1e308, \"o\", \"a\"]\n[1e308, \"o\", \"b\"]\n"), []byte("~0:00  x\n"), d.Speed, d.WPS, d.MinHold, d.Idle)
+	f.Add([]byte(`{"version": 3}`+"\n[1000, \"o\", \"a\"]\n"), []byte(""), 1e-10, 3.5, 4.0, 1.0)
+	f.Add([]byte(`{"version": 3}`+"\n[10, \"o\", \"a\"]\n"), []byte("~0:05  x\n"), 5.0, 1e-9, 4.0, 1.0)
+	f.Fuzz(func(t *testing.T, castData, capsData []byte, speed, wps, minHold, idle float64) {
 		c, err := parseCast("f.cast", castData)
 		if err != nil {
 			return
@@ -257,10 +260,19 @@ func FuzzCut(f *testing.F) {
 		if err != nil {
 			return
 		}
-		out, _, err := Cut(c, caps, defaultTiming)
+		tm := Timing{Speed: speed, Idle: idle, Lead: 1, MinHold: minHold, WPS: wps, Beat: 1}
+		out, _, err := Cut(c, caps, tm)
 		if err != nil {
 			return
 		}
-		checkCut(t, c, caps, defaultTiming, out)
+		checkCut(t, c, caps, tm, out)
+		// Whatever castcut writes, castcut reads back.
+		enc, err := encodeCast(out)
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		if _, err := parseCast("cut.cast", enc); err != nil {
+			t.Fatalf("castcut refuses its own cut: %v", err)
+		}
 	})
 }

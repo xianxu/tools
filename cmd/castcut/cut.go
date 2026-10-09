@@ -242,6 +242,11 @@ func Cut(c Cast, caps []Caption, t Timing) (Cast, Summary, error) {
 		stream = append(stream, item{w.warp(view), 0, Event{Kind: "o", Data: jsonString("")}})
 	}
 	sum := Summary{View: view, Total: w.warp(view)}
+	// The output timeline obeys the bound too (a tiny --speed stretches it):
+	// castcut never writes a cast it would refuse to read back.
+	if !inRange(sum.Total) {
+		return Cast{}, Summary{}, fmt.Errorf("the cut would run past %d hours; check --speed", maxSeconds/3600)
+	}
 	hc := make([]headerCaption, 0, len(ws))
 	for _, win := range ws {
 		oc := window{round(w.warp(win.Start), 3), round(w.warp(win.End), 3), win.Text}

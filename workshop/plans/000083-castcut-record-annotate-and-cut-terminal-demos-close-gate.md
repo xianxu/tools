@@ -244,6 +244,27 @@ rounds:
       boundary: M2
       recipe: milestone-review
       blocked: false
+    - "n": 8
+      timestamp: "2026-10-08T17:44:35-07:00"
+      agent: claude
+      dispose:
+        - id: BR-11
+          disposition: addressed
+          note: TestCutBoundsIdleLimit has a -1 row asserting the "not in [0," message (cut_test.go:176-185); the refusal is recorded in the issue Log at the M1 close.
+          round: 8
+        - id: BR-12
+          disposition: not-addressed
+          note: Only the view is bounded (cut.go:227), not warp(view). --speed 1e-10 exits 0 and the re-cut is refused (interval past 604800). FuzzCut still uses defaultTiming and has no round-trip assert.
+          round: 8
+      findings:
+        - id: BR-18
+          severity: Important
+          title: Whole-issue close with the M3 row unchecked; brew install and the parley.nvim follow-up have no evidence
+          detail: '2nd in family. Rule: close evidence covers every Done-when bullet, or a Revisions entry moves the bullet out. The formula is uncommitted (sha256 waits on the tag); the parley issue is not shown to exist.'
+          family: verification-deferred-past-boundary
+          round: 8
+      recipe: milestone-review
+      blocked: true
 ---
 
 # Gate ledger — tools#83 (boundary-review)
@@ -349,7 +370,19 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - BR-16 — withdrawn — The --version test already existed at base, main_test.go:101.
 - BR-17 — addressed — New-sidecar mode 0644 is tested in TestAnnotateServesTheTakeAndItsNotes. The stale-tmp cleanup at annotate start has no test and can delete a concurrent annotate's in-flight temp file; minor, non-blocking.
 
+## Round 8 — 2026-10-08T17:44:35-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-11 — addressed — TestCutBoundsIdleLimit has a -1 row asserting the "not in [0," message (cut_test.go:176-185); the refusal is recorded in the issue Log at the M1 close.
+- BR-12 — not-addressed — Only the view is bounded (cut.go:227), not warp(view). --speed 1e-10 exits 0 and the re-cut is refused (interval past 604800). FuzzCut still uses defaultTiming and has no round-trip assert.
+
+### Raised
+
+- **BR-18** [Important] `verification-deferred-past-boundary` Whole-issue close with the M3 row unchecked; brew install and the parley.nvim follow-up have no evidence
+  2nd in family. Rule: close evidence covers every Done-when bullet, or a Revisions entry moves the bullet out. The formula is uncommitted (sha256 waits on the tag); the parley issue is not shown to exist.
+
 ## Open findings
 
-- **BR-11** [Minor] `error-message-misstates-cause` Negative idle_time_limit is now refused as is past 168 hours (cast.go:100-104), a silent untested behaviour change
 - **BR-12** [Important] `untrusted-input-fabricated-output` Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
+- **BR-18** [Important] `verification-deferred-past-boundary` Whole-issue close with the M3 row unchecked; brew install and the parley.nvim follow-up have no evidence

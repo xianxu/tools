@@ -103,7 +103,7 @@ Durable plan: [workshop/plans/000083-castcut-plan.md](../plans/000083-castcut-pl
 
 - [x] M1 — `castcut cut`: the timing model (pure, property + fuzz tests), stdlib JSON, CLI wiring
 - [x] M2 — `castcut record` (fake asciinema on PATH), `castcut annotate` (localhost server, notes sidecar), `castcut --help` as agent instructions
-- [ ] M3 — Homebrew formula + tag (operator-confirmed), parley.nvim follow-up issue, couch broadcast end-to-end take
+- [x] M3 — Homebrew formula + tag (operator-confirmed), parley.nvim follow-up issue, couch broadcast end-to-end take
 
 ## Log
 
@@ -127,3 +127,4 @@ Reason (operator): `cut.py` was a quick prototype; castcut is a new feature buil
 carries the Python-compatible JSON seam or a python3 oracle. Plan revision of the same date has the detail.
 - M3 started: `../homebrew-tools/Formula/castcut.rb` drafted (uncommitted; sha256 pending the v0.1.8 tag), `ruby -c` OK, its test-block expectation checked against the real cut output. `make install` links `castcut` into ~/.local/bin for the couch take. Waiting on the operator for the couch take and for each outward step (PR/merge, tag, tap push, parley.nvim issue).
 - M3 couch end-to-end (operator-driven, 2026-10-08): `castcut record -- couch` → annotate → cut, run by the operator in `brain/` (take-01, take-02 + captions + take-02-cut.cast observed under `brain/recordings/`, since removed by the operator). Operator verdict: "works well". Feedback folded in during the take: record at the terminal's own size (size flags deleted), annotate prints the next step, cut names its output `<take>-cut.cast`. The in-browser checks moved here from M2 (Alt+T stamping, sidecar autosave, cut preview) are covered by that run; reload-persistence was not separately confirmed.
+- M3 done (2026-10-08): PR #57 merged (21ee5e9) after a side-quest deps fix (main's merge-check had been red since 975ddb6: `construct/deps` lacked ariadne's source URL); tag v0.1.8 pushed; tap `castcut: release v0.1.8` (0ef958d) pushed; `brew install xianxu/tools/castcut` → `castcut v0.1.8`, `brew test` exit 0; parley.nvim#311 filed. M3 is ticked by hand rather than milestone-closed: its review is the issue-close boundary review (#175).
