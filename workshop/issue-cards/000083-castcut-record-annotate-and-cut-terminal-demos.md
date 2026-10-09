@@ -1,6 +1,6 @@
 ---
 id: 000083
-status: codecomplete
+status: done
 created: 2026-10-08
 updated: 2026-10-08
 estimate_hours: 4.5
@@ -31,6 +31,7 @@ tracker:
         repository: github.com/xianxu/tools
         reviewed_head: ed23a683832d5cf9e425672409f5a9da9f8c228a
         evidence_commit: 468300e70b8d7e6cd03e086bfe4c4336218b529d
+        landed_commit: 88a6cb1fee5148a90fd972fd333360f93530a59c
 ---
 
 # castcut: record, annotate and cut terminal demos
