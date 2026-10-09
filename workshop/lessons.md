@@ -32,6 +32,11 @@ leave incident transcripts and one-off details in their owning issue or plan.
 
 ## Contracts and ownership
 
+- Bound derived quantities by round-tripping, not by enumerating them. Guarding
+  each read number left three derived ones (view end, output total, a hold) to
+  surface one review at a time; a fuzz assert that the tool reads back
+  everything it writes covers the class (tools#83).
+
 - Give each fact one producer and make consumers derive from it. Duplicate
   registries, prose lists, and constants standing in for measurements drift.
 - A receipt, filename, display key, or path locates data; it does not prove
