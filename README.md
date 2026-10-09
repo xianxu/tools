@@ -52,6 +52,7 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 | binary | what it does |
 |---|---|
 | `define` | Print a word's dictionary definition with Google-style IPA, and play its pronunciation. |
+| `castcut` | Record, annotate and cut captioned terminal demos (asciinema in, captioned asciicast out). |
 
 ### define
 
@@ -69,6 +70,21 @@ and `/help` lists the rest.
 **[cmd/define/README.md](cmd/define/README.md)** is its documentation — the
 session, the review loop, the clickable regions, what it writes in your
 directory, the flags for scripting, and the decisions behind each. `atlas/define.md` is the map of how it is built.
+
+### castcut
+
+Record a terminal take with asciinema, stamp captions in a browser viewer, and
+cut it into a short demo that plays fast between captions and in real time
+around them.
+
+```sh
+castcut record -- ./my-app --demo          # → recordings/take-01.cast
+castcut annotate recordings/take-01.cast   # Alt+T stamps; notes → take-01.captions.txt
+castcut cut recordings/take-01.cast        # → recordings/take-01-cut.cast
+```
+
+`castcut --help` is the whole manual — the flow, the timing flags, the
+`captions` header contract and how to embed a cut. `atlas/castcut.md` is the map.
 
 ## Build
 
