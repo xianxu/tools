@@ -1,10 +1,19 @@
 ---
 id: 000083
-status: working
+status: codecomplete
 created: 2026-10-08
 updated: 2026-10-08
 estimate_hours: 4.5
 github_issue:
+started: 2026-10-08T12:16:32-07:00
+claimant:
+    operator: Xian Xu
+    machine: 4716879978a7b90f6b583da1716fd0e9
+    machine_name: MacBook Pro
+    workspace: tools:0
+    worktree: /Users/xianxu/workspace/tools
+    repository: github.com/xianxu/tools
+actual_hours: 2.35
 tracker:
     version: 1
     handoff:
@@ -17,14 +26,11 @@ tracker:
         source_blob: 32155b8ddf7f4bbf444946a26e1cec72196cb78c
         destination: workshop/issues/000083-castcut-record-annotate-and-cut-terminal-demos.md
         main_commit: 4c1444f900957224cb3a10cc5bfeb9542988f2cf
-started: 2026-10-08T12:16:32-07:00
-claimant:
-    operator: Xian Xu
-    machine: 4716879978a7b90f6b583da1716fd0e9
-    machine_name: MacBook Pro
-    workspace: tools:0
-    worktree: /Users/xianxu/workspace/tools
-    repository: github.com/xianxu/tools
+    completion:
+        token: close-628aa3d0823d
+        repository: github.com/xianxu/tools
+        reviewed_head: ed23a683832d5cf9e425672409f5a9da9f8c228a
+        evidence_commit: 468300e70b8d7e6cd03e086bfe4c4336218b529d
 ---
 
 # castcut: record, annotate and cut terminal demos
