@@ -79,3 +79,69 @@ findings:
     detail: |
       2nd in family. Rule: close evidence covers every Done-when bullet, or a Revisions entry moves the bullet out. The formula is uncommitted (sha256 waits on the tag); the parley issue is not shown to exist.
 ```
+
+---
+
+## Re-review — 2026-10-08T17:48:20-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 83 — castcut: record, annotate and cut terminal demos |
+| repo | tools |
+| issue file | workshop/issues/000083-castcut-record-annotate-and-cut-terminal-demos.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 42e4a273f8d0ab25e30802534f4ae8bd68f611d1..ed23a683832d5cf9e425672409f5a9da9f8c228a |
+| command | sdlc close --issue 83 |
+| reviewer | claude |
+| timestamp | 2026-10-08T17:48:20-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+Both open findings are fixed, and I checked each one against the code and the release artifacts rather than taking the commit messages' word for it. For BR-12, `Cut` already refused a view that captions stretch past 168 hours (added in d48faad). The final commit also bounds the cut's output timeline (`cmd/castcut/cut.go:245-249`). `FuzzCut` now fuzzes the four timing values and checks that every cut it accepts parses back in. I ran all four repro cases against the built binary (`--wps 1e-300`, `--wps 5e-324`, `--speed 1e-10`, `--speed 1e-300`): each is refused with exit 1 and a message naming the flag to check. I removed the new guard in a scratch copy and `TestCutRejects` failed (`tiny --speed: err = <nil>`), so its regression test really depends on it. For BR-18, the release evidence exists outside this repo's log: tap commit `0ef958d` adds `Formula/castcut.rb` for v0.1.8 with a sha256, tag `v0.1.8` points to merge `21ee5e9`, Homebrew has `castcut v0.1.8` installed in its Cellar, and `parley.nvim/workshop/issues/000311-demo-hand-recording-tooling-to-castcut.md` exists. M3 is ticked, with a log entry explaining why it was ticked by hand.
+
+1. **Strengths**
+   - BR-12 is fixed as a rule instead of one more case. `cut_prop_test.go:263-276` fuzzes the timing values and checks that castcut can read back every cut it writes. That check covers any future derived quantity, not only `--wps` and `--speed`. It ran 1.6M executions in 45 s with no failures.
+   - `cut_test.go:161-165` tests the new guard, and it fails without the fix (checked by removing the guard).
+   - The two error messages (`cut.go:237`, `cut.go:248`) say which flags cause the problem, so each refusal tells the user what to change next.
+   - `go build`, `go vet` and `go test ./cmd/castcut/` all pass at HEAD.
+
+2. **Critical:** none.
+
+3. **Important:** none.
+
+4. **Minor**
+   - `cut.go:245`: the output check runs after the event stream is built, so a refused cut does a little extra work first. This is harmless.
+   - The log notes that reload persistence in the viewer was not confirmed separately. That is an honest note and doesn't block this close.
+
+5. **Test coverage:** the read-back property in `FuzzCut` is now the main defence for the `untrusted-input-fabricated-output` family (6 earlier findings). Any new derived time that could go out of range should fail it straight away.
+
+6. **Architecture (ARCH-\*)**
+   - ARCH-DRY: pass. `inRange` is the single range check, reused at every boundary.
+   - ARCH-PURE: pass. `Cut` is pure, and the fuzz and property tests run without any IO.
+   - ARCH-PURPOSE: pass. Every Done-when bullet is delivered or covered by the parley.nvim follow-up issue (#311), which is how bullet 3 is written.
+   - ARCH-MOCK: pass. Nothing changed here since the prior rounds: record still has its fake asciinema and live conformance test.
+   - ARCH-CONSTRAINTS: pass. Output time is now inside the stated 168 h limit.
+   - ARCH-SECURE: pass. What castcut writes now passes its own input checks, so it doesn't produce a file it would refuse to read.
+   - ARCH-ORDER: pass. `Cut` keeps no state between events because each call is one-shot.
+   - ARCH-FUNERAL: pass. Nothing new is persisted in this round.
+
+7. **Plan revisions:** none needed. The 2026-10-08 Revisions entry in the plan matches the code.
+
+```findings
+dispose:
+  - id: BR-12
+    disposition: addressed
+    note: |
+      The view bound (cut.go:235) plus the new output bound (cut.go:245) refuse --wps 1e-300 and 5e-324 and --speed 1e-10 and 1e-300 with exit 1. FuzzCut round-trip passes 1.6M execs. Removing the guard turns TestCutRejects red.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      M3 is ticked with log evidence, all checked: tap 0ef958d adds Formula/castcut.rb for v0.1.8 with a sha256, tag v0.1.8 is at 21ee5e9, Homebrew has castcut v0.1.8 in its Cellar, and parley.nvim issue 000311 exists.
+```

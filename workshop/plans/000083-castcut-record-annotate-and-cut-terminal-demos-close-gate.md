@@ -265,6 +265,20 @@ rounds:
           round: 8
       recipe: milestone-review
       blocked: true
+    - "n": 9
+      timestamp: "2026-10-08T17:48:20-07:00"
+      agent: claude
+      dispose:
+        - id: BR-12
+          disposition: addressed
+          note: The view bound (cut.go:235) plus the new output bound (cut.go:245) refuse --wps 1e-300 and 5e-324 and --speed 1e-10 and 1e-300 with exit 1. FuzzCut round-trip passes 1.6M execs. Removing the guard turns TestCutRejects red.
+          round: 9
+        - id: BR-18
+          disposition: addressed
+          note: 'M3 is ticked with log evidence, all checked: tap 0ef958d adds Formula/castcut.rb for v0.1.8 with a sha256, tag v0.1.8 is at 21ee5e9, Homebrew has castcut v0.1.8 in its Cellar, and parley.nvim issue 000311 exists.'
+          round: 9
+      recipe: milestone-review
+      blocked: false
 ---
 
 # Gate ledger — tools#83 (boundary-review)
@@ -382,7 +396,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-18** [Important] `verification-deferred-past-boundary` Whole-issue close with the M3 row unchecked; brew install and the parley.nvim follow-up have no evidence
   2nd in family. Rule: close evidence covers every Done-when bullet, or a Revisions entry moves the bullet out. The formula is uncommitted (sha256 waits on the tag); the parley issue is not shown to exist.
 
+## Round 9 — 2026-10-08T17:48:20-07:00 (claude) — passed
+
+### Disposed
+
+- BR-12 — addressed — The view bound (cut.go:235) plus the new output bound (cut.go:245) refuse --wps 1e-300 and 5e-324 and --speed 1e-10 and 1e-300 with exit 1. FuzzCut round-trip passes 1.6M execs. Removing the guard turns TestCutRejects red.
+- BR-18 — addressed — M3 is ticked with log evidence, all checked: tap 0ef958d adds Formula/castcut.rb for v0.1.8 with a sha256, tag v0.1.8 is at 21ee5e9, Homebrew has castcut v0.1.8 in its Cellar, and parley.nvim issue 000311 exists.
+
 ## Open findings
 
-- **BR-12** [Important] `untrusted-input-fabricated-output` Derived caption hold is unbounded, so a tiny --wps writes a cast castcut itself rejects, exit 0
-- **BR-18** [Important] `verification-deferred-past-boundary` Whole-issue close with the M3 row unchecked; brew install and the parley.nvim follow-up have no evidence
+(none — every finding has been disposed)
