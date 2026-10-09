@@ -1,12 +1,12 @@
 ---
 id: 000083
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-10-08
 updated: 2026-10-08
 estimate_hours: 4.5
-card_mirror: 'beb7cfd83f897cb45dfb3dc09f3e3da04886cb2c' # card fields mirrored from issue-cards; edit via sdlc
+card_mirror: '9c89d5de63245bfafeb4ea3bd915dbab132791c5' # card fields mirrored from issue-cards; edit via sdlc
 started: 2026-10-08T12:16:32-07:00
 claimant:
     operator: Xian Xu
@@ -16,6 +16,7 @@ claimant:
     worktree: /Users/xianxu/workspace/tools
     repository: github.com/xianxu/tools
 flow: {kind: full, provenance: inferred}
+actual_hours: 2.35
 ---
 
 # castcut: record, annotate and cut terminal demos
