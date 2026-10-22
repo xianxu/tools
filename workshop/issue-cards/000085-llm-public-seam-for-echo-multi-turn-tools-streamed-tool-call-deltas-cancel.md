@@ -1,6 +1,6 @@
 ---
 id: 000085
-status: working
+status: codecomplete
 created: 2026-10-21
 updated: 2026-10-21
 estimate_hours: 3.59
@@ -13,6 +13,14 @@ claimant:
     workspace: tools:1
     worktree: /Users/xianxu/workspace/worktree/tools-slot1/tools
     repository: github.com/xianxu/tools
+actual_hours: 2.11
+tracker:
+    version: 1
+    completion:
+        token: close-a6134277bc25
+        repository: github.com/xianxu/tools
+        reviewed_head: 74ef0b692d07aac73f4ef9c2e01c6f38dc92fb38
+        evidence_commit: 0a395de5c15a64016e721287592eda4414b07f4b
 ---
 
 # llm: public seam for echo — multi-turn, tools, streamed tool-call deltas, cancel
