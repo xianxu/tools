@@ -180,8 +180,9 @@ type captureAnswerDeltas struct {
 	raw *strings.Builder
 }
 
-func (c captureAnswerDeltas) Stream(ctx context.Context, r llm.Request, delta func(string)) (llm.Response, error) {
-	return c.Client.Stream(ctx, r, func(s string) { c.raw.WriteString(s); delta(s) })
+func (c captureAnswerDeltas) Stream(ctx context.Context, r llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
+	delta := textSink(onEvent)
+	return c.Client.Stream(ctx, r, llm.TextOnly(func(s string) { c.raw.WriteString(s); delta(s) }))
 }
 
 func TestLanguageAnswerLiveScreenRowsMatchAppendSink(t *testing.T) {

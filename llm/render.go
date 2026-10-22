@@ -31,8 +31,24 @@ func renderRequest(r Request) string {
 	}
 	b.WriteString("--- system ---\n")
 	b.WriteString(r.System)
+	// Messages and tools render ONLY when set, so a single-turn request renders
+	// and hashes exactly as it did before they existed and every committed
+	// golden and cassette still matches.
+	if len(r.Messages) > 0 {
+		b.WriteString("\n--- messages ---\n")
+		for _, m := range r.Messages {
+			fmt.Fprintf(&b, "[%s] %s\n", m.Role, messageJSON(m))
+		}
+	}
 	b.WriteString("\n--- prompt ---\n")
 	b.WriteString(r.Prompt)
+	if len(r.Tools) > 0 || r.ToolChoice != "" {
+		b.WriteString("\n--- tools ---\n")
+		for _, t := range r.Tools {
+			fmt.Fprintf(&b, "%s: %s\n%s\n", t.Name, t.Description, renderSchema(t.InputSchema))
+		}
+		fmt.Fprintf(&b, "choice: %s", r.ToolChoice)
+	}
 	b.WriteString("\n--- schema ---\n")
 	b.WriteString(renderSchema(r.Schema))
 	b.WriteString("\n")

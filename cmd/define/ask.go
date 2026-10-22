@@ -176,7 +176,7 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		a.Context = askCtx
 		req = renderPassagePrompt(a)
 	}
-	_, err = client.Stream(ctx, req, answer.decoder.Write)
+	_, err = client.Stream(ctx, req, llm.TextOnly(answer.decoder.Write))
 	// Finish before ANY termination branch: clean partial text belongs in
 	// history on cancellation and truncation, and never contains metadata.
 	if writeErr := answer.Finish(); writeErr != nil {

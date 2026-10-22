@@ -106,7 +106,7 @@ func Suite(t *testing.T, newClient func(t *testing.T) llm.Client) {
 		var seen strings.Builder
 		got, err := c.Stream(ctx(t), llm.Request{
 			Task: "suite-stream", Prompt: "Say: one two three",
-		}, func(s string) { seen.WriteString(s) })
+		}, llm.TextOnly(func(s string) { seen.WriteString(s) }))
 		if err != nil {
 			t.Fatalf("Stream: %v", err)
 		}

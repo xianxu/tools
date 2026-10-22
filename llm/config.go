@@ -2,6 +2,7 @@ package llm
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -84,6 +85,14 @@ type Config struct {
 	// SlowEvery is that ticker's interval. Zero takes the default; it is a field
 	// rather than a constant so the behaviour is testable in under ten seconds.
 	SlowEvery time.Duration
+	// BeforeAttempt, when set, runs before every PHYSICAL HTTP attempt of a
+	// Complete or Stream call, retries included, so a consumer can count or
+	// throttle attempts without a retry loop of its own: the transport owns all
+	// retries. It may block (bounded by the call's context). A non-nil return
+	// sends nothing, is not retried, and fails the call with ErrUnavailable
+	// wrapping that error, so errors.Is reaches it. Model discovery does not pass
+	// through it. Usage.Attempts counts only the attempts it admitted.
+	BeforeAttempt func(ctx context.Context, a Attempt) error
 }
 
 // Resolve reads configuration from an env lookup function.

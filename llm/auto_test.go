@@ -63,14 +63,14 @@ func TestAutoClientOwnerCancellationAllowsLaterRetry(t *testing.T) {
 	c := llm.New(autoConfig(f))
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { _, err := c.Complete(ctx, llm.Request{}); done <- err }()
+	go func() { _, err := c.Complete(ctx, llm.Request{Prompt: "hello"}); done <- err }()
 	<-started
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("owner=%v", err)
 	}
 	f.ConfigureCatalog(llmtest.CatalogOptions{})
-	if _, err := c.Complete(t.Context(), llm.Request{}); err != nil {
+	if _, err := c.Complete(t.Context(), llm.Request{Prompt: "hello"}); err != nil {
 		t.Fatal(err)
 	}
 	close(release)
@@ -83,7 +83,7 @@ func TestAutoClientFailureDoesNotPinOrSwitchModel(t *testing.T) {
 	f := llmtest.NewFake(t)
 	f.SetCatalog(nil)
 	c := llm.New(autoConfig(f))
-	if _, err := c.Complete(t.Context(), llm.Request{}); !errors.Is(err, llm.ErrUnavailable) {
+	if _, err := c.Complete(t.Context(), llm.Request{Prompt: "hello"}); !errors.Is(err, llm.ErrUnavailable) {
 		t.Fatalf("empty=%v", err)
 	}
 	if len(f.Requests()) != 0 {
@@ -91,7 +91,7 @@ func TestAutoClientFailureDoesNotPinOrSwitchModel(t *testing.T) {
 	}
 	f.SetCatalog([]llm.ModelInfo{{ID: "gpt-5.6", OwnedBy: "openai"}, {ID: "claude-opus-5", OwnedBy: "anthropic"}})
 	f.Script("", llmtest.Reply{Status: 400})
-	if _, err := c.Complete(t.Context(), llm.Request{}); !errors.Is(err, llm.ErrRequest) {
+	if _, err := c.Complete(t.Context(), llm.Request{Prompt: "hello"}); !errors.Is(err, llm.ErrRequest) {
 		t.Fatalf("inference=%v", err)
 	}
 	if len(f.Requests()) != 1 {

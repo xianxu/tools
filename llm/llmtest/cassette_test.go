@@ -260,7 +260,7 @@ func TestCassetteRecordsAndReplaysAStream(t *testing.T) {
 	var recorded strings.Builder
 	withUpdate(t, func() {
 		_, err := recordingClient(t, dir, f.URL).Stream(t.Context(), r,
-			func(s string) { recorded.WriteString(s) })
+			llm.TextOnly(func(s string) { recorded.WriteString(s) }))
 		if err != nil {
 			t.Fatalf("record stream: %v", err)
 		}
@@ -273,7 +273,7 @@ func TestCassetteRecordsAndReplaysAStream(t *testing.T) {
 	got, err := llm.New(llm.Config{
 		BaseURL: "http://127.0.0.1:1", APIKey: "sk-test-1234567890", Model: "claude-opus-5",
 		Timeout: 10 * time.Second, Transport: Cassettes(t, dir).Transport(nil),
-	}).Stream(t.Context(), r, func(s string) { replayed.WriteString(s) })
+	}).Stream(t.Context(), r, llm.TextOnly(func(s string) { replayed.WriteString(s) }))
 	if err != nil {
 		t.Fatalf("replay stream: %v", err)
 	}

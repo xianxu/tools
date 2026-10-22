@@ -1125,7 +1125,7 @@ func TestAskWrapsStreamWithoutLosingText(t *testing.T) {
 // this adapter makes no claim about transport error classification.
 type malformedAskStream struct{ llm.Client }
 
-func (c malformedAskStream) Stream(ctx context.Context, req llm.Request, onDelta func(string)) (llm.Response, error) {
+func (c malformedAskStream) Stream(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (llm.Response, error) {
 	response, err := c.Client.Stream(ctx, req, onDelta)
 	if !errors.Is(err, llm.ErrTruncated) {
 		return response, fmt.Errorf("expected truncated wire fixture, got %v", err)

@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -33,7 +34,30 @@ var (
 	// decodes cleanly with every required field present. Only the stop reason can
 	// catch that, so the transport is the only place it can be caught.
 	ErrTruncated = errors.New("llm: truncated response")
+	// ErrCanceled means the CALLER ended the call: the context it passed in was
+	// cancelled or hit its deadline. Neither an outage (back off) nor a cut-off
+	// answer (skip): the caller asked for this. The error also wraps ctx.Err(),
+	// so errors.Is reaches context.Canceled or context.DeadlineExceeded. The
+	// package's own Timeout and StallAfter fire on derived contexts and keep their
+	// ErrUnavailable / ErrTruncated mapping.
+	ErrCanceled = errors.New("llm: canceled")
 )
+
+// canceled wraps the caller's own context error.
+func canceled(ctx error) error { return fmt.Errorf("%w: %w", ErrCanceled, ctx) }
+
+// errBudget is the CAUSE every deadline this package sets carries
+// (context.WithTimeoutCause), which is how a call tells its own Timeout apart
+// from the caller's cancel or deadline. Checking ctx.Err() alone cannot: the
+// auto client hands its delegate a context it already bounded with Timeout, so
+// that deadline would read as the caller's.
+var errBudget = errors.New("llm: call budget exhausted")
+
+// callerDone reports whether ctx ended for a reason other than this package's
+// own budget: the caller cancelled it, or the caller's own deadline passed.
+func callerDone(ctx context.Context) bool {
+	return ctx.Err() != nil && !errors.Is(context.Cause(ctx), errBudget)
+}
 
 // transient mirrors the set the TRANSPORT itself retries (the SDK's shouldRetry:
 // 408, 409, 429, every 5xx). Derived rather than restated — a second independent

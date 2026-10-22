@@ -209,7 +209,7 @@ func TestStreamDeltasConcatToText(t *testing.T) {
 	f := llmtest.NewFake(t)
 	var got strings.Builder
 	resp, err := client(t, f.URL).Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"},
-		func(s string) { got.WriteString(s) })
+		llm.TextOnly(func(s string) { got.WriteString(s) }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestStreamDoesNotForwardThinkingDeltas(t *testing.T) {
 
 	calls := 0
 	_, err := client(t, f.URL).Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"},
-		func(string) { calls++ })
+		llm.TextOnly(func(string) { calls++ }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestStreamStallAfterTextSalvagesAndTruncates(t *testing.T) {
 
 	var seen strings.Builder
 	resp, err := stallClient(t, f.URL).Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"},
-		func(s string) { seen.WriteString(s) })
+		llm.TextOnly(func(s string) { seen.WriteString(s) }))
 
 	if !errors.Is(err, llm.ErrTruncated) {
 		t.Fatalf("err = %v, want ErrTruncated — frames arrived, so the service was reachable", err)

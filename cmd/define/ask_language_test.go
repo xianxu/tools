@@ -53,9 +53,10 @@ type cancelLanguageStream struct {
 	cancel context.CancelFunc
 }
 
-func (c cancelLanguageStream) Stream(ctx context.Context, r llm.Request, delta func(string)) (llm.Response, error) {
+func (c cancelLanguageStream) Stream(ctx context.Context, r llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
+	delta := textSink(onEvent)
 	var seen strings.Builder
-	return c.Client.Stream(ctx, r, func(s string) {
+	return c.Client.Stream(ctx, r, llm.TextOnly(func(s string) {
 		if ctx.Err() != nil {
 			return
 		}
@@ -64,7 +65,7 @@ func (c cancelLanguageStream) Stream(ctx context.Context, r llm.Request, delta f
 		if strings.Contains(seen.String(), "[lang=en]The") {
 			c.cancel()
 		}
-	})
+	}))
 }
 func TestAskAnnotatedCancellationFlushesBeforeHistory(t *testing.T) {
 	d, fake, _, _ := askRig(t)
@@ -151,13 +152,14 @@ type deltaObserver struct {
 	seen func(n int)
 }
 
-func (o deltaObserver) Stream(ctx context.Context, r llm.Request, onDelta func(string)) (llm.Response, error) {
+func (o deltaObserver) Stream(ctx context.Context, r llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
+	onDelta := textSink(onEvent)
 	n := 0
-	return o.Client.Stream(ctx, r, func(s string) {
+	return o.Client.Stream(ctx, r, llm.TextOnly(func(s string) {
 		onDelta(s)
 		n++
 		o.seen(n)
-	})
+	}))
 }
 
 // TestALongPassageReachesTheScreenInPieces is this issue at the level the

@@ -35,7 +35,7 @@ func TestConformanceAutoSelection(t *testing.T) {
 	}
 	t.Logf("verified live selection %s / %s; other providers not tested", chosen.Provider, chosen.ID)
 	var streamed string
-	_, err = c.Stream(t.Context(), llm.Request{Prompt: "Reply with PONG."}, func(s string) { streamed += s })
+	_, err = c.Stream(t.Context(), llm.Request{Prompt: "Reply with PONG."}, llm.TextOnly(func(s string) { streamed += s }))
 	if err != nil || streamed == "" {
 		t.Fatalf("stream: %v (empty=%t)", err, streamed == "")
 	}

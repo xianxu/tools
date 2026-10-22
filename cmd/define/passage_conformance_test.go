@@ -48,7 +48,7 @@ func TestPassageAnswerKeepsTheHardWordAgainstTheLiveService(t *testing.T) {
 	// sees the answer arrive, and a conformance row that used a different call
 	// would be checking a request nothing sends.
 	var answer strings.Builder
-	res, err := client.Stream(t.Context(), req, func(s string) { answer.WriteString(s) })
+	res, err := client.Stream(t.Context(), req, llm.TextOnly(func(s string) { answer.WriteString(s) }))
 	if errors.Is(err, llm.ErrUnavailable) {
 		conformance.SkipOrFail(t, "the model is unreachable", err)
 	}

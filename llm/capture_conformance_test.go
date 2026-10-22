@@ -112,7 +112,7 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 		got, err := c.Stream(ctx, llm.Request{
 			Task:   "drift-stream",
 			Prompt: "Name one synonym for sycophantic, then explain the nuance in two sentences.",
-		}, func(string) { deltas++ })
+		}, llm.TextOnly(func(string) { deltas++ }))
 		mustCall(t, err)
 		if deltas == 0 {
 			t.Error("no text deltas delivered — re-record: scripts/llm-probe.sh record")

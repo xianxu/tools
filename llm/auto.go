@@ -53,6 +53,9 @@ func (a *autoClient) modelSelection() ModelSelection {
 	return ModelSelection{}
 }
 func selectionCancelled(ctx context.Context) error {
+	if callerDone(ctx) {
+		return fmt.Errorf("%w: model selection", canceled(ctx.Err()))
+	}
 	return fmt.Errorf("%w: model selection: %w", ErrUnavailable, ctx.Err())
 }
 
@@ -121,7 +124,7 @@ func (a *autoClient) requestClient(ctx context.Context, r Request) (Client, erro
 	return a.selected(ctx)
 }
 func (a *autoClient) Complete(ctx context.Context, r Request) (Response, error) {
-	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, a.cfg.Timeout, errBudget)
 	defer cancel()
 	c, err := a.requestClient(ctx, r)
 	if err != nil {
@@ -129,12 +132,12 @@ func (a *autoClient) Complete(ctx context.Context, r Request) (Response, error) 
 	}
 	return c.Complete(ctx, r)
 }
-func (a *autoClient) Stream(ctx context.Context, r Request, onDelta func(string)) (Response, error) {
-	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
+func (a *autoClient) Stream(ctx context.Context, r Request, onEvent func(Delta)) (Response, error) {
+	ctx, cancel := context.WithTimeoutCause(ctx, a.cfg.Timeout, errBudget)
 	defer cancel()
 	c, err := a.requestClient(ctx, r)
 	if err != nil {
 		return Response{}, err
 	}
-	return c.Stream(ctx, r, onDelta)
+	return c.Stream(ctx, r, onEvent)
 }

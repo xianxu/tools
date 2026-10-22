@@ -59,6 +59,7 @@ func New(c Config) Client {
 		option.WithAPIKey(c.APIKey),
 		option.WithMaxRetries(2),
 		option.WithRequestTimeout(c.Timeout),
+		option.WithMiddleware(attemptMiddleware(c.BeforeAttempt)),
 	}
 	if c.Transport != nil {
 		opts = append(opts, option.WithHTTPClient(&http.Client{
@@ -101,9 +102,9 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 		// effective() has already normalised this; the guard stays because params
 		// is reachable from a future caller that has not been through it.
 		MaxTokens: positiveOr(r.MaxTokens, a.cfg.MaxTokens),
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(r.Prompt)),
-		},
+		Messages:   wireMessages(r),
+		Tools:      wireTools(r.Tools),
+		ToolChoice: wireToolChoice(r.ToolChoice),
 	}
 	if r.System != "" {
 		p.System = []anthropic.TextBlockParam{{Text: r.System}}
@@ -126,25 +127,36 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 }
 
 func (a *anthropicClient) Complete(ctx context.Context, r Request) (Response, error) {
+	if err := checkRequest(r); err != nil {
+		return Response{}, err
+	}
+	caller := ctx
 	r = a.effective(r)
 	ctx = withRequest(ctx, r)
-	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, a.cfg.Timeout, errBudget)
 	defer cancel()
+	ctx, st := beginCall(ctx, r)
 
 	done := a.watch(ctx, r.Task, "waiting")
 	start := time.Now()
 	msg, err := a.api.Messages.New(ctx, a.params(r))
 	done()
 	if err != nil {
-		return Response{}, a.mapError(err)
+		return Response{Usage: Usage{Attempts: st.dispatched()}}, outcome(caller, st, a.mapError(err))
 	}
-	return buildResponse(msg, time.Since(start))
+	resp, err := buildResponse(msg, time.Since(start))
+	resp.Usage.Attempts = st.dispatched()
+	return resp, err
 }
 
-func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(string)) (Response, error) {
+func (a *anthropicClient) Stream(ctx context.Context, r Request, onEvent func(Delta)) (Response, error) {
+	if err := checkRequest(r); err != nil {
+		return Response{}, err
+	}
+	caller := ctx
 	r = a.effective(r)
 	ctx = withRequest(ctx, r)
-	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, a.cfg.Timeout, errBudget)
 	defer cancel()
 
 	// stall is the one bound the SDK does not provide, and a total deadline
@@ -167,12 +179,23 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(st
 		reset = func() { timer.Reset(a.cfg.StallAfter) }
 	}
 
-	done := a.watch(stallCtx, r.Task, "streaming")
+	callCtx, st := beginCall(stallCtx, r)
+	done := a.watch(callCtx, r.Task, "streaming")
 	defer done()
 
 	start := time.Now()
-	stream := a.api.Messages.NewStreaming(stallCtx, a.params(r))
 	msg := anthropic.Message{}
+	stream := a.api.Messages.NewStreaming(callCtx, a.params(r))
+	var deltas deltaState
+	// partial is what a failed or cancelled stream returns: text so far, and only
+	// the tool calls that reached End (a half-streamed call is dropped, never
+	// half-reported).
+	partial := func() Response {
+		resp, _ := buildResponse(&msg, time.Since(start))
+		resp.ToolCalls = cloneCalls(deltas.done)
+		resp.Usage.Attempts = st.dispatched()
+		return resp
+	}
 	// sawEvent is the outage/truncation discriminator. Once a single frame has
 	// arrived the service is demonstrably reachable, so a later failure is the
 	// reply being cut short — NOT the endpoint being down. kbench's is_outage
@@ -194,19 +217,23 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(st
 			// the salvage branch below, which is where that lands.
 			continue
 		}
-		if onDelta == nil {
-			continue
+		out, derr := deltas.next(event)
+		if derr != nil {
+			stream.Close()
+			return partial(), outcome(caller, st, derr)
 		}
-		if d, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
-			// ANSWER text only. Thinking deltas are accumulated into Blocks but
-			// never forwarded: a learner watching a question appear must not see
-			// the model's reasoning scroll past.
-			if td, ok := d.Delta.AsAny().(anthropic.TextDelta); ok {
-				onDelta(td.Text)
+		if onEvent != nil {
+			for _, d := range out {
+				onEvent(d)
 			}
 		}
 	}
 	if err := stream.Err(); err != nil {
+		// Ahead of the stall and salvage branches: a caller's cancel or an
+		// admission rejection is neither, whatever the stream saw.
+		if st.rejection() != nil || callerDone(caller) {
+			return partial(), outcome(caller, st, err)
+		}
 		mu.Lock()
 		s := stalled
 		mu.Unlock()
@@ -214,13 +241,14 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(st
 			// A stall is not special-cased: it goes through the SAME discriminator
 			// as any other mid-stream failure, because the caller's question is
 			// identical — did we ever reach the service?
-			partial, _ := buildResponse(&msg, time.Since(start))
+			p := partial()
 			if sawEvent {
-				return partial, fmt.Errorf("%w: stream went silent for %s after %d bytes of text",
-					ErrTruncated, a.cfg.StallAfter, len(partial.Text))
+				return p, fmt.Errorf("%w: stream went silent for %s after %d bytes of text",
+					ErrTruncated, a.cfg.StallAfter, len(p.Text))
 			}
-			return Response{}, fmt.Errorf("%w: stream went silent for %s before any frame (phase streaming)",
-				ErrUnavailable, a.cfg.StallAfter)
+			return Response{Usage: Usage{Attempts: st.dispatched()}},
+				fmt.Errorf("%w: stream went silent for %s before any frame (phase streaming)",
+					ErrUnavailable, a.cfg.StallAfter)
 		}
 		// The SDK's SSE decoder owns framing, so a frame it cannot decode ends the
 		// stream and there is no skipping it from up here. The Lua-side lesson
@@ -234,13 +262,29 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(st
 		// it; one that treats any error as "skip this question" is correct by
 		// default.
 		if sawEvent {
-			partial, _ := buildResponse(&msg, time.Since(start))
-			return partial, fmt.Errorf("%w: stream ended mid-reply after %d bytes of text: %w",
-				ErrTruncated, len(partial.Text), err)
+			p := partial()
+			return p, fmt.Errorf("%w: stream ended mid-reply after %d bytes of text: %w",
+				ErrTruncated, len(p.Text), err)
 		}
-		return Response{}, a.mapError(err)
+		return Response{Usage: Usage{Attempts: st.dispatched()}}, a.mapError(err)
 	}
-	return buildResponse(&msg, time.Since(start))
+	resp, err := buildResponse(&msg, time.Since(start))
+	resp.Usage.Attempts = st.dispatched()
+	return resp, err
+}
+
+// cloneCalls copies calls so the returned Response aliases nothing this call
+// still holds.
+func cloneCalls(cs []ToolCall) []ToolCall {
+	if len(cs) == 0 {
+		return nil
+	}
+	out := make([]ToolCall, len(cs))
+	for i, c := range cs {
+		out[i] = c
+		out[i].Input = append(json.RawMessage(nil), c.Input...)
+	}
+	return out
 }
 
 // buildResponse converts an SDK message into our provider-independent shape.
@@ -271,6 +315,8 @@ func buildResponse(msg *anthropic.Message, took time.Duration) (Response, error)
 	}
 	var text strings.Builder
 	for _, b := range msg.Content {
+		// Raw is copied from a string, so nothing here aliases an SDK buffer: a
+		// receiver may keep any of it.
 		blk := Block{Type: b.Type, Signature: b.Signature, Raw: json.RawMessage(b.RawJSON())}
 		switch b.Type {
 		case "text":
@@ -278,6 +324,15 @@ func buildResponse(msg *anthropic.Message, took time.Duration) (Response, error)
 			text.WriteString(b.Text)
 		case "thinking":
 			blk.Text = b.Thinking
+		case "tool_use":
+			in := append(json.RawMessage(nil), b.Input...)
+			if len(in) == 0 {
+				in = json.RawMessage("{}")
+			}
+			call := ToolCall{ID: b.ID, Name: b.Name, Input: in}
+			blk.ToolCall = &call
+			out.ToolCalls = append(out.ToolCalls, ToolCall{ID: b.ID, Name: b.Name,
+				Input: append(json.RawMessage(nil), in...)})
 		}
 		out.Blocks = append(out.Blocks, blk)
 	}

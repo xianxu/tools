@@ -43,15 +43,15 @@ func (c *activityClient) Complete(ctx context.Context, r llm.Request) (llm.Respo
 	return c.client.Complete(ctx, r)
 }
 
-func (c *activityClient) Stream(ctx context.Context, r llm.Request, onDelta func(string)) (llm.Response, error) {
+func (c *activityClient) Stream(ctx context.Context, r llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
 	stop := startActivity(ctx, c.host)
 	defer stop()
-	return c.client.Stream(ctx, r, func(s string) {
-		if s != "" {
+	return c.client.Stream(ctx, r, func(d llm.Delta) {
+		if d.Kind == llm.DeltaText && d.Text != "" {
 			stop()
 		}
-		if onDelta != nil {
-			onDelta(s)
+		if onEvent != nil {
+			onEvent(d)
 		}
 	})
 }

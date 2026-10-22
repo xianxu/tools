@@ -59,7 +59,7 @@ func TestLanguageAnnotationsAgainstLiveService(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
-	_, err = client.Stream(ctx, req, decoder.Write)
+	_, err = client.Stream(ctx, req, llm.TextOnly(decoder.Write))
 	decoder.Finish()
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +128,7 @@ func TestLongPassageStreamsAgainstLiveService(t *testing.T) {
 	decoder := newLanguageDecoder(spanAccumulator(&got))
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
-	if _, err = client.Stream(ctx, req, decoder.Write); err != nil {
+	if _, err = client.Stream(ctx, req, llm.TextOnly(decoder.Write)); err != nil {
 		t.Fatal(err)
 	}
 	decoder.Finish()

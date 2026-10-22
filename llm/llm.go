@@ -10,6 +10,18 @@
 // healing mechanism here would be a parallel track where one already works. Our
 // contribution is an error that says WHICH thing is wrong, so the right
 // machinery acts on it.
+//
+// # Stability
+//
+// The import path is public (tools#85). v0.x may change incompatibly at a minor
+// version bump, so a consumer pins an exact version.
+//
+// # Concurrency
+//
+// A Client from New, the auto-discovering one included, is safe for concurrent
+// use by any number of goroutines. Calls share no per-call state: each has its
+// own stall timer, accumulator and callback, so one call's events never reach
+// another's callback, and cancelling one call's context affects that call alone.
 package llm
 
 import (
@@ -26,10 +38,11 @@ import (
 type Client interface {
 	// Complete returns the whole answer at once.
 	Complete(ctx context.Context, r Request) (Response, error)
-	// Stream delivers text as it arrives and still returns the final Response.
-	// onDelta receives ANSWER text only — thinking deltas are accumulated into
-	// Blocks but never forwarded — and may be nil.
-	Stream(ctx context.Context, r Request, onDelta func(string)) (Response, error)
+	// Stream delivers events as they arrive and still returns the final
+	// Response. onEvent runs synchronously on the calling goroutine, is never
+	// called after Stream returns, and may be nil. Thinking is accumulated into
+	// Blocks but never forwarded. TextOnly adapts a plain text callback.
+	Stream(ctx context.Context, r Request, onEvent func(Delta)) (Response, error)
 }
 
 // Request is one call, described independently of any provider's wire format.
@@ -43,7 +56,19 @@ type Request struct {
 	MaxTokens int64
 
 	System string
-	Prompt string
+
+	// Messages is the conversation so far, oldest first. Prompt, when non-empty,
+	// is appended as a final user text turn, so a single-turn caller sets Prompt
+	// alone. A request with neither is refused with ErrRequest before sending.
+	Messages []Message
+	Prompt   string
+
+	// Tools the model may call. ToolChoice is "" (the provider default, auto),
+	// "auto", "any", "none", or one declared tool's Name to force it. Because
+	// keywords and names share the string, a Tool named auto, any or none is
+	// refused with ErrRequest, as is a ToolChoice naming no declared tool.
+	Tools      []Tool
+	ToolChoice string
 
 	// Schema, when non-nil, constrains output. Callers must STILL handle
 	// ErrMalformed: an intermediary may drop the field.
@@ -72,7 +97,57 @@ type Response struct {
 	// interpreted: a multi-turn follow-up on the same model must echo thinking
 	// blocks back byte for byte or the continuation is rejected.
 	Blocks []Block
-	Usage  Usage
+	// ToolCalls is every tool_use block, in arrival order. Stop "tool_use" is a
+	// success: run the tools, append Message() and a user turn of ToolResult
+	// blocks, and call again.
+	ToolCalls []ToolCall
+	Usage     Usage
+}
+
+// Message returns the assistant turn to append to the next Request.Messages.
+// Every block keeps its Raw, so thinking signatures survive the round trip.
+func (r Response) Message() Message {
+	return Message{Role: RoleAssistant, Content: append([]Block(nil), r.Blocks...)}
+}
+
+// Role is who said a Message.
+type Role string
+
+const (
+	RoleUser      Role = "user"
+	RoleAssistant Role = "assistant"
+)
+
+// Message is one turn of a conversation. Content reuses Block, so an assistant
+// turn goes back exactly as it arrived.
+type Message struct {
+	Role    Role
+	Content []Block
+}
+
+// Tool is one function the model may call.
+type Tool struct {
+	Name        string
+	Description string
+	// InputSchema is the JSON Schema of the call's input; nil means
+	// {"type":"object"}.
+	InputSchema map[string]any
+}
+
+// ToolCall is one call the model made.
+type ToolCall struct {
+	ID   string
+	Name string
+	// Input is the complete JSON object the model sent; "{}" when it sent none.
+	Input json.RawMessage
+}
+
+// Text is an outgoing text block.
+func Text(s string) Block { return Block{Type: "text", Text: s} }
+
+// ToolResult is an outgoing tool_result block answering the call callID.
+func ToolResult(callID, content string, isError bool) Block {
+	return Block{Type: "tool_result", CallID: callID, Text: content, IsError: isError}
 }
 
 // Block is one content block, preserved as received.
@@ -80,10 +155,18 @@ type Response struct {
 // Raw is load-bearing: a text block carries its content under "text" and a
 // thinking block under "thinking", so one Text field cannot round-trip both.
 // Text is the decoded convenience; Raw is what gets echoed back.
+//
+// Raw is opaque provider data. A consumer carries it from a Response back to the
+// next Request and never authors it: an outgoing block with Raw is sent as
+// exactly those bytes, and one without is rendered from its typed fields (build
+// those with Text and ToolResult).
 type Block struct {
-	Type      string          // "text" | "thinking" | anything a future model adds
-	Text      string          // "text"/"thinking" content, whichever this block uses
+	Type      string          // "text" | "thinking" | "tool_use" | "tool_result" | future
+	Text      string          // text/thinking content, or a tool_result's content
 	Signature string          // thinking blocks carry one; it must round-trip unchanged
+	ToolCall  *ToolCall       // set when Type == "tool_use"
+	CallID    string          // set when Type == "tool_result"
+	IsError   bool            // tool_result only
 	Raw       json.RawMessage // exactly as received — what gets echoed back
 }
 
@@ -109,6 +192,18 @@ type Usage struct {
 	// kept: one field would report zero half the time.
 	CacheCreationTokens int64
 	CacheReadTokens     int64
+	// Attempts counts the HTTP attempts actually dispatched (those
+	// Config.BeforeAttempt admitted and sent), retries included. It is set on
+	// every return path, errors too: a call whose first attempt the hook rejected
+	// reports 0.
+	Attempts int
+}
+
+// Attempt describes one physical HTTP attempt, for Config.BeforeAttempt.
+type Attempt struct {
+	Task   string // Request.Task
+	Model  string // the effective model
+	Number int    // 0 for the first attempt, 1.. for retries
 }
 
 // PreambleTokens is what arrived that we did not send, cold or warm.
