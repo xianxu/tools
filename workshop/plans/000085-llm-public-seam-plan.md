@@ -198,6 +198,24 @@ Guarantees, each one a `Suite` obligation:
 An `End` whose accumulated input does not parse as a JSON object fails the call with `ErrMalformed`. The
 partial `Response` is still returned, as it is for truncation.
 
+### Ownership of delivered values (echo:1 review)
+
+Every `Delta`, and everything it points to (`Call`, `Call.Input`), is freshly allocated for that event and never
+touched by the transport again. The receiver owns it and may keep it or enqueue it to another goroutine without
+copying. The same holds for a returned `Response` (`Blocks[i].Raw`, `ToolCalls[i].Input`): nothing aliases an
+SDK buffer. Tested: retain every `Delta` from a stream, finish the stream, and compare the retained values to a
+deep copy taken inside the callback.
+
+### Concurrency (echo TL review)
+
+The package doc states it: a `Client` from `New`, including the auto-discovering one, and an `llmtest.Fake` are
+safe for concurrent use by any number of goroutines. Calls share no per-call state. Each call has its own stall
+timer, accumulator and callback, so one call's events never reach another's callback, and cancelling one
+call's `ctx` affects only that call. The auto client's single discovery flight is already shared under a mutex
+(`auto.go`). The `Suite` obligation `ConcurrentStreams`: N = 8 streams on one client, each scripted with a
+distinct answer and tool call; every callback sees only its own events; cancelling one mid-stream yields
+`ErrCanceled` for it alone while the others complete. It runs under `-race`.
+
 ### Cancellation
 
 The caller cancels by cancelling `ctx`. That's the only control, and it covers both `Complete` and `Stream`.
@@ -227,7 +245,9 @@ The caller cancels by cancelling `ctx`. That's the only control, and it covers b
   `option.WithMiddleware`, which the SDK calls inside its retry loop, so it runs once per **physical** HTTP
   attempt, retries included. It may block, which is how a throttle works; the wait is bounded by `ctx`, the
   same deadline that covers backoff. A non-nil return aborts the call without sending, maps to
-  `ErrUnavailable` wrapping the hook's error, and is not retried. Model discovery (`GET /v1/models`) does not
+  `ErrUnavailable` wrapping the hook's error (`errors.Is(err, yourAdmissionErr)` holds, so the gateway can tell
+  its own rejection from an outage), and is not retried. Rejecting immediately, without blocking, is the
+  expected use for a gateway that sheds load. Model discovery (`GET /v1/models`) does not
   pass through it.
 
   ```go
@@ -239,8 +259,11 @@ The caller cancels by cancelling `ctx`. That's the only control, and it covers b
   ```
 - **What this means for echo's gateway.** It rate-limits **logical** calls for fairness and admission between
   actors. It counts or throttles **physical** attempts against provider limits through `BeforeAttempt`. A new
-  `Response.Usage.Attempts int` field reports how many attempts the call took, so the gateway can reconcile
-  the two counts without a hook.
+  `Response.Usage.Attempts int` field counts **dispatched** HTTP attempts only, the ones the hook admitted and
+  that went on the wire. Hook invocations that returned an error don't count, so a rejection on the first
+  attempt reconciles to `Attempts == 0`, and a rejection of retry 2 after one dispatch gives `1`. It is set on
+  **every** return path, errors included: a failed call returns a `Response` whose only populated field may be
+  `Usage.Attempts`.
 
 ### llmtest controls (what echo's tests drive)
 
@@ -396,8 +419,12 @@ targets naming `./internal/llm/...`; `atlas/llm.md`, `atlas/index.md`; `AGENTS.l
       package `Timeout`/`StallAfter` still `ErrUnavailable`/`ErrTruncated`; script 503,503,200 →
       `BeforeAttempt` saw Numbers 0,1,2, `f.Requests()` has 3, `Usage.Attempts == 3`; hook error → no
       request recorded, `ErrUnavailable`, not retried; blocking hook + ctx cancel → `ErrCanceled`.
+- [ ] Tests: `TestDeltasOwnedByReceiver` (retain every Delta, finish the stream, deep-compare to copies taken
+      in the callback).
+- [ ] Tests: hook rejects attempt 0 → `Attempts == 0`, zero recorded requests, `errors.Is(err, hookErr)`;
+      503 then hook rejects retry → `Attempts == 1`; `Attempts` set on the `ErrUnavailable` path.
 - [ ] Implement: caller-ctx check before `mapError`/salvage; `attemptMiddleware`; Attempts counted in the
-      middleware and copied into Usage.
+      middleware after admission and copied into Usage on every return.
 - [ ] Audit define's sites that match `ErrUnavailable` after a user cancel (ask/practice-help Esc paths);
       each either treats `ErrCanceled` as silent or is shown not to cancel. Tests cover each.
 - [ ] Commit `#85 M2: ErrCanceled and per-attempt admission hook`.
@@ -409,7 +436,9 @@ targets naming `./internal/llm/...`; `atlas/llm.md`, `atlas/index.md`; `AGENTS.l
 - [ ] Failing fake tests: `Reply.ToolCalls` JSON path and stream path (input chunked in ≥2
       `input_json_delta` frames, Text first), `stop_reason: tool_use`; matching on a tool_result turn;
       `Recorded.Messages/Tools/ToolChoice`; `misapplied` matrix covers ToolCalls with Stall/JunkFrame.
-- [ ] Implement; extend `Suite` with the obligations in the API section; run it against the fake.
+- [ ] Implement; extend `Suite` with the obligations in the API section, including `ConcurrentStreams`
+      (8 streams, one cancelled alone); run it against the fake under `go test -race`.
+- [ ] Package doc (`llm/llm.go`, `llm/llmtest/fake.go`) states concurrent-use safety.
 - [ ] Commit; `sdlc milestone-close --milestone M2`.
 
 ### Task 6 (M3): captures, conformance, docs, tag
@@ -455,3 +484,10 @@ re-scanned (`json.Valid` invocations == 1 per call).
   above: (1) a Tool named `auto`/`any`/`none`, or a ToolChoice naming no declared tool, is refused with
   `ErrRequest` and tested; (2) the package doc states that v0.x may break at minor bumps, and the tag waits
   for landing on main.
+- 2026-10-21: echo:1 consumer review: `Usage.Attempts` is defined as dispatched attempts and set on every
+  return path (a hook rejection gives 0); ownership of delivered `Delta`/`Response` values is documented and
+  tested; a hook rejection is identifiable with `errors.Is`. echo:1 also asked for cache controls. The echo TL
+  scoped them out of this issue, so they are filed as a separate tools follow-up for a later v0.x.
+- 2026-10-21: echo TL (ops-echo:0) approved, with one addition folded in: concurrent-use safety stated in the
+  package doc, and a `ConcurrentStreams` Suite obligation (review:
+  ops-echo `teams/echo/projects/echo-control-board/reviews/tools-85-plan.md`).
