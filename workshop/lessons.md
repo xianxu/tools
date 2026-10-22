@@ -113,6 +113,14 @@ leave incident transcripts and one-off details in their owning issue or plan.
 - A ticked plan step quotes only artifacts that exist at the head. Don't write
   the commit subject you intend to use (tools#85).
 
+- A capture is not covered until a test decodes it through the production
+  path (Stream, buildResponse). A shape check on the raw bytes proves the
+  capture, not the code that reads it (tools#85).
+- A milestone box in the issue and its line in the plan are one fact. Tick both
+  in the same commit, and only when every deliverable named on the line exists.
+  Work that happens after the boundary (land, tag) doesn't go on the line
+  (tools#85).
+
 ## Working rule
 
 When a result surprises you, inspect the instrument before redesigning the

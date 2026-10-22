@@ -18,7 +18,7 @@ import (
 // The capture is read from disk rather than through llmtest, which imports this
 // package (a cycle). `go test` runs in the package directory, so the relative
 // path resolves — a fact this repo has paid for three times over.
-func loadCapture(t *testing.T, name string) *anthropic.Message {
+func loadCapture(t testing.TB, name string) *anthropic.Message {
 	t.Helper()
 	raw, err := os.ReadFile("llmtest/testdata/" + name)
 	if err != nil {

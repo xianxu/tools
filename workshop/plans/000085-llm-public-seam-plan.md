@@ -373,9 +373,10 @@ cassette misses. A test pins one existing golden's hash across the change.
 - [x] M2 — Widen the seam: Messages, Tools, ToolCalls, Delta stream, ErrCanceled, BeforeAttempt,
       Usage.Attempts; the fake and Suite grow with each; define migrated to `TextOnly`; goldens unchanged for
       single-turn requests.
-- [ ] M3 — Prove against reality: record real tool-use and multi-turn captures/cassettes via
-      `scripts/llm-probe.sh`; live conformance for tool streaming and cancel; atlas `llm.md` rewritten;
-      land; tag `v0.1.0`; `go get github.com/xianxu/tools@v0.1.0` verified from a scratch module.
+- [x] M3 — Prove against reality: record real tool-use and multi-turn captures/cassettes via
+      `scripts/llm-probe.sh`; live conformance for tool streaming and cancel; atlas `llm.md` rewritten.
+      (Landing, the `v0.1.0` tag and the scratch-module `go get` follow the close; they are the last
+      Task 6 item, not part of this boundary.)
 
 ### Task 1 (M1): move packages
 
@@ -452,7 +453,7 @@ quoted name as a claim that it does).
 
 ### Task 6 (M3): captures, conformance, docs, tag
 
-- [x] `scripts/llm-probe.sh record` gains a tool-use capture (one tool, forced) and a two-turn tool-result
+- [x] `scripts/llm-probe.sh record` gains a tool-use capture (one tool, `auto` choice, see Revisions) and a two-turn tool-result
       continuation (thinking echoed); README table rows; captures replayed in `captures_test.go`.
 - [x] Conformance (`-tags conformance`): `Suite` already runs live; add a live tool-streaming check and a live
       mid-stream cancel check; drift test asserts `input_json_delta` still arrives in >1 frame. Run against
@@ -516,3 +517,9 @@ re-scanned (`json.Valid` invocations == 1 per call).
   `TestMultiTurnRoundTrip`. A Raw block is compacted by encoding/json (keys, order and values are unchanged;
   whitespace goes). `checkRequest` now refuses an empty request, and two auto tests that sent `Request{}`
   got a prompt.
+- 2026-10-21 (M3): the tool-use probe and the Suite echo obligations use ToolChoice `auto` with an
+  instruction in the prompt, not a forced choice. Upstream refuses a forced `tool_choice` (`any`/`tool`)
+  alongside extended thinking, and thinking is always on for this proxy. Captures are replayed through
+  production code (`TestToolStreamCaptureReplaysThroughStream`,
+  `TestToolRoundCapturesReplayThroughBuildResponse`), and the delta fuzz corpus gains the recorded input.
+  Land, tag and `go get` moved out of the M3 milestone line: they happen after the close boundary.

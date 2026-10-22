@@ -42,14 +42,14 @@ caller cancellation. Retries stay in the transport, and `Config.BeforeAttempt` r
 
 ## Done when
 
-- [ ] `internal/llm` is a public package (e.g. `github.com/xianxu/tools/llm`)
+- [x] `internal/llm` is a public package (e.g. `github.com/xianxu/tools/llm`)
       and `define` builds, tests and runs on the new import path.
-- [ ] The seam carries multi-turn message history, tool definitions, streamed
+- [x] The seam carries multi-turn message history, tool definitions, streamed
       tool-call deltas alongside text deltas, and cancel, provider-neutral.
-- [ ] The httptest wire fake, cassettes, goldens and live conformance suite
+- [x] The httptest wire fake, cassettes, goldens and live conformance suite
       grow with each new capability, so the fake still behaves like the real
       provider.
-- [ ] The public API section was reviewed by ops:0 (tools owner) and the plan
+- [x] The public API section was reviewed by ops:0 (tools owner) and the plan
       sent to ops-echo:0 before change-code.
 - [ ] `v0.1.0` is tagged on the landed main commit and resolves via
       `go get github.com/xianxu/tools@v0.1.0`.
@@ -58,7 +58,8 @@ caller cancellation. Retries stay in the transport, and `Config.BeforeAttempt` r
 
 - [x] M1 — Publish `llm`, `llm/llmtest`, `conformance`; imports, rule text, atlas; no behavior change.
 - [x] M2 — Widen the seam (Messages, Tools, ToolCalls, Delta, ErrCanceled, BeforeAttempt, Attempts); fake + Suite grow; define on `TextOnly`.
-- [x] M3 — Real tool-use/multi-turn captures, live conformance, atlas rewrite, land, tag `v0.1.0`.
+- [x] M3 — Real tool-use/multi-turn captures, live conformance, atlas rewrite.
+After landing (not a boundary of its own): tag `v0.1.0` on the landed main commit; `go get` verified from a scratch module.
 
 ## Estimate
 
@@ -132,3 +133,4 @@ of the v2 mid-range.
   Blocked on the live proxy (127.0.0.1:8317 refuses connections). The TL says the operator decides on starting
   it; until then no recording, no live run, and no Go shape rows for the new captures in `captures_test.go`.
 - 2026-10-21: M3 live. The proxy came up (TL). `scripts/llm-probe.sh record` passed verification on attempt 3; attempts 1 and 2 had no thinking block in message-tool-use.json. Committed only the three new captures (stream-tool-use.sse, message-tool-use.json, message-tool-result.json) with shape rows in `TestCapturesExhibitTheirShapes` and README rows. The re-record also rewrote the older captures, and the proxy's cached preamble now measures 0 to 589 tokens instead of ~1,900, which broke the PreambleTokens tests. Those three files were restored and the drift filed as tools#87 (TL agreed). Live run, `CONFORMANCE_STRICT=1 go test -tags conformance ./llm/... ./conformance/...`: `TestConformanceAgainstTheLiveService` (all 10 Suite obligations, including tool calls, multi-turn, cancel and concurrent streams), `TestBeforeAttemptAgainstTheLiveService`, `TestConformanceAutoSelection` and `TestTypedTaskAgainstTheLiveService` pass. `TestCaptureDriftAgainstTheLiveService` passes every subtest except the preamble one (tools#87), including the new multi-frame tool-input row. Certified provider: Anthropic through the parley proxy (the only provider auto-selection finds). Main's red `TestPlanCitesTestsThatExist` row (#82 cited a bare `TestPTY*` name) was fixed on main via `sdlc issue publish --issue 82`, with TL approval.
+- 2026-10-21: close review round 4 (FIX-THEN-SHIP). BR-11: the tool captures were only text-searched, so I added `TestToolStreamCaptureReplaysThroughStream` and `TestToolRoundCapturesReplayThroughBuildResponse` and seeded `FuzzDeltaAccumulator` with the recorded input. Checkbox divergence: land and tag were moved off the M3 line in the issue and the plan, and both boxes ticked together; Done-when boxes 1 to 4 ticked with their evidence in this Log (box 5 waits for the tag). Missing revision: the plan Revisions entry for `auto` ToolChoice was added.

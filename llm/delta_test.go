@@ -49,6 +49,12 @@ func FuzzDeltaAccumulator(f *testing.F) {
 	f.Add(`{"city":"Oslo"}`, `{"q":"résumé — ok","n":[1,2,3]}`, "Let me check.", []byte{3, 1, 4, 1, 5, 9, 2, 6})
 	f.Add(`{}`, `{"a":{"b":{"c":"d"}}}`, "", []byte{0})
 	f.Add(`{"x":""}`, `{"emoji":"🌧"}`, "two calls", []byte{255, 254, 7})
+	// A recorded input, so the corpus holds at least one real model-made shape.
+	if real, err := buildResponse(loadCapture(f, "message-tool-use.json"), 0); err == nil && len(real.ToolCalls) > 0 {
+		f.Add(string(real.ToolCalls[0].Input), `{}`, "", []byte{2, 5, 3})
+	} else {
+		f.Fatalf("message-tool-use.json yields no tool call: %v", err)
+	}
 	f.Fuzz(func(t *testing.T, in1, in2, text string, plan []byte) {
 		if !utf8.ValidString(text) || !utf8.ValidString(in1) || !utf8.ValidString(in2) {
 			t.Skip() // conformance:inapplicable — wire text is a JSON string, always valid UTF-8
