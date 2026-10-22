@@ -1,6 +1,9 @@
 package llm_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
 	"testing"
 
 	"github.com/xianxu/tools/llm"
@@ -37,4 +40,30 @@ func TestSchemaGoldenIsStable(t *testing.T) {
 		Prompt: "Would `obsequious` also correctly fill the blank?",
 		Schema: schema,
 	})
+}
+
+// A single-turn request hashes exactly as it did before Messages and Tools
+// existed (tools#85). The hash is tied to the COMMITTED golden's bytes, not to a
+// fresh render, so a renderer change that moved every cassette key would fail
+// here even if someone re-recorded the golden alongside it.
+func TestSingleTurnHashUnchanged(t *testing.T) {
+	schema, err := llm.SchemaFor[vetoVerdict]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden, err := os.ReadFile("testdata/golden/schema-veto-verdict.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(golden)
+	want := hex.EncodeToString(sum[:])[:12]
+	got := llm.RequestHash(llm.Request{
+		Task: "veto-distractor", Model: "claude-opus-5", Effort: "high",
+		System: "You judge whether a candidate distractor would also fit a cloze blank.",
+		Prompt: "Would `obsequious` also correctly fill the blank?",
+		Schema: schema,
+	})
+	if got != want {
+		t.Errorf("RequestHash = %s, want %s (the committed golden's): every cassette key moved", got, want)
+	}
 }

@@ -25,6 +25,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/xianxu/tools/llm"
 )
 
 // Captures are embedded rather than read from disk so consumers outside this
@@ -82,6 +84,50 @@ func (r Recorded) Schema() map[string]any {
 // Streaming reports whether the request asked for SSE.
 func (r Recorded) Streaming() bool { b, _ := r.Body["stream"].(bool); return b }
 
+// RecordedMessage is one turn as it went on the wire.
+type RecordedMessage struct {
+	Role    string
+	Content []map[string]any // each block's JSON, decoded
+}
+
+// Messages returns every turn the request carried, in order.
+func (r Recorded) Messages() []RecordedMessage {
+	msgs, _ := r.Body["messages"].([]any)
+	out := make([]RecordedMessage, 0, len(msgs))
+	for _, v := range msgs {
+		m, _ := v.(map[string]any)
+		rm := RecordedMessage{}
+		rm.Role, _ = m["role"].(string)
+		switch c := m["content"].(type) {
+		case string:
+			rm.Content = []map[string]any{{"type": "text", "text": c}}
+		case []any:
+			for _, b := range c {
+				if bm, ok := b.(map[string]any); ok {
+					rm.Content = append(rm.Content, bm)
+				}
+			}
+		}
+		out = append(out, rm)
+	}
+	return out
+}
+
+// Tools returns the tool definitions the request declared, or nil.
+func (r Recorded) Tools() []map[string]any {
+	ts, _ := r.Body["tools"].([]any)
+	var out []map[string]any
+	for _, v := range ts {
+		if m, ok := v.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// ToolChoice returns the request's tool_choice, or nil when it sent none.
+func (r Recorded) ToolChoice() map[string]any { m, _ := r.Body["tool_choice"].(map[string]any); return m }
+
 func joinBlocks(v any) string {
 	switch t := v.(type) {
 	case string:
@@ -92,6 +138,11 @@ func joinBlocks(v any) string {
 			m, _ := e.(map[string]any)
 			if s, ok := m["text"].(string); ok {
 				b.WriteString(s)
+			}
+			// A tool_result turn is matched on its content, so a test can script
+			// the reply to "the weather came back rainy".
+			if m["type"] == "tool_result" {
+				b.WriteString(joinBlocks(m["content"]))
 			}
 		}
 		return b.String()
@@ -143,6 +194,15 @@ type Reply struct {
 	// scripted marks a reply that a test asked for, as opposed to the fake's own
 	// default. Only a scripted-but-unstreamable Reply is a caller mistake.
 	scripted bool
+	// ToolCalls answers with tool_use blocks (stop_reason "tool_use"), after Text
+	// when Text is set. On a stream each call's input is chunked across several
+	// input_json_delta frames. Invented rather than captured, legitimately: block
+	// shape and framing are protocol, not judgment. Real tool-use content comes
+	// from committed captures. Streams honour Started/Release, AfterText/
+	// FinishRelease (after the first content frame, text or tool input) and Stall
+	// (silence after the first input fragment of the LAST call, so the earlier
+	// calls have completed).
+	ToolCalls []llm.ToolCall
 	// JunkFrame inserts an undecodable data line AFTER the first text delta, so
 	// the salvage path is genuinely exercised. Injecting it earlier would only
 	// prove that a stream with no content yet fails — which is the uninteresting
@@ -204,6 +264,23 @@ func misapplied(r Reply, streaming bool) string {
 		name string
 	}
 	var offending []string
+	if streaming && len(r.ToolCalls) > 0 {
+		// A tool-call stream is synthesized from the Reply, so it carries Text but
+		// cannot also replay a capture or honour the capture-only choreography.
+		for _, x := range []rule{
+			{r.Capture != "", "Capture"}, {r.Stop != "", "Stop"}, {r.SplitText > 1, "SplitText"},
+			{r.JunkFrame, "JunkFrame"}, {r.StallEarly, "StallEarly"},
+			{r.TextStarted != nil || r.TextRelease != nil, "TextStarted/TextRelease"},
+		} {
+			if x.set {
+				offending = append(offending, x.name)
+			}
+		}
+		if len(offending) > 0 {
+			return "Reply{ToolCalls, " + strings.Join(offending, ", ") + "} cannot be served on a STREAMING request"
+		}
+		return ""
+	}
 	if streaming {
 		// A streamed response replays recorded frames; an invented body has
 		// nowhere to go, and a .json capture would be silently swapped for the
@@ -233,6 +310,9 @@ func misapplied(r Reply, streaming bool) string {
 	}
 	if r.Capture != "" && strings.HasSuffix(r.Capture, ".sse") {
 		offending = append(offending, "Capture (.sse on a non-stream)")
+	}
+	if r.Capture != "" && len(r.ToolCalls) > 0 {
+		offending = append(offending, "Capture with ToolCalls")
 	}
 	if len(offending) > 0 {
 		return "Reply{" + strings.Join(offending, ", ") + "} is frame choreography and only applies to a " +
@@ -432,6 +512,9 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 	stop := reply.Stop
 	if stop == "" {
 		stop = "end_turn"
+		if len(reply.ToolCalls) > 0 {
+			stop = "tool_use"
+		}
 	}
 	// A scripted reply always carries a thinking block, because the live service
 	// does on any non-trivial prompt. A fake whose default is the easy case is how
@@ -445,8 +528,11 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 		for _, part := range splitInto(reply.Text, reply.SplitText) {
 			blocks = append(blocks, map[string]any{"type": "text", "text": part})
 		}
-	} else {
+	} else if reply.Text != "" || len(reply.ToolCalls) == 0 {
 		blocks = append(blocks, map[string]any{"type": "text", "text": reply.Text})
+	}
+	for _, c := range reply.ToolCalls {
+		blocks = append(blocks, map[string]any{"type": "tool_use", "id": c.ID, "name": c.Name, "input": toolInput(c)})
 	}
 	body := map[string]any{
 		"type": "message", "role": "assistant", "id": "msg_fake", "model": "claude-opus-5",
@@ -480,6 +566,10 @@ func (f *Fake) serveStream(ctx context.Context, w http.ResponseWriter, reply Rep
 	if bad := misapplied(reply, true /*streaming*/); bad != "" {
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, harnessBody(bad))
+		return
+	}
+	if len(reply.ToolCalls) > 0 {
+		f.serveToolStream(ctx, w, reply)
 		return
 	}
 	name := reply.Capture
@@ -566,3 +656,89 @@ func (f *Fake) waitReply(ctx context.Context, started chan<- struct{}, release <
 	}
 	return ctx.Err() == nil
 }
+
+// toolInput is a call's input as JSON, "{}" when unset.
+func toolInput(c llm.ToolCall) json.RawMessage {
+	if len(c.Input) == 0 {
+		return json.RawMessage("{}")
+	}
+	return c.Input
+}
+
+// toolFrames synthesizes a tool-use stream in the protocol's own frame shapes
+// (message_start, content blocks in index order, message_delta, message_stop).
+// Each input is cut into three rune-aligned fragments, so a client that parsed
+// a fragment as if it were the whole input fails here.
+func toolFrames(reply Reply) []string {
+	frame := func(event string, v any) string {
+		b, _ := json.Marshal(v)
+		return "event: " + event + "\ndata: " + string(b) + "\n\n"
+	}
+	out := []string{frame("message_start", map[string]any{"type": "message_start", "message": map[string]any{
+		"id": "msg_fake_tools", "type": "message", "role": "assistant", "model": "claude-opus-5",
+		"content": []any{}, "stop_reason": nil,
+		"usage": map[string]any{"input_tokens": 10, "output_tokens": 0},
+	}})}
+	idx := 0
+	if reply.Text != "" {
+		out = append(out,
+			frame("content_block_start", map[string]any{"type": "content_block_start", "index": idx,
+				"content_block": map[string]any{"type": "text", "text": ""}}),
+			frame("content_block_delta", map[string]any{"type": "content_block_delta", "index": idx,
+				"delta": map[string]any{"type": "text_delta", "text": reply.Text}}),
+			frame("content_block_stop", map[string]any{"type": "content_block_stop", "index": idx}))
+		idx++
+	}
+	for _, c := range reply.ToolCalls {
+		out = append(out, frame("content_block_start", map[string]any{"type": "content_block_start", "index": idx,
+			"content_block": map[string]any{"type": "tool_use", "id": c.ID, "name": c.Name, "input": map[string]any{}}}))
+		for _, part := range splitInto(string(toolInput(c)), 3) {
+			out = append(out, frame("content_block_delta", map[string]any{"type": "content_block_delta", "index": idx,
+				"delta": map[string]any{"type": "input_json_delta", "partial_json": part}}))
+		}
+		out = append(out, frame("content_block_stop", map[string]any{"type": "content_block_stop", "index": idx}))
+		idx++
+	}
+	return append(out,
+		frame("message_delta", map[string]any{"type": "message_delta",
+			"delta": map[string]any{"stop_reason": "tool_use", "stop_sequence": nil},
+			"usage": map[string]any{"output_tokens": 20}}),
+		frame("message_stop", map[string]any{"type": "message_stop"}))
+}
+
+func (f *Fake) serveToolStream(ctx context.Context, w http.ResponseWriter, reply Reply) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	flusher, _ := w.(http.Flusher)
+	first := true
+	// Stall goes silent inside the LAST call, after its first fragment, so every
+	// earlier call has completed: the case a partial result exists for.
+	lastIndex := fmt.Sprint(len(reply.ToolCalls) - 1)
+	if reply.Text != "" {
+		lastIndex = fmt.Sprint(len(reply.ToolCalls))
+	}
+	for _, fr := range toolFrames(reply) {
+		fmt.Fprint(w, fr)
+		if flusher != nil {
+			flusher.Flush()
+		}
+		content := strings.Contains(fr, "text_delta") || strings.Contains(fr, "input_json_delta")
+		if content && first {
+			first = false
+			if !f.waitReply(ctx, reply.AfterText, reply.FinishRelease) {
+				return
+			}
+		}
+		if reply.Stall && strings.Contains(fr, "input_json_delta") && strings.Contains(fr, `"index":`+lastIndex) {
+			select {
+			case <-f.closing:
+			case <-ctx.Done():
+			case <-time.After(30 * time.Second):
+			}
+			return
+		}
+	}
+}
+
+// Attempts is the number of inference requests received, one per physical
+// attempt: a retried call counts each try.
+func (f *Fake) Attempts() int { return len(f.Requests()) }

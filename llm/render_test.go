@@ -120,3 +120,38 @@ func TestAdaptiveThinkingChangesHashWithoutSchema(t *testing.T) {
 		t.Fatal("thinking mode changed MaxTokens exclusion")
 	}
 }
+
+// Messages and tools render deterministically and move the hash; a request that
+// differs only in its history or its tools must never share a cassette.
+func TestRenderMultiTurn(t *testing.T) {
+	base := Request{Task: "t", Model: "m", Prompt: "now"}
+	multi := base
+	multi.Messages = []Message{{Role: RoleUser, Content: []Block{Text("before")}}}
+	tooled := base
+	tooled.Tools = []Tool{{Name: "weather", InputSchema: schemaFixture()}}
+	forced := tooled
+	forced.ToolChoice = "weather"
+
+	for _, r := range []Request{multi, tooled, forced} {
+		if renderRequest(r) != renderRequest(r) {
+			t.Fatalf("render is not deterministic:\n%s", renderRequest(r))
+		}
+	}
+	if !strings.Contains(renderRequest(multi), "--- messages ---\n[user] ") {
+		t.Errorf("messages section missing:\n%s", renderRequest(multi))
+	}
+	if !strings.Contains(renderRequest(forced), "--- tools ---\nweather: ") || !strings.Contains(renderRequest(forced), "choice: weather") {
+		t.Errorf("tools section missing:\n%s", renderRequest(forced))
+	}
+	seen := map[string]bool{}
+	for _, r := range []Request{base, multi, tooled, forced} {
+		h := RequestHash(r)
+		if seen[h] {
+			t.Errorf("two different requests share hash %s", h)
+		}
+		seen[h] = true
+	}
+	if strings.Contains(renderRequest(base), "messages") || strings.Contains(renderRequest(base), "tools") {
+		t.Errorf("a single-turn request rendered a new section:\n%s", renderRequest(base))
+	}
+}
