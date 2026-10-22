@@ -91,6 +91,7 @@ of the v2 mid-range.
 ## Log
 
 ### 2026-10-21
+- 2026-10-21: closed M1 — go build ./... and go vet ./... green; go test ./llm/... ./conformance/... pass; external scratch module imports llm+llmtest and passes llmtest.Suite against NewFake; define suite passes except main-origin TestPlanCitesTestsThatExist (#82 TestPTY) and three pty tests that fail only in the agent sandbox, which pass unsandboxed; review verdict: SHIP
 
 - Dispatched by ops-echo:0 (echo TL); echo:1 (echo#4) coordinates on the seam directly.
 - `start-plan` refused twice on a dirty resting branch. The weave catch-up's substrate step failed in the
