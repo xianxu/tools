@@ -4,13 +4,13 @@ package llm_test
 
 import (
 	"context"
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // The typed-task layer against the real model.
@@ -24,7 +24,7 @@ import (
 // that the schema constrained the answer, that a nested result decodes. Whether
 // the verdict is *correct* is #12's problem and is not testable here.
 //
-//	go test -tags conformance -run TypedTask ./internal/llm/
+//	go test -tags conformance -run TypedTask ./llm/
 func TestTypedTaskAgainstTheLiveService(t *testing.T) {
 	cfg, err := llm.Resolve(os.Getenv)
 	if err != nil {

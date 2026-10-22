@@ -5,14 +5,14 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // Drift detection for the committed captures (ARCH-MOCK).
@@ -25,7 +25,7 @@ import (
 // On drift the failure names the fix, because a conformance test that detects a
 // problem without saying what to do becomes the test everyone skips.
 //
-//	go test -tags conformance -run CaptureDrift ./internal/llm/
+//	go test -tags conformance -run CaptureDrift ./llm/
 func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 	cfg, err := llm.Resolve(os.Getenv)
 	if err != nil {

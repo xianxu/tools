@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // recordingClient drives a cassette in -update mode against the wire Fake, so

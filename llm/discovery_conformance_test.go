@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/xianxu/tools/internal/conformance"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/conformance"
+	"github.com/xianxu/tools/llm"
 )
 
 // Opt-in live contract check; an absent catalog is a visible skip, never evidence

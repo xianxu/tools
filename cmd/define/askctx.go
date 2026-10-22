@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // exchange is one question and the answer it got, within a session.
@@ -101,7 +101,7 @@ func recentDeck(deck []store.Word, n int) []string {
 // the golden be the request the transport hashes rather than a string this file
 // concatenates for the test's benefit.
 //
-// The prompt lives HERE and not in internal/llm: the transport owns the wire,
+// The prompt lives HERE and not in llm: the transport owns the wire,
 // the consumer owns the domain (AGENTS.local.md).
 func renderAskPrompt(c askContext) llm.Request {
 	var b strings.Builder

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // Suite is every obligation an llm.Client must meet, stated so that BOTH the

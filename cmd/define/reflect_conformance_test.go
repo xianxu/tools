@@ -19,14 +19,14 @@ package main
 
 import (
 	"bytes"
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // The deck is three unmistakable clusters, and one word per cluster is HELD OUT

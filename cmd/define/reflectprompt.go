@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // reflectTaskName names this request: the golden file, the cassette key, the
@@ -15,7 +15,7 @@ const reflectTaskName = "learner-model"
 // sent. Pure — evidence in, an llm.Request out — so the golden is what the
 // transport actually sends rather than a string assembled for the test.
 //
-// The prompt lives here and not in internal/llm: the transport owns the wire,
+// The prompt lives here and not in llm: the transport owns the wire,
 // the consumer owns the domain (AGENTS.local.md).
 func renderReflectPrompt(ev deckEvidence) llm.Request {
 	var b strings.Builder

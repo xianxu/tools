@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/play"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func selectionWire(a, b selectionPoint) string {
@@ -75,7 +75,7 @@ func TestSelectionEditorCopiesWhileModelIsBlocked(t *testing.T) {
 func TestSelectionPracticeDragDoesNotMarkBoard(t *testing.T) {
 	d, opt, st := playRig(t, "keel", "mesa")
 	q := play.NewBoard(boardCells("keel", "mesa"), 80, play.Palette{})
-	_, held := questionsFor(t,d,opt)
+	_, held := questionsFor(t, d, opt)
 	var tty syncBuf
 	live := newPinnedScreen(&tty, 24, 80)
 	board := newMemoryClipboard()

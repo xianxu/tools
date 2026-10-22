@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xianxu/tools/internal/conformance"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/conformance"
+	"github.com/xianxu/tools/llm"
 )
 
 func TestPassageAnswerKeepsTheHardWordAgainstTheLiveService(t *testing.T) {

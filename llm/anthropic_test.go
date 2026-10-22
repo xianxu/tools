@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func client(t *testing.T, base string, tweak ...func(*llm.Config)) llm.Client {

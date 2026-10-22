@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // SkipOrFail must actually USE message() — pinned by re-execing the test binary

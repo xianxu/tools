@@ -20,7 +20,13 @@ no shared runtime, no daemon, no cross-tool coupling beyond `internal/`.
   tool copying all five. `internal/llm` was created under this rule (operator
   decision, 2026-08-22, tools#11).
 
-  The carve-out does NOT extend to domain logic. `internal/llm` owns the
+  Such a transport may be **public** (outside `internal/`) once another
+  repository consumes it: `llm` (with `llm/llmtest` and the `conformance`
+  policy it imports) moved out of `internal/` for echo (tools owner ops:0
+  approved, 2026-10-21, tools#85). Public packages follow semver from their
+  tags; v0.x may break at a minor bump, so consumers pin.
+
+  The carve-out does NOT extend to domain logic. `llm` owns the
   transport and owns no prompts: a prompt is domain knowledge and lives with the
   consumer that needs it. If a would-be `internal/` package could be described
   without naming an external service, the first-consumer rule still applies.

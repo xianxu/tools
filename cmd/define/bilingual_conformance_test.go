@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // Run strictly after macOS upgrades and before dictionary-related releases:

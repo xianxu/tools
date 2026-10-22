@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 func TestCatalogState(t *testing.T) {

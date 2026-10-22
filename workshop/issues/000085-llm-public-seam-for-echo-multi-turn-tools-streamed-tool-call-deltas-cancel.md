@@ -56,7 +56,7 @@ caller cancellation. Retries stay in the transport, and `Config.BeforeAttempt` r
 
 ## Plan
 
-- [ ] M1 — Publish `llm`, `llm/llmtest`, `conformance`; imports, rule text, atlas; no behavior change.
+- [x] M1 — Publish `llm`, `llm/llmtest`, `conformance`; imports, rule text, atlas; no behavior change.
 - [ ] M2 — Widen the seam (Messages, Tools, ToolCalls, Delta, ErrCanceled, BeforeAttempt, Attempts); fake + Suite grow; define on `TextOnly`.
 - [ ] M3 — Real tool-use/multi-turn captures, live conformance, atlas rewrite, land, tag `v0.1.0`.
 
@@ -105,3 +105,11 @@ of the v2 mid-range.
 - ops:0 approved the public API (all 5 points) with markups: refuse a Tool named auto/any/none (and an unknown ToolChoice) with ErrRequest; package doc states the v0.x break rule; tag only after landing. Folded into the plan's Revisions.
 - echo:1 consumer review: added cache breakpoints (CacheSystem / Block / Tool, max 4), defined Usage.Attempts as dispatched attempts on every return path, documented and tested Delta/Response value ownership. Additive; sent to ops:0 for sight.
 - echo TL approved the plan, adding a concurrency guarantee (package doc + ConcurrentStreams Suite obligation). The TL scoped cache breakpoints out of #85; they're filed as a follow-up.
+- M1 implemented: `git mv` of internal/llm → llm and internal/conformance → conformance; imports and every
+  live path reference rewritten (scripts/llm-probe.sh, .gitattributes, atlas, README, the router path
+  in conformance/guard_test.go). `go build ./...` and `go vet ./...` are green; llm, llmtest and conformance
+  tests pass. An external scratch module (replace → this slot) imports llm + llmtest and passes `llmtest.Suite`
+  against `NewFake`, so no internal/ import leaks. Repo guards: the plan's tables now use one status per row,
+  and planned test names are unquoted until written. Remaining define failure `TestPlanCitesTestsThatExist` on
+  #82's `TestPTY` comes from main (#82 untouched here). Three pty tests fail only inside the agent sandbox
+  ("operation not permitted") and pass unsandboxed.

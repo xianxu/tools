@@ -3,7 +3,7 @@ package llmtest
 import (
 	"testing"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // substituteT runs fn against a throwaway *testing.T on its own goroutine and
@@ -32,10 +32,10 @@ import (
 //
 // It lives in package llmtest, not in a shared test-support package. The plan
 // first recorded the opposite — that a helper would force golden_test.go to
-// import internal/conformance — and that premise was simply wrong (BR-2):
+// import conformance — and that premise was simply wrong (BR-2):
 // golden_test.go and reachable_test.go are the same package, so an unexported
 // helper covers both with no new package and no coupling. Only
-// internal/conformance's own test is genuinely cross-package, and it keeps the
+// conformance's own test is genuinely cross-package, and it keeps the
 // idiom inline rather than exporting a test helper from a production package.
 func substituteT(t *testing.T, strict string, fn func(*testing.T)) *testing.T {
 	t.Helper()

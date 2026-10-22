@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // update rewrites goldens and re-records cassettes. One flag for both, because

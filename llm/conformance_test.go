@@ -3,12 +3,12 @@
 package llm_test
 
 import (
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"os"
 	"testing"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // Live conformance for the model seam (ARCH-MOCK).
@@ -22,7 +22,7 @@ import (
 // Cadence is on-demand with the rest of the conformance suite — it needs network
 // access and a configured key, neither of which belongs in merge-check.yml.
 //
-//	go test -tags conformance -run Conformance ./internal/llm/
+//	go test -tags conformance -run Conformance ./llm/
 //
 // The proxy is the parley-managed cli-proxy-api; its key lives in
 // ~/.local/share/nvim/parley/cliproxy/config.yaml. Export it as

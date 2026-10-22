@@ -4,7 +4,7 @@
 # nobody can reproduce is a fake grounded in nothing (ARCH-MOCK).
 #
 #   scripts/llm-probe.sh            # print a summary of all probes
-#   scripts/llm-probe.sh record     # rewrite internal/llm/llmtest/testdata/
+#   scripts/llm-probe.sh record     # rewrite llm/llmtest/testdata/
 #
 # The proxy is the PARLEY-MANAGED instance (it carries auto-healing the
 # standalone install does not — operator, 2026-08-22):
@@ -14,7 +14,7 @@ set -euo pipefail
 CONFIG="${CLIPROXY_CONFIG:-$HOME/.local/share/nvim/parley/cliproxy/config.yaml}"
 BASE="${DEFINE_LLM_BASE_URL:-http://127.0.0.1:8317}"
 MODEL="${DEFINE_LLM_MODEL:-claude-opus-5}"
-OUT="$(cd "$(dirname "$0")/.." && pwd)/internal/llm/llmtest/testdata"
+OUT="$(cd "$(dirname "$0")/.." && pwd)/llm/llmtest/testdata"
 
 key() { python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['api-keys'][0])" "$CONFIG"; }
 

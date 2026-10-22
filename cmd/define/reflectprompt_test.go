@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func sampleEvidence() deckEvidence {

@@ -23,8 +23,8 @@ import (
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/conformance"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/conformance"
+	"github.com/xianxu/tools/llm"
 )
 
 // agreementFloor is the stability the cache's premise requires.

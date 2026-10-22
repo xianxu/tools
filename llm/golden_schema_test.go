@@ -3,8 +3,8 @@ package llm_test
 import (
 	"testing"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // vetoVerdict is a representative result type, not used in production.

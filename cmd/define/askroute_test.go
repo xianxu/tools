@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 const aQuestion = "what's the difference to obsequious?"

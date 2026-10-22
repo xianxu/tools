@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // StartWithSize sets geometry before exec; setting it after starting a one-shot

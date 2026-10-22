@@ -1,12 +1,18 @@
-# internal/llm
+# llm
 
 The one way anything in `tools/` talks to a language model. One transport, one
 error taxonomy, one stateful fake, one obligation suite.
 
+**Public since tools#85:** `github.com/xianxu/tools/llm`, with `llm/llmtest`
+(fake, cassettes, goldens, `Suite`) and `conformance` (the skip-or-fail policy
+`llmtest` imports). echo consumes it as an ordinary module; v0.x may break at a
+minor bump, so consumers pin a tag.
+
 It owns **no prompts**. A prompt is domain knowledge and lives with the consumer
 that needs it; this package owns the wire and the contract. That split is why
-`internal/llm` exists at all under a repo rule that says `internal/` is earned on
-the second consumer — see the carve-out in `AGENTS.local.md`.
+it became shared infrastructure on its first consumer, under a repo rule that
+says `internal/` is earned on the second, and why it could go public for another
+repository: see the carve-out in `AGENTS.local.md`.
 
 ## The seam
 
@@ -189,7 +195,7 @@ behaves like the real thing" a test rather than a claim.
 
 **Goldens** snapshot a request's canonical form via `AssertGolden`, which renders
 through the single `renderRequest` that `RequestHash` also hashes. A committed
-example lives at `internal/llm/testdata/golden/schema-veto-verdict.txt`; it is what
+example lives at `llm/testdata/golden/schema-veto-verdict.txt`; it is what
 makes reflecting the schema safe, because a struct field added without thought
 shows up in its diff.
 
@@ -218,7 +224,7 @@ edited prompt comes to pass against a recording of the question it no longer ask
 establish is that the model reliably produces that answer: it is one sample of a
 stochastic process, which is what the conformance run is for.
 
-`internal/llm/llmtest/testdata/README.md` tabulates the captures and the rule
+`llm/llmtest/testdata/README.md` tabulates the captures and the rule
 they enforce: *a capture is evidence only for the shape its recording conditions
 elicit.* Regenerate with `scripts/llm-probe.sh record`, which stages, verifies,
 and only then promotes.

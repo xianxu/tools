@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // The reserved-bracket escapes. They existed only as prose inside askSystem's

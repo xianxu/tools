@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // Cassette is a real exchange, frozen at the WIRE.

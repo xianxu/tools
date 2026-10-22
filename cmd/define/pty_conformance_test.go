@@ -38,7 +38,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,7 +52,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm/llmtest"
 	"golang.org/x/term"
 )
 

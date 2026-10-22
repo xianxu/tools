@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // Exercise the assembled factory, not only the native record adapter: primary

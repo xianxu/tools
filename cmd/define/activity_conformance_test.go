@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // The real raw terminal must animate while the wire is silent, remove its

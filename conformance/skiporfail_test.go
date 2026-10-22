@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // The inversion this package exists for, asserted in both directions.

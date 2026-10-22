@@ -42,7 +42,7 @@ The answer integration fake replays these exact bytes. Regenerate separately fro
 the generic transport captures, from the repository root:
 
 ```sh
-CONFORMANCE_STRICT=1 DEFINE_LANGUAGE_CAPTURE="$PWD/internal/llm/llmtest/testdata/stream-language.sse" go test -tags conformance ./cmd/define -run '^TestLanguageAnnotationsAgainstLiveService$' -count=1 -v
+CONFORMANCE_STRICT=1 DEFINE_LANGUAGE_CAPTURE="$PWD/llm/llmtest/testdata/stream-language.sse" go test -tags conformance ./cmd/define -run '^TestLanguageAnnotationsAgainstLiveService$' -count=1 -v
 ```
 
 Inspect the captured language ownership as well as the mechanical check: valid
@@ -66,5 +66,5 @@ annotates only a foreign fragment (one recording produced a longest span of thre
 bytes), which is why this is recorded in the study language.
 
 ```sh
-CONFORMANCE_STRICT=1 DEFINE_LONG_PASSAGE_CAPTURE="$PWD/internal/llm/llmtest/testdata/stream-long-passage.sse" go test -tags conformance ./cmd/define -run '^TestLongPassageStreamsAgainstLiveService$' -count=1 -v
+CONFORMANCE_STRICT=1 DEFINE_LONG_PASSAGE_CAPTURE="$PWD/llm/llmtest/testdata/stream-long-passage.sse" go test -tags conformance ./cmd/define -run '^TestLongPassageStreamsAgainstLiveService$' -count=1 -v
 ```

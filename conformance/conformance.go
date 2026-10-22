@@ -44,7 +44,7 @@
 // # Why this is a package and not a helper in one directory
 //
 // The first version lived in cmd/define and the README claimed the guarantee for
-// `./...`. Measured, `CONFORMANCE_STRICT=1 go test -tags conformance ./internal/llm/...`
+// `./...`. Measured, `CONFORMANCE_STRICT=1 go test -tags conformance ./llm/...`
 // reported ok with its suites skipped — a documented command whose green meant
 // nothing, which is the precise false assurance the rule exists to remove. The
 // scope of the guarantee and the scope of the sweep are now the same thing, and

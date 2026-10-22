@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // CatalogOptions controls catalog transport independently from inference.

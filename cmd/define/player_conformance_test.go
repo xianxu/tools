@@ -12,7 +12,7 @@ package main
 //	go test -tags conformance -run AfplayBlocks ./cmd/define/
 
 import (
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"os"
 	"testing"
 	"time"

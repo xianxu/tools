@@ -3,12 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 	"strings"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func TestAskAnnotatedCaptureReachesCleanHistoryAndTint(t *testing.T) {
@@ -224,7 +224,7 @@ func TestALongPassageReachesTheScreenInPieces(t *testing.T) {
 // It is only a test of streaming while the fixture is a SINGLE LONG passage —
 // the shape stream-language.sse does not have, which is why that capture could
 // never have caught this. Re-record with the command in
-// internal/llm/llmtest/testdata/README.md.
+// llm/llmtest/testdata/README.md.
 func assertDominantPassage(t *testing.T, name string) {
 	t.Helper()
 	// The SAME predicate the conformance recorder applies before promoting a

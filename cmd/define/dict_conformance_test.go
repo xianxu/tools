@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 func TestFixturesMatchLiveDictionary(t *testing.T) {

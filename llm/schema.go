@@ -15,7 +15,7 @@ import (
 // sources of truth for one shape drift the first time a field is added
 // (ARCH-DRY). The generated schema is still a visible artifact:
 // llmtest.AssertGolden snapshots it — see
-// internal/llm/testdata/golden/schema-veto-verdict.txt — so a struct field added
+// llm/testdata/golden/schema-veto-verdict.txt — so a struct field added
 // without thought shows up in a diff, which is the only property the
 // hand-written version actually had.
 //

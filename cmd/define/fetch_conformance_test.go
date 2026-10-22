@@ -27,7 +27,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // missesEntirely asserts that NO candidate answers — through the production

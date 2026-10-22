@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // activityClient owns only foreground waiting. clientModelSelection unwraps it

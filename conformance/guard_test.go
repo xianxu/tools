@@ -22,7 +22,7 @@ import (
 //	          that skipped when deleted.
 //	round 4 — the sweep covered cmd/define while the README claimed `./...`;
 //	          measured, the documented strict command reported ok with
-//	          internal/llm's suites skipped.
+//	          llm's suites skipped.
 //
 // Every one of those was a human re-running an enumeration. A grep cannot fail a
 // build; this can. It is the same move that ended the `doc-sweep-incomplete`
@@ -36,7 +36,7 @@ func TestEverySkipIsRoutedOrWaived(t *testing.T) {
 	root := repoRoot(t)
 
 	// The router itself performs the skip every routed site delegates to.
-	const router = "internal/conformance/conformance.go"
+	const router = "conformance/conformance.go"
 
 	skip := regexp.MustCompile(`\bt\.Skipf?\(|\bt\.SkipNow\(`)
 

@@ -3,7 +3,7 @@ package llmtest
 import (
 	"context"
 	"fmt"
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"net"
 	"net/url"
 	"testing"

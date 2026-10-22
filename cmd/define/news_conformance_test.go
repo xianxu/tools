@@ -14,7 +14,7 @@ package main
 // until #10, this is the way a person looks at real output.
 
 import (
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"strings"
 	"testing"
 )
