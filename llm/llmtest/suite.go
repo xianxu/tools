@@ -193,7 +193,7 @@ func Suite(t *testing.T, newClient func(t *testing.T) llm.Client) {
 		}
 	})
 
-	t.Run("a cancelled stream returns ErrCanceled with no late callback", func(t *testing.T) {
+	t.Run("a cancelled stream ends in ErrCanceled or a complete success, never a late callback", func(t *testing.T) {
 		c := newClient(t)
 		cctx, cancel := context.WithCancel(ctx(t))
 		defer cancel()

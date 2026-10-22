@@ -380,11 +380,21 @@ func assertOnlyCompleteBlocks(t *testing.T, resp llm.Response) {
 		done[c.ID] = true
 	}
 	for _, b := range resp.Message().Content {
-		if b.Type != "tool_use" {
-			continue
-		}
-		if b.ToolCall == nil || !done[b.ToolCall.ID] || !json.Valid(b.ToolCall.Input) {
-			t.Errorf("partial Blocks carry an incomplete tool_use: %+v", b.ToolCall)
+		switch b.Type {
+		case "text":
+			// A text prefix is the documented salvage.
+		case "tool_use":
+			if b.ToolCall == nil || !done[b.ToolCall.ID] || !json.Valid(b.ToolCall.Input) {
+				t.Errorf("partial Blocks carry an incomplete tool_use: %+v", b.ToolCall)
+			}
+		case "thinking":
+			if b.Signature == "" {
+				t.Errorf("partial Blocks carry a thinking block cut before its signature")
+			}
+		default:
+			if !json.Valid(b.Raw) {
+				t.Errorf("partial Blocks carry an incomplete %s block", b.Type)
+			}
 		}
 	}
 }

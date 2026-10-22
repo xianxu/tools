@@ -270,3 +270,26 @@ func TestTextOnly(t *testing.T) {
 		t.Error("TextOnly(nil) must stay nil so Stream skips the callback")
 	}
 }
+
+// The partial-response rule for EVERY block type: only blocks that reached their
+// stop survive, plus answer text. A thinking block cut before its signature is
+// dropped like a half-streamed tool_use.
+func TestPartialKeepsOnlyCompleteBlocks(t *testing.T) {
+	var st deltaState
+	for _, js := range []string{
+		blockStart(0, `{"type":"thinking","thinking":"","signature":""}`), blockStop(0),
+		blockStart(1, `{"type":"thinking","thinking":"","signature":""}`),   // cut: no stop
+		blockStart(2, `{"type":"text","text":""}`),                          // open text
+		blockStart(3, `{"type":"tool_use","id":"a","name":"x","input":{}}`), // cut: no stop
+	} {
+		if _, err := st.next(event(t, js)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for idx, want := range map[int]bool{0: true, 1: false, 2: true, 3: false} {
+		typ := map[int]string{0: "thinking", 1: "thinking", 2: "text", 3: "tool_use"}[idx]
+		if got := st.complete(idx, typ); got != want {
+			t.Errorf("block %d (%s): complete = %v, want %v", idx, typ, got, want)
+		}
+	}
+}
