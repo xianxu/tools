@@ -1,6 +1,6 @@
 ---
 id: 000085
-status: codecomplete
+status: done
 created: 2026-10-21
 updated: 2026-10-21
 estimate_hours: 3.59
@@ -21,6 +21,7 @@ tracker:
         repository: github.com/xianxu/tools
         reviewed_head: 74ef0b692d07aac73f4ef9c2e01c6f38dc92fb38
         evidence_commit: 0a395de5c15a64016e721287592eda4414b07f4b
+        landed_commit: dc8cf67a691401e8595ee65c5a77a08c39ee9003
 ---
 
 # llm: public seam for echo — multi-turn, tools, streamed tool-call deltas, cancel
