@@ -1,13 +1,13 @@
 ---
 id: 000085
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-10-21
 updated: 2026-10-21
 estimate_hours: 3.59
 collaboration-mode: collaboration
-card_mirror: '56d294566b84f6fdca8abe4756e32f3c8a173611' # card fields mirrored from issue-cards; edit via sdlc
+card_mirror: 'a3c27e7aab610708402f346828fb840cb5e2404b' # card fields mirrored from issue-cards; edit via sdlc
 started: 2026-10-21T20:24:53-07:00
 claimant:
     operator: Xian Xu
@@ -17,6 +17,7 @@ claimant:
     worktree: /Users/xianxu/workspace/worktree/tools-slot1/tools
     repository: github.com/xianxu/tools
 flow: {kind: full, provenance: inferred}
+actual_hours: 2.11
 ---
 
 # llm: public seam for echo — multi-turn, tools, streamed tool-call deltas, cancel
