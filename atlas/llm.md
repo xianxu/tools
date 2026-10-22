@@ -3,10 +3,10 @@
 The one way anything in `tools/` talks to a language model. One transport, one
 error taxonomy, one stateful fake, one obligation suite.
 
-**Public since tools#85:** `github.com/xianxu/tools/llm`, with `llm/llmtest`
+**Public from v0.2.0 (tools#85):** `github.com/xianxu/tools/llm`, with `llm/llmtest`
 (fake, cassettes, goldens, `Suite`) and `conformance` (the skip-or-fail policy
 `llmtest` imports). echo consumes it as an ordinary module; v0.x may break at a
-minor bump, so consumers pin a tag.
+minor bump, so consumers pin a tag. Earlier tags (v0.1.0 to v0.1.8) predate it.
 
 It owns **no prompts**. A prompt is domain knowledge and lives with the consumer
 that needs it; this package owns the wire and the contract. That split is why
