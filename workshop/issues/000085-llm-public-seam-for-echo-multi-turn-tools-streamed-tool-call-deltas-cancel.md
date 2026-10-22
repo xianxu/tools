@@ -91,6 +91,7 @@ of the v2 mid-range.
 ## Log
 
 ### 2026-10-21
+- 2026-10-21: closed M2 — review round 2 fixed: BR-4 partial Blocks keep only complete blocks (regression assertOnlyCompleteBlocks in TestCancelOutcomes + TestToolInputMustBeAnObjectOnBothPaths, shown failing without the fix); BR-5 Suite cancel accepts the legal buffered-finish race, strict case on the fake; Complete/Stream share toolInputObject; llm+llmtest pass -race; go test ./... green except main-origin #82 guard row; review verdict: SHIP
 - 2026-10-21: closed M1 — go build ./... and go vet ./... green; go test ./llm/... ./conformance/... pass; external scratch module imports llm+llmtest and passes llmtest.Suite against NewFake; define suite passes except main-origin TestPlanCitesTestsThatExist (#82 TestPTY) and three pty tests that fail only in the agent sandbox, which pass unsandboxed; review verdict: SHIP
 
 - Dispatched by ops-echo:0 (echo TL); echo:1 (echo#4) coordinates on the seam directly.

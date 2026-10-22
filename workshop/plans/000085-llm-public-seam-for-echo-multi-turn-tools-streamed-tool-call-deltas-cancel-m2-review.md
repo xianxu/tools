@@ -124,3 +124,106 @@ findings:
 ```
 
 <!-- sdlc-review-usage [{"version":1,"intent":{"disposable_root":true,"id":"394b0419-49e1-4d99-a9cd-e7752a97b1b1","repository":"github.com/xianxu/tools","issue_id":"000085","recipe":"milestone-review","round":1,"attempt":1,"agent":"claude","root":"/Volumes/TestScratch/review-checkouts/d10f3a74e7609fba","reviewed_head":"248c58864b4c19ce4bd4e2f860eca3e0f7d79f31","slot":"tools:1","requested_at":"2026-10-22T04:20:59.954303Z"},"phase":"finished","pid":16776,"started_at":"2026-10-22T04:21:00.047884Z","finished_at":"2026-10-22T04:31:26.326439Z","session_id":"311ecca3-7410-46da-b1fb-c132f79e41b4","outcome":"returned"}] -->
+
+---
+
+## Re-review — 2026-10-21T21:36:54-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 85 — llm: public seam for echo — multi-turn, tools, streamed tool-call deltas, cancel |
+| repo | tools |
+| issue file | workshop/issues/000085-llm-public-seam-for-echo-multi-turn-tools-streamed-tool-call-deltas-cancel.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 5e284c7d6e4f6705f15b35cbb69e720180c35c25..9c6d73ae3ff35b36ee8a15f45d2556704445d731 |
+| command | sdlc milestone-close --issue 85 --milestone M2 |
+| reviewer | claude (anthropic; author anthropic) |
+| isolation | checkout |
+| timestamp | 2026-10-21T21:36:54-07:00 |
+| verdict | SHIP |
+
+## Review
+
+Tests pass at head. Next I'll revert each fix one at a time and check the regression tests go red.
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+All four executable fixes from round 2 hold at head `9c6d73a`, and both behavior fixes have regression tests that fail without them. I checked this in the disposable checkout. With `partial()` reverted to use every accumulator block, `TestCancelOutcomes/mid_tool_call_after_one_completed` and `TestToolInputMustBeAnObjectOnBothPaths` both fail with `partial Blocks carry an incomplete tool_use: … Input:{"cit` and `…Input:[1,2]`. With `buildResponse` reverted to `return out, nil`, the second test fails with `streaming=false: err = <nil>, want ErrMalformed`. At head, `go build ./...`, `go vet`, `go test -race ./llm/... ./conformance/...` and `gofmt -l` are all clean, and the tree was restored afterwards. The Suite change for BR-5 is sound. The Suite run against the fake still holds both the long stream and the concurrent victim with a `FinishRelease` that is never released. On the fake, then, a success the suite now tolerates can't happen: a client that ignored cancel would hit its own Timeout and fail. The relaxation only matters on the live path, which is where the race really exists. Only Minor items remain, so nothing blocks the boundary.
+
+1. **Strengths**
+   - The BR-4 fix covers the whole class, not just the reported block. `deltaState.complete` (`llm/delta.go`) keeps every block that reached `content_block_stop`, plus answer text, which is the documented salvage. So a thinking block cut off before its signature is dropped too, and so is a tool_use that failed validation at End. `markStopped` is only set after `toolInputObject` passes.
+   - BR-7 is fixed the right way: one function, `toolInputObject`, is shared by `deltaState.next` and `buildResponse`. It also closes the `null` gap through `obj == nil`, since a JSON `null` unmarshals without error.
+   - `assertOnlyCompleteBlocks` (`llm/seam_test.go:376`) checks `Message()`, the thing that actually goes back over the wire, rather than restating the implementation.
+   - The Suite now states the ARCH-ORDER race explicitly (`llm/llmtest/suite.go:214-223`). The strict side is still enforced by how the fake holds the stream.
+
+2. **Critical:** none.
+
+3. **Important:** none.
+
+4. **Minor**
+   - The subtest at `llm/llmtest/suite.go:196` is still named "a cancelled stream returns ErrCanceled…", but it now also accepts a complete success. Rename it, e.g. to "…returns ErrCanceled or a complete success, with no late callback".
+   - No test covers the thinking-block side of `complete()`. A thinking block without a stop is meant to be dropped from a partial, but `assertOnlyCompleteBlocks` only checks tool_use. The rule is already written in `workshop/lessons.md` and implemented for every block type; only the test is missing. This is the 2nd finding in family `partial-response-reports-incomplete-state` (detail in the findings block).
+
+5. **Test coverage**
+   - Both regression tests were confirmed red without their fixes.
+   - The Suite relaxation can't go red on the fake, because the fake holds the stream. The live `-tags conformance` run in M3 is what exercises it.
+
+6. **Architecture**
+   - **ARCH-DRY:** pass. The JSON-object check now lives in one place. The four-way "empty input → `{}`" default noted last round still stands as a note.
+   - **ARCH-PURE:** pass. `deltaState` and `buildResponse` stay pure.
+   - **ARCH-PURPOSE:** pass. The fix covers every block type, not just the tool_use that was reported.
+   - **ARCH-MOCK:** pass. The fake holds streams; the live conformance check is scheduled for M3.
+   - **ARCH-CONSTRAINTS:** pass. The `stopped` map adds negligible cost.
+   - **ARCH-SECURE:** pass. Malformed external tool input degrades to `ErrMalformed` rather than crashing.
+   - **ARCH-ORDER:** pass. The cancel/finish race is accepted where it's legal and held closed on the fake.
+   - **ARCH-FUNERAL:** pass. The change creates nothing durable.
+   - **ARCH-EVOLVE:** N/A. No persisted format changed in this fix.
+
+7. **Plan revisions:** none needed for M2. M3 Task 6 still owns the `atlas/llm.md` rewrite (BR-8).
+
+```findings
+dispose:
+  - id: BR-4
+    disposition: addressed
+    note: |
+      partial() filters Blocks via deltaState.complete; reverting it makes TestCancelOutcomes and TestToolInputMustBeAnObjectOnBothPaths fail (Input {"cit / [1,2]).
+  - id: BR-5
+    disposition: addressed
+    note: |
+      Suite accepts ErrCanceled or a success with a Stop; the fake still holds both streams with a FinishRelease that is never released, so success can't happen there and the strict side stays enforced.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      Tasks 2-5 now say "Committed" instead of quoting subjects; the rule is in workshop/lessons.md; Task 1 quotes an existing subject (1208207).
+  - id: BR-7
+    disposition: addressed
+    note: |
+      buildResponse calls the shared toolInputObject; reverting to return nil makes TestToolInputMustBeAnObjectOnBothPaths fail (streaming=false).
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      atlas/llm.md:22 still shows onDelta func(string); scheduled for M3 Task 6, non-blocking.
+findings:
+  - id: new
+    severity: Minor
+    kind: defect
+    family: partial-response-reports-incomplete-state
+    title: |
+      No test pins that a thinking block without a stop is dropped from a partial Response
+    detail: |
+      This is the 2nd finding in family partial-response-reports-incomplete-state. Rule (already in lessons.md and implemented for every block type in deltaState.complete): a partial keeps only blocks that reached content_block_stop, plus answer text. Fix the class in the oracle: extend assertOnlyCompleteBlocks to check every non-text block, not just tool_use, and add one cancel row held mid-thinking.
+  - id: new
+    severity: Minor
+    kind: defect
+    family: test-name-states-stale-contract
+    title: |
+      Suite subtest name still says a cancelled stream returns ErrCanceled after BR-5 relaxed it
+    detail: |
+      llm/llmtest/suite.go:196 also accepts a complete success now; rename it to describe both legal outcomes.
+```
+
+<!-- sdlc-review-usage [{"version":1,"intent":{"disposable_root":true,"id":"9ea61b07-7db7-4841-9713-a8a12aaf1f94","repository":"github.com/xianxu/tools","issue_id":"000085","recipe":"milestone-review","round":2,"attempt":1,"agent":"claude","root":"/Volumes/TestScratch/review-checkouts/eb13b7b5b9ab1110","reviewed_head":"9c6d73ae3ff35b36ee8a15f45d2556704445d731","slot":"tools:1","requested_at":"2026-10-22T04:34:27.826327Z"},"phase":"finished","pid":19866,"started_at":"2026-10-22T04:34:28.270213Z","finished_at":"2026-10-22T04:36:54.116718Z","session_id":"c09149f5-73ef-4e5f-b559-4cef52b5b6ff","outcome":"returned"}] -->
