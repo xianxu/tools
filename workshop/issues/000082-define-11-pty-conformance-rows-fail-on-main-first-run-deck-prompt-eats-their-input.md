@@ -88,7 +88,7 @@ assumption.
 
 - [ ] `seedDeck` → `--here`; rerun the 5 `--play` rows
 - [ ] settle the deck question in the editor launch helper; rerun the 6 rows
-- [ ] remove #81's inline workaround; full `TestPTY` run, record in Log
+- [ ] remove #81's inline workaround; full `TestPTY*` run, record in Log
 - [ ] `sdlc close`
 
 ## Log
