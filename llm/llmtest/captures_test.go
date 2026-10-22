@@ -126,4 +126,35 @@ func TestCapturesExhibitTheirShapes(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("the tool stream carries a call whose input arrives in pieces", func(t *testing.T) {
+		sse := strings.ReplaceAll(string(Capture(t, "stream-tool-use.sse")), " ", "")
+		if !strings.Contains(sse, `"type":"tool_use"`) {
+			t.Errorf("stream-tool-use.sse has no tool_use block — the model answered in text")
+		}
+		if n := strings.Count(sse, "input_json_delta"); n < 2 {
+			t.Errorf("stream-tool-use.sse has %d input_json_delta frames, want several — "+
+				"the fake's multi-frame chunking is unbacked", n)
+		}
+		if !strings.Contains(sse, `"stop_reason":"tool_use"`) {
+			t.Errorf("stream-tool-use.sse does not stop with tool_use")
+		}
+	})
+
+	t.Run("one tool round: a call with thinking, then a completed answer", func(t *testing.T) {
+		kinds, m := blocks(t, "message-tool-use.json")
+		for _, want := range []string{"tool_use", "thinking"} {
+			if !slices.Contains(kinds, want) {
+				t.Errorf("message-tool-use.json blocks = %v, want a %s block — turn 2 "+
+					"cannot show the signature round trip without both", kinds, want)
+			}
+		}
+		if m["stop_reason"] != "tool_use" {
+			t.Errorf("message-tool-use.json stop_reason = %v, want tool_use", m["stop_reason"])
+		}
+		kinds, m = blocks(t, "message-tool-result.json")
+		if !slices.Contains(kinds, "text") || m["stop_reason"] != "end_turn" {
+			t.Errorf("message-tool-result.json = %v / %v, want a text answer and end_turn", kinds, m["stop_reason"])
+		}
+	})
 }

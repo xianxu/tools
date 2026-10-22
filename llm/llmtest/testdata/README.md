@@ -13,6 +13,9 @@ then promotes — a capture that does not exhibit its required shape never lands
 | `message-schema.json` | `output_config` survives the proxy | payload decodes; `stop_reason: end_turn` |
 | `message-truncated.json` | **a truncated answer still parses** | `stop_reason: max_tokens` **and** the payload decodes |
 | `stream-sample.sse` | the streamed frame shape | `message_start`…`message_stop`, plus `thinking_delta` and `signature_delta` |
+| `stream-tool-use.sse` | a streamed tool call's input arrives in pieces | a `tool_use` block, more than one `input_json_delta`, `stop_reason: tool_use` |
+| `message-tool-use.json` | turn 1 of a tool round, thinking included | `tool_use` and `thinking` blocks; `stop_reason: tool_use` |
+| `message-tool-result.json` | turn 2 continues from the echoed turn 1 plus a `tool_result` | a `text` block; `stop_reason: end_turn` |
 
 Between them the three JSON captures exhibit `[thinking, text]`, `[text]` and
 `[thinking, text, thinking]` — block presence *and* order both vary, which is why

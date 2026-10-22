@@ -452,9 +452,9 @@ quoted name as a claim that it does).
 
 ### Task 6 (M3): captures, conformance, docs, tag
 
-- [ ] `scripts/llm-probe.sh record` gains a tool-use capture (one tool, forced) and a two-turn tool-result
+- [x] `scripts/llm-probe.sh record` gains a tool-use capture (one tool, forced) and a two-turn tool-result
       continuation (thinking echoed); README table rows; captures replayed in `captures_test.go`.
-- [ ] Conformance (`-tags conformance`): `Suite` already runs live; add a live tool-streaming check and a live
+- [x] Conformance (`-tags conformance`): `Suite` already runs live; add a live tool-streaming check and a live
       mid-stream cancel check; drift test asserts `input_json_delta` still arrives in >1 frame. Run against
       the auto-selected provider and report which providers were certified.
 - [x] Package doc (`llm/llm.go`) states the v0.x compatibility rule: minor bumps may break; pin a version.
