@@ -5,9 +5,9 @@ deps: []
 github_issue:
 created: 2026-10-21
 updated: 2026-10-21
-estimate_hours:
+estimate_hours: 3.59
 collaboration-mode: collaboration
-card_mirror: '5f2d777fa8c172a5f137768f41848fa7326bf563' # card fields mirrored from issue-cards; edit via sdlc
+card_mirror: '56d294566b84f6fdca8abe4756e32f3c8a173611' # card fields mirrored from issue-cards; edit via sdlc
 started: 2026-10-21T20:24:53-07:00
 claimant:
     operator: Xian Xu
@@ -16,6 +16,7 @@ claimant:
     workspace: tools:1
     worktree: /Users/xianxu/workspace/worktree/tools-slot1/tools
     repository: github.com/xianxu/tools
+flow: {kind: full, provenance: inferred}
 ---
 
 # llm: public seam for echo — multi-turn, tools, streamed tool-call deltas, cancel
@@ -58,6 +59,34 @@ caller cancellation. Retries stay in the transport, and `Config.BeforeAttempt` r
 - [ ] M1 — Publish `llm`, `llm/llmtest`, `conformance`; imports, rule text, atlas; no behavior change.
 - [ ] M2 — Widen the seam (Messages, Tools, ToolCalls, Delta, ErrCanceled, BeforeAttempt, Attempts); fake + Suite grow; define on `TextOnly`.
 - [ ] M3 — Real tool-use/multi-turn captures, live conformance, atlas rewrite, land, tag `v0.1.0`.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec                design=1.0  impl=0.08
+item: cross-cutting-refactor    design=0.05 impl=0.14
+item: api-integration           design=0.4  impl=0.4
+item: smaller-go-module         design=0.05 impl=0.14
+item: smaller-go-module         design=0.05 impl=0.14
+item: smaller-go-module         design=0.0  impl=0.14
+item: real-api-discovery        design=0.0  impl=0.18
+item: atlas-docs                design=0.1  impl=0.05
+item: milestone-review          design=0.0  impl=0.14
+item: milestone-review          design=0.0  impl=0.14
+item: milestone-review          design=0.0  impl=0.14
+design-buffer: 0.15
+total: 3.59
+```
+
+Items: issue-spec (filing, the two API reviews and plan-quality, measured from the claim); the M1 package
+move; M2's wire translation, deltas and tool calls (api-integration); cancel/attempts/callState, fake+Suite,
+and define migration+audit (three smaller-go-module); real tool-use captures through the proxy; atlas; three
+milestone reviews. Design ×0.2 spec discount on the coding items (a thorough plan), +15% buffer, impl at 40%
+of the v2 mid-range.
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
 
 ## Log
 
