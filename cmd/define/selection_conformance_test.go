@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/conformance"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/conformance"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func selectionBinary(t *testing.T) string {

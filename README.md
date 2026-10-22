@@ -111,7 +111,7 @@ answer for CI or for a close that has to mean something: set `CONFORMANCE_STRICT
 there and green means it ran.
 
 The guarantee covers `./...` because it is enforced rather than swept.
-`internal/conformance` owns the decision, and its `TestEverySkipIsRoutedOrWaived`
+`conformance` owns the decision, and its `TestEverySkipIsRoutedOrWaived`
 walks the tree and FAILS on any `t.Skip` that is neither routed through it nor
 marked `conformance:inapplicable` with a reason — so a new suite in a package
 nobody thought to sweep cannot quietly opt out.

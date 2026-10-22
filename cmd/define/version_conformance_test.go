@@ -30,7 +30,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // stampedVersion is deliberately NOT the released number: pinning v0.1.0 here

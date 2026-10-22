@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // minDeckForReflection is the floor. Below it there is nothing worth reflecting
@@ -116,7 +116,7 @@ func foldLookups(deck []store.Word, events []store.ReviewEvent, now time.Time) d
 //
 // SchemaFor[learnerModel] reflects the JSON schema from this struct, so the
 // shape has one source and a field added without thought shows up in the
-// golden's diff (internal/llm's typed-task contract).
+// golden's diff (llm's typed-task contract).
 type learnerModel struct {
 	Level   levelClaim    `json:"level"`
 	Domains []domainClaim `json:"domains"`

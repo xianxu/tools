@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // TestClipboardNativeLiteralConformance checks the real helper and native flavor

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // topicSpread is the fraction of a batch's items that carry DISTINCT domains.

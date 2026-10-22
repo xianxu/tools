@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func awaitActivity(t *testing.T, ch <-chan struct{}) {
@@ -30,7 +30,7 @@ func TestLLMActivityStreamClearsBeforeText(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = client.Stream(t.Context(), llm.Request{Prompt: "wait"}, func(s string) {
+		_, _ = client.Stream(t.Context(), llm.Request{Prompt: "wait"}, llm.TextOnly(func(s string) {
 			if s != "" {
 				out.Write([]byte("ANSWER"))
 				select {
@@ -38,7 +38,7 @@ func TestLLMActivityStreamClearsBeforeText(t *testing.T) {
 				default:
 				}
 			}
-		})
+		}))
 	}()
 	awaitActivity(t, before)
 	if !strings.Contains(out.String(), "⠋") {
@@ -155,8 +155,8 @@ type activityDeltaClient struct {
 	deltas func(func(string))
 }
 
-func (c activityDeltaClient) Stream(_ context.Context, _ llm.Request, delta func(string)) (llm.Response, error) {
-	c.deltas(delta)
+func (c activityDeltaClient) Stream(_ context.Context, _ llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
+	c.deltas(textSink(onEvent))
 	return llm.Response{Text: "answer"}, nil
 }
 
@@ -178,12 +178,22 @@ func TestLLMActivityEmptyAndNilCallback(t *testing.T) {
 		if !nilCallback {
 			callback = func(s string) { seen = append(seen, s) }
 		}
-		resp, err := client.Stream(t.Context(), llm.Request{}, callback)
+		resp, err := client.Stream(t.Context(), llm.Request{}, llm.TextOnly(callback))
 		if err != nil || resp.Text != "answer" {
 			t.Fatalf("response changed: %+v %v", resp, err)
 		}
 		if !nilCallback && (len(seen) != 2 || seen[0] != "" || seen[1] != "answer") {
 			t.Fatalf("deltas changed: %q", seen)
+		}
+	}
+}
+
+// textSink is TextOnly's inverse for test doubles: it turns the Stream callback
+// a double receives back into the text callback it forwards answer text to.
+func textSink(on func(llm.Delta)) func(string) {
+	return func(s string) {
+		if on != nil {
+			on(llm.Delta{Kind: llm.DeltaText, Text: s})
 		}
 	}
 }

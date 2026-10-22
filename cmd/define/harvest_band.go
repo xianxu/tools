@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // bandTaskName names this request: the golden file, the cassette key, the usage

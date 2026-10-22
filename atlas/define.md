@@ -27,7 +27,7 @@ and there is no second consumer yet.
 | `Dictionary` | CoreServices `DCSCopyTextDefinition` (cgo) | `fakeDictionary` over the captured corpus |
 | `AudioSource` | Google's gstatic MP3 CDN | `fakeCDN`, an `httptest` server recording request order |
 | `Player` | `afplay(1)` | `fakePlayer`, recording play count |
-| `deps.newLLM` + `getenv` | `internal/llm` (the model) | `llmtest.Fake`, an httptest server on the wire |
+| `deps.newLLM` + `getenv` | `llm` (the model) | `llmtest.Fake`, an httptest server on the wire |
 | `deps.notifySignals` | `signal.Notify` | a channel a test writes to |
 | `--reflect` | the model, batch, and the session's background job (`#54`) | `llmtest.Fake` + a live conformance check |
 | `bgRunner` → `runBackgroundJob` | the model, from the session's background | `llmtest.Fake`, and a blocking stub `llm.Client` where a test must hold a call |
@@ -1512,7 +1512,7 @@ next one is about. `session` exists for this: it replaced three separate
 declarations of "what is this session holding" (`replLines`, `runEditor`,
 `submitLine`), because the rule would otherwise have been written three times.
 
-**The answer.** A question goes to `internal/llm` with the DIRECTORY as its
+**The answer.** A question goes to `llm` with the DIRECTORY as its
 context: the word on screen and its dictionary entry, this session's lookups, the
 recent deck, the learner model, and the session's own earlier exchanges. Three
 consequences fall out, and they are the reason for this shape — a fresh process
@@ -2758,7 +2758,7 @@ issue.
 
 **A skip reads as green, so green has to be made to mean "it ran".** Every suite
 above routes its dependency check through `conformance.SkipOrFail`
-(`internal/conformance`): absent dependency SKIPS by default, and FAILS under
+(`conformance`): absent dependency SKIPS by default, and FAILS under
 `CONFORMANCE_STRICT` — the mode for CI and for a close that has to mean
 something. Checks about the dependency's *shape* — a drifted fixture, a feed that
 stopped parsing — are not routed there and stay hard failures in both modes; the
@@ -2769,7 +2769,7 @@ review rounds went to this one rule and each fixed only the sites its grep
 reached: one pty site while six suites skipped; then all seven, enumerated by a
 pattern that could not see the mirror defect; then a carve-out that excluded a
 file by name; then a sweep over `cmd/define` under a README claiming `./...`,
-where the documented strict command measurably reported `ok` with `internal/llm`
+where the documented strict command measurably reported `ok` with `internal/llm` (as it was then)
 skipped. `TestEverySkipIsRoutedOrWaived` now walks the tree and fails on any
 unrouted, unwaived skip — the same move that ended the doc-sweep family, applied
 to a guarantee instead of a sentence.

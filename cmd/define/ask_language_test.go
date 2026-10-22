@@ -3,12 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 	"strings"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func TestAskAnnotatedCaptureReachesCleanHistoryAndTint(t *testing.T) {
@@ -53,9 +53,10 @@ type cancelLanguageStream struct {
 	cancel context.CancelFunc
 }
 
-func (c cancelLanguageStream) Stream(ctx context.Context, r llm.Request, delta func(string)) (llm.Response, error) {
+func (c cancelLanguageStream) Stream(ctx context.Context, r llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
+	delta := textSink(onEvent)
 	var seen strings.Builder
-	return c.Client.Stream(ctx, r, func(s string) {
+	return c.Client.Stream(ctx, r, llm.TextOnly(func(s string) {
 		if ctx.Err() != nil {
 			return
 		}
@@ -64,7 +65,7 @@ func (c cancelLanguageStream) Stream(ctx context.Context, r llm.Request, delta f
 		if strings.Contains(seen.String(), "[lang=en]The") {
 			c.cancel()
 		}
-	})
+	}))
 }
 func TestAskAnnotatedCancellationFlushesBeforeHistory(t *testing.T) {
 	d, fake, _, _ := askRig(t)
@@ -151,13 +152,14 @@ type deltaObserver struct {
 	seen func(n int)
 }
 
-func (o deltaObserver) Stream(ctx context.Context, r llm.Request, onDelta func(string)) (llm.Response, error) {
+func (o deltaObserver) Stream(ctx context.Context, r llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
+	onDelta := textSink(onEvent)
 	n := 0
-	return o.Client.Stream(ctx, r, func(s string) {
+	return o.Client.Stream(ctx, r, llm.TextOnly(func(s string) {
 		onDelta(s)
 		n++
 		o.seen(n)
-	})
+	}))
 }
 
 // TestALongPassageReachesTheScreenInPieces is this issue at the level the
@@ -224,7 +226,7 @@ func TestALongPassageReachesTheScreenInPieces(t *testing.T) {
 // It is only a test of streaming while the fixture is a SINGLE LONG passage —
 // the shape stream-language.sse does not have, which is why that capture could
 // never have caught this. Re-record with the command in
-// internal/llm/llmtest/testdata/README.md.
+// llm/llmtest/testdata/README.md.
 func assertDominantPassage(t *testing.T, name string) {
 	t.Helper()
 	// The SAME predicate the conformance recorder applies before promoting a

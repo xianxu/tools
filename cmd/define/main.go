@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 	"golang.org/x/term"
 )
 

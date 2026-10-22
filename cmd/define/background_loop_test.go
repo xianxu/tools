@@ -14,8 +14,8 @@ import (
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // bgLookupWords are ten deck words the dictionary fixtures define and scriptAll
@@ -110,7 +110,7 @@ func (s *bgStub) Complete(ctx context.Context, _ llm.Request) (llm.Response, err
 	}
 }
 
-func (s *bgStub) Stream(ctx context.Context, r llm.Request, _ func(string)) (llm.Response, error) {
+func (s *bgStub) Stream(ctx context.Context, r llm.Request, _ func(llm.Delta)) (llm.Response, error) {
 	return s.Complete(ctx, r)
 }
 

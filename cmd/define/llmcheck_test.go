@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // The wire fake, not a stubbed Client. A double that discards its llm.Request

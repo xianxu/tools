@@ -9,7 +9,7 @@ import (
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // authorTaskName names this request: the golden file, the cassette key, the

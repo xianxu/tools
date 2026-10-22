@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func mustDomain(t *testing.T, s string) store.Domain {

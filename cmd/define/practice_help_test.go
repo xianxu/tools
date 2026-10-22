@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode"
@@ -10,8 +11,8 @@ import (
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 const (
@@ -304,6 +305,11 @@ func TestHelpReplyNumbers(t *testing.T) {
 }
 
 func TestHelpCause(t *testing.T) {
+	// The help budget is the llm call's CALLER deadline, so it arrives as
+	// ErrCanceled wrapping DeadlineExceeded (tools#85) and must still read as slow.
+	if s := helpCause(fmt.Errorf("%w: %w", llm.ErrCanceled, context.DeadlineExceeded)); !strings.Contains(s, "longer than 30s") {
+		t.Errorf("a cancelled-by-budget call reads %q", s)
+	}
 	if s := helpCause(context.DeadlineExceeded); !strings.Contains(s, "longer than 30s") {
 		t.Fatalf("deadline: %q", s)
 	}

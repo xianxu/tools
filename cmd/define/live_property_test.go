@@ -18,7 +18,7 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 	"os"
 	"testing"
 	"unicode"

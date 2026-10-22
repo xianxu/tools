@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // question is a line on its way to the model, and HOW it got here.
@@ -112,7 +112,7 @@ func unavailable(errOut io.Writer, q question) int {
 // unavailableAfterSending is what a CONFIGURED model's failure says, and it
 // deliberately does not diagnose.
 //
-// `ErrUnavailable` has three producers (`internal/llm`'s classifyStatus): the
+// `ErrUnavailable` has three producers (`llm`'s classifyStatus): the
 // service was never reached, the transport gave up on something retryable, and
 // **401/403 — a missing or wrong credential**, which that function's own comment
 // calls "an operator configuration state". A message that picks one of the three
@@ -176,7 +176,7 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		a.Context = askCtx
 		req = renderPassagePrompt(a)
 	}
-	_, err = client.Stream(ctx, req, answer.decoder.Write)
+	_, err = client.Stream(ctx, req, llm.TextOnly(answer.decoder.Write))
 	// Finish before ANY termination branch: clean partial text belongs in
 	// history on cancellation and truncation, and never contains metadata.
 	if writeErr := answer.Finish(); writeErr != nil {

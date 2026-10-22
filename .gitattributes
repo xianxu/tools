@@ -1,2 +1,5 @@
+# BEGIN weave generated
+workshop/lessons.md merge=union
+# END weave generated
 # SSE records end with a blank line; preserve captured wire bytes exactly.
-internal/llm/llmtest/testdata/*.sse whitespace=-blank-at-eof
+llm/llmtest/testdata/*.sse whitespace=-blank-at-eof

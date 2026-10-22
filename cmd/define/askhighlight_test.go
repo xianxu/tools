@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // splitWordOwnedBy finds a word the committed capture delivers across TWO

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 var reflectClock = time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC)

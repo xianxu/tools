@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // Background preparation (#54): the interactive session keeps practice material
@@ -442,12 +442,17 @@ func deckIO(err error) error { return fmt.Errorf("%w: %w", errDeckIO, err) }
 
 // stopMeans is what a pass's stop means for the session, decided by the error's
 // kind in this one place. A model that is not answering, or that refuses every
-// request (the two stops internal/llm/errors.go says repeat on every call), and a
+// request (the two stops llm/errors.go says repeat on every call), and a
 // deck whose files fail both turn background work off. Any other stop, a
 // malformed answer or a cancel, leaves the session trying at the next check; a
 // word it stopped on is already reported unfinished.
 func stopMeans(err error) (noModel bool, deckErr error) {
 	switch {
+	case errors.Is(err, llm.ErrCanceled):
+		// The session's own cancel (a shutdown, a stopped pass). It used to reach
+		// here as ErrUnavailable and turn background work off; it is no verdict
+		// on the model.
+		return false, nil
 	case errors.Is(err, llm.ErrUnavailable), errors.Is(err, llm.ErrRequest):
 		return true, nil
 	case errors.Is(err, errDeckIO):

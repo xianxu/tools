@@ -9,7 +9,7 @@ import (
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // harvestLimit is the default bound on MODEL CALLS one --harvest run may make.

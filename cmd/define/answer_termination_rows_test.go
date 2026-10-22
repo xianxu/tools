@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // Cancel only after a complete owned segment in the captured wire stream. This
@@ -19,9 +19,10 @@ type cancelAfterOwnedAnswer struct {
 	cancel context.CancelFunc
 }
 
-func (c cancelAfterOwnedAnswer) Stream(ctx context.Context, r llm.Request, delta func(string)) (llm.Response, error) {
+func (c cancelAfterOwnedAnswer) Stream(ctx context.Context, r llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
+	delta := textSink(onEvent)
 	var raw strings.Builder
-	return c.Client.Stream(ctx, r, func(s string) {
+	return c.Client.Stream(ctx, r, llm.TextOnly(func(s string) {
 		if ctx.Err() != nil {
 			return
 		}
@@ -30,7 +31,7 @@ func (c cancelAfterOwnedAnswer) Stream(ctx context.Context, r llm.Request, delta
 		if strings.Contains(raw.String(), "good morning[/lang]") {
 			c.cancel()
 		}
-	})
+	}))
 }
 
 func TestAskFinalOwnedRowSurvivesTermination(t *testing.T) {

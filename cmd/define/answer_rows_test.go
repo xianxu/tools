@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 	"io"
 	"strings"
 	"testing"
@@ -180,8 +180,9 @@ type captureAnswerDeltas struct {
 	raw *strings.Builder
 }
 
-func (c captureAnswerDeltas) Stream(ctx context.Context, r llm.Request, delta func(string)) (llm.Response, error) {
-	return c.Client.Stream(ctx, r, func(s string) { c.raw.WriteString(s); delta(s) })
+func (c captureAnswerDeltas) Stream(ctx context.Context, r llm.Request, onEvent func(llm.Delta)) (llm.Response, error) {
+	delta := textSink(onEvent)
+	return c.Client.Stream(ctx, r, llm.TextOnly(func(s string) { c.raw.WriteString(s); delta(s) }))
 }
 
 func TestLanguageAnswerLiveScreenRowsMatchAppendSink(t *testing.T) {

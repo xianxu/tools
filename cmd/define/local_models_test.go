@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 func discoveredClient(f *llmtest.Fake) func(llm.Config) llm.Client {

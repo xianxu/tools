@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
-	"github.com/xianxu/tools/internal/llm"
-	"github.com/xianxu/tools/internal/llm/llmtest"
+	"github.com/xianxu/tools/llm"
+	"github.com/xianxu/tools/llm/llmtest"
 )
 
 // askRig wires runAsk against the WIRE-LEVEL fake — an httptest server speaking
@@ -591,7 +591,7 @@ func TestAQuestionIsRecordedWhateverBecameOfTheAnswer(t *testing.T) {
 		})
 	}
 
-	// ErrUnavailable has THREE producers (internal/llm's classifyStatus): never
+	// ErrUnavailable has THREE producers (llm's classifyStatus): never
 	// reached, retryable-and-gave-up, and 401/403 — a wrong credential, which is
 	// the one cell a user can actually fix. A message that diagnoses picks one
 	// and is wrong for the others, so the message must carry the underlying
@@ -1125,7 +1125,7 @@ func TestAskWrapsStreamWithoutLosingText(t *testing.T) {
 // this adapter makes no claim about transport error classification.
 type malformedAskStream struct{ llm.Client }
 
-func (c malformedAskStream) Stream(ctx context.Context, req llm.Request, onDelta func(string)) (llm.Response, error) {
+func (c malformedAskStream) Stream(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (llm.Response, error) {
 	response, err := c.Client.Stream(ctx, req, onDelta)
 	if !errors.Is(err, llm.ErrTruncated) {
 		return response, fmt.Errorf("expected truncated wire fixture, got %v", err)

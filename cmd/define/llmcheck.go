@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/llm"
 )
 
 // runLLMCheck answers "did my model configuration take", which is otherwise only

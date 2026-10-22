@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/xianxu/tools/internal/conformance"
+	"github.com/xianxu/tools/conformance"
 )
 
 // The fake in record_test.go stands in for asciinema; this runs the same
