@@ -58,6 +58,9 @@ func TextOnly(fn func(string)) func(Delta) {
 // fragment.
 type deltaState struct {
 	open map[int]*openCall
+	// stopped marks every content block whose content_block_stop arrived, so a
+	// partial Response can keep exactly the complete blocks.
+	stopped map[int]bool
 	// done holds the calls that reached End, by Index, so a cancelled or failed
 	// stream reports exactly those and drops a half-streamed one.
 	done []ToolCall
@@ -103,6 +106,7 @@ func (s *deltaState) next(event anthropic.MessageStreamEventUnion) ([]Delta, err
 	case "content_block_stop":
 		c := s.open[idx]
 		if c == nil {
+			s.markStopped(idx)
 			return nil, nil
 		}
 		delete(s.open, idx)
@@ -113,10 +117,10 @@ func (s *deltaState) next(event anthropic.MessageStreamEventUnion) ([]Delta, err
 			in = "{}"
 		}
 		s.validations++
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(in), &obj); err != nil {
-			return nil, fmt.Errorf("%w: tool call %q input is not a JSON object: %v", ErrMalformed, c.name, err)
+		if err := toolInputObject(c.name, []byte(in)); err != nil {
+			return nil, err
 		}
+		s.markStopped(idx)
 		call := ToolCall{ID: c.id, Name: c.name, Input: json.RawMessage(in)}
 		s.done = append(s.done, call)
 		end := call // a separate copy for the receiver; done stays ours
@@ -124,4 +128,29 @@ func (s *deltaState) next(event anthropic.MessageStreamEventUnion) ([]Delta, err
 		return []Delta{{Kind: DeltaToolCallEnd, Index: idx, Call: &end}}, nil
 	}
 	return nil, nil
+}
+
+func (s *deltaState) markStopped(idx int) {
+	if s.stopped == nil {
+		s.stopped = map[int]bool{}
+	}
+	s.stopped[idx] = true
+}
+
+// complete reports whether block idx may stay in a partial Response: it reached
+// its stop, or it is answer text (a text prefix is the documented salvage). A
+// half-streamed tool_use, or a thinking block cut off before its signature,
+// would be half-reported, and Message() would echo it back.
+func (s *deltaState) complete(idx int, typ string) bool {
+	return s.stopped[idx] || typ == "text"
+}
+
+// toolInputObject is THE check that a tool call's input is a JSON object, shared
+// by the stream's End and Complete's response so the two paths cannot disagree.
+func toolInputObject(name string, in []byte) error {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(in, &obj); err != nil || obj == nil {
+		return fmt.Errorf("%w: tool call %q input is not a JSON object: %s", ErrMalformed, name, in)
+	}
+	return nil
 }

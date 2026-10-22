@@ -240,6 +240,7 @@ func TestCancelOutcomes(t *testing.T) {
 			if resp.Text != p.wantText || len(resp.ToolCalls) != p.wantCalls {
 				t.Errorf("partial = %q with %d calls, want %q with %d", resp.Text, len(resp.ToolCalls), p.wantText, p.wantCalls)
 			}
+			assertOnlyCompleteBlocks(t, resp)
 			mu.Lock()
 			defer mu.Unlock()
 			if late != 0 {
@@ -366,5 +367,52 @@ func TestOutcomeOrder(t *testing.T) {
 
 	if f.Attempts() != 0 {
 		t.Errorf("%d attempts reached the wire", f.Attempts())
+	}
+}
+
+// A partial Response reports only complete state: every tool_use block in Blocks
+// (and so in Message()) is one of ToolCalls with a valid object input, never the
+// half-streamed call the SDK's accumulator opened at content_block_start.
+func assertOnlyCompleteBlocks(t *testing.T, resp llm.Response) {
+	t.Helper()
+	done := map[string]bool{}
+	for _, c := range resp.ToolCalls {
+		done[c.ID] = true
+	}
+	for _, b := range resp.Message().Content {
+		if b.Type != "tool_use" {
+			continue
+		}
+		if b.ToolCall == nil || !done[b.ToolCall.ID] || !json.Valid(b.ToolCall.Input) {
+			t.Errorf("partial Blocks carry an incomplete tool_use: %+v", b.ToolCall)
+		}
+	}
+}
+
+// The same input is malformed through Complete and through Stream: one check,
+// both paths. A stream that dies on it drops the bad call from Blocks too.
+func TestToolInputMustBeAnObjectOnBothPaths(t *testing.T) {
+	bad := llmtest.Reply{ToolCalls: []llm.ToolCall{{ID: "tu_bad", Name: "weather", Input: json.RawMessage(`[1,2]`)}}}
+	for _, streaming := range []bool{false, true} {
+		f := llmtest.NewFake(t)
+		f.Script("go", bad)
+		c := client(t, f.URL)
+		r := llm.Request{Task: "t", Prompt: "go", Tools: []llm.Tool{weather}}
+		var resp llm.Response
+		var err error
+		if streaming {
+			resp, err = c.Stream(t.Context(), r, nil)
+		} else {
+			resp, err = c.Complete(t.Context(), r)
+		}
+		if !errors.Is(err, llm.ErrMalformed) {
+			t.Errorf("streaming=%v: err = %v, want ErrMalformed", streaming, err)
+		}
+		if streaming {
+			assertOnlyCompleteBlocks(t, resp)
+			if len(resp.ToolCalls) != 0 {
+				t.Errorf("a malformed call was reported: %+v", resp.ToolCalls)
+			}
+		}
 	}
 }

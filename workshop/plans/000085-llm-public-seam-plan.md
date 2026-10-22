@@ -406,7 +406,7 @@ quoted name as a claim that it does).
       params, with no server.
 - [x] `TestSingleTurnHashUnchanged` pins the `schema-veto-verdict` request's `RequestHash` to its pre-change
       value; `TestRenderMultiTurn` checks the new sections are deterministic.
-- [x] Implement; `params()` delegates to `wireMessages`. Commit `#85 M2: neutral message, tool and block types on the wire`.
+- [x] Implement; `params()` delegates to `wireMessages`. Committed.
 
 ### Task 3 (M2): tool calls in responses + Delta stream
 
@@ -420,7 +420,7 @@ quoted name as a claim that it does).
 - [x] `TestToolCallsOnBothPaths`, `TestMultiTurnRoundTrip`, `TestTextOnly`,
       `TestDeltasOwnedByReceiver`.
 - [x] Implement; switch `Stream` to `func(Delta)`; migrate every implementer and call site
-      (`llm.TextOnly(fn)`); `go test ./cmd/define/...` green. Commit `#85 M2: tool calls and interleaved stream deltas`.
+      (`llm.TextOnly(fn)`); `go test ./cmd/define/...` green. Committed.
 
 ### Task 4 (M2): cancel and attempts
 
@@ -438,7 +438,7 @@ quoted name as a claim that it does).
 - [x] Audit **every** `ErrUnavailable` match site in define: `ask.go:228` (already checks `ctx.Err()` first, at
       `:213`), `practice_help_client.go:195`, and `background.go:451`, whose loop is cancelled at shutdown and
       would otherwise fall to `default`. Each site gets an explicit `ErrCanceled` arm or a test showing it can't
-      see one. Commit `#85 M2: ErrCanceled and per-attempt admission hook`.
+      see one. Committed.
 
 ### Task 5 (M2): fake + Suite growth
 
@@ -448,7 +448,7 @@ quoted name as a claim that it does).
       `TestRecordedAccessors`, and the `misapplied` matrix extended to cover ToolCalls.
 - [x] `Suite` obligations from the API section, including `ConcurrentStreams` (8 streams, one cancelled alone),
       run against the fake under `-race`. The package docs for `llm` and `llmtest` state concurrent-use safety.
-- [x] Commit; `sdlc milestone-close --milestone M2`.
+- [x] Committed; `sdlc milestone-close --milestone M2`.
 
 ### Task 6 (M3): captures, conformance, docs, tag
 

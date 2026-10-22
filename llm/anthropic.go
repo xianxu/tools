@@ -191,7 +191,14 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onEvent func(De
 	// the tool calls that reached End (a half-streamed call is dropped, never
 	// half-reported).
 	partial := func() Response {
-		resp, _ := buildResponse(&msg, time.Since(start))
+		cut := msg
+		cut.Content = nil
+		for i, b := range msg.Content {
+			if deltas.complete(i, b.Type) {
+				cut.Content = append(cut.Content, b)
+			}
+		}
+		resp, _ := buildResponse(&cut, time.Since(start))
 		resp.ToolCalls = cloneCalls(deltas.done)
 		resp.Usage.Attempts = st.dispatched()
 		return resp
@@ -314,6 +321,7 @@ func buildResponse(msg *anthropic.Message, took time.Duration) (Response, error)
 		},
 	}
 	var text strings.Builder
+	var malformed error
 	for _, b := range msg.Content {
 		// Raw is copied from a string, so nothing here aliases an SDK buffer: a
 		// receiver may keep any of it.
@@ -328,6 +336,9 @@ func buildResponse(msg *anthropic.Message, took time.Duration) (Response, error)
 			in := append(json.RawMessage(nil), b.Input...)
 			if len(in) == 0 {
 				in = json.RawMessage("{}")
+			}
+			if malformed == nil {
+				malformed = toolInputObject(b.Name, in)
 			}
 			call := ToolCall{ID: b.ID, Name: b.Name, Input: in}
 			blk.ToolCall = &call
@@ -350,7 +361,7 @@ func buildResponse(msg *anthropic.Message, took time.Duration) (Response, error)
 	if err := classifyStop(out.Stop); err != nil {
 		return out, err
 	}
-	return out, nil
+	return out, malformed
 }
 
 // mapError turns an SDK error into the taxonomy.

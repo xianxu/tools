@@ -100,6 +100,18 @@ leave incident transcripts and one-off details in their owning issue or plan.
   convenient dev build. Record what was actually measured.
 - A plan is a consumer of the tree. Keep entity tables, citations, revisions,
   and status rows synchronized with the committed symbols and evidence.
+- A partial result reports only completed state. When a stream fails or is
+  cancelled, build what you return from what finished (blocks that reached
+  their stop), never from an accumulator that opens entries at their start
+  (tools#85 BR-4: a half-streamed tool_use rode out in Blocks and Message()).
+- One validity rule, one function, every path. If Stream rejects an input that
+  Complete accepts, the check lives in the wrong place (tools#85).
+- A shared obligation suite asserts only what every backend guarantees. A race
+  the contract allows (cancel against an already-buffered finish) is accepted
+  in the suite, and the strict side is pinned where a double holds the race
+  open (tools#85 BR-5).
+- A ticked plan step quotes only artifacts that exist at the head. Don't write
+  the commit subject you intend to use (tools#85).
 
 ## Working rule
 

@@ -200,7 +200,7 @@ func Suite(t *testing.T, newClient func(t *testing.T) llm.Client) {
 		var mu sync.Mutex
 		returned, late := false, 0
 		start := time.Now()
-		_, err := c.Stream(cctx, llm.Request{Task: "suite-cancel-stream", Prompt: longPrompt}, func(llm.Delta) {
+		resp, err := c.Stream(cctx, llm.Request{Task: "suite-cancel-stream", Prompt: longPrompt}, func(llm.Delta) {
 			mu.Lock()
 			defer mu.Unlock()
 			if returned {
@@ -211,8 +211,15 @@ func Suite(t *testing.T, newClient func(t *testing.T) llm.Client) {
 		mu.Lock()
 		returned = true
 		mu.Unlock()
-		if !errors.Is(err, llm.ErrCanceled) || !errors.Is(err, context.Canceled) {
-			t.Fatalf("err = %v, want ErrCanceled wrapping context.Canceled", err)
+		// Either outcome is legal (ARCH-ORDER): a stream already fully buffered may
+		// finish before the cancel lands. What is never legal is a mixture, or a
+		// different error. The strict cancel-lands case is pinned on the fake,
+		// which holds the stream (TestCancelOutcomes).
+		if err != nil && (!errors.Is(err, llm.ErrCanceled) || !errors.Is(err, context.Canceled)) {
+			t.Fatalf("err = %v, want ErrCanceled wrapping context.Canceled, or a complete success", err)
+		}
+		if err == nil && resp.Stop == "" {
+			t.Errorf("a success without a stop reason is not complete: %+v", resp)
 		}
 		if elapsed := time.Since(start); elapsed > 30*time.Second {
 			t.Errorf("took %s to return after cancel", elapsed)
@@ -254,8 +261,11 @@ func Suite(t *testing.T, newClient func(t *testing.T) llm.Client) {
 		wg.Wait()
 		for i := 0; i < n; i++ {
 			if i == victim {
-				if !errors.Is(errs[i], llm.ErrCanceled) {
-					t.Errorf("cancelled stream %d: err = %v, want ErrCanceled", i, errs[i])
+				// ErrCanceled, or a complete success if the short echo stream was
+				// already buffered when the cancel landed (ARCH-ORDER); the success
+				// path is checked for consistency above, like every other stream.
+				if errs[i] != nil && !errors.Is(errs[i], llm.ErrCanceled) {
+					t.Errorf("cancelled stream %d: err = %v, want ErrCanceled or success", i, errs[i])
 				}
 				continue
 			}
