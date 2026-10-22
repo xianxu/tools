@@ -101,7 +101,7 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 		Model: anthropic.Model(cmp.Or(r.Model, a.cfg.Model)),
 		// effective() has already normalised this; the guard stays because params
 		// is reachable from a future caller that has not been through it.
-		MaxTokens: positiveOr(r.MaxTokens, a.cfg.MaxTokens),
+		MaxTokens:  positiveOr(r.MaxTokens, a.cfg.MaxTokens),
 		Messages:   wireMessages(r),
 		Tools:      wireTools(r.Tools),
 		ToolChoice: wireToolChoice(r.ToolChoice),

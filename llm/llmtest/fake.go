@@ -126,7 +126,10 @@ func (r Recorded) Tools() []map[string]any {
 }
 
 // ToolChoice returns the request's tool_choice, or nil when it sent none.
-func (r Recorded) ToolChoice() map[string]any { m, _ := r.Body["tool_choice"].(map[string]any); return m }
+func (r Recorded) ToolChoice() map[string]any {
+	m, _ := r.Body["tool_choice"].(map[string]any)
+	return m
+}
 
 func joinBlocks(v any) string {
 	switch t := v.(type) {
