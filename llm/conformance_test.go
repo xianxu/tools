@@ -3,10 +3,10 @@
 package llm_test
 
 import (
-	"github.com/xianxu/tools/conformance"
 	"os"
 	"testing"
 
+	"github.com/xianxu/tools/conformance"
 	"github.com/xianxu/tools/llm"
 	"github.com/xianxu/tools/llm/llmtest"
 )

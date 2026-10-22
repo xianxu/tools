@@ -22,7 +22,7 @@ import (
 //	          that skipped when deleted.
 //	round 4 — the sweep covered cmd/define while the README claimed `./...`;
 //	          measured, the documented strict command reported ok with
-//	          llm's suites skipped.
+//	          internal/llm's suites skipped (the package's path at the time).
 //
 // Every one of those was a human re-running an enumeration. A grep cannot fail a
 // build; this can. It is the same move that ended the `doc-sweep-incomplete`

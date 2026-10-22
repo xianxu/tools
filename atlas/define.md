@@ -2769,7 +2769,7 @@ review rounds went to this one rule and each fixed only the sites its grep
 reached: one pty site while six suites skipped; then all seven, enumerated by a
 pattern that could not see the mirror defect; then a carve-out that excluded a
 file by name; then a sweep over `cmd/define` under a README claiming `./...`,
-where the documented strict command measurably reported `ok` with `llm`
+where the documented strict command measurably reported `ok` with `internal/llm` (as it was then)
 skipped. `TestEverySkipIsRoutedOrWaived` now walks the tree and fails on any
 unrouted, unwaived skip — the same move that ended the doc-sweep family, applied
 to a guarantee instead of a sentence.

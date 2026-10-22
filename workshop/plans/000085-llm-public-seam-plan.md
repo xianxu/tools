@@ -366,7 +366,7 @@ cassette misses. A test pins one existing golden's hash across the change.
 
 ## Milestones
 
-- [ ] M1 — Publish: move `internal/llm` → `llm`, `internal/llm/llmtest` → `llm/llmtest`,
+- [x] M1 — Publish: move `internal/llm` → `llm`, `internal/llm/llmtest` → `llm/llmtest`,
       `internal/conformance` → `conformance`; rewrite imports; update `AGENTS.local.md`, atlas, scripts.
       No behavior change; the full suite passes unchanged.
 - [ ] M2 — Widen the seam: Messages, Tools, ToolCalls, Delta stream, ErrCanceled, BeforeAttempt,
