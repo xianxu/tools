@@ -784,6 +784,11 @@ func TestMisappliedReplyFieldsFailLoudlyOnBothPaths(t *testing.T) {
 		{"an early stall on a non-stream", llmtest.Reply{StallEarly: true}, false, "frame choreography"},
 		{"a junk frame on a non-stream", llmtest.Reply{JunkFrame: true}, false, "frame choreography"},
 		{"an .sse capture on a non-stream", llmtest.Reply{Capture: "stream-sample.sse"}, false, "frame choreography"},
+		{"a capture with tool calls on a non-stream", llmtest.Reply{Capture: "message-thinking.json", ToolCalls: toolReply().ToolCalls}, false, "frame choreography"},
+		{"a capture with tool calls on a stream", llmtest.Reply{Capture: "stream-sample.sse", ToolCalls: toolReply().ToolCalls}, true, "STREAMING"},
+		{"a junk frame on a tool stream", llmtest.Reply{JunkFrame: true, ToolCalls: toolReply().ToolCalls}, true, "STREAMING"},
+		{"an early stall on a tool stream", llmtest.Reply{StallEarly: true, ToolCalls: toolReply().ToolCalls}, true, "STREAMING"},
+		{"a split body on a tool stream", llmtest.Reply{Text: "a b", SplitText: 2, ToolCalls: toolReply().ToolCalls}, true, "STREAMING"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

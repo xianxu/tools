@@ -342,7 +342,9 @@ type matcher struct {
 	queue []Reply
 }
 
-// Fake is a stateful Anthropic-shaped server.
+// Fake is a stateful Anthropic-shaped server. It is safe for concurrent use:
+// every piece of state below is guarded by mu, so many clients and calls may
+// share one Fake.
 //
 // State that persists across calls, and why each is needed:
 //   - requests, IN ORDER — the ordering is what proves a retry happened, and

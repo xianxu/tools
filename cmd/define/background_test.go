@@ -498,6 +498,7 @@ func TestStopMeans(t *testing.T) {
 		{"the deck's files", deck, false, deck},
 		{"a malformed answer", fmt.Errorf("band: %w", llm.ErrMalformed), false, nil},
 		{"a cancel", context.Canceled, false, nil},
+		{"a cancelled model call", fmt.Errorf("band: %w: %w", llm.ErrCanceled, context.Canceled), false, nil},
 	} {
 		if noModel, deckErr := stopMeans(tc.err); noModel != tc.noModel || deckErr != tc.deckErr {
 			t.Errorf("%s: stopMeans = %v, %v; want %v, %v", tc.name, noModel, deckErr, tc.noModel, tc.deckErr)

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/llm"
 )
 
 // The FLOOR: if the fake's own envelope is wrong, every later failure is
@@ -172,5 +174,72 @@ func TestAQueueStillAdvancesWhileItHasEntries(t *testing.T) {
 	body := post(t, f.URL, `{"model":"claude-opus-5","messages":[{"role":"user","content":"hello"}]}`)
 	if !strings.Contains(string(body), "recovered") {
 		t.Errorf("second = %s, want the queue to have advanced", body)
+	}
+}
+
+// A tool-call reply has the protocol's shape on both paths: tool_use blocks after
+// the text with stop_reason tool_use, and on a stream each input cut into
+// several input_json_delta frames. A fake serving one fragment per call could
+// not catch a client that parses a fragment as the whole input.
+func TestFakeToolCalls(t *testing.T) {
+	calls := []llm.ToolCall{{ID: "tu_1", Name: "weather", Input: json.RawMessage(`{"city":"Oslo"}`)}, {ID: "tu_2", Name: "ping"}}
+	f := NewFake(t)
+	f.Script("weather", Reply{Text: "Checking.", ToolCalls: calls})
+
+	var msg map[string]any
+	if err := json.Unmarshal(post(t, f.URL, `{"messages":[{"role":"user","content":"weather?"}]}`), &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg["stop_reason"] != "tool_use" {
+		t.Errorf("stop_reason = %v", msg["stop_reason"])
+	}
+	var types []string
+	for _, b := range msg["content"].([]any) {
+		types = append(types, b.(map[string]any)["type"].(string))
+	}
+	if strings.Join(types, ",") != "thinking,text,tool_use,tool_use" {
+		t.Errorf("blocks = %v", types)
+	}
+
+	body := string(post(t, f.URL, `{"stream":true,"messages":[{"role":"user","content":"weather?"}]}`))
+	if n := strings.Count(body, "input_json_delta"); n < 4 {
+		t.Errorf("%d input_json_delta frames for two calls, want each input in several", n)
+	}
+	for _, want := range []string{`"type":"tool_use"`, `"stop_reason":"tool_use"`, "message_stop", `"text":"Checking."`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("tool stream is missing %s", want)
+		}
+	}
+}
+
+// The next reply after a tool round is scripted on the tool result's content.
+func TestFakeMatchesToolResult(t *testing.T) {
+	f := NewFake(t)
+	f.Script("rain in Oslo", Reply{Text: "Bring a coat."})
+	body := post(t, f.URL, `{"messages":[{"role":"user","content":"weather?"},`+
+		`{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"weather","input":{}}]},`+
+		`{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","content":"rain in Oslo"}]}]}`)
+	if !strings.Contains(string(body), "Bring a coat.") {
+		t.Errorf("tool-result turn did not match: %s", body)
+	}
+}
+
+func TestRecordedAccessors(t *testing.T) {
+	f := NewFake(t)
+	post(t, f.URL, `{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"text","text":"yo"}]}],`+
+		`"tools":[{"name":"weather","input_schema":{"type":"object"}}],"tool_choice":{"type":"tool","name":"weather"}}`)
+	r := f.Requests()[0]
+	msgs := r.Messages()
+	if len(msgs) != 2 || msgs[0].Role != "user" || msgs[0].Content[0]["text"] != "hi" || msgs[1].Content[0]["text"] != "yo" {
+		t.Errorf("Messages() = %+v", msgs)
+	}
+	if len(r.Tools()) != 1 || r.Tools()[0]["name"] != "weather" {
+		t.Errorf("Tools() = %v", r.Tools())
+	}
+	if r.ToolChoice()["name"] != "weather" {
+		t.Errorf("ToolChoice() = %v", r.ToolChoice())
+	}
+	if f.Attempts() != 1 {
+		t.Errorf("Attempts() = %d", f.Attempts())
 	}
 }

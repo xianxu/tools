@@ -448,6 +448,11 @@ func deckIO(err error) error { return fmt.Errorf("%w: %w", errDeckIO, err) }
 // word it stopped on is already reported unfinished.
 func stopMeans(err error) (noModel bool, deckErr error) {
 	switch {
+	case errors.Is(err, llm.ErrCanceled):
+		// The session's own cancel (a shutdown, a stopped pass). It used to reach
+		// here as ErrUnavailable and turn background work off; it is no verdict
+		// on the model.
+		return false, nil
 	case errors.Is(err, llm.ErrUnavailable), errors.Is(err, llm.ErrRequest):
 		return true, nil
 	case errors.Is(err, errDeckIO):

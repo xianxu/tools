@@ -333,17 +333,18 @@ cassette misses. A test pins one existing golden's hash across the change.
 | `Message` / `Role` / `Tool` / `ToolCall` / `Text` / `ToolResult` | `llm/llm.go` | new |
 | `Delta` / `DeltaKind` / `TextOnly` | `llm/delta.go` | new |
 | `Attempt` | `llm/llm.go` | new |
-| `ErrCanceled` | `llm/errors.go` | new |
 | `renderRequest` (Messages/Tools sections) | `llm/render.go` | modified |
-| `wireMessages` (Request → `[]anthropic.MessageParam`) | `llm/wire.go` | new |
-| `deltaFor` (SDK stream event → `[]Delta`) | `llm/wire.go` | new |
+| `wireMessages` / `wireTools` / `wireToolChoice` / `checkRequest` | `llm/wire.go` | new |
+| `deltaState` (SDK stream event → `[]Delta`) | `llm/delta.go` | new |
+| `outcome` | `llm/attempt.go` | new |
+| `callerDone` / `ErrCanceled` | `llm/errors.go` | new |
 | `buildResponse` (tool_use blocks) | `llm/anthropic.go` | modified |
 
 - **wireMessages**: a pure translation of `Messages` + `Prompt` + `Tools` + `ToolChoice` into SDK params.
   Raw-first per block. Unit-tested from table inputs with no server.
   - **DRY rationale:** the one place the neutral types meet the Anthropic shape. `params()` calls it and so
     does nothing else.
-- **deltaFor**: maps one SDK stream event to zero or more `Delta`s. It's pure, so the interleaving and Index
+- **deltaState**: maps one SDK stream event to zero or more `Delta`s. It's pure, so the interleaving and Index
   rules are unit-tested on fabricated events and pinned end to end on the wire.
 - **Delta**: the provider-neutral stream event.
   - **Future extensions:** `DeltaThinking`, only if a consumer ever needs it (none does).
@@ -353,7 +354,7 @@ cassette misses. A test pins one existing golden's hash across the change.
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `anthropicClient.Stream/Complete` | `llm/anthropic.go` | modified | Anthropic Messages API via SDK |
-| `attemptMiddleware` | `llm/anthropic.go` | new | SDK retry loop (`option.WithMiddleware`) |
+| `attemptMiddleware` / `callState` | `llm/attempt.go` | new | SDK retry loop (`option.WithMiddleware`) |
 | `Fake` (tool_use, history, attempts) | `llm/llmtest/fake.go` | modified | httptest Anthropic wire |
 | `Cassette` | `llm/llmtest/cassette.go` | modified | `http.RoundTripper` |
 | `Suite` | `llm/llmtest/suite.go` | modified | fake + live service |
@@ -369,7 +370,7 @@ cassette misses. A test pins one existing golden's hash across the change.
 - [x] M1 — Publish: move `internal/llm` → `llm`, `internal/llm/llmtest` → `llm/llmtest`,
       `internal/conformance` → `conformance`; rewrite imports; update `AGENTS.local.md`, atlas, scripts.
       No behavior change; the full suite passes unchanged.
-- [ ] M2 — Widen the seam: Messages, Tools, ToolCalls, Delta stream, ErrCanceled, BeforeAttempt,
+- [x] M2 — Widen the seam: Messages, Tools, ToolCalls, Delta stream, ErrCanceled, BeforeAttempt,
       Usage.Attempts; the fake and Suite grow with each; define migrated to `TextOnly`; goldens unchanged for
       single-turn requests.
 - [ ] M3 — Prove against reality: record real tool-use and multi-turn captures/cassettes via
@@ -392,50 +393,49 @@ targets naming `./internal/llm/...`; `atlas/llm.md`, `atlas/index.md`; `AGENTS.l
       `llmtest.Suite` against `NewFake`. This proves no `internal/` import leaks.
 - [x] Commit `#85 M1: publish llm, llmtest and conformance as public packages`; `sdlc milestone-close --milestone M1`.
 
-Planned test names below are unquoted and marked "(planned)". The repo guard
-`TestPlanCitesTestsThatExist` holds that a backticked test name claims the test exists, so each one gets its
-backticks once it is written.
+Test names are quoted only once the test exists (the repo guard `TestPlanCitesTestsThatExist` reads a
+quoted name as a claim that it does).
 
 ### Task 2 (M2): neutral types + wire translation (pure, TDD)
 
 **Files:** `llm/llm.go`, `llm/wire.go`, `llm/wire_test.go`, `llm/render.go`, `llm/render_test.go`.
 
-- [ ] TestWireMessages (planned): a table over the Request shapes in the API section (Prompt-only equals today's
+- [x] `TestWireMessages`: a table over the Request shapes in the API section (Prompt-only equals today's
       params; Raw-first blocks; tool_result; tools; every ToolChoice form; the refusals: empty request, a tool
       named with a keyword, an unknown ToolChoice). Strategy: one table, asserted on the marshalled SDK
       params, with no server.
-- [ ] TestSingleTurnHashUnchanged (planned) pins the `schema-veto-verdict` request's `RequestHash` to its pre-change
-      value; TestRenderMultiTurn (planned) checks the new sections are deterministic.
-- [ ] Implement; `params()` delegates to `wireMessages`. Commit `#85 M2: neutral message, tool and block types on the wire`.
+- [x] `TestSingleTurnHashUnchanged` pins the `schema-veto-verdict` request's `RequestHash` to its pre-change
+      value; `TestRenderMultiTurn` checks the new sections are deterministic.
+- [x] Implement; `params()` delegates to `wireMessages`. Commit `#85 M2: neutral message, tool and block types on the wire`.
 
 ### Task 3 (M2): tool calls in responses + Delta stream
 
 **Files:** `llm/delta.go`, `llm/delta_test.go`, `llm/anthropic.go`, `llm/response_test.go`, `llm/auto.go`,
 `cmd/define/llm_activity.go` and the test doubles listed in the API section.
 
-- [ ] FuzzDeltaAccumulator (planned): from a seed of captured tool-use frames (M3 adds the real ones; M2 uses fake
+- [x] `FuzzDeltaAccumulator`: from a seed of captured tool-use frames (M3 adds the real ones; M2 uses fake
       frames), the fuzzer splits each call's input at arbitrary points and interleaves events from several
       Index values. It asserts guarantees 1, 2 and 4 and that `End.Input` equals `ToolCalls`, and that the
-      result never panics. TestDeltaForLinear (planned) counts `json.Valid` calls at 8 and 16 fragments (one per call).
-- [ ] TestBuildResponseToolUse (planned), TestResponseMessageRoundTripsRaw (planned), TestTextOnly (planned),
-      TestDeltasOwnedByReceiver (planned).
-- [ ] Implement; switch `Stream` to `func(Delta)`; migrate every implementer and call site
+      result never panics. `TestDeltaForLinear` counts `json.Valid` calls at 8 and 16 fragments (one per call).
+- [x] `TestToolCallsOnBothPaths`, `TestMultiTurnRoundTrip`, `TestTextOnly`,
+      `TestDeltasOwnedByReceiver`.
+- [x] Implement; switch `Stream` to `func(Delta)`; migrate every implementer and call site
       (`llm.TextOnly(fn)`); `go test ./cmd/define/...` green. Commit `#85 M2: tool calls and interleaved stream deltas`.
 
 ### Task 4 (M2): cancel and attempts
 
 **Files:** `llm/errors.go`, `llm/anthropic.go`, `llm/attempt.go`, `llm/anthropic_test.go`; define match sites.
 
-- [ ] TestCancelOutcomes (planned): a table over the cancel points (held at `Started`; after the first text; caller
+- [x] `TestCancelOutcomes`: a table over the cancel points (held at `Started`; after the first text; caller
       deadline), driven by the fake's barriers. Each expects `ErrCanceled` plus the matching ctx error, the
       partial content defined above, and no callback after return. The package's own Timeout and StallAfter
       keep their current mapping.
-- [ ] TestBeforeAttempt (planned): a table over scripted statuses × hook verdicts. It asserts the hook's Numbers,
+- [x] `TestBeforeAttempt`: a table over scripted statuses × hook verdicts. It asserts the hook's Numbers,
       `f.Requests()` count, `Usage.Attempts` on every return path, `errors.Is(err, hookErr)`, and that no request
-      follows a rejection. TestOutcomeOrder (planned): the hook rejects while the caller's ctx is cancelled, and the
+      follows a rejection. `TestOutcomeOrder`: the hook rejects while the caller's ctx is cancelled, and the
       hook's error wins.
-- [ ] Implement `callState` + `attemptMiddleware` and the outcome order.
-- [ ] Audit **every** `ErrUnavailable` match site in define: `ask.go:228` (already checks `ctx.Err()` first, at
+- [x] Implement `callState` + `attemptMiddleware` and the outcome order.
+- [x] Audit **every** `ErrUnavailable` match site in define: `ask.go:228` (already checks `ctx.Err()` first, at
       `:213`), `practice_help_client.go:195`, and `background.go:451`, whose loop is cancelled at shutdown and
       would otherwise fall to `default`. Each site gets an explicit `ErrCanceled` arm or a test showing it can't
       see one. Commit `#85 M2: ErrCanceled and per-attempt admission hook`.
@@ -444,11 +444,11 @@ backticks once it is written.
 
 **Files:** `llm/llmtest/fake.go`, `fake_test.go`, `suite.go`.
 
-- [ ] TestFakeToolCalls (planned) (JSON and stream; input chunked across ≥2 frames, after Text), TestFakeMatchesToolResult (planned),
-      TestRecordedAccessors (planned), and the `misapplied` matrix extended to cover ToolCalls.
-- [ ] `Suite` obligations from the API section, including `ConcurrentStreams` (8 streams, one cancelled alone),
+- [x] `TestFakeToolCalls` (JSON and stream; input chunked across ≥2 frames, after Text), `TestFakeMatchesToolResult`,
+      `TestRecordedAccessors`, and the `misapplied` matrix extended to cover ToolCalls.
+- [x] `Suite` obligations from the API section, including `ConcurrentStreams` (8 streams, one cancelled alone),
       run against the fake under `-race`. The package docs for `llm` and `llmtest` state concurrent-use safety.
-- [ ] Commit; `sdlc milestone-close --milestone M2`.
+- [x] Commit; `sdlc milestone-close --milestone M2`.
 
 ### Task 6 (M3): captures, conformance, docs, tag
 
@@ -484,7 +484,7 @@ the consumer's to keep.
 
 Per stream event: `deltaFor` is O(1) per event plus O(len fragment) appended to the call's buffer; End parses
 each call's input once. Growth drivers: events E, tool-call input bytes B. Expected: O(E + B). Counted test:
-TestDeltaForLinear (planned) feeds a call split into 8 and 16 fragments and asserts the buffer is appended, never
+`TestDeltaForLinear` feeds a call split into 8 and 16 fragments and asserts the buffer is appended, never
 re-scanned (`json.Valid` invocations == 1 per call).
 
 ## Revisions
@@ -505,3 +505,14 @@ re-scanned (`json.Valid` invocations == 1 per call).
   Outcome order is fixed and tested. Minors fixed too: the implementer inventory is corrected, the
   `ErrCanceled` audit now covers every `ErrUnavailable` match site (adds `background.go:451`), test prose is
   cut to names plus strategy, and `FuzzDeltaAccumulator` is added.
+- 2026-10-21 (M2 build): what shipped, where it differs from the plan text.
+  `deltaFor` became the per-call `deltaState` in `llm/delta.go`, and `attemptMiddleware` moved to `llm/attempt.go`
+  with `callState` and `outcome`. Internal deadlines carry the cause `errBudget` (`WithTimeoutCause`); without it
+  the auto client's own Timeout read as the caller's deadline. That gap was found while wiring
+  `ErrCanceled`. A hook that returns because the call's context ended is a cancel, not a rejection; the
+  rejection-beats-later-cancel order is pinned by the unit test `TestOutcomeOrderUnit`. `BeforeAttempt` is
+  not a `Suite` obligation, because `Suite` gets a built client and can't install a hook; it is covered on the
+  fake and gets a live check in M3. Planned response tests folded into `TestToolCallsOnBothPaths` and
+  `TestMultiTurnRoundTrip`. A Raw block is compacted by encoding/json (keys, order and values are unchanged;
+  whitespace goes). `checkRequest` now refuses an empty request, and two auto tests that sent `Request{}`
+  got a prompt.

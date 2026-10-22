@@ -57,7 +57,7 @@ caller cancellation. Retries stay in the transport, and `Config.BeforeAttempt` r
 ## Plan
 
 - [x] M1 — Publish `llm`, `llm/llmtest`, `conformance`; imports, rule text, atlas; no behavior change.
-- [ ] M2 — Widen the seam (Messages, Tools, ToolCalls, Delta, ErrCanceled, BeforeAttempt, Attempts); fake + Suite grow; define on `TextOnly`.
+- [x] M2 — Widen the seam (Messages, Tools, ToolCalls, Delta, ErrCanceled, BeforeAttempt, Attempts); fake + Suite grow; define on `TextOnly`.
 - [ ] M3 — Real tool-use/multi-turn captures, live conformance, atlas rewrite, land, tag `v0.1.0`.
 
 ## Estimate
@@ -114,3 +114,11 @@ of the v2 mid-range.
   and planned test names are unquoted until written. Remaining define failure `TestPlanCitesTestsThatExist` on
   #82's `TestPTY` comes from main (#82 untouched here). Three pty tests fail only inside the agent sandbox
   ("operation not permitted") and pass unsandboxed.
+- M2 implemented. Messages, Tools, ToolChoice and ToolCalls; the `Delta` stream with `TextOnly`; `ErrCanceled`;
+  `BeforeAttempt` and `Usage.Attempts`. The fake has tool-call replies, tool-result matching and the
+  `Recorded` accessors. New `Suite` obligations: tool-call events, a multi-turn continuation, cancel, and
+  `ConcurrentStreams`. define is migrated, and its ErrUnavailable match sites are audited (`background.go`
+  gains an explicit ErrCanceled arm; `ask.go` already checked ctx first; the `practice_help` budget still reads
+  as slow). Found in build: internal deadlines needed a cause (`errBudget`), or the auto client's Timeout read
+  as a caller deadline. Evidence: `go test ./...` (unsandboxed) is green except main's #82 guard row;
+  `llm` and `llmtest` pass `-race -count=3`; `FuzzDeltaAccumulator` ran 60s clean.
