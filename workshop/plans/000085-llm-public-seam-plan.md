@@ -71,8 +71,11 @@ func TextOnly(fn func(string)) func(Delta)
 ```
 
 Two methods, not a third `StreamEvents`: one streaming path means one stall timer, one salvage branch and
-one set of suite obligations. Define's decorators (`activityClient`, `practice_help_client.go`) change their
-signatures; they're the only other implementers.
+one set of suite obligations. The implementers that change signature are `autoClient.Stream` (`auto.go`),
+define's `activityClient` (`llm_activity.go`), and the test doubles in `cmd/define`
+(`answer_termination_rows_test.go`, `background_loop_test.go`, `answer_rows_test.go`, `llm_activity_test.go`,
+`askrun_test.go`, `ask_language_test.go` ×2). `practice_help_client.go` goes through `llm.Run` and is
+unaffected.
 
 ### Request
 
@@ -257,6 +260,17 @@ The caller cancels by cancelling `ctx`. That's the only control, and it covers b
       Number int    // 0 for the first attempt, 1.. for retries
   }
   ```
+- **How a rejection aborts without a retry.** The SDK retries when a middleware returns no response
+  (`requestconfig.go` `shouldRetry`: `res == nil` means retry), so returning the hook's error directly would buy
+  backoff plus two more hook calls. Instead each call carries a private `callState` (the hook error and the
+  attempt count) in its context, and its SDK call runs on a context derived from the caller's with its own
+  cancel. On a rejection the middleware stores the error, cancels that derived context, and returns. The SDK
+  loop then exits at its `ctx.Err()` check, before backoff. The client checks `callState.hookErr` **first**,
+  before the caller-ctx check that yields `ErrCanceled` and before `mapError`, and returns
+  `fmt.Errorf("%w: admission: %w", ErrUnavailable, hookErr)`. So `errors.Is` holds for both, and
+  `Usage.Attempts` is the admitted count, 0 for a first-attempt rejection. One owner decides how a call ended,
+  in a fixed order: hook rejection, then caller cancel, then the package's stall and timeout, then status
+  mapping. The order is pinned by a test where the hook rejects while the caller's ctx is also cancelled.
 - **What this means for echo's gateway.** It rate-limits **logical** calls for fairness and admission between
   actors. It counts or throttles **physical** attempts against provider limits through `BeforeAttempt`. A new
   `Response.Usage.Attempts int` field counts **dispatched** HTTP attempts only, the ones the hook admitted and
@@ -383,62 +397,54 @@ targets naming `./internal/llm/...`; `atlas/llm.md`, `atlas/index.md`; `AGENTS.l
 
 **Files:** `llm/llm.go`, `llm/wire.go`, `llm/wire_test.go`, `llm/render.go`, `llm/render_test.go`.
 
-- [ ] Failing tests in `wire_test.go`: Prompt-only → one user text message (equals today's params); Messages +
-      Prompt → Prompt appended last; assistant block with Raw → sent verbatim; `ToolResult` → `tool_result`
-      with `tool_use_id`/`is_error`; Tools → `tools[]` with input_schema (nil → `{"type":"object"}`);
-      ToolChoice ""/auto/any/none/name; neither Messages nor Prompt → `ErrRequest`.
-- [ ] `render_test.go`: `TestSingleTurnHashUnchanged` pins `RequestHash` of the committed
-      `schema-veto-verdict` request to its pre-change value; multi-turn/tools requests render deterministic
-      `--- messages ---` / `--- tools ---` sections.
-- [ ] `TestToolNameCollidesWithChoiceKeyword`: a Tool named auto/any/none → `ErrRequest`, nothing sent;
-      `TestUnknownToolChoice`: ToolChoice naming no declared tool → `ErrRequest`.
-- [ ] Implement types, `Text`, `ToolResult`, `wireMessages`; `params()` delegates to it.
-- [ ] Commit `#85 M2: neutral message, tool and block types on the wire`.
+- [ ] `TestWireMessages`: a table over the Request shapes in the API section (Prompt-only equals today's
+      params; Raw-first blocks; tool_result; tools; every ToolChoice form; the refusals: empty request, a tool
+      named with a keyword, an unknown ToolChoice). Strategy: one table, asserted on the marshalled SDK
+      params, with no server.
+- [ ] `TestSingleTurnHashUnchanged` pins the `schema-veto-verdict` request's `RequestHash` to its pre-change
+      value; `TestRenderMultiTurn` checks the new sections are deterministic.
+- [ ] Implement; `params()` delegates to `wireMessages`. Commit `#85 M2: neutral message, tool and block types on the wire`.
 
 ### Task 3 (M2): tool calls in responses + Delta stream
 
-**Files:** `llm/delta.go`, `llm/delta_test.go`, `llm/anthropic.go`, `llm/response_test.go`.
+**Files:** `llm/delta.go`, `llm/delta_test.go`, `llm/anthropic.go`, `llm/response_test.go`, `llm/auto.go`,
+`cmd/define/llm_activity.go` and the test doubles listed in the API section.
 
-- [ ] Failing tests: `deltaFor` on fabricated SDK events (text delta; tool_use start; input_json_delta;
-      content_block_stop of a tool_use → End with parsed Input; thinking → none); `buildResponse` from a
-      tool_use message populates `ToolCalls` and `Block.ToolCall`; `Response.Message()` round-trips Raw;
-      `TextOnly` forwards only text.
-- [ ] Implement; switch `Stream` to `func(Delta)`; End with unparsable input → `ErrMalformed` + partial.
-- [ ] Migrate define: each `Stream(..., fn)` → `Stream(..., llm.TextOnly(fn))`; `activityClient` and the
-      practice-help decorator take `func(llm.Delta)` and clear the waiting display on the first `DeltaText`
-      (unchanged semantics). `go test ./cmd/define/...` green.
-- [ ] Commit `#85 M2: tool calls and interleaved stream deltas`.
+- [ ] `FuzzDeltaAccumulator`: from a seed of captured tool-use frames (M3 adds the real ones; M2 uses fake
+      frames), the fuzzer splits each call's input at arbitrary points and interleaves events from several
+      Index values. It asserts guarantees 1, 2 and 4 and that `End.Input` equals `ToolCalls`, and that the
+      result never panics. `TestDeltaForLinear` counts `json.Valid` calls at 8 and 16 fragments (one per call).
+- [ ] `TestBuildResponseToolUse`, `TestResponseMessageRoundTripsRaw`, `TestTextOnly`,
+      `TestDeltasOwnedByReceiver`.
+- [ ] Implement; switch `Stream` to `func(Delta)`; migrate every implementer and call site
+      (`llm.TextOnly(fn)`); `go test ./cmd/define/...` green. Commit `#85 M2: tool calls and interleaved stream deltas`.
 
 ### Task 4 (M2): cancel and attempts
 
-**Files:** `llm/errors.go`, `llm/anthropic.go`, `llm/anthropic_test.go`, define cancel sites.
+**Files:** `llm/errors.go`, `llm/anthropic.go`, `llm/attempt.go`, `llm/anthropic_test.go`; define match sites.
 
-- [ ] Failing tests against the fake: cancel during `Started` barrier → `ErrCanceled`, `errors.Is(context.Canceled)`;
-      cancel after first text → `ErrCanceled` with partial Text, no onEvent after return (counter checked
-      after return + a release of the barrier); caller deadline → `ErrCanceled` wrapping `DeadlineExceeded`;
-      package `Timeout`/`StallAfter` still `ErrUnavailable`/`ErrTruncated`; script 503,503,200 →
-      `BeforeAttempt` saw Numbers 0,1,2, `f.Requests()` has 3, `Usage.Attempts == 3`; hook error → no
-      request recorded, `ErrUnavailable`, not retried; blocking hook + ctx cancel → `ErrCanceled`.
-- [ ] Tests: `TestDeltasOwnedByReceiver` (retain every Delta, finish the stream, deep-compare to copies taken
-      in the callback).
-- [ ] Tests: hook rejects attempt 0 → `Attempts == 0`, zero recorded requests, `errors.Is(err, hookErr)`;
-      503 then hook rejects retry → `Attempts == 1`; `Attempts` set on the `ErrUnavailable` path.
-- [ ] Implement: caller-ctx check before `mapError`/salvage; `attemptMiddleware`; Attempts counted in the
-      middleware after admission and copied into Usage on every return.
-- [ ] Audit define's sites that match `ErrUnavailable` after a user cancel (ask/practice-help Esc paths);
-      each either treats `ErrCanceled` as silent or is shown not to cancel. Tests cover each.
-- [ ] Commit `#85 M2: ErrCanceled and per-attempt admission hook`.
+- [ ] `TestCancelOutcomes`: a table over the cancel points (held at `Started`; after the first text; caller
+      deadline), driven by the fake's barriers. Each expects `ErrCanceled` plus the matching ctx error, the
+      partial content defined above, and no callback after return. The package's own Timeout and StallAfter
+      keep their current mapping.
+- [ ] `TestBeforeAttempt`: a table over scripted statuses × hook verdicts. It asserts the hook's Numbers,
+      `f.Requests()` count, `Usage.Attempts` on every return path, `errors.Is(err, hookErr)`, and that no request
+      follows a rejection. `TestOutcomeOrder`: the hook rejects while the caller's ctx is cancelled, and the
+      hook's error wins.
+- [ ] Implement `callState` + `attemptMiddleware` and the outcome order.
+- [ ] Audit **every** `ErrUnavailable` match site in define: `ask.go:228` (already checks `ctx.Err()` first, at
+      `:213`), `practice_help_client.go:195`, and `background.go:451`, whose loop is cancelled at shutdown and
+      would otherwise fall to `default`. Each site gets an explicit `ErrCanceled` arm or a test showing it can't
+      see one. Commit `#85 M2: ErrCanceled and per-attempt admission hook`.
 
 ### Task 5 (M2): fake + Suite growth
 
 **Files:** `llm/llmtest/fake.go`, `fake_test.go`, `suite.go`.
 
-- [ ] Failing fake tests: `Reply.ToolCalls` JSON path and stream path (input chunked in ≥2
-      `input_json_delta` frames, Text first), `stop_reason: tool_use`; matching on a tool_result turn;
-      `Recorded.Messages/Tools/ToolChoice`; `misapplied` matrix covers ToolCalls with Stall/JunkFrame.
-- [ ] Implement; extend `Suite` with the obligations in the API section, including `ConcurrentStreams`
-      (8 streams, one cancelled alone); run it against the fake under `go test -race`.
-- [ ] Package doc (`llm/llm.go`, `llm/llmtest/fake.go`) states concurrent-use safety.
+- [ ] `TestFakeToolCalls` (JSON and stream; input chunked across ≥2 frames, after Text), `TestFakeMatchesToolResult`,
+      `TestRecordedAccessors`, and the `misapplied` matrix extended to cover ToolCalls.
+- [ ] `Suite` obligations from the API section, including `ConcurrentStreams` (8 streams, one cancelled alone),
+      run against the fake under `-race`. The package docs for `llm` and `llmtest` state concurrent-use safety.
 - [ ] Commit; `sdlc milestone-close --milestone M2`.
 
 ### Task 6 (M3): captures, conformance, docs, tag
@@ -491,3 +497,8 @@ re-scanned (`json.Valid` invocations == 1 per call).
 - 2026-10-21: echo TL (ops-echo:0) approved, with one addition folded in: concurrent-use safety stated in the
   package doc, and a `ConcurrentStreams` Suite obligation (review:
   ops-echo `teams/echo/projects/echo-control-board/reviews/tools-85-plan.md`).
+- 2026-10-21: plan-quality PQ-1 fixed. A `BeforeAttempt` rejection now aborts through a per-call `callState`
+  and the cancel of a derived context, because the SDK retries a middleware that returns no response.
+  Outcome order is fixed and tested. Minors fixed too: the implementer inventory is corrected, the
+  `ErrCanceled` audit now covers every `ErrUnavailable` match site (adds `background.go:451`), test prose is
+  cut to names plus strategy, and `FuzzDeltaAccumulator` is added.
