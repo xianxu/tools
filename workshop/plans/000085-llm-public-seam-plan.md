@@ -26,6 +26,11 @@ attempts without writing a retry loop of its own.
 
 ## Public API (for review by ops:0 and echo:1 before change-code)
 
+### Versioning
+
+The package doc states that v0.x may change incompatibly at a minor-version bump, so consumers pin an exact
+version. `v0.1.0` is tagged only after the change lands on main (ops:0 markup).
+
 ### Import paths
 
 | path | was | holds |
@@ -119,6 +124,10 @@ type Tool struct {
     InputSchema map[string]any // JSON Schema; nil means {"type":"object"}
 }
 ```
+
+**Name collision rule (ops:0 markup).** `ToolChoice` shares one string between keywords and tool names, so a
+`Tool` named `auto`, `any` or `none` is refused with `ErrRequest` before anything is sent. A `ToolChoice` that
+is neither a keyword nor a declared tool's name is refused the same way.
 
 ### Block, Response and tool calls
 
@@ -358,6 +367,8 @@ targets naming `./internal/llm/...`; `atlas/llm.md`, `atlas/index.md`; `AGENTS.l
 - [ ] `render_test.go`: `TestSingleTurnHashUnchanged` pins `RequestHash` of the committed
       `schema-veto-verdict` request to its pre-change value; multi-turn/tools requests render deterministic
       `--- messages ---` / `--- tools ---` sections.
+- [ ] `TestToolNameCollidesWithChoiceKeyword`: a Tool named auto/any/none → `ErrRequest`, nothing sent;
+      `TestUnknownToolChoice`: ToolChoice naming no declared tool → `ErrRequest`.
 - [ ] Implement types, `Text`, `ToolResult`, `wireMessages`; `params()` delegates to it.
 - [ ] Commit `#85 M2: neutral message, tool and block types on the wire`.
 
@@ -408,6 +419,7 @@ targets naming `./internal/llm/...`; `atlas/llm.md`, `atlas/index.md`; `AGENTS.l
 - [ ] Conformance (`-tags conformance`): `Suite` already runs live; add a live tool-streaming check and a live
       mid-stream cancel check; drift test asserts `input_json_delta` still arrives in >1 frame. Run against
       the auto-selected provider and report which providers were certified.
+- [ ] Package doc (`llm/llm.go`) states the v0.x compatibility rule: minor bumps may break; pin a version.
 - [ ] Rewrite `atlas/llm.md` for the public path, the new seam sections, cancellation and admission.
 - [ ] Close, merge; after landing: `git tag v0.1.0 <landed main sha>` + push (tag push confirmed with the
       hub first); scratch module `go get github.com/xianxu/tools@v0.1.0` builds against `llm` + `llmtest`.
@@ -436,3 +448,10 @@ Per stream event: `deltaFor` is O(1) per event plus O(len fragment) appended to 
 each call's input once. Growth drivers: events E, tool-call input bytes B. Expected: O(E + B). Counted test:
 `TestDeltaForLinear` feeds a call split into 8 and 16 fragments and asserts the buffer is appended, never
 re-scanned (`json.Valid` invocations == 1 per call).
+
+## Revisions
+
+- 2026-10-21: ops:0 (tools owner) approved the public API on all five points, with two markups folded in
+  above: (1) a Tool named `auto`/`any`/`none`, or a ToolChoice naming no declared tool, is refused with
+  `ErrRequest` and tested; (2) the package doc states that v0.x may break at minor bumps, and the tag waits
+  for landing on main.

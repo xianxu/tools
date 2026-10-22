@@ -73,3 +73,4 @@ caller cancellation. Retries stay in the transport, and `Config.BeforeAttempt` r
   `conformance` public too (otherwise echo can't compile against it).
 - SDK v1.66.0 `requestconfig.go`: the middleware chain runs inside the retry loop, once per attempt, which
   makes `BeforeAttempt` possible without a second retry loop.
+- ops:0 approved the public API (all 5 points) with markups: refuse a Tool named auto/any/none (and an unknown ToolChoice) with ErrRequest; package doc states the v0.x break rule; tag only after landing. Folded into the plan's Revisions.
