@@ -39,10 +39,17 @@ new one (`--here` to skip the question; declining still answers the lookup). See
 ## Layout
 
 ```
-cmd/<name>/      one directory per binary — the whole public surface
+cmd/<name>/      one directory per binary
+llm/             public Go package: the language-model seam (with llm/llmtest)
+conformance/     public Go package: the live-check skip-or-fail policy llmtest imports
 internal/<pkg>/  shared code; import-fenced to this module by the Go toolchain
 bin/             build output (gitignored)
 ```
+
+`llm`, `llm/llmtest` and `conformance` are public from **v0.2.0** (tools#85):
+`go get github.com/xianxu/tools@v0.2.0`. Tags before v0.2.0 don't contain
+them. They follow semver from their tags; v0.x may break at a minor bump, so
+pin a version. See [atlas/llm.md](atlas/llm.md).
 
 A tool earns a `cmd/` directory when it is worth a name on `$PATH`. Anything
 smaller stays a shell function in `construct/dev-aliases.sh`.
