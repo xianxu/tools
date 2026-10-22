@@ -58,7 +58,7 @@ caller cancellation. Retries stay in the transport, and `Config.BeforeAttempt` r
 
 - [x] M1 — Publish `llm`, `llm/llmtest`, `conformance`; imports, rule text, atlas; no behavior change.
 - [x] M2 — Widen the seam (Messages, Tools, ToolCalls, Delta, ErrCanceled, BeforeAttempt, Attempts); fake + Suite grow; define on `TextOnly`.
-- [ ] M3 — Real tool-use/multi-turn captures, live conformance, atlas rewrite, land, tag `v0.1.0`.
+- [x] M3 — Real tool-use/multi-turn captures, live conformance, atlas rewrite, land, tag `v0.1.0`.
 
 ## Estimate
 
