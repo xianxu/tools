@@ -5,12 +5,12 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/xianxu/tools/conformance"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/xianxu/tools/conformance"
 	"github.com/xianxu/tools/llm"
 	"github.com/xianxu/tools/llm/llmtest"
 )
@@ -143,6 +143,34 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 		}
 		t.Logf("preamble: %d tokens (cache_creation %d + cache_read %d)",
 			p, got.Usage.CacheCreationTokens, got.Usage.CacheReadTokens)
+	})
+
+	t.Run("a streamed tool call still arrives in several input frames", func(t *testing.T) {
+		weather := llm.Tool{Name: "weather", Description: "Look up the forecast for a city.",
+			InputSchema: map[string]any{"type": "object", "required": []any{"city", "days"},
+				"properties": map[string]any{"city": map[string]any{"type": "string"},
+					"days": map[string]any{"type": "integer"}, "note": map[string]any{"type": "string"}}}}
+		fragments := map[int]int{}
+		got, err := c.Stream(ctx, llm.Request{
+			Task: "drift-tool-stream",
+			Prompt: "Use the weather tool to get the 5-day forecast for Reykjavik, Iceland. In the note " +
+				"field explain in two sentences why you chose those days. Call the tool; do not answer in text.",
+			Tools: []llm.Tool{weather}, ToolChoice: "auto",
+		}, func(d llm.Delta) {
+			if d.Kind == llm.DeltaToolCallInput {
+				fragments[d.Index]++
+			}
+		})
+		mustCall(t, err)
+		if len(got.ToolCalls) == 0 {
+			t.Fatalf("no tool call (stop %q): the model answered in text. Re-record: scripts/llm-probe.sh record", got.Stop)
+		}
+		for i, n := range fragments {
+			if n < 2 {
+				t.Errorf("tool call at Index %d streamed its input in %d fragment(s): the fake's multi-frame "+
+					"chunking is no longer what the service does. Re-record: scripts/llm-probe.sh record", i, n)
+			}
+		}
 	})
 
 }

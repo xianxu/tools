@@ -3,7 +3,10 @@
 package llm_test
 
 import (
+	"context"
+	"errors"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/xianxu/tools/conformance"
@@ -39,4 +42,42 @@ func TestConformanceAgainstTheLiveService(t *testing.T) {
 	// fake does not behave like the real thing" when the real thing is simply off.
 	llmtest.SkipIfUnreachable(t, cfg.BaseURL)
 	llmtest.Suite(t, func(t *testing.T) llm.Client { return llm.New(cfg) })
+}
+
+// BeforeAttempt against the real transport: the hook sees every physical
+// attempt, numbered from 0, and Usage.Attempts reports exactly the ones it
+// admitted. Not part of llmtest.Suite, which receives a built client and cannot
+// install a hook (tools#85).
+//
+//	go test -tags conformance -run BeforeAttemptAgainst ./llm/
+func TestBeforeAttemptAgainstTheLiveService(t *testing.T) {
+	cfg, err := llm.Resolve(os.Getenv)
+	if err != nil {
+		conformance.SkipOrFail(t, "llm seam not configured", err)
+	}
+	llmtest.SkipIfUnreachable(t, cfg.BaseURL)
+	var mu sync.Mutex
+	var numbers []int
+	cfg.BeforeAttempt = func(_ context.Context, a llm.Attempt) error {
+		mu.Lock()
+		defer mu.Unlock()
+		numbers = append(numbers, a.Number)
+		return nil
+	}
+	resp, err := llm.New(cfg).Complete(t.Context(), llm.Request{Task: "conformance-attempts", Prompt: "Reply with exactly: PONG"})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(numbers) == 0 || numbers[0] != 0 || resp.Usage.Attempts != len(numbers) {
+		t.Errorf("hook saw %v, Usage.Attempts = %d; want Numbers from 0 and one Attempt per call", numbers, resp.Usage.Attempts)
+	}
+
+	errShed := errors.New("conformance: shed")
+	cfg.BeforeAttempt = func(context.Context, llm.Attempt) error { return errShed }
+	resp, err = llm.New(cfg).Complete(t.Context(), llm.Request{Task: "conformance-shed", Prompt: "Reply with exactly: PONG"})
+	if !errors.Is(err, errShed) || !errors.Is(err, llm.ErrUnavailable) || resp.Usage.Attempts != 0 {
+		t.Errorf("rejected call = %v, Attempts %d; want ErrUnavailable wrapping the hook error, 0 attempts", err, resp.Usage.Attempts)
+	}
 }

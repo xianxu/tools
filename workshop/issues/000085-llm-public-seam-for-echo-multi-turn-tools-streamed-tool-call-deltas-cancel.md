@@ -123,3 +123,11 @@ of the v2 mid-range.
   as slow). Found in build: internal deadlines needed a cause (`errBudget`), or the auto client's Timeout read
   as a caller deadline. Evidence: `go test ./...` (unsandboxed) is green except main's #82 guard row;
   `llm` and `llmtest` pass `-race -count=3`; `FuzzDeltaAccumulator` ran 60s clean.
+- M3, the part that needs no network, is done. `scripts/llm-probe.sh` records three new captures:
+  `stream-tool-use.sse`, and the `message-tool-use.json` + `message-tool-result.json` round, each with
+  `verify` shape rules. The live checks are drift (tool input still in several frames) and
+  `TestBeforeAttemptAgainstTheLiveService`; they compile under `-tags conformance` and skip while the proxy
+  is off. The Suite echo obligations now use ToolChoice auto plus an instruction in the prompt, because a
+  forced choice is refused alongside extended thinking. `atlas/llm.md` is rewritten for the new seam.
+  Blocked on the live proxy (127.0.0.1:8317 refuses connections). The TL says the operator decides on starting
+  it; until then no recording, no live run, and no Go shape rows for the new captures in `captures_test.go`.

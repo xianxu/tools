@@ -457,8 +457,8 @@ quoted name as a claim that it does).
 - [ ] Conformance (`-tags conformance`): `Suite` already runs live; add a live tool-streaming check and a live
       mid-stream cancel check; drift test asserts `input_json_delta` still arrives in >1 frame. Run against
       the auto-selected provider and report which providers were certified.
-- [ ] Package doc (`llm/llm.go`) states the v0.x compatibility rule: minor bumps may break; pin a version.
-- [ ] Rewrite `atlas/llm.md` for the public path, the new seam sections, cancellation and admission.
+- [x] Package doc (`llm/llm.go`) states the v0.x compatibility rule: minor bumps may break; pin a version.
+- [x] Rewrite `atlas/llm.md` for the public path, the new seam sections, cancellation and admission.
 - [ ] Close, merge; after landing: `git tag v0.1.0 <landed main sha>` + push (tag push confirmed with the
       hub first); scratch module `go get github.com/xianxu/tools@v0.1.0` builds against `llm` + `llmtest`.
 

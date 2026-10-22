@@ -76,6 +76,45 @@ probe_stream() {
     -d '{"model":"'"$MODEL"'","max_tokens":8192,"stream":true,"thinking":{"type":"adaptive","display":"summarized"},"messages":[{"role":"user","content":"Which of obsequious, ephemeral, meticulous would ALSO correctly fill the blank in: \"The board produced nothing but ______ agreement — every executive praised a plan they had privately called unworkable.\" Think it through, then answer."}]}'
 }
 
+# Fact 4 (tools#85): a tool call STREAMS its input as several input_json_delta
+# frames, after a thinking block. ToolChoice stays auto (a forced choice is
+# refused alongside extended thinking) and the prompt asks for the call, with an
+# input long enough that the provider cannot send it in one fragment.
+TOOL_DEF='{"name":"weather","description":"Look up the forecast for a city.","input_schema":{"type":"object","required":["city","days"],"properties":{"city":{"type":"string"},"days":{"type":"integer"},"note":{"type":"string"}}}}'
+TOOL_PROMPT='Use the weather tool to get the 5-day forecast for Reykjavik, Iceland. In the note field explain in two sentences why you chose those days. Call the tool; do not answer in text.'
+probe_tool_stream() {
+  need_key
+  curl -sN --max-time 300 "$BASE/v1/messages" \
+    -H 'content-type: application/json' -H "x-api-key: $K" -H 'anthropic-version: 2023-06-01' \
+    -d '{"model":"'"$MODEL"'","max_tokens":8192,"stream":true,"tools":['"$TOOL_DEF"'],"tool_choice":{"type":"auto"},"messages":[{"role":"user","content":"'"$TOOL_PROMPT"'"}]}'
+}
+
+# Fact 5 (tools#85): a conversation CONTINUES through a tool round. Turn 1 is a
+# non-streamed tool call carrying a thinking block; turn 2 sends turn 1's content
+# back verbatim (signature and all) with a tool_result, and must end_turn. The
+# pair is recorded together: turn 2 is evidence only for the turn 1 it echoes.
+probe_tool_turns() { # probe_tool_turns <dir>
+  need_key
+  K="$K" BASE="$BASE" MODEL="$MODEL" TOOL_DEF="$TOOL_DEF" TOOL_PROMPT="$TOOL_PROMPT" python3 - "$1" <<'PY'
+import json,os,sys,urllib.request
+out=sys.argv[1]
+def post(body):
+    req=urllib.request.Request(os.environ["BASE"]+"/v1/messages",data=json.dumps(body).encode(),
+        headers={"content-type":"application/json","x-api-key":os.environ["K"],"anthropic-version":"2023-06-01"})
+    with urllib.request.urlopen(req,timeout=300) as r: return r.read()
+tool=json.loads(os.environ["TOOL_DEF"]); prompt=os.environ["TOOL_PROMPT"]
+base={"model":os.environ["MODEL"],"max_tokens":8192,"tools":[tool],"tool_choice":{"type":"auto"}}
+first=post({**base,"messages":[{"role":"user","content":prompt}]})
+open(out+"/message-tool-use.json","wb").write(first)
+t1=json.loads(first)
+calls=[c for c in t1.get("content",[]) if c.get("type")=="tool_use"]
+results=[{"type":"tool_result","tool_use_id":c["id"],"content":"Rain all five days, 4-7 C."} for c in calls]
+second=post({**base,"messages":[{"role":"user","content":prompt},
+    {"role":"assistant","content":t1.get("content",[])},{"role":"user","content":results or [{"type":"text","text":"(no call)"}]}]})
+open(out+"/message-tool-result.json","wb").write(second)
+PY
+}
+
 summarize() {
   python3 -c '
 import json,sys
@@ -147,6 +186,21 @@ for frag,why in [("message_start","no message_start"),
                  ("signature_delta","no signature_delta — a thinking signature must round-trip byte for byte")]:
     need(frag in sse, "stream-sample.sse", why)
 
+# stream-tool-use.sse — a streamed tool call whose input arrives in pieces.
+sse=(out/"stream-tool-use.sse").read_text()
+need('"type":"tool_use"' in sse.replace(" ",""), "stream-tool-use.sse", "no tool_use block — the model answered in text; strengthen TOOL_PROMPT")
+need(sse.count("input_json_delta")>1, "stream-tool-use.sse", "input arrived in one fragment — the fake's multi-frame chunking is unbacked; lengthen the input")
+need('"stop_reason":"tool_use"' in sse.replace(" ",""), "stream-tool-use.sse", "stop_reason is not tool_use")
+
+# message-tool-use.json + message-tool-result.json — one tool round, thinking echoed.
+b=body("message-tool-use.json")
+need("tool_use" in blocks("message-tool-use.json"), "message-tool-use.json", "no tool_use block")
+need("thinking" in blocks("message-tool-use.json"), "message-tool-use.json", "no thinking block — turn 2 then cannot show the signature round trip")
+need(b["stop_reason"]=="tool_use", "message-tool-use.json", f"stop_reason {b['stop_reason']!r}, want tool_use")
+b=body("message-tool-result.json")
+need(b["stop_reason"]=="end_turn", "message-tool-result.json", f"stop_reason {b['stop_reason']!r}: the continuation did not complete")
+need("text" in blocks("message-tool-result.json"), "message-tool-result.json", "no text answer after the tool result")
+
 if bad:
     print("CAPTURE VERIFICATION FAILED:"); [print("  -",b) for b in bad]
     print("\nA capture is evidence only for the shape its recording conditions elicit.")
@@ -180,8 +234,11 @@ case "${1:-summary}" in
       probe_blocks > "$STAGE/message-thinking.json"
       probe_schema > "$STAGE/message-schema.json"
       probe_stream > "$STAGE/stream-sample.sse"
+      probe_tool_stream > "$STAGE/stream-tool-use.sse"
+      probe_tool_turns "$STAGE"
       if OUT="$STAGE" verify; then
-        cp "$STAGE/message-thinking.json" "$STAGE/message-schema.json" "$STAGE/stream-sample.sse" "$OUT/"
+        cp "$STAGE/message-thinking.json" "$STAGE/message-schema.json" "$STAGE/stream-sample.sse" \
+          "$STAGE/stream-tool-use.sse" "$STAGE/message-tool-use.json" "$STAGE/message-tool-result.json" "$OUT/"
         echo "recorded into $OUT (attempt $attempt)"
         exit 0
       fi
@@ -196,5 +253,6 @@ case "${1:-summary}" in
     echo "[blocks] non-trivial prompt:"; probe_blocks | summarize
     echo "[schema] structured output:";  probe_schema | summarize
     echo "[stream] event sequence:";     probe_stream | grep '^event:' | sed 's/^event: /  /' | uniq -c
+    echo "[tools] streamed tool call:";  probe_tool_stream | grep '^event:' | sed 's/^event: /  /' | uniq -c
     ;;
 esac

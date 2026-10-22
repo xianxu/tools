@@ -142,7 +142,7 @@ func Suite(t *testing.T, newClient func(t *testing.T) llm.Client) {
 			t.Fatalf("Stream: %v", err)
 		}
 		if got.Stop != "tool_use" || len(got.ToolCalls) != 1 || got.ToolCalls[0].Name != "echo" {
-			t.Fatalf("stop %q calls %+v, want one forced echo call", got.Stop, got.ToolCalls)
+			t.Fatalf("stop %q calls %+v, want one echo call", got.Stop, got.ToolCalls)
 		}
 		starts, inputs, ends := map[int]int{}, map[int]string{}, map[int]llm.ToolCall{}
 		for _, d := range events {
@@ -323,8 +323,12 @@ var EchoTool = llm.Tool{Name: "echo", Description: "Echo a number back.",
 	InputSchema: map[string]any{"type": "object", "required": []any{"n"},
 		"properties": map[string]any{"n": map[string]any{"type": "integer"}}}}
 
+// echoRequest leaves ToolChoice on "auto" and asks in the prompt instead:
+// Anthropic refuses a FORCED choice (any, or a named tool) alongside extended
+// thinking, which these models use by default, so a forced obligation would test
+// the refusal rather than the seam.
 func echoRequest(n int) llm.Request {
-	return llm.Request{Task: "suite-echo", Prompt: EchoPrompt(n), Tools: []llm.Tool{EchoTool}, ToolChoice: "echo"}
+	return llm.Request{Task: "suite-echo", Prompt: EchoPrompt(n), Tools: []llm.Tool{EchoTool}, ToolChoice: "auto"}
 }
 
 func echoN(t *testing.T, in json.RawMessage) int {
