@@ -1,5 +1,9 @@
 # tools
 
+> **Frozen snapshot of 2026-10-25.** Development continues in a private repository; this public copy is archived
+> and no longer updated. Existing tags and Homebrew installs (`brew install xianxu/tools/define`) keep working.
+
+
 Small Go binaries — one job each, installed onto `$PATH`.
 
 An [ariadne](../ariadne) derivative: the SDLC spine (`sdlc`), the agentic
